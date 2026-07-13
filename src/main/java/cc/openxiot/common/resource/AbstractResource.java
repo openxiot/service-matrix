@@ -1,14 +1,14 @@
 package cc.openxiot.common.resource;
 
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 
 public abstract class AbstractResource {
 
     @Inject
-    JsonWebToken jwt;
+    SecurityIdentity securityIdentity;
 
     protected String getUserId() {
-        return jwt.getName();
+        return securityIdentity.getPrincipal().getName();
     }
 }

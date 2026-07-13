@@ -11,10 +11,10 @@ class SiteResourceTest {
     @Test
     void testHelloEndpoint() {
         given()
-          .when().get("/v1")
+          .when().get("/v1/site")
           .then()
              .statusCode(200)
              .body("success", is(true))
-             .body("data", is("Hello from ConsoleResource"));
+             .body("data", is("Hello from SiteResource"));
     }
 }

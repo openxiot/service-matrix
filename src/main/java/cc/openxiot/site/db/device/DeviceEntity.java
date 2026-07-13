@@ -1,6 +1,6 @@
 package cc.openxiot.site.db.device;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntity;
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonDiscriminator;
@@ -14,7 +14,7 @@ import java.util.List;
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "设备")
-public class DeviceEntity extends PanacheMongoEntity {
+public class DeviceEntity extends PanacheMongoEntityBase {
 
     @BsonId
     @Schema(description = "设备ID", required = true)
