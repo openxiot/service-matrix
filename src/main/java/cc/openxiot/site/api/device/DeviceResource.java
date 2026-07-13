@@ -5,7 +5,6 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceSpace;
-import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.RequestScoped;
@@ -99,7 +98,7 @@ public class DeviceResource extends AbstractResource {
         }
 
         manipulationService.removeDevices(authorization, did);
-        deviceService.deleteByDids(did);
+        deviceService.deleteByDeviceIds(did);
 
         return OxResponse.ok();
     }
@@ -150,14 +149,14 @@ public class DeviceResource extends AbstractResource {
 
     @GET
     @Path("/shadows/{spaceId}")
-    public Uni<Response> getShadows(
+    public Response getShadows(
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
         String userId = getUserId();
 
         if (spaceService.noAccess(spaceId, userId)) {
-            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+            return OxResponse.error("No access to this space");
         }
 
         List<String> deviceIds = did;
@@ -167,60 +166,60 @@ public class DeviceResource extends AbstractResource {
         }
 
         if (deviceIds.isEmpty()) {
-            return Uni.createFrom().item(OxResponse.ok(List.of()));
+            return OxResponse.ok(List.of());
         }
 
         JsonObject result = manipulationService.getShadows(authorization, deviceIds);
-        return Uni.createFrom().item(OxResponse.ok(result));
+        return OxResponse.ok(result);
     }
 
     @GET
     @Path("/properties/{spaceId}")
-    public Uni<Response> getProperties(
+    public Response getProperties(
             @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
         String userId = getUserId();
 
         if (spaceService.noAccess(spaceId, userId)) {
-            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+            return OxResponse.error("No access to this space");
         }
 
         JsonObject result = manipulationService.getProperties(authorization, pid);
-        return Uni.createFrom().item(OxResponse.ok(result));
+        return OxResponse.ok(result);
     }
 
     @POST
     @Path("/properties/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> setProperties(
+    public Response setProperties(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
         if (spaceService.noAccess(spaceId, userId)) {
-            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+            return OxResponse.error("No access to this space");
         }
 
         JsonObject result = manipulationService.setProperties(authorization, body);
-        return Uni.createFrom().item(OxResponse.ok(result));
+        return OxResponse.ok(result);
     }
 
     @POST
     @Path("/actions/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> invokeActions(
+    public Response invokeActions(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
         if (spaceService.noAccess(spaceId, userId)) {
-            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+            return OxResponse.error("No access to this space");
         }
 
         JsonObject result = manipulationService.invokeActions(authorization, body);
-        return Uni.createFrom().item(OxResponse.ok(result));
+        return OxResponse.ok(result);
     }
 }

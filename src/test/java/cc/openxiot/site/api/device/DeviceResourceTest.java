@@ -72,7 +72,7 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .body("not-json")
+                .body("\"not-json\"")
                 .when().post("/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -134,7 +134,7 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .body("not-json")
+                .body("\"not-json\"")
                 .when().put("/v1/device/many/space")
                 .then()
                 .statusCode(200)

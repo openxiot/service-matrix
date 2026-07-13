@@ -19,7 +19,7 @@ public class DeviceService {
         return deviceRepository.findBySpaceId(spaceId);
     }
 
-    public List<DeviceEntity> getByDids(List<String> dids) {
+    public List<DeviceEntity> getByDeviceIds(List<String> dids) {
         return deviceRepository.findByDeviceIds(dids);
     }
 
@@ -47,7 +47,7 @@ public class DeviceService {
         }
     }
 
-    public long deleteByDids(List<String> dids) {
+    public long deleteByDeviceIds(List<String> dids) {
         return deviceRepository.deleteByDeviceIds(dids);
     }
 }

@@ -2,7 +2,6 @@ package cc.openxiot.site.api.device;
 
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceRepository;
-import cc.openxiot.site.db.device.DeviceSpace;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -14,7 +13,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -74,14 +72,14 @@ class DeviceServiceTest {
     }
 
     @Test
-    void getByDids_delegates() {
+    void getByDeviceIds_delegates() {
         when(deviceRepository.findByDeviceIds(List.of("d1"))).thenReturn(List.of(new DeviceEntity()));
-        assertEquals(1, service.getByDids(List.of("d1")).size());
+        assertEquals(1, service.getByDeviceIds(List.of("d1")).size());
     }
 
     @Test
-    void deleteByDids_delegates() {
+    void deleteByDeviceIds_delegates() {
         when(deviceRepository.deleteByDeviceIds(List.of("d1"))).thenReturn(1L);
-        assertEquals(1L, service.deleteByDids(List.of("d1")));
+        assertEquals(1L, service.deleteByDeviceIds(List.of("d1")));
     }
 }

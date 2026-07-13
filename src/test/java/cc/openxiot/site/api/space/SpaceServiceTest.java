@@ -107,7 +107,7 @@ class SpaceServiceTest {
         assertTrue(result.ancestors.isEmpty());
         assertNull(result.parentId);
         assertEquals(1, result.users.size());
-        assertEquals("user1", result.users.get(0).userId);
+        assertEquals("user1", result.users.getFirst().userId);
     }
 
     @Test

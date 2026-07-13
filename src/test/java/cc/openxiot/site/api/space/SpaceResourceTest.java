@@ -1,7 +1,5 @@
 package cc.openxiot.site.api.space;
 
-import cc.openxiot.common.response.OxData;
-import cc.openxiot.common.response.OxError;
 import cc.openxiot.site.api.device.DeviceService;
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.db.space.SpaceUser;
@@ -9,7 +7,6 @@ import cc.openxiot.site.role.SiteRole;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
-import io.restassured.common.mapper.TypeRef;
 import io.restassured.http.ContentType;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -18,7 +15,6 @@ import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.*;
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
