@@ -1,5 +1,6 @@
 package cc.openxiot.site.api;
 
+import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.ws.rs.GET;
@@ -12,11 +13,11 @@ import org.jboss.logging.Logger;
 
 import jakarta.inject.Inject;
 
-@Path("/v1")
+@Path("/v1/site")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Site", description = "Site API")
 @RequestScoped
-public class SiteResource {
+public class SiteResource extends AbstractResource {
 
     @Inject
     Logger logger;
