@@ -2,6 +2,7 @@ package cc.openxiot.site.db.space;
 
 import io.quarkus.mongodb.panache.PanacheMongoRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.bson.types.ObjectId;
 
 import java.util.HashMap;
 import java.util.List;
@@ -10,16 +11,16 @@ import java.util.Map;
 @ApplicationScoped
 public class SpaceRepository implements PanacheMongoRepository<SpaceEntity> {
 
-    public List<SpaceEntity> findByTenantId(String tenantId) {
-        return list("tenantId", tenantId);
+    public SpaceEntity findById(String id) {
+        return findById(new ObjectId(id));
+    }
+
+    public boolean deleteById(String id) {
+        return deleteById(new ObjectId(id));
     }
 
     public List<SpaceEntity> findByParentId(String parentId) {
         return list("parentId", parentId);
-    }
-
-    public List<SpaceEntity> findByType(String type) {
-        return list("type", type);
     }
 
     public List<SpaceEntity> findByAncestor(String ancestorId) {

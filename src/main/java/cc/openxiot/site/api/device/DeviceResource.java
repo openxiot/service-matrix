@@ -3,7 +3,11 @@ package cc.openxiot.site.api.device;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.site.api.space.SpaceService;
+import cc.openxiot.site.db.device.DeviceEntity;
+import cc.openxiot.site.db.device.DeviceSpace;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -12,6 +16,7 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Path("/v1/device")
@@ -32,6 +37,9 @@ public class DeviceResource extends AbstractResource {
     @Inject
     ManipulationService manipulationService;
 
+    @HeaderParam("Authorization")
+    String authorization;
+
     @GET
     public Response hello() {
         logger.info("hello");
@@ -40,16 +48,42 @@ public class DeviceResource extends AbstractResource {
 
     @POST
     @Path("/many/{spaceId}")
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response addDevices(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
-        // TODO: 添加设备，先检查用户是否拥有这个空间
-        //  再调用 ManipulationService 里的添加接口，成功了，就通过 DeviceService 保存。
+        if (spaceService.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
 
-        return null;
+        JsonArray arr;
+        try {
+            arr = new JsonArray(body);
+        } catch (Exception e) {
+            return OxResponse.error("Invalid JSON body");
+        }
+
+        manipulationService.addDevices(authorization, body);
+
+        List<DeviceEntity> devices = new ArrayList<>();
+        for (int i = 0; i < arr.size(); i++) {
+            JsonObject obj = arr.getJsonObject(i);
+
+            DeviceEntity device = new DeviceEntity();
+            device.did = obj.getString("did");
+            device.type = obj.getString("type");
+
+            DeviceSpace ds = new DeviceSpace();
+            ds.spaceId = spaceId;
+            device.space = ds;
+            devices.add(device);
+        }
+        deviceService.saveAll(devices);
+
+        return OxResponse.ok();
     }
 
     @DELETE
@@ -60,21 +94,43 @@ public class DeviceResource extends AbstractResource {
     ) {
         String userId = getUserId();
 
-        // TODO: 删除设备，先检查用户是否拥有这个空间
-        //  再调用 ManipulationService 里的添加接口，成功了，就通过 DeviceService 删除。
+        if (spaceService.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
 
-        return null;
+        manipulationService.removeDevices(authorization, did);
+        deviceService.deleteByDids(did);
+
+        return OxResponse.ok();
     }
 
     @PUT
     @Path("/many/space")
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response updateSpace(String body) {
         String userId = getUserId();
 
-        // TODO: 仅修改设备所在的空间，先检查用户是否拥有这个空间
-        //  再调用 DeviceService 即可
+        JsonObject obj;
+        try {
+            obj = new JsonObject(body);
+        } catch (Exception e) {
+            return OxResponse.error("Invalid JSON body");
+        }
 
-        return null;
+        String spaceId = obj.getString("spaceId");
+        if (spaceService.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
+
+        String rootSpaceId = obj.getString("rootSpaceId");
+        JsonArray dids = obj.getJsonArray("dids");
+        if (dids != null) {
+            for (int i = 0; i < dids.size(); i++) {
+                deviceService.updateSpace(dids.getString(i), spaceId, rootSpaceId);
+            }
+        }
+
+        return OxResponse.ok();
     }
 
     @GET
@@ -84,61 +140,87 @@ public class DeviceResource extends AbstractResource {
     ) {
         String userId = getUserId();
 
-        // TODO: 读取空间里的设备列表，先检查用户是否拥有这个空间，再调用 DeviceService 即可
+        if (spaceService.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
 
-        return null;
+        List<DeviceEntity> devices = deviceService.getBySpaceId(spaceId);
+        return OxResponse.ok(devices);
     }
 
     @GET
     @Path("/shadows/{spaceId}")
-    public Response getShadows(
+    public Uni<Response> getShadows(
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        // spaceId: 根空间
-
         String userId = getUserId();
 
-        // TODO: 先调用 DeviceService 校验设备所在的空间，以及用户是否拥有这个空间
-        //  再 ManipulationService 里的 getShadows
+        if (spaceService.noAccess(spaceId, userId)) {
+            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+        }
 
-        return null;
+        List<String> deviceIds = did;
+        if (deviceIds == null || deviceIds.isEmpty()) {
+            List<DeviceEntity> devices = deviceService.getBySpaceId(spaceId);
+            deviceIds = devices.stream().map(d -> d.did).toList();
+        }
+
+        if (deviceIds.isEmpty()) {
+            return Uni.createFrom().item(OxResponse.ok(List.of()));
+        }
+
+        JsonObject result = manipulationService.getShadows(authorization, deviceIds);
+        return Uni.createFrom().item(OxResponse.ok(result));
     }
 
     @GET
     @Path("/properties/{spaceId}")
     public Uni<Response> getProperties(
+            @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
         String userId = getUserId();
 
-        // TODO: 先调用 DeviceService 校验设备所在的空间，以及用户是否拥有这个空间
-        //  再 ManipulationService 里的 getProperties
+        if (spaceService.noAccess(spaceId, userId)) {
+            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+        }
 
-        return null;
+        JsonObject result = manipulationService.getProperties(authorization, pid);
+        return Uni.createFrom().item(OxResponse.ok(result));
     }
 
     @POST
     @Path("/properties/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> setProperties(String body) {
+    public Uni<Response> setProperties(
+            @PathParam("spaceId") String spaceId,
+            String body
+    ) {
         String userId = getUserId();
 
-        // TODO: 先调用 DeviceService 校验设备所在的空间，以及用户是否拥有这个空间
-        //  再 ManipulationService 里的 setProperties
+        if (spaceService.noAccess(spaceId, userId)) {
+            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+        }
 
-        return null;
+        JsonObject result = manipulationService.setProperties(authorization, body);
+        return Uni.createFrom().item(OxResponse.ok(result));
     }
 
     @POST
     @Path("/actions/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> invokeActions(String body) {
+    public Uni<Response> invokeActions(
+            @PathParam("spaceId") String spaceId,
+            String body
+    ) {
         String userId = getUserId();
 
-        // TODO: 先调用 DeviceService 校验设备所在的空间，以及用户是否拥有这个空间
-        //  再 ManipulationService 里的 invokeActions
+        if (spaceService.noAccess(spaceId, userId)) {
+            return Uni.createFrom().item(OxResponse.error("No access to this space"));
+        }
 
-        return null;
+        JsonObject result = manipulationService.invokeActions(authorization, body);
+        return Uni.createFrom().item(OxResponse.ok(result));
     }
 }

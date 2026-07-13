@@ -2,8 +2,10 @@ package cc.openxiot.site.api.space;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
+import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.role.SiteRole;
+import cc.openxiot.site.api.device.DeviceService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -12,6 +14,10 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Path("/v1/space")
 @Produces(MediaType.APPLICATION_JSON)
@@ -25,6 +31,9 @@ public class SpaceResource extends AbstractResource {
     @Inject
     SpaceService service;
 
+    @Inject
+    DeviceService deviceService;
+
     @GET
     public Response hello() {
         logger.info("hello");
@@ -34,11 +43,22 @@ public class SpaceResource extends AbstractResource {
     @POST
     @Path("/one")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response addOne(SpaceEntity space) {
         String userId = getUserId();
 
-        // TODO: 添加空间（子空间，根空间），
-        return null;
+        if (space.parentId != null && !space.parentId.isBlank()) {
+            if (service.noAccess(space.parentId, userId)) {
+                return OxResponse.error("No access to parent space");
+            }
+        }
+
+        try {
+            SpaceEntity created = service.create(space, userId);
+            return OxResponse.ok(created);
+        } catch (IllegalArgumentException e) {
+            return OxResponse.error(e.getMessage());
+        }
     }
 
     @DELETE
@@ -49,18 +69,39 @@ public class SpaceResource extends AbstractResource {
     ) {
         String userId = getUserId();
 
-        // TODO: 删除空间（空间如果有子空间，就不能删除）
-        return null;
+        if (service.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
+
+        try {
+            service.delete(spaceId);
+            return OxResponse.ok();
+        } catch (IllegalArgumentException e) {
+            return OxResponse.error(e.getMessage());
+        }
     }
 
     @PUT
     @Path("/one")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response updateOne(SpaceEntity space) {
         String userId = getUserId();
 
-        // TODO: 更新空间（parentId 如果修改，则为移动空间）
-        return null;
+        if (space.id == null) {
+            return OxResponse.error("Space id is required");
+        }
+
+        if (service.noAccess(space.id.toString(), userId)) {
+            return OxResponse.error("No access to this space");
+        }
+
+        try {
+            SpaceEntity updated = service.update(space);
+            return OxResponse.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return OxResponse.error(e.getMessage());
+        }
     }
 
     @GET
@@ -71,8 +112,15 @@ public class SpaceResource extends AbstractResource {
     ) {
         String userId = getUserId();
 
-        // TODO: 读取一个空间的信息
-        return null;
+        if (service.noAccess(spaceId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
+
+        SpaceEntity space = service.getById(spaceId);
+        if (space == null) {
+            return OxResponse.error("Space not found");
+        }
+        return OxResponse.ok(space);
     }
 
     @GET
@@ -80,10 +128,8 @@ public class SpaceResource extends AbstractResource {
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
     public Response getAll() {
         String userId = getUserId();
-
-        // TODO: 读取一个根空间列表
-
-        return null;
+        List<SpaceEntity> roots = service.getRootsByUserId(userId);
+        return OxResponse.ok(roots);
     }
 
     @GET
@@ -94,9 +140,12 @@ public class SpaceResource extends AbstractResource {
     ) {
         String userId = getUserId();
 
-        // TODO: 读取一个空间树
+        if (service.noAccess(rootId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
 
-        return null;
+        List<SpaceEntity> spaces = service.getDescendants(rootId);
+        return OxResponse.ok(spaces);
     }
 
     @GET
@@ -104,11 +153,23 @@ public class SpaceResource extends AbstractResource {
     public Response getGraph(
             @PathParam("rootId") String rootId
     ) {
-        // rootId => 根空间ID
         String userId = getUserId();
 
-        // TODO: 读取一个物联网场地的所有信息：空间列表，设备列表
+        if (service.noAccess(rootId, userId)) {
+            return OxResponse.error("No access to this space");
+        }
 
-        return null;
+        List<SpaceEntity> spaces = service.getDescendants(rootId);
+        List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
+
+        List<DeviceEntity> devices = spaceIds.stream()
+                .flatMap(sid -> deviceService.getBySpaceId(sid).stream())
+                .toList();
+
+        Map<String, Object> graph = new HashMap<>();
+        graph.put("spaces", spaces);
+        graph.put("devices", devices);
+
+        return OxResponse.ok(graph);
     }
 }
