@@ -5,6 +5,7 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceSpace;
+import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.RequestScoped;
@@ -48,178 +49,199 @@ public class DeviceResource extends AbstractResource {
     @POST
     @Path("/many/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response addDevices(
+    public Uni<Response> addDevices(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
         JsonArray arr;
         try {
             arr = new JsonArray(body);
         } catch (Exception e) {
-            return OxResponse.error("Invalid JSON body");
+            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
         }
-
-        manipulationService.addDevices(authorization, body);
 
         List<DeviceEntity> devices = new ArrayList<>();
         for (int i = 0; i < arr.size(); i++) {
             JsonObject obj = arr.getJsonObject(i);
-
             DeviceEntity device = new DeviceEntity();
             device.did = obj.getString("did");
             device.type = obj.getString("type");
-
             DeviceSpace ds = new DeviceSpace();
             ds.spaceId = spaceId;
             device.space = ds;
             devices.add(device);
         }
-        deviceService.saveAll(devices);
 
-        return OxResponse.ok();
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return manipulationService.addDevices(authorization, body)
+                            .flatMap(ignore -> deviceService.saveAll(devices))
+                            .replaceWith(OxResponse.ok());
+                });
     }
 
     @DELETE
     @Path("/many/{spaceId}")
-    public Response removeDevices(
+    public Uni<Response> removeDevices(
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        manipulationService.removeDevices(authorization, did);
-        deviceService.deleteByDeviceIds(did);
-
-        return OxResponse.ok();
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return manipulationService.removeDevices(authorization, did)
+                            .flatMap(ignore -> deviceService.deleteByDeviceIds(did))
+                            .replaceWith(OxResponse.ok());
+                });
     }
 
     @PUT
     @Path("/many/space")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response updateSpace(String body) {
+    public Uni<Response> updateSpace(String body) {
         String userId = getUserId();
 
         JsonObject obj;
         try {
             obj = new JsonObject(body);
         } catch (Exception e) {
-            return OxResponse.error("Invalid JSON body");
+            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
         }
 
         String spaceId = obj.getString("spaceId");
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
 
-        String rootSpaceId = obj.getString("rootSpaceId");
-        JsonArray dids = obj.getJsonArray("dids");
-        if (dids != null) {
-            for (int i = 0; i < dids.size(); i++) {
-                deviceService.updateSpace(dids.getString(i), spaceId, rootSpaceId);
-            }
-        }
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
 
-        return OxResponse.ok();
+                    String rootSpaceId = obj.getString("rootSpaceId");
+                    JsonArray dids = obj.getJsonArray("dids");
+                    if (dids != null) {
+                        List<Uni<Void>> updates = new ArrayList<>();
+                        for (int i = 0; i < dids.size(); i++) {
+                            updates.add(deviceService.updateSpace(
+                                    dids.getString(i), spaceId, rootSpaceId));
+                        }
+                        return Uni.join().all(updates).andFailFast().replaceWith(OxResponse.ok());
+                    }
+
+                    return Uni.createFrom().item(OxResponse.ok());
+                });
     }
 
     @GET
     @Path("/many/{spaceId}")
-    public Response getDevices(
+    public Uni<Response> getDevices(
             @PathParam("spaceId") String spaceId
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        List<DeviceEntity> devices = deviceService.getBySpaceId(spaceId);
-        return OxResponse.ok(devices);
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return deviceService.getBySpaceId(spaceId)
+                            .map(OxResponse::ok);
+                });
     }
 
     @GET
     @Path("/shadows/{spaceId}")
-    public Response getShadows(
+    public Uni<Response> getShadows(
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
 
-        List<String> deviceIds = did;
-        if (deviceIds == null || deviceIds.isEmpty()) {
-            List<DeviceEntity> devices = deviceService.getBySpaceId(spaceId);
-            deviceIds = devices.stream().map(d -> d.did).toList();
-        }
+                    if (did != null && !did.isEmpty()) {
+                        return manipulationService.getShadows(authorization, did)
+                                .map(OxResponse::ok);
+                    }
 
-        if (deviceIds.isEmpty()) {
-            return OxResponse.ok(List.of());
-        }
-
-        JsonObject result = manipulationService.getShadows(authorization, deviceIds);
-        return OxResponse.ok(result);
+                    return deviceService.getBySpaceId(spaceId)
+                            .flatMap(devices -> {
+                                List<String> deviceIds = devices.stream()
+                                        .map(d -> d.did).toList();
+                                if (deviceIds.isEmpty()) {
+                                    return Uni.createFrom().item(OxResponse.ok(List.of()));
+                                }
+                                return manipulationService.getShadows(authorization, deviceIds)
+                                        .map(OxResponse::ok);
+                            });
+                });
     }
 
     @GET
     @Path("/properties/{spaceId}")
-    public Response getProperties(
+    public Uni<Response> getProperties(
             @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        JsonObject result = manipulationService.getProperties(authorization, pid);
-        return OxResponse.ok(result);
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return manipulationService.getProperties(authorization, pid)
+                            .map(OxResponse::ok);
+                });
     }
 
     @POST
     @Path("/properties/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response setProperties(
+    public Uni<Response> setProperties(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        JsonObject result = manipulationService.setProperties(authorization, body);
-        return OxResponse.ok(result);
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return manipulationService.setProperties(authorization, body)
+                            .map(OxResponse::ok);
+                });
     }
 
     @POST
     @Path("/actions/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response invokeActions(
+    public Uni<Response> invokeActions(
             @PathParam("spaceId") String spaceId,
             String body
     ) {
         String userId = getUserId();
 
-        if (spaceService.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        JsonObject result = manipulationService.invokeActions(authorization, body);
-        return OxResponse.ok(result);
+        return spaceService.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return manipulationService.invokeActions(authorization, body)
+                            .map(OxResponse::ok);
+                });
     }
 }

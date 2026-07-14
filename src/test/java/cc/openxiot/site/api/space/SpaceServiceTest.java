@@ -3,6 +3,7 @@ package cc.openxiot.site.api.space;
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.db.space.SpaceRepository;
 import cc.openxiot.site.db.space.SpaceUser;
+import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,7 +16,7 @@ import org.mockito.quality.Strictness;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,16 +31,22 @@ class SpaceServiceTest {
 
     @Test
     void noAccess_unknownSpace_returnsTrue() {
-        when(spaceRepository.findById("unknown")).thenReturn(null);
-        assertTrue(service.noAccess("unknown", "user1"));
+        when(spaceRepository.findById("unknown")).thenReturn(Uni.createFrom().nullItem());
+
+        Boolean result = service.noAccess("unknown", "user1").await().indefinitely();
+
+        assertTrue(result);
     }
 
     @Test
     void noAccess_emptyUsers_returnsTrue() {
         SpaceEntity space = new SpaceEntity();
         space.users = List.of();
-        when(spaceRepository.findById("sid")).thenReturn(space);
-        assertTrue(service.noAccess("sid", "user1"));
+        when(spaceRepository.findById("sid")).thenReturn(Uni.createFrom().item(space));
+
+        Boolean result = service.noAccess("sid", "user1").await().indefinitely();
+
+        assertTrue(result);
     }
 
     @Test
@@ -48,8 +55,11 @@ class SpaceServiceTest {
         SpaceUser u = new SpaceUser();
         u.userId = "other-user";
         space.users = List.of(u);
-        when(spaceRepository.findById("sid")).thenReturn(space);
-        assertTrue(service.noAccess("sid", "user1"));
+        when(spaceRepository.findById("sid")).thenReturn(Uni.createFrom().item(space));
+
+        Boolean result = service.noAccess("sid", "user1").await().indefinitely();
+
+        assertTrue(result);
     }
 
     @Test
@@ -58,18 +68,22 @@ class SpaceServiceTest {
         SpaceUser u = new SpaceUser();
         u.userId = "user1";
         space.users = List.of(u);
-        when(spaceRepository.findById("sid")).thenReturn(space);
-        assertFalse(service.noAccess("sid", "user1"));
+        when(spaceRepository.findById("sid")).thenReturn(Uni.createFrom().item(space));
+
+        Boolean result = service.noAccess("sid", "user1").await().indefinitely();
+
+        assertFalse(result);
     }
 
     @Test
     void getDescendants_returnsRootAndChildren() {
         SpaceEntity root = new SpaceEntity();
         SpaceEntity child = new SpaceEntity();
-        when(spaceRepository.findById("root-id")).thenReturn(root);
-        when(spaceRepository.findByAncestor("root-id")).thenReturn(List.of(child));
+        when(spaceRepository.findById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.findByAncestor("root-id"))
+                .thenReturn(Uni.createFrom().item(List.of(child)));
 
-        List<SpaceEntity> result = service.getDescendants("root-id");
+        List<SpaceEntity> result = service.getDescendants("root-id").await().indefinitely();
 
         assertEquals(2, result.size());
         assertSame(root, result.get(0));
@@ -78,30 +92,40 @@ class SpaceServiceTest {
 
     @Test
     void getDescendants_unknownRoot_returnsEmpty() {
-        when(spaceRepository.findById("unknown")).thenReturn(null);
-        assertTrue(service.getDescendants("unknown").isEmpty());
+        when(spaceRepository.findById("unknown")).thenReturn(Uni.createFrom().nullItem());
+
+        List<SpaceEntity> result = service.getDescendants("unknown").await().indefinitely();
+
+        assertTrue(result.isEmpty());
     }
 
     @Test
     void delete_withoutChildren_succeeds() {
-        when(spaceRepository.findByParentId("sid")).thenReturn(List.of());
-        service.delete("sid");
+        when(spaceRepository.findByParentId("sid")).thenReturn(Uni.createFrom().item(List.of()));
+        when(spaceRepository.deleteById(any(String.class)))
+                .thenReturn(Uni.createFrom().item(true));
+
+        service.delete("sid").await().indefinitely();
+
         verify(spaceRepository).deleteById(anyString());
     }
 
     @Test
     void delete_withChildren_throws() {
-        when(spaceRepository.findByParentId("sid")).thenReturn(List.of(new SpaceEntity()));
-        assertThrows(IllegalArgumentException.class, () -> service.delete("sid"));
+        when(spaceRepository.findByParentId("sid"))
+                .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.delete("sid").await().indefinitely());
         verify(spaceRepository, never()).deleteById(anyString());
     }
 
     @Test
     void create_rootSpace_setsLevelAndAncestors() {
         SpaceEntity space = spy(new SpaceEntity());
-        doNothing().when(space).persist();
+        doReturn(Uni.createFrom().item(space)).when(space).persist();
 
-        SpaceEntity result = service.create(space, "user1");
+        SpaceEntity result = service.create(space, "user1").await().indefinitely();
 
         assertEquals(0, result.level);
         assertTrue(result.ancestors.isEmpty());
@@ -115,13 +139,13 @@ class SpaceServiceTest {
         SpaceEntity parent = new SpaceEntity();
         parent.level = 2;
         parent.ancestors = List.of("root-id", "parent1-id");
-        when(spaceRepository.findById("parent-id")).thenReturn(parent);
+        when(spaceRepository.findById("parent-id")).thenReturn(Uni.createFrom().item(parent));
 
         SpaceEntity space = spy(new SpaceEntity());
         space.parentId = "parent-id";
-        doNothing().when(space).persist();
+        doReturn(Uni.createFrom().item(space)).when(space).persist();
 
-        SpaceEntity result = service.create(space, "user1");
+        SpaceEntity result = service.create(space, "user1").await().indefinitely();
 
         assertEquals(3, result.level);
         assertEquals(List.of("root-id", "parent1-id", "parent-id"), result.ancestors);
@@ -129,31 +153,43 @@ class SpaceServiceTest {
 
     @Test
     void create_childSpaceMissingParent_throws() {
-        when(spaceRepository.findById("parent-id")).thenReturn(null);
+        when(spaceRepository.findById("parent-id")).thenReturn(Uni.createFrom().nullItem());
 
         SpaceEntity space = new SpaceEntity();
         space.parentId = "parent-id";
 
-        assertThrows(IllegalArgumentException.class, () -> service.create(space, "user1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.create(space, "user1").await().indefinitely());
     }
 
     @Test
     void getById_delegates() {
         SpaceEntity expected = new SpaceEntity();
-        when(spaceRepository.findById("sid")).thenReturn(expected);
-        assertSame(expected, service.getById("sid"));
+        when(spaceRepository.findById("sid")).thenReturn(Uni.createFrom().item(expected));
+
+        SpaceEntity result = service.getById("sid").await().indefinitely();
+
+        assertSame(expected, result);
     }
 
     @Test
     void getByParentId_delegates() {
-        when(spaceRepository.findByParentId("pid")).thenReturn(List.of(new SpaceEntity()));
-        assertEquals(1, service.getByParentId("pid").size());
+        when(spaceRepository.findByParentId("pid"))
+                .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));
+
+        List<SpaceEntity> result = service.getByParentId("pid").await().indefinitely();
+
+        assertEquals(1, result.size());
     }
 
     @Test
     void getRootsByUserId_delegates() {
-        when(spaceRepository.findRootByUserId("user1")).thenReturn(List.of(new SpaceEntity()));
-        assertEquals(1, service.getRootsByUserId("user1").size());
+        when(spaceRepository.findRootByUserId("user1"))
+                .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));
+
+        List<SpaceEntity> result = service.getRootsByUserId("user1").await().indefinitely();
+
+        assertEquals(1, result.size());
     }
 
     @Test
@@ -164,21 +200,23 @@ class SpaceServiceTest {
         existing.id = id;
         existing.parentId = "old-parent-id";
         existing.level = 1;
-        doNothing().when(existing).update();
+        doReturn(Uni.createFrom().item(existing)).when(existing).update();
 
         SpaceEntity newParent = new SpaceEntity();
         newParent.level = 0;
         newParent.ancestors = List.of();
 
-        when(spaceRepository.findById(any(ObjectId.class))).thenReturn(existing);
-        when(spaceRepository.findById("new-parent-id")).thenReturn(newParent);
+        when(spaceRepository.findById(any(ObjectId.class)))
+                .thenReturn(Uni.createFrom().item(existing));
+        when(spaceRepository.findById("new-parent-id"))
+                .thenReturn(Uni.createFrom().item(newParent));
 
         SpaceEntity input = new SpaceEntity();
         input.id = id;
         input.parentId = "new-parent-id";
         input.name = "updated";
 
-        SpaceEntity result = service.update(input);
+        SpaceEntity result = service.update(input).await().indefinitely();
 
         assertEquals("new-parent-id", result.parentId);
         assertEquals(1, result.level);

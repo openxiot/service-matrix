@@ -1,6 +1,7 @@
 package cc.openxiot.site.db.space;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepository;
+import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
 
@@ -9,25 +10,25 @@ import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
-public class SpaceRepository implements PanacheMongoRepository<SpaceEntity> {
+public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEntity> {
 
-    public SpaceEntity findById(String id) {
+    public Uni<SpaceEntity> findById(String id) {
         return findById(new ObjectId(id));
     }
 
-    public boolean deleteById(String id) {
+    public Uni<Boolean> deleteById(String id) {
         return deleteById(new ObjectId(id));
     }
 
-    public List<SpaceEntity> findByParentId(String parentId) {
+    public Uni<List<SpaceEntity>> findByParentId(String parentId) {
         return list("parentId", parentId);
     }
 
-    public List<SpaceEntity> findByAncestor(String ancestorId) {
+    public Uni<List<SpaceEntity>> findByAncestor(String ancestorId) {
         return list("ancestors", ancestorId);
     }
 
-    public List<SpaceEntity> findRootByUserId(String userId) {
+    public Uni<List<SpaceEntity>> findRootByUserId(String userId) {
         Map<String, Object> params = new HashMap<>();
         params.put("userId", userId);
         params.put("parentId", null);

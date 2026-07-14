@@ -2,10 +2,11 @@ package cc.openxiot.site.api.space;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
+import cc.openxiot.site.api.device.DeviceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.role.SiteRole;
-import cc.openxiot.site.api.device.DeviceService;
+import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -44,132 +45,151 @@ public class SpaceResource extends AbstractResource {
     @Path("/one")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response addOne(SpaceEntity space) {
+    public Uni<Response> addOne(SpaceEntity space) {
         String userId = getUserId();
 
+        Uni<Boolean> accessCheck;
         if (space.parentId != null && !space.parentId.isBlank()) {
-            if (service.noAccess(space.parentId, userId)) {
-                return OxResponse.error("No access to parent space");
-            }
+            accessCheck = service.noAccess(space.parentId, userId);
+        } else {
+            accessCheck = Uni.createFrom().item(false);
         }
 
-        try {
-            SpaceEntity created = service.create(space, userId);
-            return OxResponse.ok(created);
-        } catch (IllegalArgumentException e) {
-            return OxResponse.error(e.getMessage());
-        }
+        return accessCheck.flatMap(noAccess -> {
+            if (noAccess) {
+                return Uni.createFrom().item(OxResponse.error("No access to parent space"));
+            }
+            return service.create(space, userId)
+                    .map(OxResponse::ok)
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+        });
     }
 
     @DELETE
     @Path("/one/{spaceId}")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
-    public Response removeOne(
+    public Uni<Response> removeOne(
             @PathParam("spaceId") String spaceId
     ) {
         String userId = getUserId();
 
-        if (service.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        try {
-            service.delete(spaceId);
-            return OxResponse.ok();
-        } catch (IllegalArgumentException e) {
-            return OxResponse.error(e.getMessage());
-        }
+        return service.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return service.delete(spaceId)
+                            .replaceWith(OxResponse.ok())
+                            .onFailure(IllegalArgumentException.class)
+                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+                });
     }
 
     @PUT
     @Path("/one")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response updateOne(SpaceEntity space) {
+    public Uni<Response> updateOne(SpaceEntity space) {
         String userId = getUserId();
 
         if (space.id == null) {
-            return OxResponse.error("Space id is required");
+            return Uni.createFrom().item(OxResponse.error("Space id is required"));
         }
 
-        if (service.noAccess(space.id.toString(), userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        try {
-            SpaceEntity updated = service.update(space);
-            return OxResponse.ok(updated);
-        } catch (IllegalArgumentException e) {
-            return OxResponse.error(e.getMessage());
-        }
+        return service.noAccess(space.id.toString(), userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return service.update(space)
+                            .map(OxResponse::ok)
+                            .onFailure(IllegalArgumentException.class)
+                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+                });
     }
 
     @GET
     @Path("/one/{spaceId}")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
-    public Response getOne(
+    public Uni<Response> getOne(
             @PathParam("spaceId") String spaceId
     ) {
         String userId = getUserId();
 
-        if (service.noAccess(spaceId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        SpaceEntity space = service.getById(spaceId);
-        if (space == null) {
-            return OxResponse.error("Space not found");
-        }
-        return OxResponse.ok(space);
+        return service.noAccess(spaceId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return service.getById(spaceId)
+                            .map(space -> {
+                                if (space == null) {
+                                    return OxResponse.error("Space not found");
+                                }
+                                return OxResponse.ok(space);
+                            });
+                });
     }
 
     @GET
     @Path("/all")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
-    public Response getAll() {
+    public Uni<Response> getAll() {
         String userId = getUserId();
-        List<SpaceEntity> roots = service.getRootsByUserId(userId);
-        return OxResponse.ok(roots);
+        return service.getRootsByUserId(userId)
+                .map(OxResponse::ok);
     }
 
     @GET
     @Path("/tree/{rootId}")
     @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
-    public Response getTree(
+    public Uni<Response> getTree(
             @PathParam("rootId") String rootId
     ) {
         String userId = getUserId();
 
-        if (service.noAccess(rootId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        List<SpaceEntity> spaces = service.getDescendants(rootId);
-        return OxResponse.ok(spaces);
+        return service.noAccess(rootId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return service.getDescendants(rootId)
+                            .map(OxResponse::ok);
+                });
     }
 
     @GET
     @Path("/graph/{rootId}")
-    public Response getGraph(
+    public Uni<Response> getGraph(
             @PathParam("rootId") String rootId
     ) {
         String userId = getUserId();
 
-        if (service.noAccess(rootId, userId)) {
-            return OxResponse.error("No access to this space");
-        }
-
-        List<SpaceEntity> spaces = service.getDescendants(rootId);
-        List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
-
-        List<DeviceEntity> devices = spaceIds.stream()
-                .flatMap(sid -> deviceService.getBySpaceId(sid).stream())
-                .toList();
-
-        Map<String, Object> graph = new HashMap<>();
-        graph.put("spaces", spaces);
-        graph.put("devices", devices);
-
-        return OxResponse.ok(graph);
+        return service.noAccess(rootId, userId)
+                .flatMap(noAccess -> {
+                    if (noAccess) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    return service.getDescendants(rootId)
+                            .flatMap(spaces -> {
+                                List<String> spaceIds = spaces.stream()
+                                        .map(s -> s.id.toString())
+                                        .toList();
+                                List<Uni<List<DeviceEntity>>> deviceUnis = spaceIds.stream()
+                                        .map(deviceService::getBySpaceId)
+                                        .toList();
+                                return Uni.join().all(deviceUnis).andFailFast()
+                                        .map(deviceLists -> {
+                                            List<DeviceEntity> allDevices = deviceLists.stream()
+                                                    .flatMap(List::stream)
+                                                    .toList();
+                                            Map<String, Object> graph = new HashMap<>();
+                                            graph.put("spaces", spaces);
+                                            graph.put("devices", allDevices);
+                                            return OxResponse.ok(graph);
+                                        });
+                            });
+                });
     }
 }

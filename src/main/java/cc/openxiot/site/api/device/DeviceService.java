@@ -3,6 +3,7 @@ package cc.openxiot.site.api.device;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceRepository;
 import cc.openxiot.site.db.device.DeviceSpace;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -15,39 +16,43 @@ public class DeviceService {
     @Inject
     DeviceRepository deviceRepository;
 
-    public List<DeviceEntity> getBySpaceId(String spaceId) {
+    public Uni<List<DeviceEntity>> getBySpaceId(String spaceId) {
         return deviceRepository.findBySpaceId(spaceId);
     }
 
-    public List<DeviceEntity> getByDeviceIds(List<String> dids) {
+    public Uni<List<DeviceEntity>> getByDeviceIds(List<String> dids) {
         return deviceRepository.findByDeviceIds(dids);
     }
 
-    public void save(DeviceEntity device) {
+    public Uni<DeviceEntity> save(DeviceEntity device) {
         if (device.create == null) {
             device.create = new Date();
         }
-        deviceRepository.persistOrUpdate(device);
+        return deviceRepository.persistOrUpdate(device);
     }
 
-    public void saveAll(List<DeviceEntity> devices) {
-        for (DeviceEntity device : devices) {
-            save(device);
-        }
+    public Uni<List<DeviceEntity>> saveAll(List<DeviceEntity> devices) {
+        List<Uni<DeviceEntity>> unis = devices.stream()
+                .map(this::save)
+                .toList();
+        return Uni.join().all(unis).andFailFast();
     }
 
-    public void updateSpace(String did, String spaceId, String rootSpaceId) {
-        DeviceEntity device = deviceRepository.findByDeviceId(did);
-        if (device != null) {
-            DeviceSpace space = new DeviceSpace();
-            space.spaceId = spaceId;
-            space.rootId = rootSpaceId;
-            device.space = space;
-            deviceRepository.persistOrUpdate(device);
-        }
+    public Uni<Void> updateSpace(String did, String spaceId, String rootSpaceId) {
+        return deviceRepository.findByDeviceId(did)
+                .flatMap(device -> {
+                    if (device != null) {
+                        DeviceSpace space = new DeviceSpace();
+                        space.spaceId = spaceId;
+                        space.rootId = rootSpaceId;
+                        device.space = space;
+                        return deviceRepository.persistOrUpdate(device).replaceWithVoid();
+                    }
+                    return Uni.createFrom().voidItem();
+                });
     }
 
-    public long deleteByDeviceIds(List<String> dids) {
+    public Uni<Long> deleteByDeviceIds(List<String> dids) {
         return deviceRepository.deleteByDeviceIds(dids);
     }
 }

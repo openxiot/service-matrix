@@ -1,8 +1,9 @@
 package cc.openxiot.site.db.space;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntity;
 import io.quarkus.mongodb.panache.common.MongoEntity;
+import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import io.smallrye.mutiny.Uni;
 import org.bson.codecs.pojo.annotations.BsonDiscriminator;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -14,7 +15,7 @@ import java.util.Map;
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "空间")
-public class SpaceEntity extends PanacheMongoEntity {
+public class SpaceEntity extends ReactivePanacheMongoEntity {
 
     @Schema(description = "租户ID", required = true)
     public String tenantId;
@@ -43,9 +44,6 @@ public class SpaceEntity extends PanacheMongoEntity {
     @Schema(description = "排序序号", required = true)
     public int sortOrder;
 
-//    @Schema(description = "状态", required = true)
-//    public String status;
-
     @Schema(description = "地理位置", required = false)
     public SpaceLocation location;
 
@@ -61,16 +59,18 @@ public class SpaceEntity extends PanacheMongoEntity {
     @Schema(description = "更新时间", required = true)
     public LocalDateTime updateTime;
 
-    public void update() {
+    @Override
+    public Uni<SpaceEntity> update() {
         this.updateTime = LocalDateTime.now();
-        super.update();
+        return super.update();
     }
 
-    public void persist() {
+    @Override
+    public Uni<SpaceEntity> persist() {
         if (this.createTime == null) {
             this.createTime = LocalDateTime.now();
         }
         this.updateTime = LocalDateTime.now();
-        super.persist();
+        return super.persist();
     }
 }

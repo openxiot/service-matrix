@@ -2,6 +2,7 @@ package cc.openxiot.site.api.device;
 
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceRepository;
+import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,9 +29,13 @@ class DeviceServiceTest {
     void save_setsCreateDate() {
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
-        service.save(device);
+        when(deviceRepository.persistOrUpdate(any(DeviceEntity.class)))
+                .thenReturn(Uni.createFrom().item(device));
+
+        DeviceEntity result = service.save(device).await().indefinitely();
+
         assertNotNull(device.create);
-        verify(deviceRepository).persistOrUpdate(any(DeviceEntity.class));
+        assertSame(device, result);
     }
 
     @Test
@@ -39,18 +44,24 @@ class DeviceServiceTest {
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
         device.create = now;
-        service.save(device);
+        when(deviceRepository.persistOrUpdate(any(DeviceEntity.class)))
+                .thenReturn(Uni.createFrom().item(device));
+
+        DeviceEntity result = service.save(device).await().indefinitely();
+
         assertSame(now, device.create);
-        verify(deviceRepository).persistOrUpdate(any(DeviceEntity.class));
+        assertSame(device, result);
     }
 
     @Test
     void updateSpace_found_updatesDeviceSpace() {
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
-        when(deviceRepository.findByDeviceId("d1")).thenReturn(device);
+        when(deviceRepository.findByDeviceId("d1")).thenReturn(Uni.createFrom().item(device));
+        when(deviceRepository.persistOrUpdate(any(DeviceEntity.class)))
+                .thenReturn(Uni.createFrom().item(device));
 
-        service.updateSpace("d1", "space-1", "root-1");
+        service.updateSpace("d1", "space-1", "root-1").await().indefinitely();
 
         assertNotNull(device.space);
         assertEquals("space-1", device.space.spaceId);
@@ -60,26 +71,40 @@ class DeviceServiceTest {
 
     @Test
     void updateSpace_notFound_doesNothing() {
-        when(deviceRepository.findByDeviceId("d1")).thenReturn(null);
-        service.updateSpace("d1", "space-1", "root-1");
+        when(deviceRepository.findByDeviceId("d1")).thenReturn(Uni.createFrom().nullItem());
+
+        service.updateSpace("d1", "space-1", "root-1").await().indefinitely();
+
         verify(deviceRepository, never()).persistOrUpdate(any(DeviceEntity.class));
     }
 
     @Test
     void getBySpaceId_delegates() {
-        when(deviceRepository.findBySpaceId("sid")).thenReturn(List.of(new DeviceEntity()));
-        assertEquals(1, service.getBySpaceId("sid").size());
+        when(deviceRepository.findBySpaceId("sid"))
+                .thenReturn(Uni.createFrom().item(List.of(new DeviceEntity())));
+
+        List<DeviceEntity> result = service.getBySpaceId("sid").await().indefinitely();
+
+        assertEquals(1, result.size());
     }
 
     @Test
     void getByDeviceIds_delegates() {
-        when(deviceRepository.findByDeviceIds(List.of("d1"))).thenReturn(List.of(new DeviceEntity()));
-        assertEquals(1, service.getByDeviceIds(List.of("d1")).size());
+        when(deviceRepository.findByDeviceIds(List.of("d1")))
+                .thenReturn(Uni.createFrom().item(List.of(new DeviceEntity())));
+
+        List<DeviceEntity> result = service.getByDeviceIds(List.of("d1")).await().indefinitely();
+
+        assertEquals(1, result.size());
     }
 
     @Test
     void deleteByDeviceIds_delegates() {
-        when(deviceRepository.deleteByDeviceIds(List.of("d1"))).thenReturn(1L);
-        assertEquals(1L, service.deleteByDeviceIds(List.of("d1")));
+        when(deviceRepository.deleteByDeviceIds(List.of("d1")))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        Long result = service.deleteByDeviceIds(List.of("d1")).await().indefinitely();
+
+        assertEquals(1L, result);
     }
 }

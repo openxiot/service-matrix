@@ -1,6 +1,6 @@
 package cc.openxiot.site.api.device;
 
-import io.vertx.core.json.JsonObject;
+import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
@@ -15,7 +15,7 @@ public interface ManipulationClient {
     @POST
     @Path("/devices")
     @Consumes(MediaType.APPLICATION_JSON)
-    JsonObject addDevices(
+    Uni<String> addDevices(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             String body
@@ -23,7 +23,7 @@ public interface ManipulationClient {
 
     @DELETE
     @Path("/devices")
-    JsonObject removeDevices(
+    Uni<String> removeDevices(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             @QueryParam("did") List<String> did
@@ -31,7 +31,7 @@ public interface ManipulationClient {
 
     @GET
     @Path("/devices")
-    JsonObject getDevices(
+    Uni<String> getDevices(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             @QueryParam("did") List<String> did
@@ -39,7 +39,7 @@ public interface ManipulationClient {
 
     @GET
     @Path("/shadows")
-    JsonObject getShadows(
+    Uni<String> getShadows(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             @QueryParam("did") List<String> did
@@ -47,7 +47,7 @@ public interface ManipulationClient {
 
     @GET
     @Path("/properties")
-    JsonObject getProperties(
+    Uni<String> getProperties(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             @QueryParam("pid") List<String> pid
@@ -56,7 +56,7 @@ public interface ManipulationClient {
     @POST
     @Path("/properties")
     @Consumes(MediaType.APPLICATION_JSON)
-    JsonObject setProperties(
+    Uni<String> setProperties(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             String body
@@ -65,7 +65,7 @@ public interface ManipulationClient {
     @POST
     @Path("/actions")
     @Consumes(MediaType.APPLICATION_JSON)
-    JsonObject invokeActions(
+    Uni<String> invokeActions(
             @HeaderParam("appId") String appId,
             @HeaderParam("authorization") String authorization,
             String body

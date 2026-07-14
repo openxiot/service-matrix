@@ -1,6 +1,7 @@
 package cc.openxiot.site.api.space;
 
 import cc.openxiot.site.api.device.DeviceService;
+import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.db.space.SpaceUser;
 import cc.openxiot.site.role.SiteRole;
@@ -8,6 +9,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
+import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +19,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
 
 @QuarkusTest
 class SpaceResourceTest {
@@ -44,8 +46,10 @@ class SpaceResourceTest {
         space.name = "test-space";
         space.users = List.of(user("test-user"));
 
-        when(spaceService.noAccess(eq("sid"), any())).thenReturn(false);
-        when(spaceService.getById("sid")).thenReturn(space);
+        when(spaceService.noAccess(eq("sid"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.getById("sid"))
+                .thenReturn(Uni.createFrom().item(space));
 
         given()
                 .when().get("/v1/space/one/{spaceId}", "sid")
@@ -58,8 +62,10 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
     void getOne_notFound_returnsError() {
-        when(spaceService.noAccess(eq("sid"), any())).thenReturn(false);
-        when(spaceService.getById("sid")).thenReturn(null);
+        when(spaceService.noAccess(eq("sid"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.getById("sid"))
+                .thenReturn(Uni.createFrom().nullItem());
 
         given()
                 .when().get("/v1/space/one/{spaceId}", "sid")
@@ -73,7 +79,8 @@ class SpaceResourceTest {
     void getAll_returnsRoots() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
-        when(spaceService.getRootsByUserId("test-user")).thenReturn(List.of(root));
+        when(spaceService.getRootsByUserId("test-user"))
+                .thenReturn(Uni.createFrom().item(List.of(root)));
 
         given()
                 .when().get("/v1/space/all")
@@ -93,7 +100,8 @@ class SpaceResourceTest {
         created.name = "new-space";
         created.level = 0;
 
-        when(spaceService.create(any(), eq("test-user"))).thenReturn(created);
+        when(spaceService.create(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().item(created));
 
         given()
                 .contentType(ContentType.JSON)
@@ -108,7 +116,8 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
     void addOne_childSpaceWithoutParentAccess_returnsError() {
-        when(spaceService.noAccess(eq("parent-id"), any())).thenReturn(true);
+        when(spaceService.noAccess(eq("parent-id"), any()))
+                .thenReturn(Uni.createFrom().item(true));
 
         given()
                 .contentType(ContentType.JSON)
@@ -122,8 +131,10 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
     void deleteOne_removesSpace() {
-        when(spaceService.noAccess(eq("sid"), any())).thenReturn(false);
-        doNothing().when(spaceService).delete("sid");
+        when(spaceService.noAccess(eq("sid"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.delete("sid"))
+                .thenReturn(Uni.createFrom().item(true));
 
         given()
                 .when().delete("/v1/space/one/{spaceId}", "sid")
@@ -135,9 +146,11 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
     void deleteOne_withChildren_returnsError() {
-        when(spaceService.noAccess(eq("sid"), any())).thenReturn(false);
-        doThrow(new IllegalArgumentException("Cannot delete space with children"))
-                .when(spaceService).delete("sid");
+        when(spaceService.noAccess(eq("sid"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.delete("sid"))
+                .thenReturn(Uni.createFrom().failure(
+                        new IllegalArgumentException("Cannot delete space with children")));
 
         given()
                 .when().delete("/v1/space/one/{spaceId}", "sid")
@@ -152,8 +165,10 @@ class SpaceResourceTest {
         SpaceEntity updated = new SpaceEntity();
         updated.name = "renamed";
 
-        when(spaceService.noAccess(any(), any())).thenReturn(false);
-        when(spaceService.update(any())).thenReturn(updated);
+        when(spaceService.noAccess(any(), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.update(any()))
+                .thenReturn(Uni.createFrom().item(updated));
 
         given()
                 .contentType(ContentType.JSON)
@@ -169,8 +184,10 @@ class SpaceResourceTest {
     void getTree_returnsDescendants() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
-        when(spaceService.noAccess(eq("root-id"), any())).thenReturn(false);
-        when(spaceService.getDescendants("root-id")).thenReturn(List.of(root));
+        when(spaceService.noAccess(eq("root-id"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.getDescendants("root-id"))
+                .thenReturn(Uni.createFrom().item(List.of(root)));
 
         given()
                 .when().get("/v1/space/tree/{rootId}", "root-id")
@@ -186,9 +203,12 @@ class SpaceResourceTest {
         SpaceEntity root = new SpaceEntity();
         root.id = new ObjectId();
         root.name = "root";
-        when(spaceService.noAccess(eq("root-id"), any())).thenReturn(false);
-        when(spaceService.getDescendants("root-id")).thenReturn(List.of(root));
-        when(deviceService.getBySpaceId(any())).thenReturn(List.of());
+        when(spaceService.noAccess(eq("root-id"), any()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(spaceService.getDescendants("root-id"))
+                .thenReturn(Uni.createFrom().item(List.of(root)));
+        when(deviceService.getBySpaceId(any()))
+                .thenReturn(Uni.createFrom().item(List.of()));
 
         given()
                 .when().get("/v1/space/graph/{rootId}", "root-id")

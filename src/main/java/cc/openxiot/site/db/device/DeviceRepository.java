@@ -1,30 +1,31 @@
 package cc.openxiot.site.db.device;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepository;
+import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
 
 @ApplicationScoped
-public class DeviceRepository implements PanacheMongoRepository<DeviceEntity> {
+public class DeviceRepository implements ReactivePanacheMongoRepository<DeviceEntity> {
 
-    public List<DeviceEntity> findBySpaceId(String spaceId) {
+    public Uni<List<DeviceEntity>> findBySpaceId(String spaceId) {
         return list("space.spaceId", spaceId);
     }
 
-    public List<DeviceEntity> findByRootId(String rootId) {
+    public Uni<List<DeviceEntity>> findByRootId(String rootId) {
         return list("rootId", rootId);
     }
 
-    public List<DeviceEntity> findByDeviceIds(List<String> dids) {
+    public Uni<List<DeviceEntity>> findByDeviceIds(List<String> dids) {
         return list("_id in ?1", dids);
     }
 
-    public DeviceEntity findByDeviceId(String did) {
+    public Uni<DeviceEntity> findByDeviceId(String did) {
         return find("_id", did).firstResult();
     }
 
-    public long deleteByDeviceIds(List<String> dids) {
+    public Uni<Long> deleteByDeviceIds(List<String> dids) {
         return delete("_id in ?1", dids);
     }
 }

@@ -7,6 +7,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
+import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -40,7 +41,8 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void addDevices_withoutAccess_returnsError() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(true);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(true));
 
         given()
                 .contentType(ContentType.JSON)
@@ -54,7 +56,12 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void addDevices_succeeds() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(manipulationService.addDevices(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
+        when(deviceService.saveAll(anyList()))
+                .thenReturn(Uni.createFrom().item(List.of()));
 
         given()
                 .contentType(ContentType.JSON)
@@ -68,7 +75,8 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void addDevices_invalidBody_returnsError() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
 
         given()
                 .contentType(ContentType.JSON)
@@ -82,7 +90,8 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void getDevices_returnsList() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
 
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
@@ -90,7 +99,8 @@ class DeviceResourceTest {
         ds.spaceId = "sid";
         device.space = ds;
 
-        when(deviceService.getBySpaceId("sid")).thenReturn(List.of(device));
+        when(deviceService.getBySpaceId("sid"))
+                .thenReturn(Uni.createFrom().item(List.of(device)));
 
         given()
                 .when().get("/v1/device/many/{spaceId}", "sid")
@@ -103,7 +113,12 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void removeDevices_succeeds() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(manipulationService.removeDevices(anyString(), anyList()))
+                .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
+        when(deviceService.deleteByDeviceIds(anyList()))
+                .thenReturn(Uni.createFrom().item(1L));
 
         given()
                 .queryParam("did", "d1", "d2")
@@ -116,7 +131,10 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void updateSpace_succeeds() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
+        when(deviceService.updateSpace(anyString(), anyString(), anyString()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         given()
                 .contentType(ContentType.JSON)
@@ -130,7 +148,8 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void updateSpace_invalidBody_returnsError() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
 
         given()
                 .contentType(ContentType.JSON)
@@ -144,7 +163,8 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void getDevices_noAccess_returnsError() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(true);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(true));
 
         given()
                 .when().get("/v1/device/many/{spaceId}", "sid")
@@ -156,11 +176,15 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user")
     void getShadows_returnsData() {
-        when(spaceService.noAccess(anyString(), anyString())).thenReturn(false);
+        when(spaceService.noAccess(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(false));
 
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
-        when(deviceService.getBySpaceId("sid")).thenReturn(List.of(device));
+        when(deviceService.getBySpaceId("sid"))
+                .thenReturn(Uni.createFrom().item(List.of(device)));
+        when(manipulationService.getShadows(anyString(), anyList()))
+                .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
 
         given()
                 .when().get("/v1/device/shadows/{spaceId}", "sid")
