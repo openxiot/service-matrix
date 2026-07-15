@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-@MongoEntity(collection = "spaces")
+@MongoEntity(database = "site", collection = "spaces")
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "空间")

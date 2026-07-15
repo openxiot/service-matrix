@@ -10,7 +10,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.Date;
 import java.util.List;
 
-@MongoEntity(collection = "devices")
+@MongoEntity(database = "site", collection = "devices")
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "设备")
