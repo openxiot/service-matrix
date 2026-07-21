@@ -2,6 +2,7 @@ package cc.openxiot.site.api.space;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
+import cc.openxiot.common.role.OxRole;
 import cc.openxiot.site.api.device.DeviceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
@@ -43,7 +44,7 @@ public class SpaceResource extends AbstractResource {
 
     @POST
     @Path("/one")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> addOne(SpaceEntity space) {
         String userId = getUserId();
@@ -68,7 +69,7 @@ public class SpaceResource extends AbstractResource {
 
     @DELETE
     @Path("/one/{spaceId}")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     public Uni<Response> removeOne(
             @PathParam("spaceId") String spaceId
     ) {
@@ -88,7 +89,7 @@ public class SpaceResource extends AbstractResource {
 
     @PUT
     @Path("/one")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> updateOne(SpaceEntity space) {
         String userId = getUserId();
@@ -111,7 +112,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/one/{spaceId}")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     public Uni<Response> getOne(
             @PathParam("spaceId") String spaceId
     ) {
@@ -134,7 +135,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/all")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     public Uni<Response> getAll() {
         String userId = getUserId();
         return service.getRootsByUserId(userId)
@@ -143,7 +144,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/tree/{rootId}")
-    @RolesAllowed({SiteRole.BROWSER, SiteRole.OPERATOR, SiteRole.MANAGER})
+    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
     public Uni<Response> getTree(
             @PathParam("rootId") String rootId
     ) {

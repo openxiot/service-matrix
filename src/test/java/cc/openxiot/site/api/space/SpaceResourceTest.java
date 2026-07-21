@@ -1,5 +1,6 @@
 package cc.openxiot.site.api.space;
 
+import cc.openxiot.common.role.OxRole;
 import cc.openxiot.site.api.device.DeviceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
@@ -40,7 +41,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void getOne_returnsSpace() {
         SpaceEntity space = new SpaceEntity();
         space.name = "test-space";
@@ -60,7 +61,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void getOne_notFound_returnsError() {
         when(spaceService.noAccess(eq("sid"), any()))
                 .thenReturn(Uni.createFrom().item(false));
@@ -75,7 +76,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void getAll_returnsRoots() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
@@ -91,7 +92,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void addOne_rootSpace_returnsCreated() {
         SpaceEntity input = new SpaceEntity();
         input.name = "new-space";
@@ -114,7 +115,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void addOne_childSpaceWithoutParentAccess_returnsError() {
         when(spaceService.noAccess(eq("parent-id"), any()))
                 .thenReturn(Uni.createFrom().item(true));
@@ -129,7 +130,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void deleteOne_removesSpace() {
         when(spaceService.noAccess(eq("sid"), any()))
                 .thenReturn(Uni.createFrom().item(false));
@@ -144,7 +145,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void deleteOne_withChildren_returnsError() {
         when(spaceService.noAccess(eq("sid"), any()))
                 .thenReturn(Uni.createFrom().item(false));
@@ -160,7 +161,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void updateOne_updatesSpace() {
         SpaceEntity updated = new SpaceEntity();
         updated.name = "renamed";
@@ -180,7 +181,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void getTree_returnsDescendants() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
@@ -198,7 +199,7 @@ class SpaceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {SiteRole.MANAGER})
+    @TestSecurity(user = "test-user", roles = {OxRole.SITE_MANAGER})
     void getGraph_succeeds() {
         SpaceEntity root = new SpaceEntity();
         root.id = new ObjectId();
