@@ -2,6 +2,7 @@ package cc.openxiot.site.api.device;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
+import cc.openxiot.site.api.orgcheck.OrgAccessService;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceSpace;
@@ -37,24 +38,23 @@ public class DeviceResource extends AbstractResource {
     @Inject
     ManipulationService manipulationService;
 
-    @HeaderParam("Authorization")
-    String authorization;
+    @Inject
+    OrgAccessService orgAccessService;
 
     @GET
-    public Response hello() {
+    public Uni<Response> hello() {
         logger.info("hello");
-        return OxResponse.ok("Hello from DeviceResource");
+        return Uni.createFrom().item(OxResponse.ok("Hello from DeviceResource"));
     }
 
     @POST
     @Path("/many/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> addDevices(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        String userId = getUserId();
-
         JsonArray arr;
         try {
             arr = new JsonArray(body);
@@ -74,12 +74,10 @@ public class DeviceResource extends AbstractResource {
             devices.add(device);
         }
 
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return manipulationService.addDevices(authorization, body)
+        return requireAdmin(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.addDevices(orgId, body)
                             .flatMap(ignore -> deviceService.saveAll(devices))
                             .replaceWith(OxResponse.ok());
                 });
@@ -88,17 +86,14 @@ public class DeviceResource extends AbstractResource {
     @DELETE
     @Path("/many/{spaceId}")
     public Uni<Response> removeDevices(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        String userId = getUserId();
-
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return manipulationService.removeDevices(authorization, did)
+        return requireAdmin(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.removeDevices(orgId, did)
                             .flatMap(ignore -> deviceService.deleteByDeviceIds(did))
                             .replaceWith(OxResponse.ok());
                 });
@@ -107,9 +102,10 @@ public class DeviceResource extends AbstractResource {
     @PUT
     @Path("/many/space")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> updateSpace(String body) {
-        String userId = getUserId();
-
+    public Uni<Response> updateSpace(
+            @HeaderParam("X-Org-Id") String orgId,
+            String body
+    ) {
         JsonObject obj;
         try {
             obj = new JsonObject(body);
@@ -119,11 +115,9 @@ public class DeviceResource extends AbstractResource {
 
         String spaceId = obj.getString("spaceId");
 
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
+        return requireAdmin(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
 
                     String rootSpaceId = obj.getString("rootSpaceId");
                     JsonArray dids = obj.getJsonArray("dids");
@@ -143,15 +137,12 @@ public class DeviceResource extends AbstractResource {
     @GET
     @Path("/many/{spaceId}")
     public Uni<Response> getDevices(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        String userId = getUserId();
-
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
                     return deviceService.getBySpaceId(spaceId)
                             .map(OxResponse::ok);
                 });
@@ -160,19 +151,16 @@ public class DeviceResource extends AbstractResource {
     @GET
     @Path("/shadows/{spaceId}")
     public Uni<Response> getShadows(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        String userId = getUserId();
-
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
 
                     if (did != null && !did.isEmpty()) {
-                        return manipulationService.getShadows(authorization, did)
+                        return manipulationService.getShadows(orgId, did)
                                 .map(OxResponse::ok);
                     }
 
@@ -183,7 +171,7 @@ public class DeviceResource extends AbstractResource {
                                 if (deviceIds.isEmpty()) {
                                     return Uni.createFrom().item(OxResponse.ok(List.of()));
                                 }
-                                return manipulationService.getShadows(authorization, deviceIds)
+                                return manipulationService.getShadows(orgId, deviceIds)
                                         .map(OxResponse::ok);
                             });
                 });
@@ -192,17 +180,14 @@ public class DeviceResource extends AbstractResource {
     @GET
     @Path("/properties/{spaceId}")
     public Uni<Response> getProperties(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
-        String userId = getUserId();
-
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return manipulationService.getProperties(authorization, pid)
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.getProperties(orgId, pid)
                             .map(OxResponse::ok);
                 });
     }
@@ -211,17 +196,14 @@ public class DeviceResource extends AbstractResource {
     @Path("/properties/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> setProperties(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        String userId = getUserId();
-
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return manipulationService.setProperties(authorization, body)
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.setProperties(orgId, body)
                             .map(OxResponse::ok);
                 });
     }
@@ -230,18 +212,51 @@ public class DeviceResource extends AbstractResource {
     @Path("/actions/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> invokeActions(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        String userId = getUserId();
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.invokeActions(orgId, body)
+                            .map(OxResponse::ok);
+                });
+    }
 
-        return spaceService.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+    // -- helper methods --
+
+    private Uni<Response> requireAdmin(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+        }
+        return spaceService.getById(spaceId)
+                .flatMap(space -> {
+                    if (space == null || space.organizationId == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
-                    return manipulationService.invokeActions(authorization, body)
-                            .map(OxResponse::ok);
+                    if (!orgId.equals(space.organizationId)) {
+                        return Uni.createFrom().item(OxResponse.error("OrgId does not match the space"));
+                    }
+                    return orgAccessService.isAdmin(orgId, getUserId())
+                            .map(admin -> admin ? null : OxResponse.error("Not an admin"));
+                });
+    }
+
+    private Uni<Response> requireMember(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+        }
+        return spaceService.getById(spaceId)
+                .flatMap(space -> {
+                    if (space == null || space.organizationId == null) {
+                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                    }
+                    if (!orgId.equals(space.organizationId)) {
+                        return Uni.createFrom().item(OxResponse.error("OrgId does not match the space"));
+                    }
+                    return orgAccessService.isMember(orgId, getUserId())
+                            .map(member -> member ? null : OxResponse.error("Not a member"));
                 });
     }
 }

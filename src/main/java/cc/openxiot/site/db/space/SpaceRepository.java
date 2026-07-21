@@ -5,6 +5,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.types.ObjectId;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,10 +29,24 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         return list("ancestors", ancestorId);
     }
 
-    public Uni<List<SpaceEntity>> findRootByUserId(String userId) {
+    public Uni<List<SpaceEntity>> findRootByOrganizationId(String orgId) {
         Map<String, Object> params = new HashMap<>();
-        params.put("userId", userId);
+        params.put("orgId", orgId);
         params.put("parentId", null);
-        return list("users.userId = :userId and parentId = :parentId", params);
+        return list("organizationId = :orgId and parentId = :parentId", params);
+    }
+
+    @Override
+    public Uni<SpaceEntity> persist(SpaceEntity space) {
+        if (space.createTime == null) {
+            space.createTime = LocalDateTime.now();
+        }
+        space.updateTime = LocalDateTime.now();
+        return ReactivePanacheMongoRepository.super.persist(space);
+    }
+
+    public Uni<SpaceEntity> update(SpaceEntity space) {
+        space.updateTime = LocalDateTime.now();
+        return ReactivePanacheMongoRepository.super.persistOrUpdate(space);
     }
 }

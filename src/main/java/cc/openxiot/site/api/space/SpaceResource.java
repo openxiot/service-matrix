@@ -4,9 +4,9 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.site.api.device.DeviceService;
+import cc.openxiot.site.api.orgcheck.OrgAccessService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
-import cc.openxiot.site.role.SiteRole;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
@@ -36,48 +36,63 @@ public class SpaceResource extends AbstractResource {
     @Inject
     DeviceService deviceService;
 
+    @Inject
+    OrgAccessService orgAccessService;
+
     @GET
-    public Response hello() {
+    public Uni<Response> hello() {
         logger.info("hello");
-        return OxResponse.ok("Hello from SpaceResource");
+        return Uni.createFrom().item(OxResponse.ok("Hello from SpaceResource"));
     }
 
     @POST
     @Path("/one")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
+    @RolesAllowed({OxRole.DEVELOPER})
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> addOne(SpaceEntity space) {
-        String userId = getUserId();
-
-        Uni<Boolean> accessCheck;
+    public Uni<Response> addOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            SpaceEntity space
+    ) {
         if (space.parentId != null && !space.parentId.isBlank()) {
-            accessCheck = service.noAccess(space.parentId, userId);
-        } else {
-            accessCheck = Uni.createFrom().item(false);
+            return getSpaceIfAdmin(space.parentId, orgId)
+                    .flatMap(parent -> {
+                        if (parent == null) {
+                            return Uni.createFrom().item(OxResponse.error("No access to parent space"));
+                        }
+                        return service.create(space)
+                                .map(OxResponse::ok)
+                                .onFailure(IllegalArgumentException.class)
+                                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+                    });
         }
 
-        return accessCheck.flatMap(noAccess -> {
-            if (noAccess) {
-                return Uni.createFrom().item(OxResponse.error("No access to parent space"));
-            }
-            return service.create(space, userId)
-                    .map(OxResponse::ok)
-                    .onFailure(IllegalArgumentException.class)
-                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-        });
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required for root space"));
+        }
+        space.organizationId = orgId;
+
+        return orgAccessService.isAdmin(orgId, getUserId())
+                .flatMap(admin -> {
+                    if (!admin) {
+                        return Uni.createFrom().item(OxResponse.error("Not an admin of the organization"));
+                    }
+                    return service.create(space)
+                            .map(OxResponse::ok)
+                            .onFailure(IllegalArgumentException.class)
+                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+                });
     }
 
     @DELETE
     @Path("/one/{spaceId}")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
+    @RolesAllowed({OxRole.DEVELOPER})
     public Uni<Response> removeOne(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        String userId = getUserId();
-
-        return service.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+        return getSpaceIfAdmin(spaceId, orgId)
+                .flatMap(space -> {
+                    if (space == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
                     return service.delete(spaceId)
@@ -89,18 +104,19 @@ public class SpaceResource extends AbstractResource {
 
     @PUT
     @Path("/one")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
+    @RolesAllowed({OxRole.DEVELOPER})
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> updateOne(SpaceEntity space) {
-        String userId = getUserId();
-
+    public Uni<Response> updateOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            SpaceEntity space
+    ) {
         if (space.id == null) {
             return Uni.createFrom().item(OxResponse.error("Space id is required"));
         }
 
-        return service.noAccess(space.id.toString(), userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+        return getSpaceIfAdmin(space.id.toString(), orgId)
+                .flatMap(existing -> {
+                    if (existing == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
                     return service.update(space)
@@ -112,47 +128,50 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/one/{spaceId}")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
+    @RolesAllowed({OxRole.DEVELOPER})
     public Uni<Response> getOne(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        String userId = getUserId();
-
-        return service.noAccess(spaceId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+        return getSpaceIfMember(spaceId, orgId)
+                .flatMap(space -> {
+                    if (space == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
-                    return service.getById(spaceId)
-                            .map(space -> {
-                                if (space == null) {
-                                    return OxResponse.error("Space not found");
-                                }
-                                return OxResponse.ok(space);
-                            });
+                    return Uni.createFrom().item(OxResponse.ok(space));
                 });
     }
 
     @GET
     @Path("/all")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
-    public Uni<Response> getAll() {
-        String userId = getUserId();
-        return service.getRootsByUserId(userId)
-                .map(OxResponse::ok);
+    @RolesAllowed({OxRole.DEVELOPER})
+    public Uni<Response> getAll(
+            @HeaderParam("X-Org-Id") String orgId
+    ) {
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+        }
+
+        return orgAccessService.isMember(orgId, getUserId())
+                .flatMap(member -> {
+                    if (!member) {
+                        return Uni.createFrom().item(OxResponse.error("Not a member of the organization"));
+                    }
+                    return service.getRootsByOrganizationId(orgId)
+                            .map(OxResponse::ok);
+                });
     }
 
     @GET
     @Path("/tree/{rootId}")
-    @RolesAllowed({OxRole.SITE_BROWSER, OxRole.SITE_OPERATOR, OxRole.SITE_MANAGER})
+    @RolesAllowed({OxRole.DEVELOPER})
     public Uni<Response> getTree(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId
     ) {
-        String userId = getUserId();
-
-        return service.noAccess(rootId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+        return getSpaceIfMember(rootId, orgId)
+                .flatMap(root -> {
+                    if (root == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
                     return service.getDescendants(rootId)
@@ -162,14 +181,14 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/graph/{rootId}")
+    @RolesAllowed({OxRole.DEVELOPER})
     public Uni<Response> getGraph(
+            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId
     ) {
-        String userId = getUserId();
-
-        return service.noAccess(rootId, userId)
-                .flatMap(noAccess -> {
-                    if (noAccess) {
+        return getSpaceIfMember(rootId, orgId)
+                .flatMap(root -> {
+                    if (root == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
                     return service.getDescendants(rootId)
@@ -191,6 +210,30 @@ public class SpaceResource extends AbstractResource {
                                             return OxResponse.ok(graph);
                                         });
                             });
+                });
+    }
+
+    // -- helper methods --
+
+    private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
+        return service.getById(spaceId)
+                .flatMap(space -> {
+                    if (space == null) return Uni.createFrom().nullItem();
+                    if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
+                    return orgAccessService.isMember(orgId, getUserId())
+                            .map(member -> member ? space : null);
+                });
+    }
+
+    private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
+        return service.getById(spaceId)
+                .flatMap(space -> {
+                    if (space == null) return Uni.createFrom().nullItem();
+                    if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
+                    return orgAccessService.isAdmin(orgId, getUserId())
+                            .map(admin -> admin ? space : null);
                 });
     }
 }

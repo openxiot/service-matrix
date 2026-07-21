@@ -2,8 +2,6 @@ package cc.openxiot.site.api.space;
 
 import cc.openxiot.site.db.space.SpaceEntity;
 import cc.openxiot.site.db.space.SpaceRepository;
-import cc.openxiot.site.db.space.SpaceUser;
-import cc.openxiot.site.db.space.SpaceUserRole;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -25,8 +23,8 @@ public class SpaceService {
         return spaceRepository.findByParentId(parentId);
     }
 
-    public Uni<List<SpaceEntity>> getRootsByUserId(String userId) {
-        return spaceRepository.findRootByUserId(userId);
+    public Uni<List<SpaceEntity>> getRootsByOrganizationId(String orgId) {
+        return spaceRepository.findRootByOrganizationId(orgId);
     }
 
     public Uni<List<SpaceEntity>> getDescendants(String rootId) {
@@ -44,7 +42,7 @@ public class SpaceService {
                 .onItem().ifNull().continueWith(List.of());
     }
 
-    public Uni<SpaceEntity> create(SpaceEntity space, String userId) {
+    public Uni<SpaceEntity> create(SpaceEntity space) {
         if (space.parentId != null && !space.parentId.isBlank()) {
             return spaceRepository.findById(space.parentId)
                     .flatMap(parent -> {
@@ -59,22 +57,19 @@ public class SpaceService {
                         }
                         ancestors.add(space.parentId);
                         space.ancestors = ancestors;
-                        return setupUserAndPersist(space, userId);
+                        space.organizationId = parent.organizationId;
+                        return spaceRepository.persist(space);
                     });
         } else {
+            if (space.organizationId == null || space.organizationId.isBlank()) {
+                return Uni.createFrom().failure(
+                        new IllegalArgumentException("organizationId is required for root space"));
+            }
             space.level = 0;
             space.ancestors = List.of();
             space.parentId = null;
-            return setupUserAndPersist(space, userId);
+            return spaceRepository.persist(space);
         }
-    }
-
-    private Uni<SpaceEntity> setupUserAndPersist(SpaceEntity space, String userId) {
-        SpaceUser user = new SpaceUser();
-        user.userId = userId;
-        user.role = SpaceUserRole.MANAGER.toString();
-        space.users = List.of(user);
-        return space.persist();
     }
 
     public Uni<SpaceEntity> update(SpaceEntity space) {
@@ -106,11 +101,12 @@ public class SpaceService {
                                     }
                                     ancestors.add(space.parentId);
                                     existing.ancestors = ancestors;
-                                    return existing.update();
+                                    existing.organizationId = parent.organizationId;
+                                    return spaceRepository.update(existing);
                                 });
                     }
 
-                    return existing.update();
+                    return spaceRepository.update(existing);
                 });
     }
 
@@ -125,13 +121,9 @@ public class SpaceService {
                 });
     }
 
-    public Uni<Boolean> noAccess(String spaceId, String userId) {
+    public Uni<Boolean> noAccess(String spaceId) {
         return spaceRepository.findById(spaceId)
-                .map(space -> {
-                    if (space == null) return true;
-                    if (space.users == null || space.users.isEmpty()) return true;
-                    return space.users.stream().noneMatch(u -> u.userId.equals(userId));
-                })
+                .map(space -> space == null)
                 .onItem().ifNull().continueWith(true);
     }
 }

@@ -3,7 +3,6 @@ package cc.openxiot.site.db.space;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import io.smallrye.mutiny.Uni;
 import org.bson.codecs.pojo.annotations.BsonDiscriminator;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -16,9 +15,6 @@ import java.util.Map;
 @RegisterForReflection
 @Schema(description = "空间")
 public class SpaceEntity extends ReactivePanacheMongoEntity {
-
-    @Schema(description = "租户ID", required = true)
-    public String tenantId;
 
     @Schema(description = "空间名称", required = true)
     public String name;
@@ -47,30 +43,15 @@ public class SpaceEntity extends ReactivePanacheMongoEntity {
     @Schema(description = "地理位置", required = false)
     public SpaceLocation location;
 
+    @Schema(description = "所属组织ID", required = false)
+    public String organizationId;
+
     @Schema(description = "扩展属性", required = false)
     public Map<String, Object> attributes;
-
-    @Schema(description = "空间用户", required = false)
-    public List<SpaceUser> users;
 
     @Schema(description = "创建时间", required = true)
     public LocalDateTime createTime;
 
     @Schema(description = "更新时间", required = true)
     public LocalDateTime updateTime;
-
-    @Override
-    public Uni<SpaceEntity> update() {
-        this.updateTime = LocalDateTime.now();
-        return super.update();
-    }
-
-    @Override
-    public Uni<SpaceEntity> persist() {
-        if (this.createTime == null) {
-            this.createTime = LocalDateTime.now();
-        }
-        this.updateTime = LocalDateTime.now();
-        return super.persist();
-    }
 }

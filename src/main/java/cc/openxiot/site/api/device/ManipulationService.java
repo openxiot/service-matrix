@@ -1,5 +1,6 @@
 package cc.openxiot.site.api.device;
 
+import cc.openxiot.common.util.JwtUtil;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,37 +20,47 @@ public class ManipulationService {
     @ConfigProperty(name = "manipulation.app-id", defaultValue = "openxiot.site")
     String appId;
 
-    public Uni<JsonObject> addDevices(String authorization, String body) {
+    @ConfigProperty(name = "manipulation.jwt-secret", defaultValue = "this is a test key")
+    String jwtSecret;
+
+    public Uni<JsonObject> addDevices(String orgId, String body) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.addDevices(appId, authorization, body)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> removeDevices(String authorization, List<String> did) {
+    public Uni<JsonObject> removeDevices(String orgId, List<String> did) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.removeDevices(appId, authorization, did)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> getDevices(String authorization, List<String> did) {
+    public Uni<JsonObject> getDevices(String orgId, List<String> did) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getDevices(appId, authorization, did)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> getShadows(String authorization, List<String> did) {
+    public Uni<JsonObject> getShadows(String orgId, List<String> did) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getShadows(appId, authorization, did)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> getProperties(String authorization, List<String> pid) {
+    public Uni<JsonObject> getProperties(String orgId, List<String> pid) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getProperties(appId, authorization, pid)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> setProperties(String authorization, String body) {
+    public Uni<JsonObject> setProperties(String orgId, String body) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.setProperties(appId, authorization, body)
                 .map(JsonObject::new);
     }
 
-    public Uni<JsonObject> invokeActions(String authorization, String body) {
+    public Uni<JsonObject> invokeActions(String orgId, String body) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.invokeActions(appId, authorization, body)
                 .map(JsonObject::new);
     }
