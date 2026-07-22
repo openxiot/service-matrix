@@ -30,7 +30,7 @@ public class SpaceService {
 
     public Uni<List<SpaceEntity>> getDescendants(String rootId) {
         return spaceRepository.findById(rootId)
-                .flatMap(root -> {
+                .chain(root -> {
                     if (root == null) return Uni.createFrom().item(List.<SpaceEntity>of());
                     return spaceRepository.findByAncestor(rootId)
                             .map(descendants -> {
@@ -46,7 +46,7 @@ public class SpaceService {
     public Uni<SpaceEntity> create(SpaceEntity space) {
         if (space.parentId != null && !space.parentId.isBlank()) {
             return spaceRepository.findById(space.parentId)
-                    .flatMap(parent -> {
+                    .chain(parent -> {
                         if (parent == null) {
                             return Uni.createFrom().failure(
                                     new IllegalArgumentException("Parent space not found"));
@@ -75,7 +75,7 @@ public class SpaceService {
 
     public Uni<SpaceEntity> update(SpaceEntity space) {
         return spaceRepository.findById(space.id)
-                .flatMap(existing -> {
+                .chain(existing -> {
                     if (existing == null) {
                         return Uni.createFrom().failure(
                                 new IllegalArgumentException("Space not found"));
@@ -89,7 +89,7 @@ public class SpaceService {
 
                     if (space.parentId != null && !space.parentId.equals(existing.parentId)) {
                         return spaceRepository.findById(space.parentId)
-                                .flatMap(parent -> {
+                                .chain(parent -> {
                                     if (parent == null) {
                                         return Uni.createFrom().failure(
                                                 new IllegalArgumentException("Parent space not found"));
@@ -113,7 +113,7 @@ public class SpaceService {
 
     public Uni<Boolean> delete(String spaceId) {
         return spaceRepository.findByParentId(spaceId)
-                .flatMap(children -> {
+                .chain(children -> {
                     if (!children.isEmpty()) {
                         return Uni.createFrom().failure(
                                 new IllegalArgumentException("Cannot delete space with children"));

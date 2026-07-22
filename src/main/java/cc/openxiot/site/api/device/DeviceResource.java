@@ -5,7 +5,8 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.site.api.orgcheck.OrgAccessService;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
-import cc.openxiot.site.db.device.DeviceSpace;
+import cc.openxiot.site.db.device.DeviceEntityMapper;
+import cc.openxiot.site.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -55,27 +56,17 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        JsonObject obj;
-        try {
-            obj = new JsonObject(body);
-        } catch (Exception e) {
-            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
-        }
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(space -> addDevice(orgId, body, space))
+                .chain(entity -> deviceService.save(entity))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
 
-        DeviceEntity device = new DeviceEntity();
-        device.did = obj.getString("did");
-        device.type = obj.getString("type");
-        DeviceSpace ds = new DeviceSpace();
-        ds.spaceId = spaceId;
-        device.space = ds;
-
-        return requireAdmin(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.addDevice(orgId, body)
-                            .flatMap(ignore -> deviceService.save(device))
-                            .replaceWith(OxResponse.ok());
-                });
+    private Uni<DeviceEntity> addDevice(String orgId, String body, SpaceEntity space) {
+        return manipulationService.addDevice(orgId, body)
+                .map(device -> DeviceEntityMapper.from(device, space));
     }
 
     @DELETE
@@ -85,13 +76,12 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        return requireAdmin(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.removeDevice(orgId, did)
-                            .flatMap(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
-                            .replaceWith(OxResponse.ok());
-                });
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> manipulationService.removeDevice(orgId, did))
+                .chain(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -101,12 +91,11 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return deviceService.getByDeviceId(did)
-                            .map(OxResponse::ok);
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> deviceService.getByDeviceId(did))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @POST
@@ -117,32 +106,17 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        JsonArray arr;
-        try {
-            arr = new JsonArray(body);
-        } catch (Exception e) {
-            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
-        }
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(space -> addDevices(orgId, body, space))
+                .chain(entities -> deviceService.saveAll(entities))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
 
-        List<DeviceEntity> devices = new ArrayList<>();
-        for (int i = 0; i < arr.size(); i++) {
-            JsonObject obj = arr.getJsonObject(i);
-            DeviceEntity device = new DeviceEntity();
-            device.did = obj.getString("did");
-            device.type = obj.getString("type");
-            DeviceSpace ds = new DeviceSpace();
-            ds.spaceId = spaceId;
-            device.space = ds;
-            devices.add(device);
-        }
-
-        return requireAdmin(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.addDevices(orgId, body)
-                            .flatMap(ignore -> deviceService.saveAll(devices))
-                            .replaceWith(OxResponse.ok());
-                });
+    private Uni<List<DeviceEntity>> addDevices(String orgId, String body, SpaceEntity space) {
+        return manipulationService.addDevices(orgId, body)
+                .map(devices -> DeviceEntityMapper.from(devices, space));
     }
 
     @DELETE
@@ -152,13 +126,12 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        return requireAdmin(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.removeDevices(orgId, did)
-                            .flatMap(ignore -> deviceService.deleteByDeviceIds(did))
-                            .replaceWith(OxResponse.ok());
-                });
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> manipulationService.removeDevices(orgId, did))
+                .chain(ignore -> deviceService.deleteByDeviceIds(did))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @PUT
@@ -177,23 +150,10 @@ public class DeviceResource extends AbstractResource {
 
         String spaceId = obj.getString("spaceId");
 
-        return requireAdmin(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-
-                    String rootSpaceId = obj.getString("rootSpaceId");
-                    JsonArray dids = obj.getJsonArray("dids");
-                    if (dids != null) {
-                        List<Uni<Void>> updates = new ArrayList<>();
-                        for (int i = 0; i < dids.size(); i++) {
-                            updates.add(deviceService.updateSpace(
-                                    dids.getString(i), spaceId, rootSpaceId));
-                        }
-                        return Uni.join().all(updates).andFailFast().replaceWith(OxResponse.ok());
-                    }
-
-                    return Uni.createFrom().item(OxResponse.ok());
-                });
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> updateSpaceDevices(obj, spaceId))
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -202,12 +162,11 @@ public class DeviceResource extends AbstractResource {
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return deviceService.getBySpaceId(spaceId)
-                            .map(OxResponse::ok);
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> deviceService.getBySpaceId(spaceId))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -217,26 +176,11 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-
-                    if (did != null && !did.isEmpty()) {
-                        return manipulationService.getShadows(orgId, did)
-                                .map(OxResponse::ok);
-                    }
-
-                    return deviceService.getBySpaceId(spaceId)
-                            .flatMap(devices -> {
-                                List<String> deviceIds = devices.stream()
-                                        .map(d -> d.did).toList();
-                                if (deviceIds.isEmpty()) {
-                                    return Uni.createFrom().item(OxResponse.ok(List.of()));
-                                }
-                                return manipulationService.getShadows(orgId, deviceIds)
-                                        .map(OxResponse::ok);
-                            });
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> fetchShadows(orgId, spaceId, did))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -246,12 +190,11 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.getProperties(orgId, pid)
-                            .map(OxResponse::ok);
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> manipulationService.getProperties(orgId, pid))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @POST
@@ -262,12 +205,11 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.setProperties(orgId, body)
-                            .map(OxResponse::ok);
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> manipulationService.setProperties(orgId, body))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @POST
@@ -278,47 +220,93 @@ public class DeviceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        return requireMember(spaceId, orgId)
-                .flatMap(error -> {
-                    if (error != null) return Uni.createFrom().item(error);
-                    return manipulationService.invokeActions(orgId, body)
-                            .map(OxResponse::ok);
-                });
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> manipulationService.invokeActions(orgId, body))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     // -- helper methods --
-
-    private Uni<Response> requireAdmin(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+    private Uni<JsonArray> fetchShadows(String orgId, String spaceId, List<String> did) {
+        if (did != null && !did.isEmpty()) {
+            return manipulationService.getShadows(orgId, did);
         }
-        return spaceService.getById(spaceId)
-                .flatMap(space -> {
-                    if (space == null || space.organizationId == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+
+        return deviceService.getBySpaceId(spaceId)
+                .chain(devices -> {
+                    List<String> deviceIds = devices.stream().map(d -> d.did).toList();
+                    if (deviceIds.isEmpty()) {
+                        return Uni.createFrom().item(new JsonArray());
                     }
-                    if (!orgId.equals(space.organizationId)) {
-                        return Uni.createFrom().item(OxResponse.error("OrgId does not match the space"));
-                    }
-                    return orgAccessService.isAdmin(orgId, getUserId())
-                            .map(admin -> admin ? null : OxResponse.error("Not an admin"));
+
+                    return manipulationService.getShadows(orgId, deviceIds);
                 });
     }
 
-    private Uni<Response> requireMember(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+    private Uni<Response> updateSpaceDevices(JsonObject obj, String spaceId) {
+        String rootSpaceId = obj.getString("rootSpaceId");
+        JsonArray dids = obj.getJsonArray("dids");
+        if (dids != null) {
+            List<Uni<Void>> updates = new ArrayList<>();
+            for (int i = 0; i < dids.size(); i++) {
+                updates.add(deviceService.updateSpace(dids.getString(i), spaceId, rootSpaceId));
+            }
+            return Uni.join().all(updates).andFailFast().replaceWith(OxResponse.ok());
         }
+
+        return Uni.createFrom().item(OxResponse.ok());
+    }
+
+    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) {
+            throw new IllegalArgumentException("X-Org-Id header is required");
+        }
+
         return spaceService.getById(spaceId)
-                .flatMap(space -> {
+                .chain(space -> {
                     if (space == null || space.organizationId == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
+                        throw new IllegalArgumentException("No access to this space");
                     }
+
                     if (!orgId.equals(space.organizationId)) {
-                        return Uni.createFrom().item(OxResponse.error("OrgId does not match the space"));
+                        throw new IllegalArgumentException("OrgId does not match the space");
                     }
+
+                    return orgAccessService.isAdmin(orgId, getUserId())
+                            .map(admin -> {
+                                if (!admin) {
+                                    throw new IllegalArgumentException("Not an admin");
+                                }
+
+                                return space;
+                            });
+                });
+    }
+
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+        if (orgId == null || orgId.isBlank()) {
+            throw new IllegalArgumentException("X-Org-Id header is required");
+        }
+
+        return spaceService.getById(spaceId)
+                .chain(space -> {
+                    if (space == null || space.organizationId == null) {
+                        throw new IllegalArgumentException("No access to this space");
+                    }
+
+                    if (!orgId.equals(space.organizationId)) {
+                        throw new IllegalArgumentException("OrgId does not match the space");
+                    }
+
                     return orgAccessService.isMember(orgId, getUserId())
-                            .map(member -> member ? null : OxResponse.error("Not a member"));
+                            .map(member -> {
+                                if (!member) {
+                                    throw new IllegalArgumentException("Not a member");
+                                }
+
+                                return space;
+                            });
                 });
     }
 }

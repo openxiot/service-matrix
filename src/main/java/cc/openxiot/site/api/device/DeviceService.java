@@ -44,7 +44,7 @@ public class DeviceService {
 
     public Uni<Void> updateSpace(String did, String spaceId, String rootSpaceId) {
         return deviceRepository.findByDeviceId(did)
-                .flatMap(device -> {
+                .chain(device -> {
                     if (device != null) {
                         DeviceSpace space = new DeviceSpace();
                         space.spaceId = spaceId;

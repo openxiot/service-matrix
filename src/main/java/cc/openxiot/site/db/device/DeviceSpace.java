@@ -1,5 +1,6 @@
 package cc.openxiot.site.db.device;
 
+import cc.openxiot.site.db.space.SpaceEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -12,4 +13,12 @@ public class DeviceSpace {
 
     @Schema(description = "根空间ID", required = false)
     public String rootId;
+
+    public DeviceSpace() {
+    }
+
+    public DeviceSpace(SpaceEntity entity) {
+        spaceId = entity.id.toString();
+        rootId = entity.rootId;
+    }
 }

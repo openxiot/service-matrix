@@ -55,7 +55,7 @@ public class SpaceResource extends AbstractResource {
     ) {
         if (space.parentId != null && !space.parentId.isBlank()) {
             return getSpaceIfAdmin(space.parentId, orgId)
-                    .flatMap(parent -> {
+                    .chain(parent -> {
                         if (parent == null) {
                             return Uni.createFrom().item(OxResponse.error("No access to parent space"));
                         }
@@ -72,7 +72,7 @@ public class SpaceResource extends AbstractResource {
         space.organizationId = orgId;
 
         return orgAccessService.isAdmin(orgId, getUserId())
-                .flatMap(admin -> {
+                .chain(admin -> {
                     if (!admin) {
                         return Uni.createFrom().item(OxResponse.error("Not an admin of the organization"));
                     }
@@ -91,7 +91,7 @@ public class SpaceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId
     ) {
         return getSpaceIfAdmin(spaceId, orgId)
-                .flatMap(space -> {
+                .chain(space -> {
                     if (space == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
@@ -115,7 +115,7 @@ public class SpaceResource extends AbstractResource {
         }
 
         return getSpaceIfAdmin(space.id.toString(), orgId)
-                .flatMap(existing -> {
+                .chain(existing -> {
                     if (existing == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
@@ -134,7 +134,7 @@ public class SpaceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId
     ) {
         return getSpaceIfMember(spaceId, orgId)
-                .flatMap(space -> {
+                .chain(space -> {
                     if (space == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
@@ -153,7 +153,7 @@ public class SpaceResource extends AbstractResource {
         }
 
         return orgAccessService.isMember(orgId, getUserId())
-                .flatMap(member -> {
+                .chain(member -> {
                     if (!member) {
                         return Uni.createFrom().item(OxResponse.error("Not a member of the organization"));
                     }
@@ -170,7 +170,7 @@ public class SpaceResource extends AbstractResource {
             @PathParam("rootId") String rootId
     ) {
         return getSpaceIfMember(rootId, orgId)
-                .flatMap(root -> {
+                .chain(root -> {
                     if (root == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
@@ -187,12 +187,12 @@ public class SpaceResource extends AbstractResource {
             @PathParam("rootId") String rootId
     ) {
         return getSpaceIfMember(rootId, orgId)
-                .flatMap(root -> {
+                .chain(root -> {
                     if (root == null) {
                         return Uni.createFrom().item(OxResponse.error("No access to this space"));
                     }
                     return service.getDescendants(rootId)
-                            .flatMap(spaces -> {
+                            .chain(spaces -> {
                                 List<String> spaceIds = spaces.stream()
                                         .map(s -> s.id.toString())
                                         .toList();
@@ -218,7 +218,7 @@ public class SpaceResource extends AbstractResource {
     private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
         if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
         return service.getById(spaceId)
-                .flatMap(space -> {
+                .chain(space -> {
                     if (space == null) return Uni.createFrom().nullItem();
                     if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
                     return orgAccessService.isMember(orgId, getUserId())
@@ -229,7 +229,7 @@ public class SpaceResource extends AbstractResource {
     private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
         if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
         return service.getById(spaceId)
-                .flatMap(space -> {
+                .chain(space -> {
                     if (space == null) return Uni.createFrom().nullItem();
                     if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
                     return orgAccessService.isAdmin(orgId, getUserId())

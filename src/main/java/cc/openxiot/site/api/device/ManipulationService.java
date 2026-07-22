@@ -1,7 +1,10 @@
 package cc.openxiot.site.api.device;
 
 import cc.openxiot.common.util.JwtUtil;
+import cn.geekcity.xiot.spec.codec.vertx.device.DeviceCodec;
+import cn.geekcity.xiot.spec.device.Device;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -23,63 +26,81 @@ public class ManipulationService {
     @ConfigProperty(name = "manipulation.jwt-secret", defaultValue = "this is a test key")
     String jwtSecret;
 
-    public Uni<JsonObject> addDevice(String orgId, String body) {
+    public Uni<Device> addDevice(String orgId, String body) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.addDevice(appId, authorization, body)
-                .map(JsonObject::new);
+                .map(this::getJsonObject)
+                .map(DeviceCodec::decode);
     }
 
     public Uni<JsonObject> removeDevice(String orgId, String did) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.removeDevice(appId, authorization, did)
-                .map(JsonObject::new);
+                .map(this::getJsonObject);
     }
 
     public Uni<JsonObject> getDevice(String orgId, String did) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getDevice(appId, authorization, did)
-                .map(JsonObject::new);
+                .map(this::getJsonObject);
     }
 
-    public Uni<JsonObject> addDevices(String orgId, String body) {
+    public Uni<List<Device>> addDevices(String orgId, String body) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.addDevices(appId, authorization, body)
-                .map(JsonObject::new);
+                .map(this::getJsonArray)
+                .map(DeviceCodec::decode);
     }
 
     public Uni<JsonObject> removeDevices(String orgId, List<String> did) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.removeDevices(appId, authorization, did)
-                .map(JsonObject::new);
+                .map(this::getJsonObject);
     }
 
     public Uni<JsonObject> getDevices(String orgId, List<String> did) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getDevices(appId, authorization, did)
-                .map(JsonObject::new);
+                .map(this::getJsonObject);
     }
 
-    public Uni<JsonObject> getShadows(String orgId, List<String> did) {
+    public Uni<JsonArray> getShadows(String orgId, List<String> did) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getShadows(appId, authorization, did)
-                .map(JsonObject::new);
+                .map(this::getJsonArray);
     }
 
-    public Uni<JsonObject> getProperties(String orgId, List<String> pid) {
+    public Uni<JsonArray> getProperties(String orgId, List<String> pid) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.getProperties(appId, authorization, pid)
-                .map(JsonObject::new);
+                .map(this::getJsonArray);
     }
 
-    public Uni<JsonObject> setProperties(String orgId, String body) {
+    public Uni<JsonArray> setProperties(String orgId, String body) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.setProperties(appId, authorization, body)
-                .map(JsonObject::new);
+                .map(this::getJsonArray);
     }
 
-    public Uni<JsonObject> invokeActions(String orgId, String body) {
+    public Uni<JsonArray> invokeActions(String orgId, String body) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.invokeActions(appId, authorization, body)
-                .map(JsonObject::new);
+                .map(this::getJsonArray);
+    }
+
+    private JsonObject getJsonObject(String resp) {
+        JsonObject json = new JsonObject(resp);
+        if (!Boolean.TRUE.equals(json.getBoolean("success"))) {
+            throw new IllegalArgumentException(json.getString("message", "Unknown error"));
+        }
+        return json.getJsonObject("data");
+    }
+
+    private JsonArray getJsonArray(String resp) {
+        JsonObject json = new JsonObject(resp);
+        if (!Boolean.TRUE.equals(json.getBoolean("success"))) {
+            throw new IllegalArgumentException(json.getString("message", "Unknown error"));
+        }
+        return json.getJsonArray("data");
     }
 }
