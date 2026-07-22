@@ -49,8 +49,8 @@ class SpaceResourceTest {
         space.organizationId = "org-1";
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
 
         given()
                 .header("X-Org-Id", "org-1")
@@ -96,8 +96,8 @@ class SpaceResourceTest {
         root.name = "root";
         root.organizationId = "org-1";
 
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.getRootsByOrganizationId("org-1"))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
@@ -123,8 +123,9 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.DEVELOPER})
     void getAll_notMember_returnsError() {
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(false));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().failure(
+                        new IllegalArgumentException("Not a member of the organization")));
 
         given()
                 .header("X-Org-Id", "org-1")
@@ -141,8 +142,8 @@ class SpaceResourceTest {
         created.name = "new-space";
         created.level = 0;
 
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.create(any()))
                 .thenReturn(Uni.createFrom().item(created));
 
@@ -172,8 +173,9 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.DEVELOPER})
     void addOne_rootSpace_notAdmin_returnsError() {
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(false));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().failure(
+                        new IllegalArgumentException("Not an admin of the organization")));
 
         given()
                 .header("X-Org-Id", "org-1")
@@ -192,8 +194,8 @@ class SpaceResourceTest {
         parent.organizationId = "org-1";
 
         when(spaceService.getById("parent-id")).thenReturn(Uni.createFrom().item(parent));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
 
         given()
                 .contentType(ContentType.JSON)
@@ -226,8 +228,8 @@ class SpaceResourceTest {
         space.organizationId = "org-1";
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.delete("sid"))
                 .thenReturn(Uni.createFrom().item(true));
 
@@ -246,8 +248,8 @@ class SpaceResourceTest {
         space.organizationId = "org-1";
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.delete("sid"))
                 .thenReturn(Uni.createFrom().failure(
                         new IllegalArgumentException("Cannot delete space with children")));
@@ -267,8 +269,8 @@ class SpaceResourceTest {
         space.organizationId = "org-1";
 
         when(spaceService.getById("507f1f77bcf86cd799439011")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.update(any()))
                 .thenReturn(Uni.createFrom().item(space));
 
@@ -290,8 +292,8 @@ class SpaceResourceTest {
         root.organizationId = "org-1";
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.getDescendants("root-id"))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
@@ -313,8 +315,8 @@ class SpaceResourceTest {
         root.organizationId = "org-1";
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.getDescendants("root-id"))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
         when(deviceService.getBySpaceId(any()))

@@ -12,6 +12,7 @@ import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
 
+import io.vertx.core.json.JsonArray;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
@@ -80,10 +81,10 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user")
     void addDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.addDevices(anyString(), anyString()))
-                .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
+                .thenReturn(Uni.createFrom().item(List.of()));
         when(deviceService.saveAll(anyList()))
                 .thenReturn(Uni.createFrom().item(List.of()));
 
@@ -114,8 +115,8 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user")
     void getDevices_returnsList() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
@@ -149,8 +150,8 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user")
     void removeDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
         when(deviceService.deleteByDeviceIds(anyList()))
@@ -169,8 +170,8 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user")
     void updateSpace_succeeds() {
         when(spaceService.getById("new-space")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.isAdmin("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkAdmin("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
         when(deviceService.updateSpace(anyString(), anyString(), anyString()))
                 .thenReturn(Uni.createFrom().voidItem());
 
@@ -225,15 +226,15 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user")
     void getShadows_returnsData() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.isMember("org-1", "test-user"))
-                .thenReturn(Uni.createFrom().item(true));
+        when(orgAccessService.checkMember("org-1", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
         when(deviceService.getBySpaceId("sid"))
                 .thenReturn(Uni.createFrom().item(List.of(device)));
         when(manipulationService.getShadows(anyString(), anyList()))
-                .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
+                .thenReturn(Uni.createFrom().item(new JsonArray()));
 
         given()
                 .header("X-Org-Id", "org-1")

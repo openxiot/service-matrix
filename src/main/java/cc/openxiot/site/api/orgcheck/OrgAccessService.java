@@ -10,26 +10,35 @@ import java.util.List;
 @ApplicationScoped
 public class OrgAccessService {
 
-    public Uni<Boolean> isMember(String orgId, String accountId) {
+    public Uni<Void> checkMember(String orgId, String accountId) {
         return Organization.<Organization>findById(orgId)
                 .map(org -> {
-                    if (org == null) return false;
+                    if (org == null) {
+                        throw new IllegalArgumentException("Organization not found");
+                    }
+
                     List<Member> members = org.members;
-                    if (members == null) return false;
-                    return members.stream()
-                            .anyMatch(m -> accountId.equals(m.developerId));
+                    if (members == null || members.stream().noneMatch(m -> accountId.equals(m.developerId))) {
+                        throw new IllegalArgumentException("Not a member of the organization");
+                    }
+
+                    return null;
                 });
     }
 
-    public Uni<Boolean> isAdmin(String orgId, String accountId) {
+    public Uni<Void> checkAdmin(String orgId, String accountId) {
         return Organization.<Organization>findById(orgId)
                 .map(org -> {
-                    if (org == null) return false;
+                    if (org == null) {
+                        throw new IllegalArgumentException("Organization not found");
+                    }
+
                     List<Member> members = org.members;
-                    if (members == null) return false;
-                    return members.stream()
-                            .anyMatch(m -> accountId.equals(m.developerId)
-                                    && "admin".equals(m.role));
+                    if (members == null || members.stream().noneMatch(m -> accountId.equals(m.developerId) && "admin".equals(m.role))) {
+                        throw new IllegalArgumentException("Not an admin of the organization");
+                    }
+
+                    return null;
                 });
     }
 }

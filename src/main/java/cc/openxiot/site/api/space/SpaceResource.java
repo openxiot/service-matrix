@@ -55,32 +55,21 @@ public class SpaceResource extends AbstractResource {
     ) {
         if (space.parentId != null && !space.parentId.isBlank()) {
             return getSpaceIfAdmin(space.parentId, orgId)
-                    .chain(parent -> {
-                        if (parent == null) {
-                            return Uni.createFrom().item(OxResponse.error("No access to parent space"));
-                        }
-                        return service.create(space)
-                                .map(OxResponse::ok)
-                                .onFailure(IllegalArgumentException.class)
-                                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-                    });
+                    .chain(ignored -> service.create(space).map(OxResponse::ok))
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
         if (orgId == null || orgId.isBlank()) {
             return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required for root space"));
         }
+
         space.organizationId = orgId;
 
-        return orgAccessService.isAdmin(orgId, getUserId())
-                .chain(admin -> {
-                    if (!admin) {
-                        return Uni.createFrom().item(OxResponse.error("Not an admin of the organization"));
-                    }
-                    return service.create(space)
-                            .map(OxResponse::ok)
-                            .onFailure(IllegalArgumentException.class)
-                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-                });
+        return orgAccessService.checkAdmin(orgId, getUserId())
+                .chain(ignored -> service.create(space).map(OxResponse::ok))
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @DELETE
@@ -91,15 +80,10 @@ public class SpaceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId
     ) {
         return getSpaceIfAdmin(spaceId, orgId)
-                .chain(space -> {
-                    if (space == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return service.delete(spaceId)
-                            .replaceWith(OxResponse.ok())
-                            .onFailure(IllegalArgumentException.class)
-                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-                });
+                .chain(ignored -> service.delete(spaceId))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @PUT
@@ -115,15 +99,10 @@ public class SpaceResource extends AbstractResource {
         }
 
         return getSpaceIfAdmin(space.id.toString(), orgId)
-                .chain(existing -> {
-                    if (existing == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return service.update(space)
-                            .map(OxResponse::ok)
-                            .onFailure(IllegalArgumentException.class)
-                            .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-                });
+                .chain(ignored -> service.update(space))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -134,12 +113,9 @@ public class SpaceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId
     ) {
         return getSpaceIfMember(spaceId, orgId)
-                .chain(space -> {
-                    if (space == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return Uni.createFrom().item(OxResponse.ok(space));
-                });
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -152,14 +128,11 @@ public class SpaceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
         }
 
-        return orgAccessService.isMember(orgId, getUserId())
-                .chain(member -> {
-                    if (!member) {
-                        return Uni.createFrom().item(OxResponse.error("Not a member of the organization"));
-                    }
-                    return service.getRootsByOrganizationId(orgId)
-                            .map(OxResponse::ok);
-                });
+        return orgAccessService.checkMember(orgId, getUserId())
+                .chain(ignored -> service.getRootsByOrganizationId(orgId))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -170,13 +143,10 @@ public class SpaceResource extends AbstractResource {
             @PathParam("rootId") String rootId
     ) {
         return getSpaceIfMember(rootId, orgId)
-                .chain(root -> {
-                    if (root == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return service.getDescendants(rootId)
-                            .map(OxResponse::ok);
-                });
+                .chain(ignored -> service.getDescendants(rootId))
+                .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
@@ -187,53 +157,62 @@ public class SpaceResource extends AbstractResource {
             @PathParam("rootId") String rootId
     ) {
         return getSpaceIfMember(rootId, orgId)
-                .chain(root -> {
-                    if (root == null) {
-                        return Uni.createFrom().item(OxResponse.error("No access to this space"));
-                    }
-                    return service.getDescendants(rootId)
-                            .chain(spaces -> {
-                                List<String> spaceIds = spaces.stream()
-                                        .map(s -> s.id.toString())
-                                        .toList();
-                                List<Uni<List<DeviceEntity>>> deviceUnis = spaceIds.stream()
-                                        .map(deviceService::getBySpaceId)
-                                        .toList();
-                                return Uni.join().all(deviceUnis).andFailFast()
-                                        .map(deviceLists -> {
-                                            List<DeviceEntity> allDevices = deviceLists.stream()
-                                                    .flatMap(List::stream)
-                                                    .toList();
-                                            Map<String, Object> graph = new HashMap<>();
-                                            graph.put("spaces", spaces);
-                                            graph.put("devices", allDevices);
-                                            return OxResponse.ok(graph);
-                                        });
+                .chain(ignored -> service.getDescendants(rootId))
+                .chain(spaces -> {
+                    List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
+                    List<Uni<List<DeviceEntity>>> deviceUnis = spaceIds.stream().map(deviceService::getBySpaceId).toList();
+                    return Uni.join().all(deviceUnis).andFailFast()
+                            .map(deviceLists -> {
+                                List<DeviceEntity> allDevices = deviceLists.stream().flatMap(List::stream).toList();
+                                Map<String, Object> graph = new HashMap<>();
+                                graph.put("spaces", spaces);
+                                graph.put("devices", allDevices);
+                                return OxResponse.ok(graph);
                             });
-                });
+                })
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     // -- helper methods --
 
     private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
+        }
+
         return service.getById(spaceId)
                 .chain(space -> {
-                    if (space == null) return Uni.createFrom().nullItem();
-                    if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
-                    return orgAccessService.isMember(orgId, getUserId())
-                            .map(member -> member ? space : null);
+                    if (space == null) {
+                        throw new IllegalArgumentException("Space not found: " + spaceId);
+                    }
+
+                    if (!orgId.equals(space.organizationId)) {
+                        throw new IllegalArgumentException("OrgId does not match the space");
+                    }
+
+                    return orgAccessService.checkMember(orgId, getUserId())
+                            .map(ignored -> space);
                 });
     }
 
     private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) return Uni.createFrom().nullItem();
+        if (orgId == null || orgId.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
+        }
+
         return service.getById(spaceId)
                 .chain(space -> {
-                    if (space == null) return Uni.createFrom().nullItem();
-                    if (!orgId.equals(space.organizationId)) return Uni.createFrom().nullItem();
-                    return orgAccessService.isAdmin(orgId, getUserId())
-                            .map(admin -> admin ? space : null);
+                    if (space == null) {
+                        throw new IllegalArgumentException("Space not found: " + spaceId);
+                    }
+
+                    if (!orgId.equals(space.organizationId)) {
+                        throw new IllegalArgumentException("OrgId does not match the space");
+                    }
+
+                    return orgAccessService.checkAdmin(orgId, getUserId())
+                            .map(ignored -> space);
                 });
     }
 }

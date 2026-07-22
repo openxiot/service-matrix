@@ -260,7 +260,7 @@ public class DeviceResource extends AbstractResource {
 
     private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
         if (orgId == null || orgId.isBlank()) {
-            throw new IllegalArgumentException("X-Org-Id header is required");
+            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
         }
 
         return spaceService.getById(spaceId)
@@ -273,20 +273,14 @@ public class DeviceResource extends AbstractResource {
                         throw new IllegalArgumentException("OrgId does not match the space");
                     }
 
-                    return orgAccessService.isAdmin(orgId, getUserId())
-                            .map(admin -> {
-                                if (!admin) {
-                                    throw new IllegalArgumentException("Not an admin");
-                                }
-
-                                return space;
-                            });
+                    return orgAccessService.checkAdmin(orgId, getUserId())
+                            .map(ignored -> space);
                 });
     }
 
     private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
         if (orgId == null || orgId.isBlank()) {
-            throw new IllegalArgumentException("X-Org-Id header is required");
+            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
         }
 
         return spaceService.getById(spaceId)
@@ -299,14 +293,8 @@ public class DeviceResource extends AbstractResource {
                         throw new IllegalArgumentException("OrgId does not match the space");
                     }
 
-                    return orgAccessService.isMember(orgId, getUserId())
-                            .map(member -> {
-                                if (!member) {
-                                    throw new IllegalArgumentException("Not a member");
-                                }
-
-                                return space;
-                            });
+                    return orgAccessService.checkMember(orgId, getUserId())
+                            .map(ignored -> space);
                 });
     }
 }
