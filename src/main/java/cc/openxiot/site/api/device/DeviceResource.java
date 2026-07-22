@@ -59,7 +59,7 @@ public class DeviceResource extends AbstractResource {
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(space -> addDevice(orgId, body, space))
                 .chain(entity -> deviceService.save(entity))
-                .replaceWith(OxResponse.ok())
+                .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -109,7 +109,7 @@ public class DeviceResource extends AbstractResource {
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(space -> addDevices(orgId, body, space))
                 .chain(entities -> deviceService.saveAll(entities))
-                .replaceWith(OxResponse.ok())
+                .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
