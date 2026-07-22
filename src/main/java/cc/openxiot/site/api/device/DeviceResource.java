@@ -48,9 +48,71 @@ public class DeviceResource extends AbstractResource {
     }
 
     @POST
+    @Path("/one/{spaceId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Uni<Response> addOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            String body
+    ) {
+        JsonObject obj;
+        try {
+            obj = new JsonObject(body);
+        } catch (Exception e) {
+            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
+        }
+
+        DeviceEntity device = new DeviceEntity();
+        device.did = obj.getString("did");
+        device.type = obj.getString("type");
+        DeviceSpace ds = new DeviceSpace();
+        ds.spaceId = spaceId;
+        device.space = ds;
+
+        return requireAdmin(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.addDevice(orgId, body)
+                            .flatMap(ignore -> deviceService.save(device))
+                            .replaceWith(OxResponse.ok());
+                });
+    }
+
+    @DELETE
+    @Path("/one/{spaceId}/{did}")
+    public Uni<Response> removeOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            @PathParam("did") String did
+    ) {
+        return requireAdmin(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return manipulationService.removeDevice(orgId, did)
+                            .flatMap(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
+                            .replaceWith(OxResponse.ok());
+                });
+    }
+
+    @GET
+    @Path("/one/{spaceId}/{did}")
+    public Uni<Response> getOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            @PathParam("did") String did
+    ) {
+        return requireMember(spaceId, orgId)
+                .flatMap(error -> {
+                    if (error != null) return Uni.createFrom().item(error);
+                    return deviceService.getByDeviceId(did)
+                            .map(OxResponse::ok);
+                });
+    }
+
+    @POST
     @Path("/many/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Uni<Response> addDevices(
+    public Uni<Response> addMany(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body

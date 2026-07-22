@@ -24,6 +24,10 @@ public class DeviceService {
         return deviceRepository.findByDeviceIds(dids);
     }
 
+    public Uni<DeviceEntity> getByDeviceId(String did) {
+        return deviceRepository.findByDeviceId(did);
+    }
+
     public Uni<DeviceEntity> save(DeviceEntity device) {
         if (device.create == null) {
             device.create = new Date();

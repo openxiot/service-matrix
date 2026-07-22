@@ -23,6 +23,24 @@ public class ManipulationService {
     @ConfigProperty(name = "manipulation.jwt-secret", defaultValue = "this is a test key")
     String jwtSecret;
 
+    public Uni<JsonObject> addDevice(String orgId, String body) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
+        return client.addDevice(appId, authorization, body)
+                .map(JsonObject::new);
+    }
+
+    public Uni<JsonObject> removeDevice(String orgId, String did) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
+        return client.removeDevice(appId, authorization, did)
+                .map(JsonObject::new);
+    }
+
+    public Uni<JsonObject> getDevice(String orgId, String did) {
+        String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
+        return client.getDevice(appId, authorization, did)
+                .map(JsonObject::new);
+    }
+
     public Uni<JsonObject> addDevices(String orgId, String body) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.addDevices(appId, authorization, body)

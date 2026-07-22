@@ -13,6 +13,31 @@ import java.util.List;
 public interface ManipulationClient {
 
     @POST
+    @Path("/device")
+    @Consumes(MediaType.APPLICATION_JSON)
+    Uni<String> addDevice(
+            @HeaderParam("appId") String appId,
+            @HeaderParam("authorization") String authorization,
+            String body
+    );
+
+    @DELETE
+    @Path("/device/{did}")
+    Uni<String> removeDevice(
+            @HeaderParam("appId") String appId,
+            @HeaderParam("authorization") String authorization,
+            @PathParam("did") String did
+    );
+
+    @GET
+    @Path("/device/{did}")
+    Uni<String> getDevice(
+            @HeaderParam("appId") String appId,
+            @HeaderParam("authorization") String authorization,
+            @PathParam("did") String did
+    );
+
+    @POST
     @Path("/devices")
     @Consumes(MediaType.APPLICATION_JSON)
     Uni<String> addDevices(
