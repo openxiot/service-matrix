@@ -36,17 +36,16 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         return list("organizationId = :orgId and parentId = :parentId", params);
     }
 
-    @Override
-    public Uni<SpaceEntity> persist(SpaceEntity space) {
+    public Uni<SpaceEntity> persistEntity(SpaceEntity space) {
         if (space.createTime == null) {
             space.createTime = LocalDateTime.now();
         }
         space.updateTime = LocalDateTime.now();
-        return ReactivePanacheMongoRepository.super.persist(space);
+        return persist(space);
     }
 
-    public Uni<SpaceEntity> update(SpaceEntity space) {
+    public Uni<SpaceEntity> persistOrUpdateEntity(SpaceEntity space) {
         space.updateTime = LocalDateTime.now();
-        return ReactivePanacheMongoRepository.super.persistOrUpdate(space);
+        return persistOrUpdate(space);
     }
 }

@@ -96,7 +96,7 @@ class SpaceServiceTest {
     void create_rootSpace_setsLevelAndAncestors() {
         SpaceEntity space = new SpaceEntity();
         space.organizationId = "org-1";
-        when(spaceRepository.persist(any())).thenReturn(Uni.createFrom().item(space));
+        when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
 
         SpaceEntity result = service.create(space).await().indefinitely();
 
@@ -123,7 +123,7 @@ class SpaceServiceTest {
 
         SpaceEntity space = new SpaceEntity();
         space.parentId = "parent-id";
-        when(spaceRepository.persist(any())).thenReturn(Uni.createFrom().item(space));
+        when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
 
         SpaceEntity result = service.create(space).await().indefinitely();
 
@@ -191,7 +191,7 @@ class SpaceServiceTest {
                 .thenReturn(Uni.createFrom().item(existing));
         when(spaceRepository.findById("new-parent-id"))
                 .thenReturn(Uni.createFrom().item(newParent));
-        when(spaceRepository.update(any())).thenReturn(Uni.createFrom().item(existing));
+        when(spaceRepository.persistOrUpdateEntity(any())).thenReturn(Uni.createFrom().item(existing));
 
         SpaceEntity input = new SpaceEntity();
         input.id = id;

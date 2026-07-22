@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @ApplicationScoped
 public class SpaceService {
@@ -58,7 +59,7 @@ public class SpaceService {
                         ancestors.add(space.parentId);
                         space.ancestors = ancestors;
                         space.organizationId = parent.organizationId;
-                        return spaceRepository.persist(space);
+                        return spaceRepository.persistEntity(space);
                     });
         } else {
             if (space.organizationId == null || space.organizationId.isBlank()) {
@@ -68,7 +69,7 @@ public class SpaceService {
             space.level = 0;
             space.ancestors = List.of();
             space.parentId = null;
-            return spaceRepository.persist(space);
+            return spaceRepository.persistEntity(space);
         }
     }
 
@@ -102,11 +103,11 @@ public class SpaceService {
                                     ancestors.add(space.parentId);
                                     existing.ancestors = ancestors;
                                     existing.organizationId = parent.organizationId;
-                                    return spaceRepository.update(existing);
+                                    return spaceRepository.persistOrUpdateEntity(existing);
                                 });
                     }
 
-                    return spaceRepository.update(existing);
+                    return spaceRepository.persistOrUpdateEntity(existing);
                 });
     }
 
@@ -123,7 +124,7 @@ public class SpaceService {
 
     public Uni<Boolean> noAccess(String spaceId) {
         return spaceRepository.findById(spaceId)
-                .map(space -> space == null)
+                .map(Objects::isNull)
                 .onItem().ifNull().continueWith(true);
     }
 }
