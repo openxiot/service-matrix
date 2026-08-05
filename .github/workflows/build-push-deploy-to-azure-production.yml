@@ -7,9 +7,9 @@ on:
 
 env:
   REGISTRY: ghcr.io/openxiot
-  IMAGE_NAME: service-site
+  IMAGE_NAME: service-matrix
   RESOURCE_GROUP: production
-  CONTAINER_APP_NAME: service-site
+  CONTAINER_APP_NAME: service-matrix
 
 jobs:
   build-and-push:
