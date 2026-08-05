@@ -2,7 +2,8 @@ package cc.openxiot.site.api.device;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
-import cc.openxiot.site.api.orgcheck.OrgAccessService;
+import cc.openxiot.common.role.OxRole;
+import cc.openxiot.site.service.orgcheck.OrgAccessService;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceEntityMapper;
@@ -10,6 +11,7 @@ import cc.openxiot.site.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -51,6 +53,7 @@ public class DeviceResource extends AbstractResource {
     @POST
     @Path("/one/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> addOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -71,6 +74,7 @@ public class DeviceResource extends AbstractResource {
 
     @DELETE
     @Path("/one/{spaceId}/{did}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> removeOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -86,6 +90,7 @@ public class DeviceResource extends AbstractResource {
 
     @GET
     @Path("/one/{spaceId}/{did}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -101,6 +106,7 @@ public class DeviceResource extends AbstractResource {
     @POST
     @Path("/many/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> addMany(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -121,6 +127,7 @@ public class DeviceResource extends AbstractResource {
 
     @DELETE
     @Path("/many/{spaceId}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> removeDevices(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -137,6 +144,7 @@ public class DeviceResource extends AbstractResource {
     @PUT
     @Path("/many/space")
     @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> updateSpace(
             @HeaderParam("X-Org-Id") String orgId,
             String body
@@ -158,6 +166,7 @@ public class DeviceResource extends AbstractResource {
 
     @GET
     @Path("/many/{spaceId}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getDevices(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
@@ -171,6 +180,7 @@ public class DeviceResource extends AbstractResource {
 
     @GET
     @Path("/shadows/{spaceId}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getShadows(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -185,6 +195,7 @@ public class DeviceResource extends AbstractResource {
 
     @GET
     @Path("/properties/{spaceId}")
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getProperties(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -200,6 +211,7 @@ public class DeviceResource extends AbstractResource {
     @POST
     @Path("/properties/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> setProperties(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
@@ -215,6 +227,7 @@ public class DeviceResource extends AbstractResource {
     @POST
     @Path("/actions/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> invokeActions(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,

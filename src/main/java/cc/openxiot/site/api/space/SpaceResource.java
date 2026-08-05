@@ -4,7 +4,7 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.site.api.device.DeviceService;
-import cc.openxiot.site.api.orgcheck.OrgAccessService;
+import cc.openxiot.site.service.orgcheck.OrgAccessService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
@@ -47,7 +47,7 @@ public class SpaceResource extends AbstractResource {
 
     @POST
     @Path("/one")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> addOne(
             @HeaderParam("X-Org-Id") String orgId,
@@ -74,7 +74,7 @@ public class SpaceResource extends AbstractResource {
 
     @DELETE
     @Path("/one/{spaceId}")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> removeOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
@@ -88,7 +88,7 @@ public class SpaceResource extends AbstractResource {
 
     @PUT
     @Path("/one")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> updateOne(
             @HeaderParam("X-Org-Id") String orgId,
@@ -107,7 +107,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/one/{spaceId}")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
@@ -120,7 +120,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/all")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getAll(
             @HeaderParam("X-Org-Id") String orgId
     ) {
@@ -137,7 +137,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/tree/{rootId}")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getTree(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId
@@ -151,7 +151,7 @@ public class SpaceResource extends AbstractResource {
 
     @GET
     @Path("/graph/{rootId}")
-    @RolesAllowed({OxRole.DEVELOPER})
+    @RolesAllowed({OxRole.USER})
     public Uni<Response> getGraph(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId

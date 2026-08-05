@@ -6,8 +6,5 @@ public interface OxRole {
     String OPERATOR = "operator";
     String ADMIN = "admin";
     String ADVERTISER = "advertiser";
-
-    String SITE_MANAGER = "developer";
-    String SITE_OPERATOR = "operator";
-    String SITE_BROWSER = "browser";
+    String USER = "user";
 }

@@ -1,4 +1,4 @@
-package cc.openxiot.account.organization.member;
+package cc.openxiot.account.user.organization.member;
 
 public interface MemberRole {
 

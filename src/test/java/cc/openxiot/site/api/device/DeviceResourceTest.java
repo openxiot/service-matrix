@@ -1,6 +1,6 @@
 package cc.openxiot.site.api.device;
 
-import cc.openxiot.site.api.orgcheck.OrgAccessService;
+import cc.openxiot.site.service.orgcheck.OrgAccessService;
 import cc.openxiot.site.api.space.SpaceService;
 import cc.openxiot.site.db.device.DeviceEntity;
 import cc.openxiot.site.db.device.DeviceSpace;
