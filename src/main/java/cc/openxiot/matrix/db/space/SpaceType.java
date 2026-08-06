@@ -5,7 +5,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @Schema(description = "空间类型")
 public enum SpaceType {
 
-    SITE("matrix"),
+    SITE("site"),
     BUILDING("building"),
     ZONE("zone"),
     FLOOR("floor"),
