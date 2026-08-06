@@ -8,7 +8,7 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 import java.util.List;
 
 @RegisterRestClient(configKey = "manipulation-api")
-@Path("/v1")
+@Path("/manipulation/v1")
 @Produces(MediaType.APPLICATION_JSON)
 public interface ManipulationClient {
 
