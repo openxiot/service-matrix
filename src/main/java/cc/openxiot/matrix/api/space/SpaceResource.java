@@ -6,10 +6,10 @@ import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwnerRole;
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
+import cc.openxiot.matrix.db.space.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwner;
+import cc.openxiot.matrix.db.space.SpaceAccess;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.annotation.security.RolesAllowed;
@@ -66,16 +66,16 @@ public class SpaceResource extends AbstractResource {
 
         // 根空间：无 X-Org-Id → 个人创建（用户是管理员）；带 X-Org-Id → 组织创建（组织是管理员）
         if (orgId == null || orgId.isBlank()) {
-            SpaceOwner owner = new SpaceOwner(getUserId(), SpaceOwnerType.USER, SpaceOwnerRole.ADMIN);
-            return service.createWithOwner(space, owner)
+            SpaceAccess owner = new SpaceAccess(getUserId(), SpaceAccessType.USER, SpaceAccessRole.ADMIN);
+            return service.createWithAccess(space, owner)
                     .map(OxResponse::ok)
                     .onFailure(IllegalArgumentException.class)
                     .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
-        SpaceOwner owner = new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN);
+        SpaceAccess owner = new SpaceAccess(orgId, SpaceAccessType.ORGANIZATION, SpaceAccessRole.ADMIN);
         return orgAccessService.checkAdmin(orgId, getUserId())
-                .chain(() -> service.createWithOwner(space, owner).map(OxResponse::ok))
+                .chain(() -> service.createWithAccess(space, owner).map(OxResponse::ok))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -133,15 +133,15 @@ public class SpaceResource extends AbstractResource {
             @HeaderParam("X-Org-Id") String orgId
     ) {
         if (orgId == null || orgId.isBlank()) {
-            // 无 X-Org-Id → 属于该用户的根空间（管理员或普通成员，owners 含该用户）
-            return service.getRootsByOwner(getUserId(), SpaceOwnerType.USER)
+            // 无 X-Org-Id → 属于该用户的根空间（管理员或普通成员，accesses 含该用户）
+            return service.getRootsByAccess(getUserId(), SpaceAccessType.USER)
                     .map(OxResponse::ok)
                     .onFailure(IllegalArgumentException.class)
                     .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
         return orgAccessService.checkMember(orgId, getUserId())
-                .chain(() -> service.getRootsByOwner(orgId, SpaceOwnerType.ORGANIZATION))
+                .chain(() -> service.getRootsByAccess(orgId, SpaceAccessType.ORGANIZATION))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

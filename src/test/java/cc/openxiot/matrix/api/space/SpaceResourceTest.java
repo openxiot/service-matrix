@@ -3,10 +3,10 @@ package cc.openxiot.matrix.api.space;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
-import cc.openxiot.matrix.db.space.SpaceOwnerRole;
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
+import cc.openxiot.matrix.db.space.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwner;
+import cc.openxiot.matrix.db.space.SpaceAccess;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -36,7 +36,7 @@ class SpaceResourceTest {
 
     private static SpaceEntity orgSpace(String orgId) {
         SpaceEntity space = new SpaceEntity();
-        space.owners = List.of(new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN));
+        space.accesses = List.of(new SpaceAccess(orgId, SpaceAccessType.ORGANIZATION, SpaceAccessRole.ADMIN));
         return space;
     }
 
@@ -105,7 +105,7 @@ class SpaceResourceTest {
 
         when(orgAccessService.checkMember("org-1", "test-user"))
                 .thenReturn(Uni.createFrom().voidItem());
-        when(spaceService.getRootsByOwner("org-1", SpaceOwnerType.ORGANIZATION))
+        when(spaceService.getRootsByAccess("org-1", SpaceAccessType.ORGANIZATION))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
         given()
@@ -122,9 +122,9 @@ class SpaceResourceTest {
     void getAll_noOrgId_returnsAccessibleRoots() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
-        root.owners = List.of(new SpaceOwner("test-user", SpaceOwnerType.USER, SpaceOwnerRole.ADMIN));
+        root.accesses = List.of(new SpaceAccess("test-user", SpaceAccessType.USER, SpaceAccessRole.ADMIN));
 
-        when(spaceService.getRootsByOwner("test-user", SpaceOwnerType.USER))
+        when(spaceService.getRootsByAccess("test-user", SpaceAccessType.USER))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
         given()
@@ -159,7 +159,7 @@ class SpaceResourceTest {
 
         when(orgAccessService.checkAdmin("org-1", "test-user"))
                 .thenReturn(Uni.createFrom().voidItem());
-        when(spaceService.createWithOwner(any(), any()))
+        when(spaceService.createWithAccess(any(), any()))
                 .thenReturn(Uni.createFrom().item(created));
 
         given()
@@ -179,9 +179,9 @@ class SpaceResourceTest {
         SpaceEntity created = new SpaceEntity();
         created.name = "new-space";
         created.level = 0;
-        created.owners = List.of(new SpaceOwner("test-user", SpaceOwnerType.USER, SpaceOwnerRole.ADMIN));
+        created.accesses = List.of(new SpaceAccess("test-user", SpaceAccessType.USER, SpaceAccessRole.ADMIN));
 
-        when(spaceService.createWithOwner(any(), any()))
+        when(spaceService.createWithAccess(any(), any()))
                 .thenReturn(Uni.createFrom().item(created));
 
         given()
@@ -192,7 +192,7 @@ class SpaceResourceTest {
                 .statusCode(200)
                 .body("success", is(true))
                 .body("data.name", is("new-space"))
-                .body("data.owners.size()", is(1));
+                .body("data.accesses.size()", is(1));
     }
 
     @Test

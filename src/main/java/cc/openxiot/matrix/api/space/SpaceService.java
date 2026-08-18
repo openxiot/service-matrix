@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.space;
 
-import cc.openxiot.matrix.api.member.AccountUserLookup;
+import cc.openxiot.matrix.api.space.access.AccountUserLookup;
+import cc.openxiot.matrix.db.space.SpaceAccess;
+import cc.openxiot.matrix.db.space.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwner;
-import cc.openxiot.matrix.db.space.SpaceOwnerRole;
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceRepository;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
@@ -32,8 +32,8 @@ public class SpaceService {
         return spaceRepository.findByParentId(parentId);
     }
 
-    public Uni<List<SpaceEntity>> getRootsByOwner(String ownerId, String ownerType) {
-        return spaceRepository.findRootsByOwner(ownerId, ownerType);
+    public Uni<List<SpaceEntity>> getRootsByAccess(String accessId, String accessType) {
+        return spaceRepository.findRootsByAccess(accessId, accessType);
     }
 
     public Uni<List<SpaceEntity>> getDescendants(String rootId) {
@@ -52,20 +52,20 @@ public class SpaceService {
     }
 
     /**
-     * 创建根空间并写入拥有者条目：用户/组织名从 account 解析为快照。
+     * 创建根空间并写入访问条目：用户/组织名从 account 解析为快照。
      * 个人创建（type=user, role=admin）；组织创建（type=organization, role=admin）。
      */
-    public Uni<SpaceEntity> createWithOwner(SpaceEntity space, SpaceOwner owner) {
-        return resolveOwnerName(owner)
+    public Uni<SpaceEntity> createWithAccess(SpaceEntity space, SpaceAccess access) {
+        return resolveAccessName(access)
                 .map(resolved -> {
-                    space.owners = List.of(resolved);
+                    space.accesses = List.of(resolved);
                     return space;
                 })
                 .chain(this::create);
     }
 
-    /** 添加根空间成员（user 条目；role 默认 member；name 从 account 解析快照）。 */
-    public Uni<Void> addMember(String rootId, String memberId, String role, String remark) {
+    /** 添加根空间用户访问条目（role 默认 member；name 从 account 解析快照）。 */
+    public Uni<Void> addAccess(String rootId, String memberId, String role, String remark) {
         String resolvedRole = normalizeRole(role);
         return accountUserLookup.userName(memberId)
                 .chain(name -> spaceRepository.findById(rootId)
@@ -73,47 +73,47 @@ public class SpaceService {
                             if (space == null || space.parentId != null) {
                                 throw new IllegalArgumentException("Root space not found: " + rootId);
                             }
-                            if (space.owners != null && space.owners.stream().anyMatch(o ->
-                                    SpaceOwnerType.USER.equals(o.type) && memberId.equals(o.id))) {
+                            if (space.accesses != null && space.accesses.stream().anyMatch(o ->
+                                    SpaceAccessType.USER.equals(o.type) && memberId.equals(o.id))) {
                                 throw new IllegalArgumentException("Member already exists: " + memberId);
                             }
-                            SpaceOwner owner = new SpaceOwner(memberId, SpaceOwnerType.USER, resolvedRole, name, remark);
-                            return spaceRepository.pushOwner(rootId, owner);
+                            SpaceAccess access = new SpaceAccess(memberId, SpaceAccessType.USER, resolvedRole, name, remark);
+                            return spaceRepository.pushAccess(rootId, access);
                         })))
                 .replaceWithVoid();
     }
 
-    /** 移除根空间成员。 */
-    public Uni<Void> removeMember(String rootId, String memberId) {
+    /** 移除根空间用户访问条目。 */
+    public Uni<Void> removeAccess(String rootId, String memberId) {
         return spaceRepository.findById(rootId)
                 .chain(Unchecked.function(space -> {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
-                    boolean exists = space.owners != null && space.owners.stream().anyMatch(o ->
-                            SpaceOwnerType.USER.equals(o.type) && memberId.equals(o.id));
+                    boolean exists = space.accesses != null && space.accesses.stream().anyMatch(o ->
+                            SpaceAccessType.USER.equals(o.type) && memberId.equals(o.id));
                     if (!exists) {
                         throw new IllegalArgumentException("Member not found: " + memberId);
                     }
-                    return spaceRepository.pullOwner(rootId, memberId);
+                    return spaceRepository.pullAccess(rootId, memberId);
                 }))
                 .replaceWithVoid();
     }
 
-    private Uni<SpaceOwner> resolveOwnerName(SpaceOwner owner) {
-        if (SpaceOwnerType.USER.equals(owner.type)) {
-            return accountUserLookup.userName(owner.id)
-                    .map(name -> new SpaceOwner(owner.id, owner.type, owner.role, name, owner.remark));
+    private Uni<SpaceAccess> resolveAccessName(SpaceAccess access) {
+        if (SpaceAccessType.USER.equals(access.type)) {
+            return accountUserLookup.userName(access.id)
+                    .map(name -> new SpaceAccess(access.id, access.type, access.role, name, access.remark));
         }
-        if (SpaceOwnerType.ORGANIZATION.equals(owner.type)) {
-            return accountUserLookup.orgName(owner.id)
-                    .map(name -> new SpaceOwner(owner.id, owner.type, owner.role, name, owner.remark));
+        if (SpaceAccessType.ORGANIZATION.equals(access.type)) {
+            return accountUserLookup.orgName(access.id)
+                    .map(name -> new SpaceAccess(access.id, access.type, access.role, name, access.remark));
         }
-        return Uni.createFrom().item(owner);
+        return Uni.createFrom().item(access);
     }
 
     private String normalizeRole(String role) {
-        return SpaceOwnerRole.ADMIN.equals(role) ? SpaceOwnerRole.ADMIN : SpaceOwnerRole.MEMBER;
+        return SpaceAccessRole.ADMIN.equals(role) ? SpaceAccessRole.ADMIN : SpaceAccessRole.MEMBER;
     }
 
     public Uni<SpaceEntity> create(SpaceEntity space) {
@@ -131,11 +131,11 @@ public class SpaceService {
                         }
                         ancestors.add(space.parentId);
                         space.ancestors = ancestors;
-                        space.owners = parent.owners;
+                        space.accesses = parent.accesses;
                         return spaceRepository.persistEntity(space);
                     });
         } else {
-            requireRootOwners(space);
+            requireRootAccesses(space);
             space.level = 0;
             space.ancestors = List.of();
             space.parentId = null;
@@ -143,14 +143,14 @@ public class SpaceService {
         }
     }
 
-    private void requireRootOwners(SpaceEntity space) {
-        if (space.owners == null || space.owners.isEmpty()) {
-            throw new IllegalArgumentException("owners is required for root space");
+    private void requireRootAccesses(SpaceEntity space) {
+        if (space.accesses == null || space.accesses.isEmpty()) {
+            throw new IllegalArgumentException("accesses is required for root space");
         }
-        for (SpaceOwner owner : space.owners) {
-            if (owner.id == null || owner.id.isBlank()
-                    || owner.type == null || owner.type.isBlank()) {
-                throw new IllegalArgumentException("owner (id/type) is required for root space");
+        for (SpaceAccess access : space.accesses) {
+            if (access.id == null || access.id.isBlank()
+                    || access.type == null || access.type.isBlank()) {
+                throw new IllegalArgumentException("access (id/type) is required for root space");
             }
         }
     }
@@ -182,7 +182,7 @@ public class SpaceService {
                                     }
                                     ancestors.add(space.parentId);
                                     existing.ancestors = ancestors;
-                                    existing.owners = parent.owners;
+                                    existing.accesses = parent.accesses;
                                     return spaceRepository.persistOrUpdateEntity(existing);
                                 });
                     }

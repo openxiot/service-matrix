@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.member;
+package cc.openxiot.matrix.api.space.access;
 
 import cc.openxiot.account.db.account.user.User;
 import cc.openxiot.account.user.organization.UserOrganization;

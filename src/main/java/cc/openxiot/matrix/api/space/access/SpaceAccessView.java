@@ -1,11 +1,11 @@
-package cc.openxiot.matrix.api.member;
+package cc.openxiot.matrix.api.space.access;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * 项目成员视图（根空间 owners 中 type = user 的条目）。
+ * 根空间用户访问条目视图（根空间 accesses 中 type = user 的条目）。
  */
-public class MemberView {
+public class SpaceAccessView {
 
     @Schema(description = "成员账号 ID")
     public String userId;

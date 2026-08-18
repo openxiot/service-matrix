@@ -16,10 +16,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 回归测试：嵌套类字段名恰好叫 "id" 时，MongoDB PojoCodec 会默认把它当成文档 _id 字段，
- * 导致读真实数据（字段名是 "id"）时拿不到值。SpaceOwner.id 用 @BsonProperty("id") 显式
+ * 导致读真实数据（字段名是 "id"）时拿不到值。SpaceAccess.id 用 @BsonProperty("id") 显式
  * 指定 BSON 字段名，绕开该约定。此测试在内存中编解码验证字段映射，不依赖数据库。
  */
-class SpaceOwnerCodecTest {
+class SpaceAccessCodecTest {
 
     @Test
     void idFieldMapsToBsonId_notUnderscoreId() {
@@ -27,21 +27,21 @@ class SpaceOwnerCodecTest {
         CodecRegistry registry = CodecRegistries.fromRegistries(
                 MongoClientSettings.getDefaultCodecRegistry(),
                 CodecRegistries.fromProviders(
-                        PojoCodecProvider.builder().register(SpaceOwner.class).build()));
-        Codec<SpaceOwner> codec = registry.get(SpaceOwner.class);
+                        PojoCodecProvider.builder().register(SpaceAccess.class).build()));
+        Codec<SpaceAccess> codec = registry.get(SpaceAccess.class);
 
-        SpaceOwner owner = new SpaceOwner("cct", "organization", "admin");
+        SpaceAccess access = new SpaceAccess("cct", "organization", "admin");
 
         BsonDocument out = new BsonDocument();
-        codec.encode(new BsonDocumentWriter(out), owner, EncoderContext.builder().build());
+        codec.encode(new BsonDocumentWriter(out), access, EncoderContext.builder().build());
 
         // 关键断言：字段必须写为 "id"，而不是被 driver 默认映射成 "_id"
         assertTrue(out.containsKey("id"), "字段应写为 id，而不是被映射成 _id：" + out.toJson());
         assertEquals("cct", out.getString("id").getValue());
 
-        SpaceOwner back = codec.decode(new BsonDocumentReader(out), DecoderContext.builder().build());
+        SpaceAccess back = codec.decode(new BsonDocumentReader(out), DecoderContext.builder().build());
         assertEquals("cct", back.id);
-        assertEquals(SpaceOwnerType.ORGANIZATION, back.type);
-        assertEquals(SpaceOwnerRole.ADMIN, back.role);
+        assertEquals(SpaceAccessType.ORGANIZATION, back.type);
+        assertEquals(SpaceAccessRole.ADMIN, back.role);
     }
 }

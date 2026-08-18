@@ -1,13 +1,13 @@
-package cc.openxiot.matrix.api.member;
+package cc.openxiot.matrix.api.space.access;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * 添加项目成员的请求体。
+ * 添加根空间用户访问条目（成员）的请求体。
  */
-public class MemberAddRequest {
+public class SpaceAccessAddRequest {
 
-    @Schema(description = "项目成员账号 ID", required = true)
+    @Schema(description = "成员账号 ID", required = true)
     public String memberId;
 
     @Schema(description = "角色：admin（管理员）/ member（普通成员），为空默认 member")

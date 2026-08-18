@@ -32,35 +32,35 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
     }
 
     /**
-     * 根空间列表：owners 数组内「同一元素」满足 id + type（$elemMatch，避免数组点号跨元素误匹配）。
+     * 根空间列表：accesses 数组内「同一元素」满足 id + type（$elemMatch，避免数组点号跨元素误匹配）。
      * type = organization → 组织根空间；type = user → 用户作为管理员或成员参与的根空间。
      */
-    public Uni<List<SpaceEntity>> findRootsByOwner(String ownerId, String ownerType) {
+    public Uni<List<SpaceEntity>> findRootsByAccess(String accessId, String accessType) {
         Document filter = new Document("parentId", null)
-                .append("owners", new Document("$elemMatch",
-                        new Document("id", ownerId).append("type", ownerType)));
+                .append("accesses", new Document("$elemMatch",
+                        new Document("id", accessId).append("type", accessType)));
         return mongoCollection().find(filter).collect().asList();
     }
 
-    /** 原子追加成员条目（$push） */
-    public Uni<Long> pushOwner(String rootId, SpaceOwner owner) {
-        Document ownerDoc = new Document("id", owner.id)
-                .append("type", owner.type)
-                .append("role", owner.role)
-                .append("name", owner.name)
-                .append("remark", owner.remark);
+    /** 原子追加访问条目（$push） */
+    public Uni<Long> pushAccess(String rootId, SpaceAccess access) {
+        Document accessDoc = new Document("id", access.id)
+                .append("type", access.type)
+                .append("role", access.role)
+                .append("name", access.name)
+                .append("remark", access.remark);
         return mongoCollection()
-                .updateOne(Filters.eq("_id", new ObjectId(rootId)), Updates.push("owners", ownerDoc))
+                .updateOne(Filters.eq("_id", new ObjectId(rootId)), Updates.push("accesses", accessDoc))
                 .map(UpdateResult::getModifiedCount);
     }
 
-    /** 原子移除用户成员条目（$pull，仅匹配 type = user 的条目） */
-    public Uni<Long> pullOwner(String rootId, String memberId) {
+    /** 原子移除用户访问条目（$pull，仅匹配 type = user 的条目） */
+    public Uni<Long> pullAccess(String rootId, String memberId) {
         return mongoCollection()
                 .updateOne(Filters.eq("_id", new ObjectId(rootId)),
-                        Updates.pull("owners",
+                        Updates.pull("accesses",
                                 Filters.and(
-                                        Filters.eq("type", SpaceOwnerType.USER),
+                                        Filters.eq("type", SpaceAccessType.USER),
                                         Filters.eq("id", memberId))))
                 .map(UpdateResult::getModifiedCount);
     }

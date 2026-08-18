@@ -5,10 +5,10 @@ import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceSpace;
-import cc.openxiot.matrix.db.space.SpaceOwnerRole;
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
+import cc.openxiot.matrix.db.space.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwner;
+import cc.openxiot.matrix.db.space.SpaceAccess;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -41,7 +41,7 @@ class DeviceResourceTest {
 
     private static SpaceEntity spaceWithOrg(String orgId) {
         SpaceEntity s = new SpaceEntity();
-        s.owners = List.of(new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN));
+        s.accesses = List.of(new SpaceAccess(orgId, SpaceAccessType.ORGANIZATION, SpaceAccessRole.ADMIN));
         return s;
     }
 

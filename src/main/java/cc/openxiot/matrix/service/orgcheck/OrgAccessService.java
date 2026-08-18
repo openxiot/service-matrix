@@ -2,20 +2,20 @@ package cc.openxiot.matrix.service.orgcheck;
 
 import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.account.user.organization.member.Member;
-import cc.openxiot.matrix.db.space.SpaceOwnerRole;
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
+import cc.openxiot.matrix.db.space.SpaceAccess;
+import cc.openxiot.matrix.db.space.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceOwner;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
 
 /**
- * 空间访问控制。根空间持有 owners 列表（组织条目为管理员；用户条目角色可为 admin / member）：
+ * 空间访问控制。根空间持有 accesses 列表（组织条目为管理员；用户条目角色可为 admin / member）：
  * <ul>
- *     <li>读：owners 含「该用户」的 user 条目（任意角色）；或 X-Org-Id 命中某组织条目且该用户在组织中。</li>
- *     <li>管：owners 含「该用户 + role=admin」的 user 条目；或 X-Org-Id 命中某组织条目且该用户是组织管理员。</li>
+ *     <li>读：accesses 含「该用户」的 user 条目（任意角色）；或 X-Org-Id 命中某组织条目且该用户在组织中。</li>
+ *     <li>管：accesses 含「该用户 + role=admin」的 user 条目；或 X-Org-Id 命中某组织条目且该用户是组织管理员。</li>
  * </ul>
  * 组织成员关系仍存于 account.user-organizations（真实组织），组织条目本身不定义具体用户。
  */
@@ -56,51 +56,51 @@ public class OrgAccessService {
 
     /** 空间只读访问：直接成员（任意角色）或组织成员（X-Org-Id 命中组织条目）。 */
     public Uni<Void> checkSpaceMember(SpaceEntity space, String orgId, String accountId) {
-        List<SpaceOwner> owners = requireOwners(space);
+        List<SpaceAccess> accesses = requireAccesses(space);
 
-        if (isDirectMember(owners, accountId)) {
+        if (isDirectMember(accesses, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        SpaceOwner orgOwner = orgOwner(owners, orgId);
-        if (orgOwner != null) {
-            return checkMember(orgOwner.id, accountId);
+        SpaceAccess orgAccess = orgAccess(accesses, orgId);
+        if (orgAccess != null) {
+            return checkMember(orgAccess.id, accountId);
         }
 
-        boolean hasOrg = owners.stream().anyMatch(o -> SpaceOwnerType.ORGANIZATION.equals(o.type));
+        boolean hasOrg = accesses.stream().anyMatch(o -> SpaceAccessType.ORGANIZATION.equals(o.type));
         return Uni.createFrom().failure(new IllegalArgumentException(
                 hasOrg ? "OrgId does not match the space" : "No access to this space"));
     }
 
     /** 空间管理访问：直接管理员（user + role=admin）或组织管理员（X-Org-Id 命中组织条目）。 */
     public Uni<Void> checkSpaceAdmin(SpaceEntity space, String orgId, String accountId) {
-        List<SpaceOwner> owners = requireOwners(space);
+        List<SpaceAccess> accesses = requireAccesses(space);
 
-        if (isDirectAdmin(owners, accountId)) {
+        if (isDirectAdmin(accesses, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        SpaceOwner orgOwner = orgOwner(owners, orgId);
-        if (orgOwner != null) {
-            return checkAdmin(orgOwner.id, accountId);
+        SpaceAccess orgAccess = orgAccess(accesses, orgId);
+        if (orgAccess != null) {
+            return checkAdmin(orgAccess.id, accountId);
         }
 
-        boolean hasOrg = owners.stream().anyMatch(o -> SpaceOwnerType.ORGANIZATION.equals(o.type));
+        boolean hasOrg = accesses.stream().anyMatch(o -> SpaceAccessType.ORGANIZATION.equals(o.type));
         return Uni.createFrom().failure(new IllegalArgumentException(
                 hasOrg ? "OrgId does not match the space" : "No access to this space"));
     }
 
     /** 根空间成员列表权限：直接成员（任意角色）或组织成员（组织条目命中，无需 X-Org-Id）。 */
     public Uni<Void> checkRootSpaceMember(SpaceEntity space, String rootId, String accountId) {
-        List<SpaceOwner> owners = requireOwners(space);
+        List<SpaceAccess> accesses = requireAccesses(space);
 
-        if (isDirectMember(owners, accountId)) {
+        if (isDirectMember(accesses, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        SpaceOwner orgOwner = firstOrgOwner(owners);
-        if (orgOwner != null) {
-            return checkMember(orgOwner.id, accountId);
+        SpaceAccess orgAccess = firstOrgAccess(accesses);
+        if (orgAccess != null) {
+            return checkMember(orgAccess.id, accountId);
         }
 
         return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
@@ -108,53 +108,53 @@ public class OrgAccessService {
 
     /** 根空间成员管理权限：直接管理员（user + role=admin）或组织管理员（组织条目命中）。 */
     public Uni<Void> checkRootSpaceAdmin(SpaceEntity space, String accountId) {
-        List<SpaceOwner> owners = requireOwners(space);
+        List<SpaceAccess> accesses = requireAccesses(space);
 
-        if (isDirectAdmin(owners, accountId)) {
+        if (isDirectAdmin(accesses, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        SpaceOwner orgOwner = firstOrgOwner(owners);
-        if (orgOwner != null) {
-            return checkAdmin(orgOwner.id, accountId);
+        SpaceAccess orgAccess = firstOrgAccess(accesses);
+        if (orgAccess != null) {
+            return checkAdmin(orgAccess.id, accountId);
         }
 
         return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
     }
 
-    private List<SpaceOwner> requireOwners(SpaceEntity space) {
-        List<SpaceOwner> owners = space.owners;
-        if (owners == null || owners.isEmpty()) {
-            throw new IllegalArgumentException("Space owners is not set");
+    private List<SpaceAccess> requireAccesses(SpaceEntity space) {
+        List<SpaceAccess> accesses = space.accesses;
+        if (accesses == null || accesses.isEmpty()) {
+            throw new IllegalArgumentException("Space accesses is not set");
         }
-        return owners;
+        return accesses;
     }
 
-    private boolean isDirectMember(List<SpaceOwner> owners, String accountId) {
-        return owners.stream().anyMatch(o ->
-                SpaceOwnerType.USER.equals(o.type) && accountId.equals(o.id));
+    private boolean isDirectMember(List<SpaceAccess> accesses, String accountId) {
+        return accesses.stream().anyMatch(o ->
+                SpaceAccessType.USER.equals(o.type) && accountId.equals(o.id));
     }
 
-    private boolean isDirectAdmin(List<SpaceOwner> owners, String accountId) {
-        return owners.stream().anyMatch(o ->
-                SpaceOwnerType.USER.equals(o.type)
+    private boolean isDirectAdmin(List<SpaceAccess> accesses, String accountId) {
+        return accesses.stream().anyMatch(o ->
+                SpaceAccessType.USER.equals(o.type)
                         && accountId.equals(o.id)
-                        && SpaceOwnerRole.ADMIN.equals(o.role));
+                        && SpaceAccessRole.ADMIN.equals(o.role));
     }
 
-    private SpaceOwner orgOwner(List<SpaceOwner> owners, String orgId) {
+    private SpaceAccess orgAccess(List<SpaceAccess> accesses, String orgId) {
         if (orgId == null || orgId.isBlank()) {
             return null;
         }
-        return owners.stream()
-                .filter(o -> SpaceOwnerType.ORGANIZATION.equals(o.type) && orgId.equals(o.id))
+        return accesses.stream()
+                .filter(o -> SpaceAccessType.ORGANIZATION.equals(o.type) && orgId.equals(o.id))
                 .findFirst()
                 .orElse(null);
     }
 
-    private SpaceOwner firstOrgOwner(List<SpaceOwner> owners) {
-        return owners.stream()
-                .filter(o -> SpaceOwnerType.ORGANIZATION.equals(o.type))
+    private SpaceAccess firstOrgAccess(List<SpaceAccess> accesses) {
+        return accesses.stream()
+                .filter(o -> SpaceAccessType.ORGANIZATION.equals(o.type))
                 .findFirst()
                 .orElse(null);
     }
