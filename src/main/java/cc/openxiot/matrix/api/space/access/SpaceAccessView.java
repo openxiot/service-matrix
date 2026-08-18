@@ -1,10 +1,13 @@
 package cc.openxiot.matrix.api.space.access;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  * 根空间用户访问条目视图（根空间 accesses 中 type = user 的条目）。
+ * native 镜像下需注册反射供 Jackson 序列化。
  */
+@RegisterForReflection
 public class SpaceAccessView {
 
     @Schema(description = "成员账号 ID")
