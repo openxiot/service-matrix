@@ -272,53 +272,24 @@ public class DeviceResource extends AbstractResource {
     }
 
     private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-
-        return spaceService.getById(spaceId)
-                .chain(space -> {
-                    if (space == null || space.organizationId == null) {
-                        throw new IllegalArgumentException("No access to this space");
-                    }
-
-                    if (!orgId.equals(space.organizationId)) {
-                        throw new IllegalArgumentException("OrgId does not match the space");
-                    }
-
-                    return orgAccessService.checkAdmin(orgId, getUserId())
-                            .map(ignored -> space);
-                });
-    }
-
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
+                    return orgAccessService.checkSpaceAdmin(space, orgId, getUserId())
+                            .map(ignored -> space);
+                });
+    }
 
-                    return orgAccessService.checkMember(orgId, getUserId())
-                            .chain(() -> orgAccessService.isVirtual(orgId))
-                            .map(virtual -> {
-                                if (virtual) {
-                                    // 虚拟组织作用域 = 以 orgId 为根的整棵树
-                                    boolean inScope = space.id.toString().equals(orgId)
-                                            || (space.ancestors != null && space.ancestors.contains(orgId));
-                                    if (!inScope) {
-                                        throw new IllegalArgumentException("No access to this space");
-                                    }
-                                } else {
-                                    if (space.organizationId == null || !orgId.equals(space.organizationId)) {
-                                        throw new IllegalArgumentException("OrgId does not match the space");
-                                    }
-                                }
-                                return space;
-                            });
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+        return spaceService.getById(spaceId)
+                .chain(space -> {
+                    if (space == null) {
+                        throw new IllegalArgumentException("No access to this space");
+                    }
+                    return orgAccessService.checkSpaceMember(space, orgId, getUserId())
+                            .map(ignored -> space);
                 });
     }
 }

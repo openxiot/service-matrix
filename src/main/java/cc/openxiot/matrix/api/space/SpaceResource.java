@@ -8,7 +8,9 @@ import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.member.AccountService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
+import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
+import cc.openxiot.matrix.db.space.SpaceOwner;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.annotation.security.RolesAllowed;
@@ -66,11 +68,15 @@ public class SpaceResource extends AbstractResource {
                     .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
+        // 根空间：无 X-Org-Id → 个人创建（owner = 当前用户）；带 X-Org-Id → 组织创建
         if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required for root space"));
+            space.owner = new SpaceOwner(getUserId(), SpaceOwnerType.USER);
+            return service.create(space).map(OxResponse::ok)
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
-        space.organizationId = orgId;
+        space.owner = new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION);
 
         return orgAccessService.checkAdmin(orgId, getUserId())
                 .chain(() -> orgAccessService.isVirtual(orgId))
@@ -138,14 +144,18 @@ public class SpaceResource extends AbstractResource {
             @HeaderParam("X-Org-Id") String orgId
     ) {
         if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().item(OxResponse.error("X-Org-Id header is required"));
+            // 无 X-Org-Id → 按 JWT 用户列出其个人根空间
+            return service.getRootsByOwner(getUserId(), SpaceOwnerType.USER)
+                    .map(OxResponse::ok)
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
 
         return orgAccessService.checkMember(orgId, getUserId())
                 .chain(() -> orgAccessService.isVirtual(orgId))
                 .chain(virtual -> virtual
                         ? service.getRootsById(List.of(orgId))
-                        : service.getRootsByOrganizationId(orgId))
+                        : service.getRootsByOwner(orgId, SpaceOwnerType.ORGANIZATION))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -193,50 +203,23 @@ public class SpaceResource extends AbstractResource {
     // -- helper methods --
 
     private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-
         return service.getById(spaceId)
                 .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-
-                    return orgAccessService.checkMember(orgId, getUserId())
-                            .chain(() -> orgAccessService.isVirtual(orgId))
-                            .map(Unchecked.function(virtual -> {
-                                if (virtual) {
-                                    // 虚拟组织作用域 = 以 orgId 为根的整棵树
-                                    boolean inScope = space.id.toString().equals(orgId)
-                                            || (space.ancestors != null && space.ancestors.contains(orgId));
-                                    if (!inScope) {
-                                        throw new IllegalArgumentException("No access to this space");
-                                    }
-                                } else if (!orgId.equals(space.organizationId)) {
-                                    throw new IllegalArgumentException("OrgId does not match the space");
-                                }
-                                return space;
-                            }));
+                    return orgAccessService.checkSpaceMember(space, orgId, getUserId())
+                            .map(ignored -> space);
                 }));
     }
 
     private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-
         return service.getById(spaceId)
                 .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-
-                    if (!orgId.equals(space.organizationId)) {
-                        throw new IllegalArgumentException("OrgId does not match the space");
-                    }
-
-                    return orgAccessService.checkAdmin(orgId, getUserId())
+                    return orgAccessService.checkSpaceAdmin(space, orgId, getUserId())
                             .map(ignored -> space);
                 }));
     }

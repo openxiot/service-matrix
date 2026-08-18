@@ -24,8 +24,8 @@ public class SpaceService {
         return spaceRepository.findByParentId(parentId);
     }
 
-    public Uni<List<SpaceEntity>> getRootsByOrganizationId(String orgId) {
-        return spaceRepository.findRootByOrganizationId(orgId);
+    public Uni<List<SpaceEntity>> getRootsByOwner(String ownerId, String ownerType) {
+        return spaceRepository.findRootsByOwner(ownerId, ownerType);
     }
 
     public Uni<List<SpaceEntity>> getRootsById(List<String> ids) {
@@ -62,12 +62,13 @@ public class SpaceService {
                         }
                         ancestors.add(space.parentId);
                         space.ancestors = ancestors;
-                        space.organizationId = parent.organizationId;
+                        space.owner = parent.owner;
                         return spaceRepository.persistEntity(space);
                     });
         } else {
-            if (space.organizationId == null || space.organizationId.isBlank()) {
-                return Uni.createFrom().failure(new IllegalArgumentException("organizationId is required for root space"));
+            if (space.owner == null || space.owner.id == null || space.owner.id.isBlank()
+                    || space.owner.type == null || space.owner.type.isBlank()) {
+                return Uni.createFrom().failure(new IllegalArgumentException("owner (id/type) is required for root space"));
             }
             space.level = 0;
             space.ancestors = List.of();
@@ -103,7 +104,7 @@ public class SpaceService {
                                     }
                                     ancestors.add(space.parentId);
                                     existing.ancestors = ancestors;
-                                    existing.organizationId = parent.organizationId;
+                                    existing.owner = parent.owner;
                                     return spaceRepository.persistOrUpdateEntity(existing);
                                 });
                     }

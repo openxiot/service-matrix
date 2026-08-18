@@ -43,8 +43,8 @@ public class SpaceEntity extends ReactivePanacheMongoEntity {
     @Schema(description = "地理位置", required = false)
     public SpaceLocation location;
 
-    @Schema(description = "所属组织ID", required = false)
-    public String organizationId;
+    @Schema(description = "拥有者（组织或个人）", required = false)
+    public SpaceOwner owner;
 
     @Schema(description = "扩展属性", required = false)
     public Map<String, Object> attributes;

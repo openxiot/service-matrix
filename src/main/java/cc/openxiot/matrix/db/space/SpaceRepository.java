@@ -29,11 +29,12 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         return list("ancestors", ancestorId);
     }
 
-    public Uni<List<SpaceEntity>> findRootByOrganizationId(String orgId) {
+    public Uni<List<SpaceEntity>> findRootsByOwner(String ownerId, String ownerType) {
         Map<String, Object> params = new HashMap<>();
-        params.put("orgId", orgId);
+        params.put("ownerId", ownerId);
+        params.put("ownerType", ownerType);
         params.put("parentId", null);
-        return list("organizationId = :orgId and parentId = :parentId", params);
+        return list("owner.id = :ownerId and owner.type = :ownerType and parentId = :parentId", params);
     }
 
     public Uni<List<SpaceEntity>> findRootsByIds(List<String> ids) {

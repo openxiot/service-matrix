@@ -1,6 +1,8 @@
 package cc.openxiot.matrix.api.space;
 
+import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
+import cc.openxiot.matrix.db.space.SpaceOwner;
 import cc.openxiot.matrix.db.space.SpaceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
@@ -95,7 +97,7 @@ class SpaceServiceTest {
     @Test
     void create_rootSpace_setsLevelAndAncestors() {
         SpaceEntity space = new SpaceEntity();
-        space.organizationId = "org-1";
+        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
         when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
 
         SpaceEntity result = service.create(space).await().indefinitely();
@@ -103,7 +105,7 @@ class SpaceServiceTest {
         assertEquals(0, result.level);
         assertTrue(result.ancestors.isEmpty());
         assertNull(result.parentId);
-        assertEquals("org-1", result.organizationId);
+        assertEquals("org-1", result.owner.id);
     }
 
     @Test
@@ -118,7 +120,7 @@ class SpaceServiceTest {
         SpaceEntity parent = new SpaceEntity();
         parent.level = 2;
         parent.ancestors = List.of("root-id", "parent1-id");
-        parent.organizationId = "org-1";
+        parent.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
         when(spaceRepository.findById("parent-id")).thenReturn(Uni.createFrom().item(parent));
 
         SpaceEntity space = new SpaceEntity();
@@ -129,7 +131,7 @@ class SpaceServiceTest {
 
         assertEquals(3, result.level);
         assertEquals(List.of("root-id", "parent1-id", "parent-id"), result.ancestors);
-        assertEquals("org-1", result.organizationId);
+        assertEquals("org-1", result.owner.id);
     }
 
     @Test
@@ -164,11 +166,11 @@ class SpaceServiceTest {
     }
 
     @Test
-    void getRootsByOrganizationId_delegates() {
-        when(spaceRepository.findRootByOrganizationId("org-1"))
+    void getRootsByOwner_delegates() {
+        when(spaceRepository.findRootsByOwner("org-1", SpaceOwnerType.ORGANIZATION))
                 .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));
 
-        List<SpaceEntity> result = service.getRootsByOrganizationId("org-1").await().indefinitely();
+        List<SpaceEntity> result = service.getRootsByOwner("org-1", SpaceOwnerType.ORGANIZATION).await().indefinitely();
 
         assertEquals(1, result.size());
     }
@@ -185,7 +187,7 @@ class SpaceServiceTest {
         SpaceEntity newParent = new SpaceEntity();
         newParent.level = 0;
         newParent.ancestors = List.of();
-        newParent.organizationId = "org-1";
+        newParent.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
 
         when(spaceRepository.findById(any(ObjectId.class)))
                 .thenReturn(Uni.createFrom().item(existing));
@@ -204,6 +206,6 @@ class SpaceServiceTest {
         assertEquals(1, result.level);
         assertEquals(List.of("new-parent-id"), result.ancestors);
         assertEquals("updated", result.name);
-        assertEquals("org-1", result.organizationId);
+        assertEquals("org-1", result.owner.id);
     }
 }

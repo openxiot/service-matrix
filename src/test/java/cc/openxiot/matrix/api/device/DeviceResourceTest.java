@@ -1,10 +1,13 @@
 package cc.openxiot.matrix.api.device;
 
+import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
+import cc.openxiot.matrix.db.space.SpaceOwner;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -37,33 +40,33 @@ class DeviceResourceTest {
 
     private static SpaceEntity spaceWithOrg(String orgId) {
         SpaceEntity s = new SpaceEntity();
-        s.organizationId = orgId;
+        s.owner = new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION);
         return s;
     }
 
     @Test
     void hello() {
         given()
-                .when().get("/v1/device")
+                .when().get("/matrix/v1/device")
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addDevices_missingOrgId_returnsError() {
         given()
                 .contentType(ContentType.JSON)
                 .body("[{\"did\":\"d1\",\"key\":\"k1\"}]")
-                .when().post("/v1/device/many/{spaceId}", "sid")
+                .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addDevices_spaceNotFound_returnsError() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
 
@@ -71,17 +74,17 @@ class DeviceResourceTest {
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
                 .body("[{\"did\":\"d1\",\"key\":\"k1\"}]")
-                .when().post("/v1/device/many/{spaceId}", "sid")
+                .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkAdmin("org-1", "test-user"))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.addDevices(anyString(), anyString()))
                 .thenReturn(Uni.createFrom().item(List.of()));
@@ -92,30 +95,30 @@ class DeviceResourceTest {
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
                 .body("[{\"did\":\"d1\",\"key\":\"k1\",\"type\":\"sensor\"}]")
-                .when().post("/v1/device/many/{spaceId}", "sid")
+                .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addDevices_invalidBody_returnsError() {
         given()
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
                 .body("\"not-json\"")
-                .when().post("/v1/device/many/{spaceId}", "sid")
+                .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getDevices_returnsList() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkMember("org-1", "test-user"))
+        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
@@ -129,7 +132,7 @@ class DeviceResourceTest {
 
         given()
                 .header("X-Org-Id", "org-1")
-                .when().get("/v1/device/many/{spaceId}", "sid")
+                .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(true))
@@ -137,20 +140,20 @@ class DeviceResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getDevices_missingOrgId_returnsError() {
         given()
-                .when().get("/v1/device/many/{spaceId}", "sid")
+                .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void removeDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkAdmin("org-1", "test-user"))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
@@ -160,17 +163,17 @@ class DeviceResourceTest {
         given()
                 .header("X-Org-Id", "org-1")
                 .queryParam("did", "d1", "d2")
-                .when().delete("/v1/device/many/{spaceId}", "sid")
+                .when().delete("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateSpace_succeeds() {
         when(spaceService.getById("new-space")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkAdmin("org-1", "test-user"))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(deviceService.updateSpace(anyString(), anyString(), anyString()))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -179,54 +182,54 @@ class DeviceResourceTest {
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
                 .body("{\"spaceId\":\"new-space\",\"rootSpaceId\":\"root-1\",\"dids\":[\"d1\",\"d2\"]}")
-                .when().put("/v1/device/many/space")
+                .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateSpace_missingOrgId_returnsError() {
         given()
                 .contentType(ContentType.JSON)
                 .body("{\"spaceId\":\"new-space\"}")
-                .when().put("/v1/device/many/space")
+                .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateSpace_invalidBody_returnsError() {
         given()
                 .contentType(ContentType.JSON)
                 .body("\"not-json\"")
-                .when().put("/v1/device/many/space")
+                .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getDevices_noAccess_returnsError() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
 
         given()
                 .header("X-Org-Id", "org-1")
-                .when().get("/v1/device/many/{spaceId}", "sid")
+                .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
     }
 
     @Test
-    @TestSecurity(user = "test-user")
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getShadows_returnsData() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkMember("org-1", "test-user"))
+        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
@@ -238,7 +241,7 @@ class DeviceResourceTest {
 
         given()
                 .header("X-Org-Id", "org-1")
-                .when().get("/v1/device/shadows/{spaceId}", "sid")
+                .when().get("/matrix/v1/device/shadows/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
