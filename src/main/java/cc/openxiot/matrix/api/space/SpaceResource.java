@@ -4,24 +4,20 @@ import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.common.util.JwtUtil;
 import cc.openxiot.matrix.api.device.DeviceService;
-import cc.openxiot.matrix.api.member.AccountClient;
-import cc.openxiot.matrix.api.member.VirtualOrgRequest;
+import cc.openxiot.matrix.api.member.AccountService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
-import io.vertx.core.json.JsonObject;
+import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 import java.util.HashMap;
@@ -47,12 +43,7 @@ public class SpaceResource extends AbstractResource {
     OrgAccessService orgAccessService;
 
     @Inject
-    @RestClient
-    AccountClient accountClient;
-
-    @Inject
-    @ConfigProperty(name = "openxiot.internal.secret")
-    String systemSecret;
+    AccountService accountService;
 
     @GET
     public Uni<Response> hello() {
@@ -83,12 +74,12 @@ public class SpaceResource extends AbstractResource {
 
         return orgAccessService.checkAdmin(orgId, getUserId())
                 .chain(() -> orgAccessService.isVirtual(orgId))
-                .invoke(virtual -> {
+                .invoke(Unchecked.consumer(virtual -> {
                     if (virtual) {
                         // 虚拟组织下不能创建根空间，保证一个虚拟组织 = 一个项目
                         throw new IllegalArgumentException("虚拟组织下不能创建根空间");
                     }
-                })
+                }))
                 .chain(ignored -> service.create(space).map(OxResponse::ok))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -102,8 +93,7 @@ public class SpaceResource extends AbstractResource {
             @PathParam("spaceId") String spaceId
     ) {
         return getSpaceIfAdmin(spaceId, orgId)
-                .chain(existing -> service.delete(spaceId)
-                        .chain(deleted -> cleanupVirtualOrg(existing)))
+                .chain(existing -> service.delete(spaceId).chain(deleted -> cleanupVirtualOrg(existing)))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -122,8 +112,7 @@ public class SpaceResource extends AbstractResource {
         }
 
         return getSpaceIfAdmin(space.id.toString(), orgId)
-                .chain(existing -> service.update(space)
-                        .chain(updated -> syncVirtualOrgName(existing, space.name)))
+                .chain(existing -> service.update(space).chain(updated -> syncVirtualOrgName(existing, space.name)))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -209,14 +198,14 @@ public class SpaceResource extends AbstractResource {
         }
 
         return service.getById(spaceId)
-                .chain(space -> {
+                .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
 
                     return orgAccessService.checkMember(orgId, getUserId())
                             .chain(() -> orgAccessService.isVirtual(orgId))
-                            .map(virtual -> {
+                            .map(Unchecked.function(virtual -> {
                                 if (virtual) {
                                     // 虚拟组织作用域 = 以 orgId 为根的整棵树
                                     boolean inScope = space.id.toString().equals(orgId)
@@ -228,8 +217,8 @@ public class SpaceResource extends AbstractResource {
                                     throw new IllegalArgumentException("OrgId does not match the space");
                                 }
                                 return space;
-                            });
-                });
+                            }));
+                }));
     }
 
     private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
@@ -238,7 +227,7 @@ public class SpaceResource extends AbstractResource {
         }
 
         return service.getById(spaceId)
-                .chain(space -> {
+                .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
@@ -249,7 +238,7 @@ public class SpaceResource extends AbstractResource {
 
                     return orgAccessService.checkAdmin(orgId, getUserId())
                             .map(ignored -> space);
-                });
+                }));
     }
 
     /** 根空间改名时同步虚拟组织（成员项目）名；虚拟组织不存在则跳过，避免普通项目改名误创建 */
@@ -263,19 +252,8 @@ public class SpaceResource extends AbstractResource {
                     if (org == null || !org.isVirtual()) {
                         return Uni.createFrom().item(space);
                     }
-                    String systemToken = JwtUtil.createOwnerIdToken(space.id.toString(), systemSecret);
-                    VirtualOrgRequest body = new VirtualOrgRequest();
-                    body.name = newName;
-                    body.memberId = null;
-                    body.creatorId = null;
-                    return accountClient.upsertVirtual(systemToken, body)
-                            .map(resp -> {
-                                String message = extractMessage(resp);
-                                if (message != null) {
-                                    logger.warnv("syncVirtualOrgName failed: {0}", message);
-                                }
-                                return space;
-                            });
+                    return bestEffort(accountService.upsertVirtual(space.id.toString(), newName, null, null),
+                            space, "syncVirtualOrgName");
                 });
     }
 
@@ -290,28 +268,18 @@ public class SpaceResource extends AbstractResource {
                     if (org == null || !org.isVirtual()) {
                         return Uni.createFrom().item(space);
                     }
-                    String systemToken = JwtUtil.createOwnerIdToken(space.id.toString(), systemSecret);
-                    return accountClient.deleteVirtual(systemToken, space.id.toString(), null)
-                            .map(resp -> {
-                                String message = extractMessage(resp);
-                                if (message != null) {
-                                    logger.warnv("cleanupVirtualOrg failed: {0}", message);
-                                }
-                                return space;
-                            });
+                    return bestEffort(accountService.deleteVirtual(space.id.toString(), null),
+                            space, "cleanupVirtualOrg");
                 });
     }
 
-    /** 解析 account 返回的 {"success":true} 或 {"success":false,"message":...}，返回错误消息或 null */
-    private String extractMessage(String resp) {
-        try {
-            JsonObject json = new JsonObject(resp);
-            if (Boolean.TRUE.equals(json.getBoolean("success"))) {
-                return null;
-            }
-            return json.getString("message", "Unknown error");
-        } catch (Exception e) {
-            return "Invalid response from account service";
-        }
+    /** 虚拟组织同步尽力而为：业务失败（IllegalArgumentException）记 warning 继续，网络失败照常上抛 */
+    private Uni<SpaceEntity> bestEffort(Uni<Void> call, SpaceEntity space, String op) {
+        return call
+                .onFailure(IllegalArgumentException.class)
+                .invoke(e -> logger.warnv("{0} failed: {1}", op, e.getMessage()))
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithUni(Uni.createFrom().voidItem())
+                .replaceWith(space);
     }
 }

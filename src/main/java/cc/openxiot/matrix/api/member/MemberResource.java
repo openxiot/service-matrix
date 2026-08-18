@@ -4,21 +4,18 @@ import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.common.util.JwtUtil;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
-import io.vertx.core.json.JsonObject;
+import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 import java.util.List;
@@ -43,12 +40,7 @@ public class MemberResource extends AbstractResource {
     OrgAccessService orgAccessService;
 
     @Inject
-    @RestClient
-    AccountClient accountClient;
-
-    @Inject
-    @ConfigProperty(name = "openxiot.internal.secret")
-    String systemSecret;
+    AccountService accountService;
 
     /** 添加项目成员（真实组织管理员） */
     @POST
@@ -63,24 +55,10 @@ public class MemberResource extends AbstractResource {
         }
 
         return requireRootSpaceAdmin(rootId, getUserId())
-                .chain(space -> {
-                    String systemToken = JwtUtil.createOwnerIdToken(rootId, systemSecret);
-                    VirtualOrgRequest body = new VirtualOrgRequest();
-                    body.name = space.name;
-                    body.memberId = req.memberId;
-                    body.creatorId = getUserId();
-
-                    return accountClient.upsertVirtual(systemToken, body)
-                            .map(resp -> {
-                                String message = extractMessage(resp);
-                                if (message != null) {
-                                    throw new IllegalArgumentException(message);
-                                }
-                                logger.infov("addMember, root: {0}, member: {1}, creator: {2}",
-                                        rootId, req.memberId, getUserId());
-                                return OxResponse.ok();
-                            });
-                })
+                .chain(space -> accountService.upsertVirtual(rootId, space.name, req.memberId, getUserId())
+                        .invoke(ignored -> logger.infov("addMember, root: {0}, member: {1}, creator: {2}",
+                                rootId, req.memberId, getUserId()))
+                        .replaceWith(OxResponse.ok()))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -97,18 +75,9 @@ public class MemberResource extends AbstractResource {
         }
 
         return requireRootSpaceAdmin(rootId, getUserId())
-                .chain(space -> {
-                    String systemToken = JwtUtil.createOwnerIdToken(rootId, systemSecret);
-                    return accountClient.deleteVirtual(systemToken, rootId, memberId)
-                            .map(resp -> {
-                                String message = extractMessage(resp);
-                                if (message != null) {
-                                    throw new IllegalArgumentException(message);
-                                }
-                                logger.infov("removeMember, root: {0}, member: {1}", rootId, memberId);
-                                return OxResponse.ok();
-                            });
-                })
+                .chain(space -> accountService.deleteVirtual(rootId, memberId)
+                        .invoke(ignored -> logger.infov("removeMember, root: {0}, member: {1}", rootId, memberId))
+                        .replaceWith(OxResponse.ok()))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -133,36 +102,23 @@ public class MemberResource extends AbstractResource {
 
     private Uni<SpaceEntity> requireRootSpaceAdmin(String rootId, String accountId) {
         return service.getById(rootId)
-                .chain(space -> {
+                .chain(Unchecked.function(space -> {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
                     return orgAccessService.checkAdmin(space.organizationId, accountId)
                             .map(ignored -> space);
-                });
+                }));
     }
 
     private Uni<SpaceEntity> requireRootSpaceMember(String rootId, String accountId) {
         return service.getById(rootId)
-                .chain(space -> {
+                .chain(Unchecked.function(space -> {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
                     return orgAccessService.checkMember(space.organizationId, accountId)
                             .map(ignored -> space);
-                });
-    }
-
-    /** 解析 account 返回的 {"success":true} 或 {"success":false,"message":...}，返回错误消息或 null */
-    private String extractMessage(String resp) {
-        try {
-            JsonObject json = new JsonObject(resp);
-            if (Boolean.TRUE.equals(json.getBoolean("success"))) {
-                return null;
-            }
-            return json.getString("message", "Unknown error");
-        } catch (Exception e) {
-            return "Invalid response from account service";
-        }
+                }));
     }
 }

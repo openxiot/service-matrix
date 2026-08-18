@@ -67,8 +67,7 @@ public class SpaceService {
                     });
         } else {
             if (space.organizationId == null || space.organizationId.isBlank()) {
-                return Uni.createFrom().failure(
-                        new IllegalArgumentException("organizationId is required for root space"));
+                return Uni.createFrom().failure(new IllegalArgumentException("organizationId is required for root space"));
             }
             space.level = 0;
             space.ancestors = List.of();
@@ -81,8 +80,7 @@ public class SpaceService {
         return spaceRepository.findById(space.id)
                 .chain(existing -> {
                     if (existing == null) {
-                        return Uni.createFrom().failure(
-                                new IllegalArgumentException("Space not found"));
+                        return Uni.createFrom().failure(new IllegalArgumentException("Space not found"));
                     }
 
                     existing.name = space.name;
@@ -95,8 +93,7 @@ public class SpaceService {
                         return spaceRepository.findById(space.parentId)
                                 .chain(parent -> {
                                     if (parent == null) {
-                                        return Uni.createFrom().failure(
-                                                new IllegalArgumentException("Parent space not found"));
+                                        return Uni.createFrom().failure(new IllegalArgumentException("Parent space not found"));
                                     }
                                     existing.parentId = space.parentId;
                                     existing.level = parent.level + 1;
@@ -119,8 +116,7 @@ public class SpaceService {
         return spaceRepository.findByParentId(spaceId)
                 .chain(children -> {
                     if (!children.isEmpty()) {
-                        return Uni.createFrom().failure(
-                                new IllegalArgumentException("Cannot delete space with children"));
+                        return Uni.createFrom().failure(new IllegalArgumentException("Cannot delete space with children"));
                     }
                     return spaceRepository.deleteById(spaceId);
                 });
