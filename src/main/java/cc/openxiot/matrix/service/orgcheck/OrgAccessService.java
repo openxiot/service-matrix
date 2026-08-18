@@ -49,4 +49,20 @@ public class OrgAccessService {
         return UserOrganization.<UserOrganization>findById(orgId)
                 .map(org -> org != null && org.isVirtual());
     }
+
+    /**
+     * 项目成员列表权限：真实组织成员 或 项目（虚拟组织）成员 均可查看。
+     * <p>
+     * 先查真实组织（项目所属组织）成员关系，失败再回退查虚拟组织（code = 根空间 id）。
+     * 项目成员可能不是真实组织成员，但同样需要能查看项目成员列表。
+     *
+     * @param realOrgId      项目所属真实组织 id
+     * @param virtualOrgCode 项目虚拟组织 code（= 根空间 id）
+     * @param accountId      当前账号 id
+     */
+    public Uni<Void> checkProjectMember(String realOrgId, String virtualOrgCode, String accountId) {
+        return checkMember(realOrgId, accountId)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithUni(() -> checkMember(virtualOrgCode, accountId));
+    }
 }

@@ -117,7 +117,8 @@ public class MemberResource extends AbstractResource {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
-                    return orgAccessService.checkMember(space.organizationId, accountId)
+                    // 项目成员列表对两类人可见：真实组织成员，或项目（虚拟组织）成员
+                    return orgAccessService.checkProjectMember(space.organizationId, rootId, accountId)
                             .map(ignored -> space);
                 }));
     }
