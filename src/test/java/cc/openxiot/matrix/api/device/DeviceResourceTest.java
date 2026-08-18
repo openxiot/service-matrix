@@ -5,6 +5,7 @@ import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOwnerRole;
 import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOwner;
@@ -40,7 +41,7 @@ class DeviceResourceTest {
 
     private static SpaceEntity spaceWithOrg(String orgId) {
         SpaceEntity s = new SpaceEntity();
-        s.owner = new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION);
+        s.owners = List.of(new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN));
         return s;
     }
 

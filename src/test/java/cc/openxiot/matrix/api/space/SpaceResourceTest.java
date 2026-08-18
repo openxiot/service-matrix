@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.space;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
+import cc.openxiot.matrix.db.space.SpaceOwnerRole;
 import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOwner;
@@ -33,6 +34,12 @@ class SpaceResourceTest {
     @InjectMock
     OrgAccessService orgAccessService;
 
+    private static SpaceEntity orgSpace(String orgId) {
+        SpaceEntity space = new SpaceEntity();
+        space.owners = List.of(new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN));
+        return space;
+    }
+
     @Test
     void hello() {
         given()
@@ -45,9 +52,8 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getOne_returnsSpace() {
-        SpaceEntity space = new SpaceEntity();
+        SpaceEntity space = orgSpace("org-1");
         space.name = "test-space";
-        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
         when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
@@ -78,8 +84,7 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getOne_wrongOrgId_returnsError() {
-        SpaceEntity space = new SpaceEntity();
-        space.owner = new SpaceOwner("org-2", SpaceOwnerType.ORGANIZATION);
+        SpaceEntity space = orgSpace("org-2");
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
         when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("OrgId does not match the space")));
@@ -95,14 +100,11 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getAll_returnsRoots() {
-        SpaceEntity root = new SpaceEntity();
+        SpaceEntity root = orgSpace("org-1");
         root.name = "root";
-        root.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
 
         when(orgAccessService.checkMember("org-1", "test-user"))
                 .thenReturn(Uni.createFrom().voidItem());
-        when(orgAccessService.isVirtual("org-1"))
-                .thenReturn(Uni.createFrom().item(false));
         when(spaceService.getRootsByOwner("org-1", SpaceOwnerType.ORGANIZATION))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
@@ -117,10 +119,10 @@ class SpaceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void getAll_noOrgId_returnsPersonalRoots() {
+    void getAll_noOrgId_returnsAccessibleRoots() {
         SpaceEntity root = new SpaceEntity();
         root.name = "root";
-        root.owner = new SpaceOwner("test-user", SpaceOwnerType.USER);
+        root.owners = List.of(new SpaceOwner("test-user", SpaceOwnerType.USER, SpaceOwnerRole.ADMIN));
 
         when(spaceService.getRootsByOwner("test-user", SpaceOwnerType.USER))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
@@ -157,9 +159,7 @@ class SpaceResourceTest {
 
         when(orgAccessService.checkAdmin("org-1", "test-user"))
                 .thenReturn(Uni.createFrom().voidItem());
-        when(orgAccessService.isVirtual("org-1"))
-                .thenReturn(Uni.createFrom().item(false));
-        when(spaceService.create(any()))
+        when(spaceService.createWithOwner(any(), any()))
                 .thenReturn(Uni.createFrom().item(created));
 
         given()
@@ -179,9 +179,9 @@ class SpaceResourceTest {
         SpaceEntity created = new SpaceEntity();
         created.name = "new-space";
         created.level = 0;
-        created.owner = new SpaceOwner("test-user", SpaceOwnerType.USER);
+        created.owners = List.of(new SpaceOwner("test-user", SpaceOwnerType.USER, SpaceOwnerRole.ADMIN));
 
-        when(spaceService.create(any()))
+        when(spaceService.createWithOwner(any(), any()))
                 .thenReturn(Uni.createFrom().item(created));
 
         given()
@@ -191,7 +191,8 @@ class SpaceResourceTest {
                 .then()
                 .statusCode(200)
                 .body("success", is(true))
-                .body("data.name", is("new-space"));
+                .body("data.name", is("new-space"))
+                .body("data.owners.size()", is(1));
     }
 
     @Test
@@ -214,8 +215,7 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addOne_childSpace_withoutOrgId_returnsError() {
-        SpaceEntity parent = new SpaceEntity();
-        parent.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        SpaceEntity parent = orgSpace("org-1");
 
         when(spaceService.getById("parent-id")).thenReturn(Uni.createFrom().item(parent));
         when(orgAccessService.checkSpaceAdmin(any(), isNull(), eq("test-user")))
@@ -248,8 +248,7 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void deleteOne_removesSpace() {
-        SpaceEntity space = new SpaceEntity();
-        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        SpaceEntity space = orgSpace("org-1");
         space.id = new ObjectId("507f1f77bcf86cd799439011");
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
@@ -269,8 +268,7 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void deleteOne_withChildren_returnsError() {
-        SpaceEntity space = new SpaceEntity();
-        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        SpaceEntity space = orgSpace("org-1");
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
         when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
@@ -290,8 +288,7 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateOne_updatesSpace() {
-        SpaceEntity space = new SpaceEntity();
-        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        SpaceEntity space = orgSpace("org-1");
         space.id = new ObjectId("507f1f77bcf86cd799439011");
 
         when(spaceService.getById("507f1f77bcf86cd799439011")).thenReturn(Uni.createFrom().item(space));
@@ -313,9 +310,8 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getTree_returnsDescendants() {
-        SpaceEntity root = new SpaceEntity();
+        SpaceEntity root = orgSpace("org-1");
         root.name = "root";
-        root.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
         when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
@@ -335,10 +331,9 @@ class SpaceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getGraph_succeeds() {
-        SpaceEntity root = new SpaceEntity();
+        SpaceEntity root = orgSpace("org-1");
         root.id = new ObjectId();
         root.name = "root";
-        root.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
         when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))

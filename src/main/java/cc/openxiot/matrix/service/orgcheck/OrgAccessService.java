@@ -2,6 +2,7 @@ package cc.openxiot.matrix.service.orgcheck;
 
 import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.account.user.organization.member.Member;
+import cc.openxiot.matrix.db.space.SpaceOwnerRole;
 import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOwner;
@@ -10,6 +11,14 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
 
+/**
+ * 空间访问控制。根空间持有 owners 列表（组织条目为管理员；用户条目角色可为 admin / member）：
+ * <ul>
+ *     <li>读：owners 含「该用户」的 user 条目（任意角色）；或 X-Org-Id 命中某组织条目且该用户在组织中。</li>
+ *     <li>管：owners 含「该用户 + role=admin」的 user 条目；或 X-Org-Id 命中某组织条目且该用户是组织管理员。</li>
+ * </ul>
+ * 组织成员关系仍存于 account.user-organizations（真实组织），组织条目本身不定义具体用户。
+ */
 @ApplicationScoped
 public class OrgAccessService {
 
@@ -45,127 +54,108 @@ public class OrgAccessService {
                 });
     }
 
-    /**
-     * 该组织是否为虚拟组织（项目成员关系）。
-     */
-    public Uni<Boolean> isVirtual(String orgId) {
-        return UserOrganization.<UserOrganization>findById(orgId)
-                .map(org -> org != null && org.isVirtual());
-    }
-
-    /**
-     * 项目成员列表权限：真实组织成员 或 项目（虚拟组织）成员 均可查看。
-     * <p>
-     * 先查真实组织（项目所属组织）成员关系，失败再回退查虚拟组织（code = 根空间 id）。
-     * 项目成员可能不是真实组织成员，但同样需要能查看项目成员列表。
-     *
-     * @param realOrgId      项目所属真实组织 id
-     * @param virtualOrgCode 项目虚拟组织 code（= 根空间 id）
-     * @param accountId      当前账号 id
-     */
-    public Uni<Void> checkProjectMember(String realOrgId, String virtualOrgCode, String accountId) {
-        return checkMember(realOrgId, accountId)
-                .onFailure(IllegalArgumentException.class)
-                .recoverWithUni(() -> checkMember(virtualOrgCode, accountId));
-    }
-
-    /**
-     * 空间只读访问：组织空间要求 X-Org-Id 且为该组织成员（含虚拟组织作用域），
-     * 个人空间只允许拥有者本人（忽略 X-Org-Id，直接校验 JWT 用户）。
-     */
+    /** 空间只读访问：直接成员（任意角色）或组织成员（X-Org-Id 命中组织条目）。 */
     public Uni<Void> checkSpaceMember(SpaceEntity space, String orgId, String accountId) {
-        SpaceOwner owner = requireOwner(space);
+        List<SpaceOwner> owners = requireOwners(space);
 
-        if (SpaceOwnerType.USER.equals(owner.type)) {
-            if (!accountId.equals(owner.id)) {
-                return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
-            }
+        if (isDirectMember(owners, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
+        SpaceOwner orgOwner = orgOwner(owners, orgId);
+        if (orgOwner != null) {
+            return checkMember(orgOwner.id, accountId);
         }
 
-        return checkMember(orgId, accountId)
-                .chain(() -> isVirtual(orgId))
-                .map(virtual -> {
-                    if (Boolean.TRUE.equals(virtual)) {
-                        // 虚拟组织作用域 = 以 orgId 为根的整棵树
-                        boolean inScope = space.id.toString().equals(orgId)
-                                || (space.ancestors != null && space.ancestors.contains(orgId));
-                        if (!inScope) {
-                            throw new IllegalArgumentException("No access to this space");
-                        }
-                    } else if (!orgId.equals(owner.id)) {
-                        throw new IllegalArgumentException("OrgId does not match the space");
-                    }
-                    return null;
-                });
+        boolean hasOrg = owners.stream().anyMatch(o -> SpaceOwnerType.ORGANIZATION.equals(o.type));
+        return Uni.createFrom().failure(new IllegalArgumentException(
+                hasOrg ? "OrgId does not match the space" : "No access to this space"));
     }
 
-    /**
-     * 空间管理访问：组织空间要求 X-Org-Id 且为该组织管理员，
-     * 个人空间只允许拥有者本人（拥有者即管理员）。
-     */
+    /** 空间管理访问：直接管理员（user + role=admin）或组织管理员（X-Org-Id 命中组织条目）。 */
     public Uni<Void> checkSpaceAdmin(SpaceEntity space, String orgId, String accountId) {
-        SpaceOwner owner = requireOwner(space);
+        List<SpaceOwner> owners = requireOwners(space);
 
-        if (SpaceOwnerType.USER.equals(owner.type)) {
-            if (!accountId.equals(owner.id)) {
-                return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
-            }
+        if (isDirectAdmin(owners, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
+        SpaceOwner orgOwner = orgOwner(owners, orgId);
+        if (orgOwner != null) {
+            return checkAdmin(orgOwner.id, accountId);
         }
 
-        if (!orgId.equals(owner.id)) {
-            return Uni.createFrom().failure(new IllegalArgumentException("OrgId does not match the space"));
-        }
-
-        return checkAdmin(orgId, accountId);
+        boolean hasOrg = owners.stream().anyMatch(o -> SpaceOwnerType.ORGANIZATION.equals(o.type));
+        return Uni.createFrom().failure(new IllegalArgumentException(
+                hasOrg ? "OrgId does not match the space" : "No access to this space"));
     }
 
-    /**
-     * 项目成员列表权限：真实组织成员 或 项目（虚拟组织）成员 可查看；
-     * 个人空间只允许拥有者本人。
-     */
+    /** 根空间成员列表权限：直接成员（任意角色）或组织成员（组织条目命中，无需 X-Org-Id）。 */
     public Uni<Void> checkRootSpaceMember(SpaceEntity space, String rootId, String accountId) {
-        SpaceOwner owner = requireOwner(space);
+        List<SpaceOwner> owners = requireOwners(space);
 
-        if (SpaceOwnerType.USER.equals(owner.type)) {
-            if (!accountId.equals(owner.id)) {
-                return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
-            }
+        if (isDirectMember(owners, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        return checkProjectMember(owner.id, rootId, accountId);
+        SpaceOwner orgOwner = firstOrgOwner(owners);
+        if (orgOwner != null) {
+            return checkMember(orgOwner.id, accountId);
+        }
+
+        return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
     }
 
-    /** 项目成员管理权限：真实组织管理员；个人空间只允许拥有者本人。 */
+    /** 根空间成员管理权限：直接管理员（user + role=admin）或组织管理员（组织条目命中）。 */
     public Uni<Void> checkRootSpaceAdmin(SpaceEntity space, String accountId) {
-        SpaceOwner owner = requireOwner(space);
+        List<SpaceOwner> owners = requireOwners(space);
 
-        if (SpaceOwnerType.USER.equals(owner.type)) {
-            if (!accountId.equals(owner.id)) {
-                return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
-            }
+        if (isDirectAdmin(owners, accountId)) {
             return Uni.createFrom().voidItem();
         }
 
-        return checkAdmin(owner.id, accountId);
+        SpaceOwner orgOwner = firstOrgOwner(owners);
+        if (orgOwner != null) {
+            return checkAdmin(orgOwner.id, accountId);
+        }
+
+        return Uni.createFrom().failure(new IllegalArgumentException("No access to this space"));
     }
 
-    private SpaceOwner requireOwner(SpaceEntity space) {
-        SpaceOwner owner = space.owner;
-        if (owner == null || owner.id == null || owner.id.isBlank()
-                || owner.type == null || owner.type.isBlank()) {
-            throw new IllegalArgumentException("Space owner is not set");
+    private List<SpaceOwner> requireOwners(SpaceEntity space) {
+        List<SpaceOwner> owners = space.owners;
+        if (owners == null || owners.isEmpty()) {
+            throw new IllegalArgumentException("Space owners is not set");
         }
-        return owner;
+        return owners;
+    }
+
+    private boolean isDirectMember(List<SpaceOwner> owners, String accountId) {
+        return owners.stream().anyMatch(o ->
+                SpaceOwnerType.USER.equals(o.type) && accountId.equals(o.id));
+    }
+
+    private boolean isDirectAdmin(List<SpaceOwner> owners, String accountId) {
+        return owners.stream().anyMatch(o ->
+                SpaceOwnerType.USER.equals(o.type)
+                        && accountId.equals(o.id)
+                        && SpaceOwnerRole.ADMIN.equals(o.role));
+    }
+
+    private SpaceOwner orgOwner(List<SpaceOwner> owners, String orgId) {
+        if (orgId == null || orgId.isBlank()) {
+            return null;
+        }
+        return owners.stream()
+                .filter(o -> SpaceOwnerType.ORGANIZATION.equals(o.type) && orgId.equals(o.id))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private SpaceOwner firstOrgOwner(List<SpaceOwner> owners) {
+        return owners.stream()
+                .filter(o -> SpaceOwnerType.ORGANIZATION.equals(o.type))
+                .findFirst()
+                .orElse(null);
     }
 }

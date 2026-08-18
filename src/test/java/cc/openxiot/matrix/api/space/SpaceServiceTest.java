@@ -1,13 +1,16 @@
 package cc.openxiot.matrix.api.space;
 
-import cc.openxiot.matrix.db.space.SpaceOwnerType;
+import cc.openxiot.matrix.api.member.AccountUserLookup;
+import cc.openxiot.matrix.db.space.SpaceOwnerRole;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOwner;
+import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,8 +30,19 @@ class SpaceServiceTest {
     @Mock
     SpaceRepository spaceRepository;
 
+    @Mock
+    AccountUserLookup accountUserLookup;
+
     @InjectMocks
     SpaceService service;
+
+    private static SpaceOwner orgOwner(String orgId) {
+        return new SpaceOwner(orgId, SpaceOwnerType.ORGANIZATION, SpaceOwnerRole.ADMIN);
+    }
+
+    private static SpaceOwner userOwner(String userId, String role) {
+        return new SpaceOwner(userId, SpaceOwnerType.USER, role);
+    }
 
     @Test
     void noAccess_unknownSpace_returnsTrue() {
@@ -97,7 +111,7 @@ class SpaceServiceTest {
     @Test
     void create_rootSpace_setsLevelAndAncestors() {
         SpaceEntity space = new SpaceEntity();
-        space.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        space.owners = List.of(orgOwner("org-1"));
         when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
 
         SpaceEntity result = service.create(space).await().indefinitely();
@@ -105,11 +119,11 @@ class SpaceServiceTest {
         assertEquals(0, result.level);
         assertTrue(result.ancestors.isEmpty());
         assertNull(result.parentId);
-        assertEquals("org-1", result.owner.id);
+        assertEquals("org-1", result.owners.get(0).id);
     }
 
     @Test
-    void create_rootSpaceMissingOrgId_throws() {
+    void create_rootSpaceMissingOwners_throws() {
         SpaceEntity space = new SpaceEntity();
         assertThrows(IllegalArgumentException.class,
                 () -> service.create(space).await().indefinitely());
@@ -120,7 +134,7 @@ class SpaceServiceTest {
         SpaceEntity parent = new SpaceEntity();
         parent.level = 2;
         parent.ancestors = List.of("root-id", "parent1-id");
-        parent.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        parent.owners = List.of(orgOwner("org-1"));
         when(spaceRepository.findById("parent-id")).thenReturn(Uni.createFrom().item(parent));
 
         SpaceEntity space = new SpaceEntity();
@@ -131,7 +145,7 @@ class SpaceServiceTest {
 
         assertEquals(3, result.level);
         assertEquals(List.of("root-id", "parent1-id", "parent-id"), result.ancestors);
-        assertEquals("org-1", result.owner.id);
+        assertEquals("org-1", result.owners.get(0).id);
     }
 
     @Test
@@ -143,6 +157,115 @@ class SpaceServiceTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.create(space).await().indefinitely());
+    }
+
+    @Test
+    void createWithOwner_user_resolvesNameAndCreates() {
+        when(accountUserLookup.userName("u1")).thenReturn(Uni.createFrom().item("user-one"));
+        SpaceEntity space = new SpaceEntity();
+        when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
+
+        SpaceEntity result = service.createWithOwner(space, userOwner("u1", SpaceOwnerRole.ADMIN)).await().indefinitely();
+
+        assertEquals(0, result.level);
+        assertEquals(1, result.owners.size());
+        SpaceOwner owner = result.owners.get(0);
+        assertEquals("u1", owner.id);
+        assertEquals(SpaceOwnerType.USER, owner.type);
+        assertEquals(SpaceOwnerRole.ADMIN, owner.role);
+        assertEquals("user-one", owner.name);
+    }
+
+    @Test
+    void createWithOwner_org_resolvesNameAndCreates() {
+        when(accountUserLookup.orgName("org-1")).thenReturn(Uni.createFrom().item("Acme"));
+        SpaceEntity space = new SpaceEntity();
+        when(spaceRepository.persistEntity(any())).thenReturn(Uni.createFrom().item(space));
+
+        SpaceEntity result = service.createWithOwner(space, orgOwner("org-1")).await().indefinitely();
+
+        assertEquals("Acme", result.owners.get(0).name);
+        assertEquals(SpaceOwnerType.ORGANIZATION, result.owners.get(0).type);
+        assertEquals(SpaceOwnerRole.ADMIN, result.owners.get(0).role);
+    }
+
+    @Test
+    void addMember_appendsOwnerWithDefaultRole() {
+        when(accountUserLookup.userName("m1")).thenReturn(Uni.createFrom().item("member-one"));
+        SpaceEntity root = new SpaceEntity();
+        root.owners = List.of(orgOwner("org-1"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.pushOwner(anyString(), any())).thenReturn(Uni.createFrom().item(1L));
+
+        service.addMember("root", "m1", null, null).await().indefinitely();
+
+        ArgumentCaptor<SpaceOwner> captor = ArgumentCaptor.forClass(SpaceOwner.class);
+        verify(spaceRepository).pushOwner(eq("root"), captor.capture());
+        SpaceOwner pushed = captor.getValue();
+        assertEquals("m1", pushed.id);
+        assertEquals(SpaceOwnerType.USER, pushed.type);
+        assertEquals(SpaceOwnerRole.MEMBER, pushed.role);
+        assertEquals("member-one", pushed.name);
+    }
+
+    @Test
+    void addMember_withAdminRoleAndRemark_preservesThem() {
+        when(accountUserLookup.userName("m1")).thenReturn(Uni.createFrom().item("member-one"));
+        SpaceEntity root = new SpaceEntity();
+        root.owners = List.of(orgOwner("org-1"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.pushOwner(anyString(), any())).thenReturn(Uni.createFrom().item(1L));
+
+        service.addMember("root", "m1", SpaceOwnerRole.ADMIN, "对接人").await().indefinitely();
+
+        ArgumentCaptor<SpaceOwner> captor = ArgumentCaptor.forClass(SpaceOwner.class);
+        verify(spaceRepository).pushOwner(eq("root"), captor.capture());
+        assertEquals(SpaceOwnerRole.ADMIN, captor.getValue().role);
+        assertEquals("对接人", captor.getValue().remark);
+    }
+
+    @Test
+    void addMember_existingMember_throws() {
+        when(accountUserLookup.userName("m1")).thenReturn(Uni.createFrom().item("member-one"));
+        SpaceEntity root = new SpaceEntity();
+        root.owners = List.of(userOwner("m1", SpaceOwnerRole.MEMBER));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.addMember("root", "m1", null, null).await().indefinitely());
+        verify(spaceRepository, never()).pushOwner(anyString(), any());
+    }
+
+    @Test
+    void addMember_unknownRoot_throws() {
+        when(accountUserLookup.userName("m1")).thenReturn(Uni.createFrom().item("member-one"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().nullItem());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.addMember("root", "m1", null, null).await().indefinitely());
+    }
+
+    @Test
+    void removeMember_pullsOwner() {
+        SpaceEntity root = new SpaceEntity();
+        root.owners = List.of(userOwner("m1", SpaceOwnerRole.MEMBER));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.pullOwner("root", "m1")).thenReturn(Uni.createFrom().item(1L));
+
+        service.removeMember("root", "m1").await().indefinitely();
+
+        verify(spaceRepository).pullOwner("root", "m1");
+    }
+
+    @Test
+    void removeMember_missingMember_throws() {
+        SpaceEntity root = new SpaceEntity();
+        root.owners = List.of(orgOwner("org-1"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.removeMember("root", "m1").await().indefinitely());
+        verify(spaceRepository, never()).pullOwner(anyString(), anyString());
     }
 
     @Test
@@ -187,7 +310,7 @@ class SpaceServiceTest {
         SpaceEntity newParent = new SpaceEntity();
         newParent.level = 0;
         newParent.ancestors = List.of();
-        newParent.owner = new SpaceOwner("org-1", SpaceOwnerType.ORGANIZATION);
+        newParent.owners = List.of(orgOwner("org-1"));
 
         when(spaceRepository.findById(any(ObjectId.class)))
                 .thenReturn(Uni.createFrom().item(existing));
@@ -206,6 +329,6 @@ class SpaceServiceTest {
         assertEquals(1, result.level);
         assertEquals(List.of("new-parent-id"), result.ancestors);
         assertEquals("updated", result.name);
-        assertEquals("org-1", result.owner.id);
+        assertEquals("org-1", result.owners.get(0).id);
     }
 }

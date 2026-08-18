@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.member;
 
-import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.space.SpaceService;
+import cc.openxiot.matrix.db.space.SpaceOwnerType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * 项目成员管理：给项目（根空间）添加/移除成员。
- * 成员关系以"虚拟组织"存储于 account（user-organizations，code = rootSpaceId）。
+ * 成员关系直接存于矩阵空间的 owners 列表（type = user 条目）。
  */
 @Path("/matrix/v1/space/{rootId}/member")
 @Produces(MediaType.APPLICATION_JSON)
@@ -39,10 +39,7 @@ public class MemberResource extends AbstractResource {
     @Inject
     OrgAccessService orgAccessService;
 
-    @Inject
-    AccountService accountService;
-
-    /** 添加项目成员（真实组织管理员） */
+    /** 添加项目成员（空间管理员：用户管理员或组织管理员） */
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
@@ -55,15 +52,15 @@ public class MemberResource extends AbstractResource {
         }
 
         return requireRootSpaceAdmin(rootId, getUserId())
-                .chain(space -> accountService.upsertVirtual(rootId, space.name, req.memberId, getUserId())
-                        .invoke(ignored -> logger.infov("addMember, root: {0}, member: {1}, creator: {2}",
-                                rootId, req.memberId, getUserId()))
-                        .replaceWith(OxResponse.ok()))
+                .chain(space -> service.addMember(rootId, req.memberId, req.role, req.remark))
+                .invoke(ignored -> logger.infov("addMember, root: {0}, member: {1}, role: {2}",
+                        rootId, req.memberId, req.role))
+                .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    /** 移除项目成员（真实组织管理员） */
+    /** 移除项目成员（空间管理员） */
     @DELETE
     @RolesAllowed({OxRole.USER})
     public Uni<Response> removeMember(
@@ -75,30 +72,43 @@ public class MemberResource extends AbstractResource {
         }
 
         return requireRootSpaceAdmin(rootId, getUserId())
-                .chain(space -> accountService.deleteVirtual(rootId, memberId)
-                        .invoke(ignored -> logger.infov("removeMember, root: {0}, member: {1}", rootId, memberId))
-                        .replaceWith(OxResponse.ok()))
+                .chain(space -> service.removeMember(rootId, memberId))
+                .invoke(ignored -> logger.infov("removeMember, root: {0}, member: {1}", rootId, memberId))
+                .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    /** 列项目成员（真实组织成员可见） */
+    /** 列项目成员（空间成员：用户成员或组织成员） */
     @GET
     @RolesAllowed({OxRole.USER})
     public Uni<Response> listMembers(
             @PathParam("rootId") String rootId
     ) {
         return requireRootSpaceMember(rootId, getUserId())
-                .chain(space -> UserOrganization.<UserOrganization>findById(rootId)
-                        .map(org -> {
-                            List<?> members = org == null ? List.of() : org.members;
-                            return OxResponse.ok(members);
-                        }))
+                .map(space -> OxResponse.ok(memberViews(space)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    // -- helper methods --
+    // -- helpers --
+
+    private List<MemberView> memberViews(SpaceEntity space) {
+        if (space.owners == null) {
+            return List.of();
+        }
+        return space.owners.stream()
+                .filter(o -> SpaceOwnerType.USER.equals(o.type))
+                .map(o -> {
+                    MemberView view = new MemberView();
+                    view.userId = o.id;
+                    view.name = o.name;
+                    view.role = o.role;
+                    view.remark = o.remark;
+                    return view;
+                })
+                .toList();
+    }
 
     private Uni<SpaceEntity> requireRootSpaceAdmin(String rootId, String accountId) {
         return service.getById(rootId)
