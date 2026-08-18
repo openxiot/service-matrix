@@ -36,6 +36,14 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         return list("organizationId = :orgId and parentId = :parentId", params);
     }
 
+    public Uni<List<SpaceEntity>> findRootsByIds(List<String> ids) {
+        List<ObjectId> objectIds = ids.stream().map(ObjectId::new).toList();
+        Map<String, Object> params = new HashMap<>();
+        params.put("ids", objectIds);
+        params.put("parentId", null);
+        return list("id in :ids and parentId = :parentId", params);
+    }
+
     public Uni<SpaceEntity> persistEntity(SpaceEntity space) {
         if (space.createTime == null) {
             space.createTime = LocalDateTime.now();

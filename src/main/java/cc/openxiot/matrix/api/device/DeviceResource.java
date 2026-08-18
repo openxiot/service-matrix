@@ -298,16 +298,27 @@ public class DeviceResource extends AbstractResource {
 
         return spaceService.getById(spaceId)
                 .chain(space -> {
-                    if (space == null || space.organizationId == null) {
+                    if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
 
-                    if (!orgId.equals(space.organizationId)) {
-                        throw new IllegalArgumentException("OrgId does not match the space");
-                    }
-
                     return orgAccessService.checkMember(orgId, getUserId())
-                            .map(ignored -> space);
+                            .chain(() -> orgAccessService.isVirtual(orgId))
+                            .map(virtual -> {
+                                if (virtual) {
+                                    // 虚拟组织作用域 = 以 orgId 为根的整棵树
+                                    boolean inScope = space.id.toString().equals(orgId)
+                                            || (space.ancestors != null && space.ancestors.contains(orgId));
+                                    if (!inScope) {
+                                        throw new IllegalArgumentException("No access to this space");
+                                    }
+                                } else {
+                                    if (space.organizationId == null || !orgId.equals(space.organizationId)) {
+                                        throw new IllegalArgumentException("OrgId does not match the space");
+                                    }
+                                }
+                                return space;
+                            });
                 });
     }
 }

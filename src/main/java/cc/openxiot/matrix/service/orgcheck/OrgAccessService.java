@@ -41,4 +41,12 @@ public class OrgAccessService {
                     return null;
                 });
     }
+
+    /**
+     * 该组织是否为虚拟组织（项目成员关系）。
+     */
+    public Uni<Boolean> isVirtual(String orgId) {
+        return UserOrganization.<UserOrganization>findById(orgId)
+                .map(org -> org != null && org.isVirtual());
+    }
 }

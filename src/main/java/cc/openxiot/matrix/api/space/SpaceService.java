@@ -28,6 +28,10 @@ public class SpaceService {
         return spaceRepository.findRootByOrganizationId(orgId);
     }
 
+    public Uni<List<SpaceEntity>> getRootsById(List<String> ids) {
+        return spaceRepository.findRootsByIds(ids);
+    }
+
     public Uni<List<SpaceEntity>> getDescendants(String rootId) {
         return spaceRepository.findById(rootId)
                 .chain(root -> {
