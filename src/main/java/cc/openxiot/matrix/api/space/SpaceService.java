@@ -105,6 +105,21 @@ public class SpaceService {
                 .replaceWithVoid();
     }
 
+    /** 更新成员备注。 */
+    public Uni<Void> updateAccessRemark(String rootId, String memberId, String remark) {
+        return spaceRepository.findById(rootId)
+                .chain(Unchecked.function(space -> {
+                    if (space == null || space.parentId != null) {
+                        throw new IllegalArgumentException("Root space not found: " + rootId);
+                    }
+                    if (findUserAccess(space, memberId) == null) {
+                        throw new IllegalArgumentException("Member not found: " + memberId);
+                    }
+                    return spaceRepository.updateAccessRemark(rootId, memberId, remark);
+                }))
+                .replaceWithVoid();
+    }
+
     /** 移除根空间用户访问条目（管理员移除其他成员，或成员本人退出）。最后一个管理员不可被移除。 */
     public Uni<Void> removeAccess(String rootId, String memberId) {
         return spaceRepository.findById(rootId)

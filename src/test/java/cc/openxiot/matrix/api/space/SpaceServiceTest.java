@@ -332,6 +332,30 @@ class SpaceServiceTest {
     }
 
     @Test
+    void updateAccessRemark_updatesRemark() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(userAccess("m1", SpaceAccessRole.MEMBER));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.updateAccessRemark("root", "m1", "对接人"))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.updateAccessRemark("root", "m1", "对接人").await().indefinitely();
+
+        verify(spaceRepository).updateAccessRemark("root", "m1", "对接人");
+    }
+
+    @Test
+    void updateAccessRemark_missingMember_throws() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(orgAccess("org-1"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.updateAccessRemark("root", "m1", "备注").await().indefinitely());
+        verify(spaceRepository, never()).updateAccessRemark(anyString(), anyString(), anyString());
+    }
+
+    @Test
     void removeAccess_lastAdmin_throws() {
         SpaceEntity root = new SpaceEntity();
         root.accesses = List.of(userAccess("m1", SpaceAccessRole.ADMIN));

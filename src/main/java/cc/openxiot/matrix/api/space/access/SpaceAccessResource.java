@@ -60,23 +60,36 @@ public class SpaceAccessResource extends AbstractResource {
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    /** 调整成员角色（空间管理员） */
+    /** 调整成员角色 / 备注（空间管理员，两者至少提供其一） */
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
-    public Uni<Response> updateAccessRole(
+    public Uni<Response> updateAccess(
             @PathParam("rootId") String rootId,
             SpaceAccessAddRequest req
     ) {
-        if (req == null || req.memberId == null || req.memberId.isBlank()
-                || req.role == null || req.role.isBlank()) {
-            return Uni.createFrom().item(OxResponse.error("memberId and role are required"));
+        if (req == null || req.memberId == null || req.memberId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("memberId is required"));
+        }
+        boolean roleProvided = req.role != null && !req.role.isBlank();
+        boolean remarkProvided = req.remark != null;
+        if (!roleProvided && !remarkProvided) {
+            return Uni.createFrom().item(OxResponse.error("role or remark is required"));
         }
 
         return requireRootSpaceAdmin(rootId, getUserId())
-                .chain(space -> service.updateAccessRole(rootId, req.memberId, req.role))
-                .invoke(ignored -> logger.infov("updateAccessRole, root: {0}, member: {1}, role: {2}",
-                        rootId, req.memberId, req.role))
+                .chain(space -> {
+                    Uni<Void> result = Uni.createFrom().voidItem();
+                    if (roleProvided) {
+                        result = result.chain(ignored -> service.updateAccessRole(rootId, req.memberId, req.role));
+                    }
+                    if (remarkProvided) {
+                        result = result.chain(ignored -> service.updateAccessRemark(rootId, req.memberId, req.remark));
+                    }
+                    return result;
+                })
+                .invoke(ignored -> logger.infov("updateAccess, root: {0}, member: {1}, role: {2}, remark: {3}",
+                        rootId, req.memberId, req.role, req.remark))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

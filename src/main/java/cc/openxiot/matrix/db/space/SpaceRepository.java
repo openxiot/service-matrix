@@ -80,6 +80,19 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
                 .map(UpdateResult::getModifiedCount);
     }
 
+    /** 原子更新用户访问条目备注（$set 位置操作符，仅匹配 type = user 的条目） */
+    public Uni<Long> updateAccessRemark(String rootId, String memberId, String remark) {
+        return mongoCollection()
+                .updateOne(
+                        Filters.and(
+                                Filters.eq("_id", new ObjectId(rootId)),
+                                Filters.elemMatch("accesses", Filters.and(
+                                        Filters.eq("type", SpaceAccessType.USER),
+                                        Filters.eq("id", memberId)))),
+                        Updates.set("accesses.$.remark", remark))
+                .map(UpdateResult::getModifiedCount);
+    }
+
     public Uni<SpaceEntity> persistEntity(SpaceEntity space) {
         if (space.createTime == null) {
             space.createTime = LocalDateTime.now();

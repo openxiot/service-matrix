@@ -417,6 +417,28 @@ class SpaceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void updateAccessRemark_succeeds() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(spaceService.updateAccessRemark("root-id", "m1", "对接人"))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .contentType(ContentType.JSON)
+                .body("{\"memberId\": \"m1\", \"remark\": \"对接人\"}")
+                .when().put("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void removeAccess_selfExit_succeeds() {
         SpaceEntity root = orgSpace("org-1");
         root.id = new ObjectId();
