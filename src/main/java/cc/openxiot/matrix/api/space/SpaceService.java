@@ -134,13 +134,10 @@ public class SpaceService {
                 .orElse(null);
     }
 
-    /** 排除指定用户后，空间是否仍存在管理员（组织条目视为管理员）。 */
+    /** 排除指定用户后，是否仍存在其他 user admin（不做组织兜底）。 */
     private boolean hasAdminWithout(SpaceEntity space, String excludedUserId) {
         if (space.accesses == null) {
             return false;
-        }
-        if (space.accesses.stream().anyMatch(o -> SpaceAccessType.ORGANIZATION.equals(o.type))) {
-            return true;
         }
         return space.accesses.stream().anyMatch(o ->
                 SpaceAccessType.USER.equals(o.type)
