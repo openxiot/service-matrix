@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.space;
+package cc.openxiot.matrix.db.space.access;
 
 /** 空间访问条目主体类型 */
 public interface SpaceAccessType {

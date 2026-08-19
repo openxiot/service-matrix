@@ -3,10 +3,10 @@ package cc.openxiot.matrix.api.space;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
-import cc.openxiot.matrix.db.space.SpaceAccessRole;
-import cc.openxiot.matrix.db.space.SpaceAccessType;
+import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.db.space.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -351,5 +351,109 @@ class SpaceResourceTest {
                 .body("success", is(true))
                 .body("data.spaces.size()", is(1))
                 .body("data.devices.size()", is(0));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void updateAccessRole_succeeds() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(spaceService.updateAccessRole("root-id", "m1", "admin"))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .contentType(ContentType.JSON)
+                .body("{\"memberId\": \"m1\", \"role\": \"admin\"}")
+                .when().put("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void updateAccessRole_notAdmin_returnsError() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+                .thenThrow(new IllegalArgumentException("No access"));
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .contentType(ContentType.JSON)
+                .body("{\"memberId\": \"m1\", \"role\": \"admin\"}")
+                .when().put("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void updateAccessRole_missingMemberId_returnsError() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .contentType(ContentType.JSON)
+                .body("{\"role\": \"admin\"}")
+                .when().put("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void removeAccess_selfExit_succeeds() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        // memberId == 当前用户 → 走成员权限（checkRootSpaceMember）
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceMember(any(), eq("root-id"), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(spaceService.removeAccess("root-id", "test-user"))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .queryParam("memberId", "test-user")
+                .when().delete("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void removeAccess_otherMember_requiresAdmin() {
+        SpaceEntity root = orgSpace("org-1");
+        root.id = new ObjectId();
+
+        // memberId != 当前用户 → 走管理员权限
+        when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
+        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+                .thenThrow(new IllegalArgumentException("No access"));
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .queryParam("memberId", "m1")
+                .when().delete("/matrix/v1/space/{rootId}/access", "root-id")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
     }
 }

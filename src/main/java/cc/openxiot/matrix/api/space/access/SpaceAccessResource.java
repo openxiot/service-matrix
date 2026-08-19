@@ -4,7 +4,7 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.space.SpaceAccessType;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -60,7 +60,29 @@ public class SpaceAccessResource extends AbstractResource {
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    /** 移除根空间用户访问条目（空间管理员） */
+    /** 调整成员角色（空间管理员） */
+    @PUT
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> updateAccessRole(
+            @PathParam("rootId") String rootId,
+            SpaceAccessAddRequest req
+    ) {
+        if (req == null || req.memberId == null || req.memberId.isBlank()
+                || req.role == null || req.role.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("memberId and role are required"));
+        }
+
+        return requireRootSpaceAdmin(rootId, getUserId())
+                .chain(space -> service.updateAccessRole(rootId, req.memberId, req.role))
+                .invoke(ignored -> logger.infov("updateAccessRole, root: {0}, member: {1}, role: {2}",
+                        rootId, req.memberId, req.role))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /** 移除根空间用户访问条目：管理员移除其他成员，或成员本人退出项目 */
     @DELETE
     @RolesAllowed({OxRole.USER})
     public Uni<Response> removeAccess(
@@ -71,7 +93,7 @@ public class SpaceAccessResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("memberId is required"));
         }
 
-        return requireRootSpaceAdmin(rootId, getUserId())
+        return requireRootSpaceAdminOrSelf(rootId, getUserId(), memberId)
                 .chain(space -> service.removeAccess(rootId, memberId))
                 .invoke(ignored -> logger.infov("removeAccess, root: {0}, member: {1}", rootId, memberId))
                 .replaceWith(OxResponse.ok())
@@ -128,6 +150,22 @@ public class SpaceAccessResource extends AbstractResource {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
                     return orgAccessService.checkRootSpaceMember(space, rootId, accountId)
+                            .map(ignored -> space);
+                }));
+    }
+
+    /** 管理员可操作任意成员；成员本人可退出项目（需项目成员权限）。 */
+    private Uni<SpaceEntity> requireRootSpaceAdminOrSelf(String rootId, String accountId, String memberId) {
+        return service.getById(rootId)
+                .chain(Unchecked.function(space -> {
+                    if (space == null || space.parentId != null) {
+                        throw new IllegalArgumentException("Root space not found: " + rootId);
+                    }
+                    if (memberId.equals(accountId)) {
+                        return orgAccessService.checkRootSpaceMember(space, rootId, accountId)
+                                .map(ignored -> space);
+                    }
+                    return orgAccessService.checkRootSpaceAdmin(space, accountId)
                             .map(ignored -> space);
                 }));
     }

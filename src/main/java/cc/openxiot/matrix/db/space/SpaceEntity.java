@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.space;
 
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;

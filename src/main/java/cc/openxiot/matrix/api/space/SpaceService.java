@@ -1,9 +1,9 @@
 package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.matrix.api.space.access.AccountUserLookup;
-import cc.openxiot.matrix.db.space.SpaceAccess;
-import cc.openxiot.matrix.db.space.SpaceAccessRole;
-import cc.openxiot.matrix.db.space.SpaceAccessType;
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceRepository;
 import io.smallrye.mutiny.Uni;
@@ -83,21 +83,69 @@ public class SpaceService {
                 .replaceWithVoid();
     }
 
-    /** 移除根空间用户访问条目。 */
+    /** 调整成员角色（admin/member）。最后一个管理员不可被降级。 */
+    public Uni<Void> updateAccessRole(String rootId, String memberId, String role) {
+        String resolvedRole = normalizeRole(role);
+        return spaceRepository.findById(rootId)
+                .chain(Unchecked.function(space -> {
+                    if (space == null || space.parentId != null) {
+                        throw new IllegalArgumentException("Root space not found: " + rootId);
+                    }
+                    SpaceAccess target = findUserAccess(space, memberId);
+                    if (target == null) {
+                        throw new IllegalArgumentException("Member not found: " + memberId);
+                    }
+                    if (SpaceAccessRole.ADMIN.equals(target.role)
+                            && !resolvedRole.equals(target.role)
+                            && !hasAdminWithout(space, memberId)) {
+                        throw new IllegalArgumentException("Cannot demote the last admin");
+                    }
+                    return spaceRepository.updateAccessRole(rootId, memberId, resolvedRole);
+                }))
+                .replaceWithVoid();
+    }
+
+    /** 移除根空间用户访问条目（管理员移除其他成员，或成员本人退出）。最后一个管理员不可被移除。 */
     public Uni<Void> removeAccess(String rootId, String memberId) {
         return spaceRepository.findById(rootId)
                 .chain(Unchecked.function(space -> {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
-                    boolean exists = space.accesses != null && space.accesses.stream().anyMatch(o ->
-                            SpaceAccessType.USER.equals(o.type) && memberId.equals(o.id));
-                    if (!exists) {
+                    SpaceAccess target = findUserAccess(space, memberId);
+                    if (target == null) {
                         throw new IllegalArgumentException("Member not found: " + memberId);
+                    }
+                    if (SpaceAccessRole.ADMIN.equals(target.role) && !hasAdminWithout(space, memberId)) {
+                        throw new IllegalArgumentException("Cannot remove the last admin");
                     }
                     return spaceRepository.pullAccess(rootId, memberId);
                 }))
                 .replaceWithVoid();
+    }
+
+    private SpaceAccess findUserAccess(SpaceEntity space, String memberId) {
+        if (space.accesses == null) {
+            return null;
+        }
+        return space.accesses.stream()
+                .filter(o -> SpaceAccessType.USER.equals(o.type) && memberId.equals(o.id))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 排除指定用户后，空间是否仍存在管理员（组织条目视为管理员）。 */
+    private boolean hasAdminWithout(SpaceEntity space, String excludedUserId) {
+        if (space.accesses == null) {
+            return false;
+        }
+        if (space.accesses.stream().anyMatch(o -> SpaceAccessType.ORGANIZATION.equals(o.type))) {
+            return true;
+        }
+        return space.accesses.stream().anyMatch(o ->
+                SpaceAccessType.USER.equals(o.type)
+                        && !excludedUserId.equals(o.id)
+                        && SpaceAccessRole.ADMIN.equals(o.role));
     }
 
     private Uni<SpaceAccess> resolveAccessName(SpaceAccess access) {

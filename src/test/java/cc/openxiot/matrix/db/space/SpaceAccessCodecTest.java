@@ -1,5 +1,8 @@
 package cc.openxiot.matrix.db.space;
 
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;

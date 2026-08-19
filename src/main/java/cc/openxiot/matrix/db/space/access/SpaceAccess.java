@@ -1,5 +1,6 @@
-package cc.openxiot.matrix.db.space;
+package cc.openxiot.matrix.db.space.access;
 
+import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonProperty;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;

@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.db.space;
 
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
@@ -62,6 +64,19 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
                                 Filters.and(
                                         Filters.eq("type", SpaceAccessType.USER),
                                         Filters.eq("id", memberId))))
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /** 原子调整用户访问条目角色（$set 位置操作符，仅匹配 type = user 的条目） */
+    public Uni<Long> updateAccessRole(String rootId, String memberId, String role) {
+        return mongoCollection()
+                .updateOne(
+                        Filters.and(
+                                Filters.eq("_id", new ObjectId(rootId)),
+                                Filters.elemMatch("accesses", Filters.and(
+                                        Filters.eq("type", SpaceAccessType.USER),
+                                        Filters.eq("id", memberId)))),
+                        Updates.set("accesses.$.role", role))
                 .map(UpdateResult::getModifiedCount);
     }
 

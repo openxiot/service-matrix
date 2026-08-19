@@ -2,9 +2,9 @@ package cc.openxiot.matrix.service.orgcheck;
 
 import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.account.user.organization.member.Member;
-import cc.openxiot.matrix.db.space.SpaceAccess;
-import cc.openxiot.matrix.db.space.SpaceAccessRole;
-import cc.openxiot.matrix.db.space.SpaceAccessType;
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;

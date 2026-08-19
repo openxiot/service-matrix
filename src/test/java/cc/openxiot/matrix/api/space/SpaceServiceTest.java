@@ -1,9 +1,9 @@
 package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.matrix.api.space.access.AccountUserLookup;
-import cc.openxiot.matrix.db.space.SpaceAccess;
-import cc.openxiot.matrix.db.space.SpaceAccessRole;
-import cc.openxiot.matrix.db.space.SpaceAccessType;
+import cc.openxiot.matrix.db.space.access.SpaceAccess;
+import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
+import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceRepository;
 import io.smallrye.mutiny.Uni;
@@ -266,6 +266,96 @@ class SpaceServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.removeAccess("root", "m1").await().indefinitely());
         verify(spaceRepository, never()).pullAccess(anyString(), anyString());
+    }
+
+    @Test
+    void updateAccessRole_updatesRole() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(userAccess("m1", SpaceAccessRole.MEMBER));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.updateAccessRole("root", "m1", SpaceAccessRole.ADMIN))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.updateAccessRole("root", "m1", SpaceAccessRole.ADMIN).await().indefinitely();
+
+        verify(spaceRepository).updateAccessRole("root", "m1", SpaceAccessRole.ADMIN);
+    }
+
+    @Test
+    void updateAccessRole_unknownMember_throws() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(orgAccess("org-1"));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.updateAccessRole("root", "m1", SpaceAccessRole.ADMIN).await().indefinitely());
+        verify(spaceRepository, never()).updateAccessRole(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void updateAccessRole_demoteLastAdmin_throws() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(userAccess("m1", SpaceAccessRole.ADMIN));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.updateAccessRole("root", "m1", SpaceAccessRole.MEMBER).await().indefinitely());
+        verify(spaceRepository, never()).updateAccessRole(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void updateAccessRole_withOtherAdmin_allows() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(
+                userAccess("m1", SpaceAccessRole.ADMIN),
+                userAccess("m2", SpaceAccessRole.ADMIN));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.updateAccessRole("root", "m1", SpaceAccessRole.MEMBER))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.updateAccessRole("root", "m1", SpaceAccessRole.MEMBER).await().indefinitely();
+
+        verify(spaceRepository).updateAccessRole("root", "m1", SpaceAccessRole.MEMBER);
+    }
+
+    @Test
+    void updateAccessRole_withOrgEntry_allows() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(
+                orgAccess("org-1"),
+                userAccess("m1", SpaceAccessRole.ADMIN));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.updateAccessRole("root", "m1", SpaceAccessRole.MEMBER))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.updateAccessRole("root", "m1", SpaceAccessRole.MEMBER).await().indefinitely();
+
+        verify(spaceRepository).updateAccessRole("root", "m1", SpaceAccessRole.MEMBER);
+    }
+
+    @Test
+    void removeAccess_lastAdmin_throws() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(userAccess("m1", SpaceAccessRole.ADMIN));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.removeAccess("root", "m1").await().indefinitely());
+        verify(spaceRepository, never()).pullAccess(anyString(), anyString());
+    }
+
+    @Test
+    void removeAccess_withOrgEntry_allows() {
+        SpaceEntity root = new SpaceEntity();
+        root.accesses = List.of(
+                orgAccess("org-1"),
+                userAccess("m1", SpaceAccessRole.ADMIN));
+        when(spaceRepository.findById("root")).thenReturn(Uni.createFrom().item(root));
+        when(spaceRepository.pullAccess("root", "m1")).thenReturn(Uni.createFrom().item(1L));
+
+        service.removeAccess("root", "m1").await().indefinitely();
+
+        verify(spaceRepository).pullAccess("root", "m1");
     }
 
     @Test
