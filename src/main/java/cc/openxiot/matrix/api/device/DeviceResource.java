@@ -57,18 +57,22 @@ public class DeviceResource extends AbstractResource {
     public Uni<Response> addOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
-            String body
+            DeviceAddRequest req
     ) {
+        if (req == null || req.did == null || req.did.isBlank() || req.key == null || req.key.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("did and key are required"));
+        }
+
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(space -> addDevice(orgId, body, space))
+                .chain(space -> addDevice(orgId, req, space))
                 .chain(entity -> deviceService.save(entity))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    private Uni<DeviceEntity> addDevice(String orgId, String body, SpaceEntity space) {
-        return manipulationService.addDevice(orgId, body)
+    private Uni<DeviceEntity> addDevice(String orgId, DeviceAddRequest req, SpaceEntity space) {
+        return manipulationService.addDevice(orgId, req)
                 .map(device -> DeviceEntityMapper.from(device, space));
     }
 

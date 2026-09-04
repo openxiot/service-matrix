@@ -5,6 +5,7 @@ import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceSpace;
+import cn.geekcity.xiot.spec.device.Device;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -110,6 +111,46 @@ class DeviceResourceTest {
                 .header("X-Org-Id", "org-1")
                 .body("\"not-json\"")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void addOne_succeeds() {
+        SpaceEntity space = spaceWithOrg("org-1");
+        space.id = new org.bson.types.ObjectId();
+
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(manipulationService.addDevice(anyString(), any(DeviceAddRequest.class)))
+                .thenReturn(Uni.createFrom().item(new Device("abc")));
+        DeviceEntity saved = new DeviceEntity();
+        saved.did = "abc";
+        when(deviceService.save(any(DeviceEntity.class)))
+                .thenReturn(Uni.createFrom().item(saved));
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"did\":\"abc\",\"key\":\"k1\"}")
+                .when().post("/matrix/v1/device/one/{spaceId}", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(true))
+                .body("data.did", is("abc"));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void addOne_missingFields_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"key\":\"k1\"}")
+                .when().post("/matrix/v1/device/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
                 .body("success", is(false));

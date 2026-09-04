@@ -26,8 +26,12 @@ public class ManipulationService {
     @ConfigProperty(name = "manipulation.jwt-secret", defaultValue = "this is a test key")
     String jwtSecret;
 
-    public Uni<Device> addDevice(String orgId, String body) {
+    public Uni<Device> addDevice(String orgId, DeviceAddRequest req) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
+        String body = new JsonObject()
+                .put("did", req.did)
+                .put("key", req.key)
+                .encode();
         return client.addDevice(appId, authorization, body)
                 .map(this::getJsonObject)
                 .map(DeviceCodec::decode);
