@@ -55,30 +55,30 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-#      # 登录 Azure（保留原有部署逻辑）
-#      - name: Login to Azure
-#        uses: azure/login@v1
-#        with:
-#          creds: ${{ secrets.AZURE_OPENXIOT_STAGING_CREDENTIALS }}
-#
-#      # 更新 Azure Container App 镜像
-#      - name: Deploy to Azure Container Apps
-#        run: |
-#          az containerapp update \
-#            --name ${{ env.CONTAINER_APP_NAME }} \
-#            --resource-group ${{ env.RESOURCE_GROUP }} \
-#            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-#            --query properties.configuration.ingress.fqdn
-#
-#      # 部署状态校验
-#      - name: Verify deployment
-#        run: |
-#          STATUS=$(az containerapp show \
-#            --name ${{ env.CONTAINER_APP_NAME }} \
-#            --resource-group ${{ env.RESOURCE_GROUP }} \
-#            --query properties.provisioningState -o tsv)
-#
-#          if [ "$STATUS" != "Succeeded" ]; then
-#            echo "::error:: Deployment failed with status: $STATUS"
-#            exit 1
-#          fi
+      # 登录 Azure（保留原有部署逻辑）
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_OPENXIOT_STAGING_CREDENTIALS }}
+
+      # 更新 Azure Container App 镜像
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --query properties.configuration.ingress.fqdn
+
+      # 部署状态校验
+      - name: Verify deployment
+        run: |
+          STATUS=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.provisioningState -o tsv)
+
+          if [ "$STATUS" != "Succeeded" ]; then
+            echo "::error:: Deployment failed with status: $STATUS"
+            exit 1
+          fi
