@@ -10,14 +10,14 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.List;
 
 /**
- * Modbus 设备点表配置：厂家 + 型号 + 描述 + 有序寄存器点表。
+ * Modbus 设备点表配置：厂家 + 型号 + 描述 + 有序功能码动作列表。
  *
  * <p>独立库 {@code modbus}/集合 {@code device-configs}（沿用 service-matrix-modbus 的落库，
  * 字符串主键写入 {@code _id}，与既有数据兼容）；持久化经 {@code ModbusDeviceConfigRepository}（Panache）。
  */
 @MongoEntity(database = "modbus", collection = "device-configs")
 @RegisterForReflection
-@Schema(description = "Modbus 设备点表配置（厂家型号 + 有序寄存器点表）")
+@Schema(description = "Modbus 设备点表配置（厂家型号 + 有序功能码动作列表）")
 public class ModbusDeviceConfig extends ReactivePanacheMongoEntityBase {
 
     @BsonId
@@ -42,8 +42,8 @@ public class ModbusDeviceConfig extends ReactivePanacheMongoEntityBase {
     @Schema(description = "描述（可选）", required = false)
     public String description;
 
-    @Schema(description = "寄存器点表（有序列表）", required = true)
-    public List<ModbusPoint> points;
+    @Schema(description = "功能码动作列表（有序；每个动作按功能码读一个参数或写一段）", required = true)
+    public List<ModbusCommand> commands;
 
     @Schema(description = "创建者/创建时间")
     public Person creator;

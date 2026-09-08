@@ -77,7 +77,7 @@ class ModbusDeviceConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"points\":[]}")
+                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"commands\":[]}")
                 .when().post("/matrix/v1/modbus/one")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -105,7 +105,7 @@ class ModbusDeviceConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"\",\"points\":[]}")
+                .body("{\"manufacturer\":\"\",\"commands\":[]}")
                 .when().post("/matrix/v1/modbus/one")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
@@ -180,7 +180,7 @@ class ModbusDeviceConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"points\":[]}")
+                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"commands\":[]}")
                 .when().put("/matrix/v1/modbus/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))

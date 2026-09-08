@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.modbus.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
-import cc.openxiot.matrix.db.modbus.ModbusPoint;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -43,12 +43,12 @@ public final class ModbusJson {
             o.put("description", c.description);
         }
         JsonArray arr = new JsonArray();
-        if (c.points != null) {
-            for (ModbusPoint p : c.points) {
-                arr.add(pointToJson(p));
+        if (c.commands != null) {
+            for (ModbusCommand cmd : c.commands) {
+                arr.add(commandToJson(cmd));
             }
         }
-        o.put("points", arr);
+        o.put("commands", arr);
         if (c.creator != null) {
             o.put("creator", personToJson(c.creator));
         }
@@ -82,37 +82,88 @@ public final class ModbusJson {
         return arr;
     }
 
-    private static JsonObject pointToJson(ModbusPoint p) {
+    private static JsonObject commandToJson(ModbusCommand cmd) {
         JsonObject o = new JsonObject();
-        if (p == null) {
+        if (cmd == null) {
             return o;
         }
-        if (p.name != null) {
-            o.put("name", p.name);
+        if (cmd.name != null) {
+            o.put("name", cmd.name);
         }
-        if (p.area != null) {
-            o.put("area", p.area);
+        if (cmd.fc != null) {
+            o.put("fc", cmd.fc);
         }
-        if (p.address != null) {
-            o.put("address", p.address);
+        if (cmd.start != null) {
+            o.put("start", cmd.start);
         }
-        if (p.logicalAddress != null) {
-            o.put("logicalAddress", p.logicalAddress);
+        if (cmd.quantity != null) {
+            o.put("quantity", cmd.quantity);
         }
-        if (p.dataType != null) {
-            o.put("dataType", p.dataType);
+        if (cmd.dataType != null) {
+            o.put("dataType", cmd.dataType);
         }
-        if (p.rw != null) {
-            o.put("rw", p.rw);
+        if (cmd.byteOrder != null) {
+            o.put("byteOrder", cmd.byteOrder);
         }
-        if (p.scale != null) {
-            o.put("scale", p.scale);
+        if (cmd.scale != null) {
+            o.put("scale", cmd.scale);
         }
-        if (p.unit != null) {
-            o.put("unit", p.unit);
+        if (cmd.unit != null) {
+            o.put("unit", cmd.unit);
         }
-        if (p.description != null) {
-            o.put("description", p.description);
+        if (cmd.coilState != null) {
+            o.put("coilState", cmd.coilState);
+        }
+        if (cmd.registerValue != null) {
+            o.put("registerValue", cmd.registerValue);
+        }
+        if (cmd.coils != null) {
+            JsonArray arr = new JsonArray();
+            for (ModbusCommand.Coil c : cmd.coils) {
+                arr.add(coilToJson(c));
+            }
+            o.put("coils", arr);
+        }
+        if (cmd.registers != null) {
+            JsonArray arr = new JsonArray();
+            for (ModbusCommand.Register r : cmd.registers) {
+                arr.add(registerToJson(r));
+            }
+            o.put("registers", arr);
+        }
+        return o;
+    }
+
+    private static JsonObject coilToJson(ModbusCommand.Coil c) {
+        JsonObject o = new JsonObject();
+        if (c == null) {
+            return o;
+        }
+        if (c.offset != null) {
+            o.put("offset", c.offset);
+        }
+        if (c.on != null) {
+            o.put("on", c.on);
+        }
+        return o;
+    }
+
+    private static JsonObject registerToJson(ModbusCommand.Register r) {
+        JsonObject o = new JsonObject();
+        if (r == null) {
+            return o;
+        }
+        if (r.address != null) {
+            o.put("address", r.address);
+        }
+        if (r.dataType != null) {
+            o.put("dataType", r.dataType);
+        }
+        if (r.byteOrder != null) {
+            o.put("byteOrder", r.byteOrder);
+        }
+        if (r.value != null) {
+            o.put("value", r.value);
         }
         return o;
     }
