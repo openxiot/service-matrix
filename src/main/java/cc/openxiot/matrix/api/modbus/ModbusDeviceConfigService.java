@@ -18,7 +18,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class ModbusDeviceConfigService {
 
-    private static final Set<String> AREAS = Set.of("input", "holding", "coil");
+    private static final Set<String> AREAS = Set.of("input", "holding", "coil", "discrete_input");
     private static final Set<String> RWS = Set.of("r", "w", "rw");
     private static final Set<String> VISIBILITIES = Set.of("private", "public");
 

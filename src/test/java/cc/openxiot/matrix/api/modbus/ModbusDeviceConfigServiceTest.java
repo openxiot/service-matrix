@@ -135,6 +135,17 @@ class ModbusDeviceConfigServiceTest {
     }
 
     @Test
+    void createWithAllSupportedAreasAllowed() {
+        ModbusPoint p = new ModbusPoint();
+        p.name = "TAG";
+        p.dataType = "uint16";
+        p.area = "discrete_input"; // 与前三大区并列的新增区域，须可保存
+        cfg.points = List.of(p);
+        when(repo.insert(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().voidItem());
+        assertNotNull(service.create(cfg).await().indefinitely());
+    }
+
+    @Test
     void createWithPointNameMissingFails() {
         ModbusPoint p = new ModbusPoint();
         p.dataType = "uint16";
