@@ -98,12 +98,34 @@ public class ModbusDeviceConfigService {
                 });
     }
 
+    /**
+     * 读单条（orgId 必填，调用方需已校验该组织成员身份）：
+     * 返回「当前组织配置（任意可见度）」或「任意组织的公开配置」，与 /visible 列表口径一致；
+     * 他组织非公开配置一律视为 not found。
+     */
     public Uni<ModbusDeviceConfig> get(String orgId, String id) {
         String err = checkId(orgId, id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        return repo.findByIdAndOrg(id, orgId)
+        return repo.findVisibleById(id, orgId)
+                .onItem().transformToUni(existing -> {
+                    if (existing == null) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
+                    }
+                    return Uni.createFrom().item(existing);
+                });
+    }
+
+    /**
+     * 读公开单条（无组织场景浏览用，仅需登录，无需成员身份）：任意组织的公开配置；
+     * 非公开 → not found。
+     */
+    public Uni<ModbusDeviceConfig> getPublic(String id) {
+        if (id == null || id.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("id is required"));
+        }
+        return repo.findPublicById(id)
                 .onItem().transformToUni(existing -> {
                     if (existing == null) {
                         return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));

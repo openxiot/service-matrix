@@ -42,6 +42,24 @@ public class ModbusDeviceConfigRepository implements ReactivePanacheMongoReposit
                 .collect().first();
     }
 
+    /**
+     * 按 id 查询「组织内可见」的单条配置：本组织（任意可见度）或任意组织的公开配置，
+     * 与 {@link #listVisible} 单条口径一致（读详情用，跨组织仅放行 public）。
+     */
+    public Uni<ModbusDeviceConfig> findVisibleById(String id, String orgId) {
+        return collection()
+                .find(Filters.and(Filters.eq("_id", id),
+                        Filters.or(Filters.eq("orgId", orgId), Filters.eq("visibility", "public"))))
+                .collect().first();
+    }
+
+    /** 按 id 查询公开配置（无组织场景读详情用；未公开 → 空）。 */
+    public Uni<ModbusDeviceConfig> findPublicById(String id) {
+        return collection()
+                .find(Filters.and(Filters.eq("_id", id), Filters.eq("visibility", "public")))
+                .collect().first();
+    }
+
     /** 全量替换一条（更新：整文档覆盖）。 */
     public Uni<Void> replace(ModbusDeviceConfig cfg) {
         return collection()

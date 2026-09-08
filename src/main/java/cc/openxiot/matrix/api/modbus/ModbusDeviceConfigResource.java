@@ -92,6 +92,14 @@ public class ModbusDeviceConfigResource extends AbstractResource {
             @PathParam("id") String id
     ) {
         logger.infov("get modbus device config, org: {0}, id: {1}", orgId, id);
+        if (orgId == null || orgId.isBlank()) {
+            // 未携带组织头（未选组织浏览）：仅放行公开配置的只读查看
+            return service.getPublic(id)
+                    .map(config -> OxResponse.ok(ModbusJson.toJson(config)))
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+        }
+        // 已带组织头：需为成员，可读「本组织配置或任意公开配置」
         return requireMember(orgId)
                 .chain(o -> service.get(o, id))
                 .map(config -> OxResponse.ok(ModbusJson.toJson(config)))

@@ -478,9 +478,62 @@ class ModbusDeviceConfigServiceTest {
 
     @Test
     void getNotFoundFails() {
-        when(repo.findByIdAndOrg("ghost", "org1")).thenReturn(Uni.createFrom().nullItem());
+        when(repo.findVisibleById("ghost", "org1")).thenReturn(Uni.createFrom().nullItem());
         assertThrows(IllegalArgumentException.class,
                 () -> service.get("org1", "ghost").await().indefinitely());
+    }
+
+    @Test
+    void getBlankOrgFails() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.get(" ", "c1").await().indefinitely());
+        assertEquals("orgId is required", ex.getMessage());
+    }
+
+    @Test
+    void getDelegatesToVisibleLookup() {
+        cfg.id = "c1";
+        when(repo.findVisibleById("c1", "org1")).thenReturn(Uni.createFrom().item(cfg));
+        ModbusDeviceConfig found = service.get("org1", "c1").await().indefinitely();
+        assertEquals("c1", found.id);
+    }
+
+    @Test
+    void getCrossOrgPublicReadable() {
+        ModbusDeviceConfig pub = new ModbusDeviceConfig();
+        pub.id = "c2";
+        pub.orgId = "org2"; // 他组织
+        pub.visibility = "public";
+        when(repo.findVisibleById("c2", "org1")).thenReturn(Uni.createFrom().item(pub));
+        ModbusDeviceConfig found = service.get("org1", "c2").await().indefinitely();
+        assertEquals("public", found.visibility);
+        assertEquals("org2", found.orgId);
+    }
+
+    @Test
+    void getPublicReadable() {
+        ModbusDeviceConfig pub = new ModbusDeviceConfig();
+        pub.id = "c2";
+        pub.orgId = "org2";
+        pub.visibility = "public";
+        when(repo.findPublicById("c2")).thenReturn(Uni.createFrom().item(pub));
+        ModbusDeviceConfig found = service.getPublic("c2").await().indefinitely();
+        assertEquals("c2", found.id);
+    }
+
+    @Test
+    void getPublicNotFoundFails() {
+        when(repo.findPublicById("ghost")).thenReturn(Uni.createFrom().nullItem());
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.getPublic("ghost").await().indefinitely());
+        assertEquals("modbus device config not found: ghost", ex.getMessage());
+    }
+
+    @Test
+    void getPublicBlankIdFails() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.getPublic(" ").await().indefinitely());
+        assertEquals("id is required", ex.getMessage());
     }
 
     @Test

@@ -173,6 +173,38 @@ class ModbusDeviceConfigResourceTest {
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void getOneWithoutOrgReadsPublic() {
+        ModbusDeviceConfig pub = sample();
+        pub.visibility = "public";
+        when(service.getPublic("c1")).thenReturn(Uni.createFrom().item(pub));
+
+        // 未带 X-Org-Id（未选组织浏览）：仍可读公开配置详情，无需成员校验
+        given().when().get("/matrix/v1/modbus/one/c1")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.manufacturer", equalTo("开利"))
+                .body("data.visibility", equalTo("public"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void getOneWithOrgReadsCrossOrgPublic() {
+        allowMember();
+        ModbusDeviceConfig pub = sample();
+        pub.orgId = "org2"; // 他组织公开
+        pub.visibility = "public";
+        when(service.get("org1", "c1")).thenReturn(Uni.createFrom().item(pub));
+
+        given().header("X-Org-Id", "org1")
+                .when().get("/matrix/v1/modbus/one/c1")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.orgId", equalTo("org2"))
+                .body("data.visibility", equalTo("public"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
     void updateOk() {
         allowMember();
         when(service.update(anyString(), anyString(), any(ModbusDeviceConfig.class)))
