@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus;
+package cc.openxiot.matrix.db.modbus.config;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,30 +19,31 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.modbus.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
 import io.smallrye.mutiny.Uni;
 
 @ExtendWith(MockitoExtension.class)
-class ModbusDeviceConfigServiceTest {
+class ModbusConfigServiceTest {
 
     @Mock
-    ModbusDeviceConfigRepository repo;
+    ModbusConfigRepository repo;
 
     @InjectMocks
-    ModbusDeviceConfigService service;
+    ModbusConfigService service;
 
-    private ModbusDeviceConfig cfg;
+    private ModbusConfig cfg;
 
     @BeforeEach
     void setUp() {
-        cfg = new ModbusDeviceConfig();
+        cfg = new ModbusConfig();
         cfg.orgId = "org1";
         cfg.manufacturer = "开利";
         cfg.model = "19XRV";
         cfg.slaveId = 1;
         cfg.visibility = "private";
+        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
     }
 
     /** 合法的读保持寄存器动作（默认样例）。 */
@@ -59,7 +61,7 @@ class ModbusDeviceConfigServiceTest {
     }
 
     private void insertOk() {
-        when(repo.insert(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().voidItem());
+        when(repo.insert(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
     }
 
     @Test
@@ -69,7 +71,7 @@ class ModbusDeviceConfigServiceTest {
         cfg.commands = List.of(readHolding());
         insertOk();
 
-        ModbusDeviceConfig created = service.create(cfg).await().indefinitely();
+        ModbusConfig created = service.create(cfg).await().indefinitely();
 
         assertNotNull(created.id);
         // 创建者/更新者由上层注入，服务层仅保证生成 id 并落库
@@ -131,6 +133,14 @@ class ModbusDeviceConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("visibility is required", ex.getMessage());
+    }
+
+    @Test
+    void createWithBlankTypeFails() {
+        cfg.type = "";
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("type is required", ex.getMessage());
     }
 
     @Test
@@ -388,7 +398,7 @@ class ModbusDeviceConfigServiceTest {
 
     @Test
     void updateMergesEditableFields() {
-        ModbusDeviceConfig existing = new ModbusDeviceConfig();
+        ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
         existing.manufacturer = "old";
@@ -398,12 +408,12 @@ class ModbusDeviceConfigServiceTest {
         existing.creator = Person.of("acc1", "小明");
         existing.updater = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.replace(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().voidItem());
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         cfg.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of(readHolding());
-        ModbusDeviceConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
         assertEquals("new", updated.manufacturer);
         assertEquals("19XRV", updated.model);
@@ -420,7 +430,7 @@ class ModbusDeviceConfigServiceTest {
 
     @Test
     void updateWithCommandsAbsentKeepsExistingCommands() {
-        ModbusDeviceConfig existing = new ModbusDeviceConfig();
+        ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
         existing.manufacturer = "m";
@@ -429,12 +439,12 @@ class ModbusDeviceConfigServiceTest {
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.replace(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().voidItem());
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 只改设备信息：patch.commands 为 null（请求体未带 commands 字段）
         cfg.manufacturer = "new-m";
         cfg.updater = Person.of("acc2", "小红");
-        ModbusDeviceConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
         assertEquals("new-m", updated.manufacturer);
         // 既有功能码不被整体清空
@@ -444,7 +454,7 @@ class ModbusDeviceConfigServiceTest {
 
     @Test
     void updateWithEmptyCommandsClearsAll() {
-        ModbusDeviceConfig existing = new ModbusDeviceConfig();
+        ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
         existing.manufacturer = "m";
@@ -453,19 +463,19 @@ class ModbusDeviceConfigServiceTest {
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.replace(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().voidItem());
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 显式传空数组才算清空全部功能码
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of();
-        ModbusDeviceConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
         assertEquals(0, updated.commands.size());
     }
 
     @Test
     void updateWithBlankModelFails() {
-        ModbusDeviceConfig existing = new ModbusDeviceConfig();
+        ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
@@ -474,6 +484,48 @@ class ModbusDeviceConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.update("org1", "c1", cfg).await().indefinitely());
         assertEquals("model is required", ex.getMessage());
+    }
+
+    @Test
+    void updateCopiesTypeWhenPresent() {
+        ModbusConfig existing = new ModbusConfig();
+        existing.id = "c1";
+        existing.orgId = "org1";
+        existing.manufacturer = "m";
+        existing.model = "mm";
+        existing.visibility = "private";
+        existing.type = "urn:xiot-spec:device:old:00000001";
+        existing.creator = Person.of("acc1", "小明");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        cfg.updater = Person.of("acc2", "小红");
+        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.type);
+    }
+
+    @Test
+    void updateWithoutTypeKeepsExisting() {
+        ModbusConfig existing = new ModbusConfig();
+        existing.id = "c1";
+        existing.orgId = "org1";
+        existing.manufacturer = "m";
+        existing.model = "mm";
+        existing.visibility = "private";
+        existing.type = "urn:xiot-spec:device:chiller:0000A005";
+        existing.creator = Person.of("acc1", "小明");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        // 只改设备信息、请求体未带 type（旧客户端/存量配置），不清空既有 type
+        cfg.type = null;
+        cfg.manufacturer = "new-m";
+        cfg.updater = Person.of("acc2", "小红");
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.type);
     }
 
     @Test
@@ -494,30 +546,30 @@ class ModbusDeviceConfigServiceTest {
     void getDelegatesToVisibleLookup() {
         cfg.id = "c1";
         when(repo.findVisibleById("c1", "org1")).thenReturn(Uni.createFrom().item(cfg));
-        ModbusDeviceConfig found = service.get("org1", "c1").await().indefinitely();
+        ModbusConfig found = service.get("org1", "c1").await().indefinitely();
         assertEquals("c1", found.id);
     }
 
     @Test
     void getCrossOrgPublicReadable() {
-        ModbusDeviceConfig pub = new ModbusDeviceConfig();
+        ModbusConfig pub = new ModbusConfig();
         pub.id = "c2";
         pub.orgId = "org2"; // 他组织
         pub.visibility = "public";
         when(repo.findVisibleById("c2", "org1")).thenReturn(Uni.createFrom().item(pub));
-        ModbusDeviceConfig found = service.get("org1", "c2").await().indefinitely();
+        ModbusConfig found = service.get("org1", "c2").await().indefinitely();
         assertEquals("public", found.visibility);
         assertEquals("org2", found.orgId);
     }
 
     @Test
     void getPublicReadable() {
-        ModbusDeviceConfig pub = new ModbusDeviceConfig();
+        ModbusConfig pub = new ModbusConfig();
         pub.id = "c2";
         pub.orgId = "org2";
         pub.visibility = "public";
         when(repo.findPublicById("c2")).thenReturn(Uni.createFrom().item(pub));
-        ModbusDeviceConfig found = service.getPublic("c2").await().indefinitely();
+        ModbusConfig found = service.getPublic("c2").await().indefinitely();
         assertEquals("c2", found.id);
     }
 

@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.modbus;
+package cc.openxiot.matrix.api.modbus.config;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.modbus.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -16,7 +16,7 @@ public final class ModbusJson {
     private ModbusJson() {
     }
 
-    public static JsonObject toJson(ModbusDeviceConfig c) {
+    public static JsonObject toJson(ModbusConfig c) {
         JsonObject o = new JsonObject();
         if (c == null) {
             return o;
@@ -41,6 +41,9 @@ public final class ModbusJson {
         }
         if (c.description != null) {
             o.put("description", c.description);
+        }
+        if (c.type != null) {
+            o.put("type", c.type);
         }
         JsonArray arr = new JsonArray();
         if (c.commands != null) {
@@ -72,10 +75,10 @@ public final class ModbusJson {
         return o;
     }
 
-    public static JsonArray toArray(List<ModbusDeviceConfig> list) {
+    public static JsonArray toArray(List<ModbusConfig> list) {
         JsonArray arr = new JsonArray();
         if (list != null) {
-            for (ModbusDeviceConfig c : list) {
+            for (ModbusConfig c : list) {
                 arr.add(toJson(c));
             }
         }

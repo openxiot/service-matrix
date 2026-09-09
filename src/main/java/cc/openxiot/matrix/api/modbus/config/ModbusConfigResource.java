@@ -1,10 +1,10 @@
-package cc.openxiot.matrix.api.modbus;
+package cc.openxiot.matrix.api.modbus.config;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -28,17 +28,17 @@ import org.jboss.logging.Logger;
  * Modbus 设备点表配置 API。org 一律取 {@code X-Org-Id} 请求头，并经
  * {@link OrgAccessService#checkMember} 校验（需为组织成员），口径与 device/space 一致。
  */
-@Path("/matrix/v1/modbus")
+@Path("/matrix/v1/modbus/config")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Modbus", description = "Modbus 设备点表配置 API")
 @RequestScoped
-public class ModbusDeviceConfigResource extends AbstractResource {
+public class ModbusConfigResource extends AbstractResource {
 
     @Inject
     Logger logger;
 
     @Inject
-    ModbusDeviceConfigService service;
+    ModbusConfigService service;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -46,7 +46,7 @@ public class ModbusDeviceConfigResource extends AbstractResource {
     @GET
     public Uni<Response> hello() {
         logger.info("hello");
-        return Uni.createFrom().item(OxResponse.ok("Hello from ModbusDeviceConfigResource"));
+        return Uni.createFrom().item(OxResponse.ok("Hello from ModbusConfigResource"));
     }
 
     @GET
@@ -113,7 +113,7 @@ public class ModbusDeviceConfigResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> createOne(
             @HeaderParam("X-Org-Id") String orgId,
-            ModbusDeviceConfig cfg
+            ModbusConfig cfg
     ) {
         logger.infov("create modbus device config, org: {0}", orgId);
         if (cfg == null) {
@@ -139,7 +139,7 @@ public class ModbusDeviceConfigResource extends AbstractResource {
     public Uni<Response> updateOne(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("id") String id,
-            ModbusDeviceConfig cfg
+            ModbusConfig cfg
     ) {
         logger.infov("update modbus device config, org: {0}, id: {1}", orgId, id);
         if (cfg == null) {

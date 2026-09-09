@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.modbus;
+package cc.openxiot.matrix.api.modbus.config;
 
-import cc.openxiot.matrix.db.modbus.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
 import com.mongodb.client.model.Filters;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @ApplicationScoped
-public class ModbusDeviceConfigService {
+public class ModbusConfigService {
 
     /** 功能码词表（十六进制大写字符串）。 */
     private static final Set<String> FCS = Set.of("01", "02", "03", "04", "05", "06", "0F", "10");
@@ -42,7 +42,7 @@ public class ModbusDeviceConfigService {
     Logger logger;
 
     @Inject
-    ModbusDeviceConfigRepository repo;
+    ModbusConfigRepository repo;
 
     @Inject
     ReactiveMongoClient mongo;
@@ -58,7 +58,7 @@ public class ModbusDeviceConfigService {
         repo.ensureIndexes().await().indefinitely();
     }
 
-    public Uni<ModbusDeviceConfig> create(ModbusDeviceConfig cfg) {
+    public Uni<ModbusConfig> create(ModbusConfig cfg) {
         String err = validate(cfg);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -67,7 +67,7 @@ public class ModbusDeviceConfigService {
         return repo.insert(cfg).replaceWith(cfg);
     }
 
-    public Uni<ModbusDeviceConfig> update(String orgId, String id, ModbusDeviceConfig patch) {
+    public Uni<ModbusConfig> update(String orgId, String id, ModbusConfig patch) {
         String err = checkId(orgId, id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -86,6 +86,10 @@ public class ModbusDeviceConfigService {
                     existing.slaveId = patch.slaveId;
                     existing.visibility = patch.visibility;
                     existing.description = patch.description;
+                    // type 缺省/为 null 时保留既有值（兼容存量无 type 的旧配置，编辑其他字段不清空）。
+                    if (patch.type != null) {
+                        existing.type = patch.type;
+                    }
                     // commands 缺省/为 null 时保留既有列表，避免旧客户端或“只改设备信息”的请求体
                     // 不带 commands 字段而把已配置的功能码整体清空（显式传 [] 才表示清空全部）。
                     if (patch.commands != null) {
@@ -103,7 +107,7 @@ public class ModbusDeviceConfigService {
      * 返回「当前组织配置（任意可见度）」或「任意组织的公开配置」，与 /visible 列表口径一致；
      * 他组织非公开配置一律视为 not found。
      */
-    public Uni<ModbusDeviceConfig> get(String orgId, String id) {
+    public Uni<ModbusConfig> get(String orgId, String id) {
         String err = checkId(orgId, id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -121,7 +125,7 @@ public class ModbusDeviceConfigService {
      * 读公开单条（无组织场景浏览用，仅需登录，无需成员身份）：任意组织的公开配置；
      * 非公开 → not found。
      */
-    public Uni<ModbusDeviceConfig> getPublic(String id) {
+    public Uni<ModbusConfig> getPublic(String id) {
         if (id == null || id.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("id is required"));
         }
@@ -134,18 +138,18 @@ public class ModbusDeviceConfigService {
                 });
     }
 
-    public Uni<List<ModbusDeviceConfig>> listByOrg(String orgId) {
+    public Uni<List<ModbusConfig>> listByOrg(String orgId) {
         if (orgId == null || orgId.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("orgId is required"));
         }
         return repo.listByOrg(orgId);
     }
 
-    public Uni<List<ModbusDeviceConfig>> listPublic() {
+    public Uni<List<ModbusConfig>> listPublic() {
         return repo.listPublic();
     }
 
-    public Uni<List<ModbusDeviceConfig>> listVisible(String orgId) {
+    public Uni<List<ModbusConfig>> listVisible(String orgId) {
         if (orgId == null || orgId.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("orgId is required"));
         }
@@ -178,17 +182,20 @@ public class ModbusDeviceConfigService {
         return null;
     }
 
-    private String validate(ModbusDeviceConfig cfg) {
+    private String validate(ModbusConfig cfg) {
         if (cfg == null) {
             return "body is required";
         }
         if (cfg.orgId == null || cfg.orgId.isBlank()) {
             return "orgId is required";
         }
+        if (cfg.type == null || cfg.type.isBlank()) {
+            return "type is required";
+        }
         return validateContent(cfg);
     }
 
-    private String validateContent(ModbusDeviceConfig cfg) {
+    private String validateContent(ModbusConfig cfg) {
         if (cfg.manufacturer == null || cfg.manufacturer.isBlank()) {
             return "manufacturer is required";
         }

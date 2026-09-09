@@ -13,12 +13,13 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.db.modbus.ModbusDeviceConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -27,22 +28,23 @@ import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
 
 @QuarkusTest
-class ModbusDeviceConfigResourceTest {
+class ModbusConfigResourceTest {
 
     @InjectMock
-    ModbusDeviceConfigService service;
+    ModbusConfigService service;
 
     @InjectMock
     OrgAccessService orgAccessService;
 
-    private ModbusDeviceConfig sample() {
-        ModbusDeviceConfig cfg = new ModbusDeviceConfig();
+    private ModbusConfig sample() {
+        ModbusConfig cfg = new ModbusConfig();
         cfg.id = "c1";
         cfg.orgId = "org1";
         cfg.manufacturer = "开利";
         cfg.model = "19XRV";
         cfg.slaveId = 1;
         cfg.visibility = "private";
+        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
         cfg.creator = Person.of("acc1", "小明");
         cfg.updater = Person.of("acc1", "小明");
         return cfg;
@@ -54,16 +56,16 @@ class ModbusDeviceConfigResourceTest {
 
     @Test
     void helloIsPublic() {
-        given().when().get("/matrix/v1/modbus")
+        given().when().get("/matrix/v1/modbus/config")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data", equalTo("Hello from ModbusDeviceConfigResource"));
+                .body("data", equalTo("Hello from ModbusConfigResource"));
     }
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void missingOrgHeaderFails() {
-        given().when().get("/matrix/v1/modbus/many")
+        given().when().get("/matrix/v1/modbus/config/many")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", containsString("X-Org-Id"));
@@ -73,25 +75,28 @@ class ModbusDeviceConfigResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void createOkOverridesOrgFromHeader() {
         allowMember();
-        when(service.create(any(ModbusDeviceConfig.class))).thenReturn(Uni.createFrom().item(sample()));
+        when(service.create(any(ModbusConfig.class))).thenReturn(Uni.createFrom().item(sample()));
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"commands\":[]}")
-                .when().post("/matrix/v1/modbus/one")
+                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\","
+                        + "\"type\":\"urn:xiot-spec:device:chiller:0000A005\",\"commands\":[]}")
+                .when().post("/matrix/v1/modbus/config/one")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.manufacturer", equalTo("开利"))
                 .body("data.model", equalTo("19XRV"))
                 .body("data.slaveId", equalTo(1))
                 .body("data.visibility", equalTo("private"))
+                .body("data.type", equalTo("urn:xiot-spec:device:chiller:0000A005"))
                 .body("data.id", equalTo("c1"));
 
-        ArgumentCaptor<ModbusDeviceConfig> captor = ArgumentCaptor.forClass(ModbusDeviceConfig.class);
+        ArgumentCaptor<ModbusConfig> captor = ArgumentCaptor.forClass(ModbusConfig.class);
         verify(service).create(captor.capture());
-        ModbusDeviceConfig sent = captor.getValue();
+        ModbusConfig sent = captor.getValue();
         // orgId 被请求头覆盖；creator 取当前登录人（TestSecurity 无 username claim → name 为 null）
         assertEquals("org1", sent.orgId);
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", sent.type);
         assertEquals("tester", sent.creator.id);
         assertNotNull(sent.creator.timestamp);
     }
@@ -100,13 +105,13 @@ class ModbusDeviceConfigResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void createValidationErrorIsHttp200() {
         allowMember();
-        when(service.create(any(ModbusDeviceConfig.class)))
+        when(service.create(any(ModbusConfig.class)))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("manufacturer is required")));
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
                 .body("{\"manufacturer\":\"\",\"commands\":[]}")
-                .when().post("/matrix/v1/modbus/one")
+                .when().post("/matrix/v1/modbus/config/one")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", equalTo("manufacturer is required"));
@@ -119,7 +124,7 @@ class ModbusDeviceConfigResourceTest {
         when(service.listByOrg(anyString())).thenReturn(Uni.createFrom().item(List.of(sample())));
 
         given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/many")
+                .when().get("/matrix/v1/modbus/config/many")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data", hasSize(1))
@@ -136,7 +141,7 @@ class ModbusDeviceConfigResourceTest {
         when(service.listVisible("org1")).thenReturn(Uni.createFrom().item(List.of(sample())));
 
         given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/visible")
+                .when().get("/matrix/v1/modbus/config/visible")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data", hasSize(1))
@@ -146,11 +151,11 @@ class ModbusDeviceConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void publicOk() {
-        ModbusDeviceConfig pub = sample();
+        ModbusConfig pub = sample();
         pub.visibility = "public";
         when(service.listPublic()).thenReturn(Uni.createFrom().item(List.of(pub)));
 
-        given().when().get("/matrix/v1/modbus/public")
+        given().when().get("/matrix/v1/modbus/config/public")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data", hasSize(1))
@@ -165,7 +170,7 @@ class ModbusDeviceConfigResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: nope")));
 
         given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/one/nope")
+                .when().get("/matrix/v1/modbus/config/one/nope")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", containsString("not found"));
@@ -174,12 +179,12 @@ class ModbusDeviceConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void getOneWithoutOrgReadsPublic() {
-        ModbusDeviceConfig pub = sample();
+        ModbusConfig pub = sample();
         pub.visibility = "public";
         when(service.getPublic("c1")).thenReturn(Uni.createFrom().item(pub));
 
         // 未带 X-Org-Id（未选组织浏览）：仍可读公开配置详情，无需成员校验
-        given().when().get("/matrix/v1/modbus/one/c1")
+        given().when().get("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.manufacturer", equalTo("开利"))
@@ -190,13 +195,13 @@ class ModbusDeviceConfigResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void getOneWithOrgReadsCrossOrgPublic() {
         allowMember();
-        ModbusDeviceConfig pub = sample();
+        ModbusConfig pub = sample();
         pub.orgId = "org2"; // 他组织公开
         pub.visibility = "public";
         when(service.get("org1", "c1")).thenReturn(Uni.createFrom().item(pub));
 
         given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/one/c1")
+                .when().get("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.orgId", equalTo("org2"))
@@ -207,13 +212,13 @@ class ModbusDeviceConfigResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void updateOk() {
         allowMember();
-        when(service.update(anyString(), anyString(), any(ModbusDeviceConfig.class)))
+        when(service.update(anyString(), anyString(), any(ModbusConfig.class)))
                 .thenReturn(Uni.createFrom().item(sample()));
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
                 .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"commands\":[]}")
-                .when().put("/matrix/v1/modbus/one/c1")
+                .when().put("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.manufacturer", equalTo("开利"))
@@ -227,7 +232,7 @@ class ModbusDeviceConfigResourceTest {
         when(service.delete("org1", "c1")).thenReturn(Uni.createFrom().item(1L));
 
         given().header("X-Org-Id", "org1")
-                .when().delete("/matrix/v1/modbus/one/c1")
+                .when().delete("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true));
     }
