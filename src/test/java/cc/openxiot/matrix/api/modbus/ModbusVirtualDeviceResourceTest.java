@@ -91,8 +91,19 @@ class ModbusVirtualDeviceResourceTest {
         return cfg;
     }
 
-    private void allowMember() {
-        when(orgAccessService.checkMember(anyString(), anyString())).thenReturn(Uni.createFrom().voidItem());
+    /** createOne / deleteOne 现走 {@link OrgAccessService#checkAdmin}（组织管理员）门槛。 */
+    private void allowAdmin() {
+        when(orgAccessService.checkAdmin(anyString(), anyString())).thenReturn(Uni.createFrom().voidItem());
+    }
+
+    /** 一条可解码回环的虚拟设备定义文档（instance.type 精确可查），供 getInstance 返回。 */
+    private ModbusVirtualDevice instanceDoc(String type) {
+        DeviceInstance di = new DeviceInstance(DeviceType.parse(type));
+        ModbusVirtualDevice v = new ModbusVirtualDevice();
+        v.did = "virt-1";
+        v.instance.type = type;
+        v.instance.definition = DeviceInstanceCodec.encode(di).toString();
+        return v;
     }
 
     private void allowConfig(ModbusConfig cfg) {
@@ -139,7 +150,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void createValidationErrorIsHttp200() {
-        allowMember();
+        allowAdmin();
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
                 .body("{\"configId\":\"c1\",\"did\":\"p1\",\"siid\":0,\"aiid\":2}")
@@ -152,7 +163,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void configNotFoundFails() {
-        allowMember();
+        allowAdmin();
         when(configService.get(anyString(), anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: nope")));
 
@@ -168,7 +179,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void configTypeMissingFails() {
-        allowMember();
+        allowAdmin();
         ModbusConfig cfg = sample();
         cfg.slave.type = null;
         allowConfig(cfg);
@@ -185,7 +196,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void createOkRegistersChildDeviceAndPersistsDefinition() {
-        allowMember();
+        allowAdmin();
         allowConfig(sample());
         when(repo.insert(any(ModbusVirtualDevice.class))).thenReturn(Uni.createFrom().voidItem());
         allowParentDevice();
@@ -261,7 +272,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void createParentDeviceMissingFails() {
-        allowMember();
+        allowAdmin();
         allowConfig(sample());
         when(deviceService.getByDeviceId("parent-device-1")).thenReturn(Uni.createFrom().nullItem());
 
@@ -287,7 +298,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void deleteNotFoundFails() {
-        allowMember();
+        allowAdmin();
         when(repo.findByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().nullItem());
 
         given().header("X-Org-Id", "org1")
@@ -301,7 +312,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void deleteOkRemovesDefinitionDocAndMatrixChild() {
-        allowMember();
+        allowAdmin();
         ModbusVirtualDevice v = new ModbusVirtualDevice();
         v.did = "virt-1";
         v.orgId = "org1";
@@ -324,7 +335,7 @@ class ModbusVirtualDeviceResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void deleteCrossOrgIsRejected() {
-        allowMember();
+        allowAdmin();
         // 定义文档归属 org2；以 org1 身份删除 → 查不到（org 约束防跨组织删除）
         when(repo.findByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().nullItem());
 
@@ -334,5 +345,29 @@ class ModbusVirtualDeviceResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", containsString("not found"));
+    }
+
+    // ===== getInstance：公开只读，按派生 DeviceType 取实例定义 =====
+
+    @Test
+    void getInstanceNotFoundFails() {
+        String type = "urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1";
+        when(repo.findFirstByInstanceType(type)).thenReturn(Uni.createFrom().nullItem());
+
+        given().when().get("/matrix/v1/modbus/virtual/instance/" + type)
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("not found"));
+    }
+
+    @Test
+    void getInstanceOkReturnsDecodedInstance() {
+        String type = "urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1";
+        when(repo.findFirstByInstanceType(type)).thenReturn(Uni.createFrom().item(instanceDoc(type)));
+
+        given().when().get("/matrix/v1/modbus/virtual/instance/" + type)
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data", notNullValue());
     }
 }

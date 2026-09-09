@@ -17,8 +17,8 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 /**
- * Modbus 虚拟化 API。org 一律取 {@code X-Org-Id} 请求头，并经
- * {@link OrgAccessService#checkMember} 校验（需为组织成员），口径与 device/space 一致。
+ * Modbus 虚拟化 API。createOne / deleteOne 为组织级管理操作：org 取 {@code X-Org-Id} 请求头，经
+ * {@link OrgAccessService#checkAdmin} 校验（需为组织管理员）；{@code getInstance} 为公开只读（无需鉴权）。
  *
  * <p>createOne = 生成虚拟设备实例定义并落库（{@code virtual-devices} 定义注册表），再把它作为父设备
  * （请求 {@code did}）下的子设备创建矩阵 {@code DeviceEntity}（复制父设备所在 space，离线起步）并返回该设备。
@@ -61,18 +61,18 @@ public class ModbusVirtualDeviceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         Person who = currentUser();
-        return requireMember(orgId)
+        return requireAdmin(orgId)
                 .chain(o -> service.create(o, mapping, who))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    private Uni<String> requireMember(String orgId) {
+    private Uni<String> requireAdmin(String orgId) {
         if (orgId == null || orgId.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
         }
-        return orgAccessService.checkMember(orgId, getUserId()).map(ignored -> orgId);
+        return orgAccessService.checkAdmin(orgId, getUserId()).map(ignored -> orgId);
     }
 
     @DELETE
@@ -83,9 +83,25 @@ public class ModbusVirtualDeviceResource extends AbstractResource {
             @QueryParam("did") String did
     ) {
         logger.infov("delete virtual device, org: {0}, did: {1}", orgId, did);
-        return requireMember(orgId)
+        return requireAdmin(orgId)
                 .chain(o -> service.delete(o, did))
                 .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /**
+     * 公开只读：按派生的实例 DeviceType 取出虚拟设备实例（{@code instance.type} 精确匹配，跨组织）。
+     * 无需 {@code X-Org-Id} 与成员校验——调用方仅持类型即可读，供真实接入 / 实例注册侧使用。
+     */
+    @GET
+    @Path("/instance/{type}")
+    public Uni<Response> getInstance(
+            @PathParam("type") String type
+    ) {
+        logger.infov("get virtual device instance, type: {0}", type);
+        return service.getInstance(type)
+                .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }

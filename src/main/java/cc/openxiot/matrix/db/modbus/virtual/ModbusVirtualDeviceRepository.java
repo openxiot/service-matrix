@@ -47,4 +47,11 @@ public class ModbusVirtualDeviceRepository implements ReactivePanacheMongoReposi
                 .deleteOne(Filters.and(Filters.eq("orgId", orgId), Filters.eq("_id", did)))
                 .map(DeleteResult::getDeletedCount);
     }
+
+    /** 按派生的实例 DeviceType（{@code instance.type}）取单条（公开只读，跨组织，供实例读取/接入侧用）。 */
+    public Uni<ModbusVirtualDevice> findFirstByInstanceType(String type) {
+        return collection()
+                .find(Filters.eq("instance.type", type))
+                .collect().first();
+    }
 }

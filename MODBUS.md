@@ -10,7 +10,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 
 ## 一、创建 Modbus 虚拟设备
 
-接口：`POST /matrix/v1/modbus/virtual/one`（`X-Org-Id` 请求头携带操作组织，需为该组织成员）。
+接口：`POST /matrix/v1/modbus/virtual/one`（`X-Org-Id` 请求头携带操作组织，需为该组织管理员）。
 
 ### 1. 输入
 
@@ -96,13 +96,24 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 
 ### 5. 删除
 
-接口：`DELETE /matrix/v1/modbus/virtual/one?did=<虚拟设备ID>`（`X-Org-Id` 需为该组织成员；`did` 指虚拟设备
+接口：`DELETE /matrix/v1/modbus/virtual/one?did=<虚拟设备ID>`（`X-Org-Id` 需为该组织管理员；`did` 指虚拟设备
 自身 ID，即 createOne 生成的 UUID，不是父设备 did）。
 
 * 先按 `orgId + did` 查 `virtual-devices` 定义文档：不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
 * 再删同 did 的矩阵 `DeviceEntity`（`deviceService.deleteByDeviceIds`，createOne 的镜像）与 `virtual-devices`
   定义文档；矩阵子设备可能已被先行删除（条数 0）不视为失败。
 * 不守卫子设备（沿用 device 模块本地删除口径），子树理论上可能悬空。
+
+### 6. 读取虚拟设备实例
+
+接口：`GET /matrix/v1/modbus/virtual/instance/{type}`（**公开只读**，无需 `X-Org-Id` 与成员校验）。
+
+* `type` = createOne 派生的**实例 DeviceType**（8 段实例类型，与矩阵 `DeviceEntity` 的 `type` 一致，
+  如 `urn:xiot-spec:device:chiller:0000a005:<父did>:<cfgid>:1`，经路径传参）。
+* 按 `instance.type` **跨组织**精确匹配 `virtual-devices` 定义文档，把落库 `definition`
+  （`DeviceInstanceCodec` 编码 JSON）解析回 xiot-spec 模型并重新编码返回；
+  未命中 → `modbus virtual device instance not found: <type>`。
+* 供仅持类型、无组织上下文的调用方（真实 Modbus 接入 / 实例注册侧）读取实例定义。
 
 ## 二、参考文档
 
@@ -111,7 +122,12 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 ## 三、变更记录
 
 ### 2026-09-09
-* 新增删除虚拟设备 `deleteOne`：`DELETE /matrix/v1/modbus/virtual/one?did=...`（需 `X-Org-Id` 为该组织成员）。
+* 虚拟设备 createOne / deleteOne 授权从「组织成员」收紧为「**组织管理员**」（`OrgAccessService.checkAdmin`），
+  仅 `getInstance` 保持公开只读。
+* 新增公开只读 `getInstance`：`GET /matrix/v1/modbus/virtual/instance/{type}`（无需鉴权），按派生的实例
+  DeviceType 跨组织读取 `virtual-devices` 定义文档并把 `definition` 解码为 `DeviceInstance` 返回
+  （未命中 / 存量定义损坏 → 明确报错）。
+* 新增删除虚拟设备 `deleteOne`：`DELETE /matrix/v1/modbus/virtual/one?did=...`（需 `X-Org-Id` 为该组织管理员）。
   按当前组织删除 `virtual-devices` 定义文档 + 同 did 的矩阵 `DeviceEntity`（createOne 的镜像清理，不做子设备守卫）；
   不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
 * 点表配置新增 `lifecycle`（生命周期，存储串与 xiot-spec `Lifecycle` 对齐：`development`/`preview`/`released`）：

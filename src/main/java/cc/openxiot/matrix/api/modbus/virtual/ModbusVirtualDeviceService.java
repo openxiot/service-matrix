@@ -31,6 +31,7 @@ import cn.geekcity.xiot.spec.instance.DeviceInstance;
 import cn.geekcity.xiot.spec.instance.Property;
 import cn.geekcity.xiot.spec.instance.Service;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -121,6 +122,35 @@ public class ModbusVirtualDeviceService {
                     return deviceService.deleteByDeviceIds(List.of(did))
                             .chain(count -> repo.deleteByIdAndOrg(did, orgId))
                             .replaceWithVoid();
+                });
+    }
+
+    // ===== 读取 =====
+
+    /**
+     * 公开只读取出一个虚拟设备实例：按派生的实例 DeviceType（{@code instance.type}）跨组织精确匹配
+     * {@code virtual-devices} 定义文档（调用方仅持类型、无组织上下文——真实接入/实例注册侧）。
+     * 把落库的 {@code definition}（DeviceInstanceCodec 编码 JSON）解析回 xiot-spec 模型再编码返回，
+     * 未命中或存量定义损坏 → 明确报错。
+     */
+    public Uni<JsonObject> getInstance(String type) {
+        if (type == null || type.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("type is required"));
+        }
+        return repo.findFirstByInstanceType(type)
+                .onItem().transformToUni(v -> {
+                    if (v == null || v.instance == null || v.instance.definition == null || v.instance.definition.isBlank()) {
+                        return Uni.createFrom().failure(
+                                new IllegalArgumentException("modbus virtual device instance not found: " + type));
+                    }
+                    DeviceInstance instance;
+                    try {
+                        instance = DeviceInstanceCodec.decode(new JsonObject(v.instance.definition));
+                    } catch (RuntimeException e) {
+                        return Uni.createFrom().failure(
+                                new IllegalArgumentException("invalid modbus virtual device instance definition: " + type));
+                    }
+                    return Uni.createFrom().item(DeviceInstanceCodec.encode(instance));
                 });
     }
 
