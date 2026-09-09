@@ -3,6 +3,8 @@ package cc.openxiot.matrix.api.modbus.config;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
+import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -27,23 +29,9 @@ public final class ModbusJson {
         if (c.orgId != null) {
             o.put("orgId", c.orgId);
         }
-        if (c.manufacturer != null) {
-            o.put("manufacturer", c.manufacturer);
-        }
-        if (c.model != null) {
-            o.put("model", c.model);
-        }
-        if (c.slaveId != null) {
-            o.put("slaveId", c.slaveId);
-        }
+        o.put("slave", slaveToJson(c.slave));
         if (c.visibility != null) {
             o.put("visibility", c.visibility);
-        }
-        if (c.description != null) {
-            o.put("description", c.description);
-        }
-        if (c.type != null) {
-            o.put("type", c.type);
         }
         JsonArray arr = new JsonArray();
         if (c.commands != null) {
@@ -57,6 +45,50 @@ public final class ModbusJson {
         }
         if (c.updater != null) {
             o.put("updater", personToJson(c.updater));
+        }
+        return o;
+    }
+
+    private static JsonObject slaveToJson(ModbusSlave s) {
+        JsonObject o = new JsonObject();
+        if (s == null) {
+            return o;
+        }
+        if (s.manufacturer != null) {
+            o.put("manufacturer", s.manufacturer);
+        }
+        if (s.model != null) {
+            o.put("model", s.model);
+        }
+        if (s.slaveId != null) {
+            o.put("slaveId", s.slaveId);
+        }
+        if (s.type != null) {
+            o.put("type", deviceTypeToJson(s.type));
+        }
+        if (s.description != null) {
+            o.put("description", s.description);
+        }
+        return o;
+    }
+
+    private static JsonObject deviceTypeToJson(ModbusDeviceType t) {
+        JsonObject o = new JsonObject();
+        if (t == null) {
+            return o;
+        }
+        if (t.specDescription != null && !t.specDescription.isEmpty()) {
+            JsonObject m = new JsonObject();
+            t.specDescription.forEach(m::put);
+            o.put("specDescription", m);
+        }
+        if (t.typeDescription != null && !t.typeDescription.isEmpty()) {
+            JsonObject m = new JsonObject();
+            t.typeDescription.forEach(m::put);
+            o.put("typeDescription", m);
+        }
+        if (t.type != null) {
+            o.put("type", t.type);
         }
         return o;
     }
@@ -95,6 +127,9 @@ public final class ModbusJson {
         }
         if (cmd.fc != null) {
             o.put("fc", cmd.fc);
+        }
+        if (cmd.index != null) {
+            o.put("index", cmd.index);
         }
         if (cmd.start != null) {
             o.put("start", cmd.start);

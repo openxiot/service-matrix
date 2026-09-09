@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 
 import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -40,11 +42,15 @@ class ModbusConfigResourceTest {
         ModbusConfig cfg = new ModbusConfig();
         cfg.id = "c1";
         cfg.orgId = "org1";
-        cfg.manufacturer = "开利";
-        cfg.model = "19XRV";
-        cfg.slaveId = 1;
+        cfg.slave.manufacturer = "开利";
+        cfg.slave.model = "19XRV";
+        cfg.slave.slaveId = 1;
+        ModbusDeviceType deviceType = new ModbusDeviceType();
+        deviceType.type = "urn:xiot-spec:device:chiller:0000A005";
+        deviceType.specDescription = Map.of("zh-CN", "智能楼宇");
+        deviceType.typeDescription = Map.of("zh-CN", "冷水机组", "en-US", "Chiller");
+        cfg.slave.type = deviceType;
         cfg.visibility = "private";
-        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
         cfg.creator = Person.of("acc1", "小明");
         cfg.updater = Person.of("acc1", "小明");
         return cfg;
@@ -79,16 +85,20 @@ class ModbusConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\","
-                        + "\"type\":\"urn:xiot-spec:device:chiller:0000A005\",\"commands\":[]}")
+                .body("{\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,"
+                        + "\"type\":{\"type\":\"urn:xiot-spec:device:chiller:0000A005\","
+                        + "\"specDescription\":{\"zh-CN\":\"智能楼宇\"},"
+                        + "\"typeDescription\":{\"zh-CN\":\"冷水机组\",\"en-US\":\"Chiller\"}}},"
+                        + "\"visibility\":\"private\",\"commands\":[]}")
                 .when().post("/matrix/v1/modbus/config/one")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.manufacturer", equalTo("开利"))
-                .body("data.model", equalTo("19XRV"))
-                .body("data.slaveId", equalTo(1))
+                .body("data.slave.manufacturer", equalTo("开利"))
+                .body("data.slave.model", equalTo("19XRV"))
+                .body("data.slave.slaveId", equalTo(1))
                 .body("data.visibility", equalTo("private"))
-                .body("data.type", equalTo("urn:xiot-spec:device:chiller:0000A005"))
+                .body("data.slave.type.type", equalTo("urn:xiot-spec:device:chiller:0000A005"))
+                .body("data.slave.type.typeDescription.zh-CN", equalTo("冷水机组"))
                 .body("data.id", equalTo("c1"));
 
         ArgumentCaptor<ModbusConfig> captor = ArgumentCaptor.forClass(ModbusConfig.class);
@@ -96,7 +106,10 @@ class ModbusConfigResourceTest {
         ModbusConfig sent = captor.getValue();
         // orgId 被请求头覆盖；creator 取当前登录人（TestSecurity 无 username claim → name 为 null）
         assertEquals("org1", sent.orgId);
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", sent.type);
+        assertNotNull(sent.slave.type);
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", sent.slave.type.type);
+        assertEquals("冷水机组", sent.slave.type.typeDescription.get("zh-CN"));
+        assertEquals("开利", sent.slave.manufacturer);
         assertEquals("tester", sent.creator.id);
         assertNotNull(sent.creator.timestamp);
     }
@@ -110,7 +123,7 @@ class ModbusConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"\",\"commands\":[]}")
+                .body("{\"slave\":{\"manufacturer\":\"\"},\"commands\":[]}")
                 .when().post("/matrix/v1/modbus/config/one")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
@@ -128,9 +141,9 @@ class ModbusConfigResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data", hasSize(1))
-                .body("data[0].manufacturer", equalTo("开利"))
-                .body("data[0].model", equalTo("19XRV"))
-                .body("data[0].slaveId", equalTo(1))
+                .body("data[0].slave.manufacturer", equalTo("开利"))
+                .body("data[0].slave.model", equalTo("19XRV"))
+                .body("data[0].slave.slaveId", equalTo(1))
                 .body("data[0].visibility", equalTo("private"));
     }
 
@@ -187,7 +200,7 @@ class ModbusConfigResourceTest {
         given().when().get("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.manufacturer", equalTo("开利"))
+                .body("data.slave.manufacturer", equalTo("开利"))
                 .body("data.visibility", equalTo("public"));
     }
 
@@ -217,12 +230,12 @@ class ModbusConfigResourceTest {
 
         given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
-                .body("{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1,\"visibility\":\"private\",\"commands\":[]}")
+                .body("{\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},\"visibility\":\"private\",\"commands\":[]}")
                 .when().put("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.manufacturer", equalTo("开利"))
-                .body("data.slaveId", equalTo(1));
+                .body("data.slave.manufacturer", equalTo("开利"))
+                .body("data.slave.slaveId", equalTo(1));
     }
 
     @Test

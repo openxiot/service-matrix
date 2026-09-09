@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.virtual.params.CreateModbusVirtualDeviceRequest;
+import cc.openxiot.matrix.db.modbus.virtual.ModbusMapping;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -32,13 +32,13 @@ import org.jboss.logging.Logger;
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Modbus Virtual", description = "Modbus 虚拟化 API")
 @RequestScoped
-public class ModbusVirtualResource extends AbstractResource {
+public class ModbusVirtualDeviceResource extends AbstractResource {
 
     @Inject
     Logger logger;
 
     @Inject
-    ModbusVirtualService service;
+    ModbusVirtualDeviceService service;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -46,7 +46,7 @@ public class ModbusVirtualResource extends AbstractResource {
     @GET
     public Uni<Response> hello() {
         logger.info("hello");
-        return Uni.createFrom().item(OxResponse.ok("Hello from ModbusVirtualResource"));
+        return Uni.createFrom().item(OxResponse.ok("Hello from ModbusVirtualDeviceResource"));
     }
 
     @POST
@@ -55,15 +55,15 @@ public class ModbusVirtualResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> createOne(
             @HeaderParam("X-Org-Id") String orgId,
-            CreateModbusVirtualDeviceRequest request
+            ModbusMapping mapping
     ) {
         logger.infov("create virtual device, org: {0}", orgId);
-        if (request == null) {
+        if (mapping == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         Person who = currentUser();
         return requireMember(orgId)
-                .chain(o -> service.create(o, request, who))
+                .chain(o -> service.create(o, mapping, who))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

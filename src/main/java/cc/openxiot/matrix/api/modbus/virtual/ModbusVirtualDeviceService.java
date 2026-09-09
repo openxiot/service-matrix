@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.api.modbus.virtual;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -8,11 +9,11 @@ import java.util.UUID;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
-import cc.openxiot.matrix.api.modbus.virtual.params.CreateModbusVirtualDeviceRequest;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtual;
-import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtualRepository;
+import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtualDevice;
+import cc.openxiot.matrix.db.modbus.virtual.ModbusMapping;
+import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtualDeviceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.instance.DeviceInstanceCodec;
 import cn.geekcity.xiot.spec.constant.Spec;
 import cn.geekcity.xiot.spec.definition.property.Access;
@@ -41,9 +42,12 @@ import org.jboss.logging.Logger;
  * <p>实例定义用 xiot-spec 模型代码构造 {@link DeviceInstance}（单个 modbus Service），再经
  * {@link DeviceInstanceCodec} 编码为 JSON 文本落库，不手拼 JSON。读命令（fc 01/02/03/04）产出一个
  * 只读 backing property + 带 {@code out} 参数的 action；写命令（fc 05/06/0F/10）仅产出无参 action。</p>
+ *
+ * <p>挂载描述（源配置 + 父设备挂载点）即 {@link ModbusMapping}：同对象作请求体 / 实体 {@code mapping}
+ * 子文档 / 响应 {@code mapping} 回显，不在实体中平铺重复字段。</p>
  */
 @ApplicationScoped
-public class ModbusVirtualService {
+public class ModbusVirtualDeviceService {
 
     /** 读功能码。 */
     private static final List<String> READ_FCS = List.of("01", "02", "03", "04");
@@ -55,20 +59,20 @@ public class ModbusVirtualService {
     ModbusConfigService configService;
 
     @Inject
-    ModbusVirtualRepository repo;
+    ModbusVirtualDeviceRepository repo;
 
     /**
      * 校验 → 取点表配置 → 构造 DeviceInstance 并编码 → 落库 → 返回摘要数据。
      */
-    public Uni<JsonObject> create(String orgId, CreateModbusVirtualDeviceRequest request, Person who) {
-        String err = validate(request);
+    public Uni<JsonObject> create(String orgId, ModbusMapping mapping, Person who) {
+        String err = validate(mapping);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        return configService.get(orgId, request.modbusConfigId)
+        return configService.get(orgId, mapping.configId)
                 .onItem().transformToUni(cfg -> {
                     try {
-                        ModbusVirtual v = build(cfg, request, orgId, who);
+                        ModbusVirtualDevice v = build(cfg, mapping, orgId, who);
                         return repo.insert(v).map(ignored -> toData(v));
                     } catch (IllegalArgumentException e) {
                         return Uni.createFrom().failure(e);
@@ -78,34 +82,34 @@ public class ModbusVirtualService {
 
     // ===== 校验 =====
 
-    private String validate(CreateModbusVirtualDeviceRequest request) {
-        if (request == null) {
+    private String validate(ModbusMapping mapping) {
+        if (mapping == null) {
             return "body is required";
         }
-        if (request.modbusConfigId == null || request.modbusConfigId.isBlank()) {
-            return "modbusConfigId is required";
+        if (mapping.configId == null || mapping.configId.isBlank()) {
+            return "configId is required";
         }
-        if (request.did == null || request.did.isBlank()) {
+        if (mapping.did == null || mapping.did.isBlank()) {
             return "did is required";
         }
-        if (request.did.contains(":")) {
-            return "invalid did: " + request.did + " (must not contain ':')";
+        if (mapping.did.contains(":")) {
+            return "invalid did: " + mapping.did + " (must not contain ':')";
         }
-        if (request.siid < 1) {
-            return "invalid siid: " + request.siid + " (must be > 0)";
+        if (mapping.siid < 1) {
+            return "invalid siid: " + mapping.siid + " (must be > 0)";
         }
-        if (request.aiid < 1) {
-            return "invalid aiid: " + request.aiid + " (must be > 0)";
+        if (mapping.aiid < 1) {
+            return "invalid aiid: " + mapping.aiid + " (must be > 0)";
         }
         return null;
     }
 
     // ===== 生成 =====
 
-    private ModbusVirtual build(ModbusConfig cfg, CreateModbusVirtualDeviceRequest request, String orgId, Person who) {
-        DeviceType base = parseDeviceType(cfg.type);
-        String vendor = request.did.toLowerCase(Locale.ROOT);
-        String model = request.modbusConfigId.toLowerCase(Locale.ROOT);
+    private ModbusVirtualDevice build(ModbusConfig cfg, ModbusMapping mapping, String orgId, Person who) {
+        DeviceType base = parseDeviceType(cfg.slave == null || cfg.slave.type == null ? null : cfg.slave.type.type);
+        String vendor = mapping.did.toLowerCase(Locale.ROOT);
+        String model = mapping.configId.toLowerCase(Locale.ROOT);
 
         // 复用配置里的 ns/name/value 重建实例类型头部（避免 base 已是 8 段带 org/model 时重复追加）。
         String headValue = String.format("%08x", ((long) base.value()) & 0x7FFFFFFFL);
@@ -113,15 +117,17 @@ public class ModbusVirtualService {
                 "urn:%s:device:%s:%s:%s:%s:1", base.ns(), base.name(), headValue, vendor, model)).toString();
 
         DeviceInstance device = new DeviceInstance(DeviceType.parse(deviceType));
-        if (cfg.description != null && !cfg.description.isBlank()) {
-            device.description(Map.of(Spec.DESCRIPTION_EN_US, cfg.description));
+        if (cfg.slave != null && cfg.slave.description != null && !cfg.slave.description.isBlank()) {
+            device.description(Map.of(Spec.DESCRIPTION_EN_US, cfg.slave.description));
         }
 
         String ns = base.ns();
         Service svc = new Service(1, ServiceType.parse(subUrn(ns, "service", "modbus", cfg.id + ":svc", vendor, model)));
         List<Property<Object>> props = new ArrayList<>();
         List<Action> actions = new ArrayList<>();
-        List<ModbusCommand> commands = cfg.commands == null ? List.of() : cfg.commands;
+        // 排序与 iid 均依赖 ModbusCommand.index（1 起自然数）：按 index 升序生成，数组序不再影响输出
+        List<ModbusCommand> commands = new ArrayList<>(cfg.commands == null ? List.of() : cfg.commands);
+        commands.sort(Comparator.comparingInt(cmd -> cmd == null || cmd.index == null ? Integer.MAX_VALUE : cmd.index));
         for (int i = 0; i < commands.size(); i++) {
             ModbusCommand cmd = commands.get(i);
             if (cmd == null) {
@@ -129,7 +135,9 @@ public class ModbusVirtualService {
             }
             boolean read = READ_FCS.contains(cmd.fc);
             String actionUrn = subUrn(ns, "action", "a" + i, cfg.id + ":action:" + i, vendor, model);
-            Action action = new Action(i + 1, ActionType.parse(actionUrn));
+            // action iid = command.index（1 起自然数）；存量文档未回填 index 时兜底用排序位置
+            int iid = cmd.index == null ? i + 1 : cmd.index;
+            Action action = new Action(iid, ActionType.parse(actionUrn));
             if (cmd.name != null && !cmd.name.isBlank()) {
                 action.description(Map.of(Spec.DESCRIPTION_EN_US, cmd.name));
             }
@@ -150,17 +158,14 @@ public class ModbusVirtualService {
         svc.actions(actions);
         device.services().put(1, svc);
 
-        ModbusVirtual v = new ModbusVirtual();
-        v.id = UUID.randomUUID().toString();
+        ModbusVirtualDevice v = new ModbusVirtualDevice();
+        v.did = UUID.randomUUID().toString();
         // 虚拟设备归属当前操作组织（跨组织公开点表可被本组织虚拟化）
         v.orgId = orgId;
-        v.modbusConfigId = request.modbusConfigId;
-        v.did = request.did;
-        v.siid = request.siid;
-        v.aiid = request.aiid;
-        v.type = deviceType;
-        v.description = cfg.description;
-        v.definition = DeviceInstanceCodec.encode(device).toString();
+        v.mapping = mapping;
+        v.instance.type = deviceType;
+        v.instance.description = cfg.slave == null ? null : cfg.slave.description;
+        v.instance.definition = DeviceInstanceCodec.encode(device).toString();
         v.creator = who;
         return v;
     }
@@ -222,27 +227,22 @@ public class ModbusVirtualService {
     // ===== 回显 =====
 
     /** 落库后的摘要：虚拟设备形状对齐矩阵设备 + 映射信息原样回显。 */
-    private JsonObject toData(ModbusVirtual v) {
+    private JsonObject toData(ModbusVirtualDevice v) {
         JsonObject summary = new JsonObject()
-                .put("did", v.id)
-                .put("type", v.type)
+                .put("did", v.did)
+                .put("type", v.instance.type)
                 .put("online", false)
                 .put("protocol", "modbus")
-                .put("rootId", v.did)
-                .put("parentId", v.did);
-        JsonObject mapping = new JsonObject()
-                .put("modbusConfigId", v.modbusConfigId)
-                .put("did", v.did)
-                .put("siid", v.siid)
-                .put("aiid", v.aiid);
+                .put("rootId", v.mapping.did)
+                .put("parentId", v.mapping.did);
         JsonObject o = new JsonObject()
-                .put("virtualDeviceId", v.id)
+                .put("virtualDeviceId", v.did)
                 .put("deviceSummary", summary)
-                .put("mapping", mapping);
-        if (v.description != null) {
-            o.put("description", v.description);
+                .put("mapping", JsonObject.mapFrom(v.mapping));
+        if (v.instance.description != null) {
+            o.put("description", v.instance.description);
         }
-        o.put("definition", new JsonObject(v.definition));
+        o.put("definition", new JsonObject(v.instance.definition));
         return o;
     }
 }

@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.config;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import com.mongodb.client.model.Filters;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
@@ -55,6 +56,9 @@ public class ModbusConfigService {
             return;
         }
         migrateLegacyPoints();
+        migrateFlatSlave();
+        migrateLegacySlaveType();
+        migrateCommandIndex();
         repo.ensureIndexes().await().indefinitely();
     }
 
@@ -81,15 +85,15 @@ public class ModbusConfigService {
                     if (contentErr != null) {
                         return Uni.createFrom().failure(new IllegalArgumentException(contentErr));
                     }
-                    existing.manufacturer = patch.manufacturer;
-                    existing.model = patch.model;
-                    existing.slaveId = patch.slaveId;
-                    existing.visibility = patch.visibility;
-                    existing.description = patch.description;
-                    // type 缺省/为 null 时保留既有值（兼容存量无 type 的旧配置，编辑其他字段不清空）。
-                    if (patch.type != null) {
-                        existing.type = patch.type;
+                    // slave 必填（validateContent 已保证），整体替换；type 子对象缺省/为 null 时保留既有值
+                    // （兼容存量无 type 的旧配置，编辑其他字段不清空——含已随 type 落库的规范/类型文案）。
+                    ModbusDeviceType keepType =
+                            (patch.slave.type == null && existing.slave != null) ? existing.slave.type : null;
+                    existing.slave = patch.slave;
+                    if (keepType != null) {
+                        existing.slave.type = keepType;
                     }
+                    existing.visibility = patch.visibility;
                     // commands 缺省/为 null 时保留既有列表，避免旧客户端或“只改设备信息”的请求体
                     // 不带 commands 字段而把已配置的功能码整体清空（显式传 [] 才表示清空全部）。
                     if (patch.commands != null) {
@@ -189,24 +193,27 @@ public class ModbusConfigService {
         if (cfg.orgId == null || cfg.orgId.isBlank()) {
             return "orgId is required";
         }
-        if (cfg.type == null || cfg.type.isBlank()) {
+        if (cfg.slave == null || cfg.slave.type == null || cfg.slave.type.type == null || cfg.slave.type.type.isBlank()) {
             return "type is required";
         }
         return validateContent(cfg);
     }
 
     private String validateContent(ModbusConfig cfg) {
-        if (cfg.manufacturer == null || cfg.manufacturer.isBlank()) {
+        if (cfg.slave == null) {
+            return "slave is required";
+        }
+        if (cfg.slave.manufacturer == null || cfg.slave.manufacturer.isBlank()) {
             return "manufacturer is required";
         }
-        if (cfg.model == null || cfg.model.isBlank()) {
+        if (cfg.slave.model == null || cfg.slave.model.isBlank()) {
             return "model is required";
         }
-        if (cfg.slaveId == null) {
+        if (cfg.slave.slaveId == null) {
             return "slaveId is required";
         }
-        if (cfg.slaveId < 0 || cfg.slaveId > 247) {
-            return "invalid slaveId: " + cfg.slaveId;
+        if (cfg.slave.slaveId < 0 || cfg.slave.slaveId > 247) {
+            return "invalid slaveId: " + cfg.slave.slaveId;
         }
         if (cfg.visibility == null || cfg.visibility.isBlank()) {
             return "visibility is required";
@@ -221,11 +228,21 @@ public class ModbusConfigService {
         if (commands == null) {
             return null;
         }
+        Set<Integer> seenIndex = new HashSet<>();
         for (int i = 0; i < commands.size(); i++) {
             ModbusCommand c = commands.get(i);
             String base = "commands[" + i + "]";
             if (c == null) {
                 return base + " is null";
+            }
+            if (c.index == null) {
+                return base + ".index is required";
+            }
+            if (c.index < 1) {
+                return "invalid " + base + ".index: " + c.index + " (index must be a natural number, 1-based)";
+            }
+            if (!seenIndex.add(c.index)) {
+                return "invalid " + base + ".index: " + c.index + " (duplicated)";
             }
             if (c.name == null || c.name.isBlank()) {
                 return base + ".name is required";
@@ -451,6 +468,151 @@ public class ModbusConfigService {
             }
         } catch (Exception ex) {
             logger.warnf("modbus legacy migration skipped: %s", ex.getMessage());
+        }
+    }
+
+    /**
+     * 幂等迁移 configs 集合中仍是扁平形态的旧配置（顶层 manufacturer/model/slaveId/type/description，
+     * 无 slave 子文档）→ 包装为 {@code slave} 子对象，字段缺失/为 null 一律不写入。
+     */
+    void migrateFlatSlave() {
+        if (mongo == null) {
+            return;
+        }
+        try {
+            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
+                    .getCollection("configs", Document.class);
+            List<Document> docs = col
+                    .find(Filters.and(Filters.exists("slave", false), Filters.exists("manufacturer", true)))
+                    .collect().asList().await().indefinitely();
+            if (docs.isEmpty()) {
+                return;
+            }
+            int done = 0;
+            for (Document d : docs) {
+                try {
+                    Document slave = new Document();
+                    if (d.getString("manufacturer") != null) {
+                        slave.put("manufacturer", d.getString("manufacturer"));
+                    }
+                    if (d.getString("model") != null) {
+                        slave.put("model", d.getString("model"));
+                    }
+                    if (d.get("slaveId") != null) {
+                        slave.put("slaveId", d.get("slaveId"));
+                    }
+                    if (d.getString("type") != null) {
+                        slave.put("type", d.getString("type"));
+                    }
+                    if (d.getString("description") != null) {
+                        slave.put("description", d.getString("description"));
+                    }
+                    d.put("slave", slave);
+                    d.remove("manufacturer");
+                    d.remove("model");
+                    d.remove("slaveId");
+                    d.remove("type");
+                    d.remove("description");
+                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
+                    done++;
+                } catch (Exception ex) {
+                    logger.warnf("skip flat-to-slave migration for _id=%s: %s", d.get("_id"), ex.getMessage());
+                }
+            }
+            if (done > 0) {
+                logger.infof("migrated %d modbus device config(s): flat fields -> slave", done);
+            }
+        } catch (Exception ex) {
+            logger.warnf("modbus flat-slave migration skipped: %s", ex.getMessage());
+        }
+    }
+
+    /**
+     * 幂等迁移 {@code slave.type} 仍是字符串的旧文档 → 包装为 {@link ModbusDeviceType} 子对象
+     * （{@code {type: <URN>}}，specDescription / typeDescription 暂缺由前端回退解析）。
+     * 覆盖两类存量：扁平时代的顶层 {@code type}（经 {@link #migrateFlatSlave()} 收进 slave 后是字符串）、
+     * 以及嵌套 slave 但 type 还是字符串的中间版本文档。已是对象则跳过。
+     */
+    void migrateLegacySlaveType() {
+        if (mongo == null) {
+            return;
+        }
+        try {
+            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
+                    .getCollection("configs", Document.class);
+            List<Document> docs = col.find(Filters.exists("slave", true)).collect().asList().await().indefinitely();
+            if (docs.isEmpty()) {
+                return;
+            }
+            int done = 0;
+            for (Document d : docs) {
+                try {
+                    Object slaveRaw = d.get("slave");
+                    if (!(slaveRaw instanceof Document slave)) {
+                        continue;
+                    }
+                    Object typeRaw = slave.get("type");
+                    if (!(typeRaw instanceof String)) {
+                        continue; // 已包装为对象或缺失，跳过（幂等）
+                    }
+                    slave.put("type", new Document("type", typeRaw));
+                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
+                    done++;
+                } catch (Exception ex) {
+                    logger.warnf("skip slave-type wrapping for _id=%s: %s", d.get("_id"), ex.getMessage());
+                }
+            }
+            if (done > 0) {
+                logger.infof("migrated %d modbus device config(s): slave.type string -> object", done);
+            }
+        } catch (Exception ex) {
+            logger.warnf("modbus slave-type migration skipped: %s", ex.getMessage());
+        }
+    }
+
+    /**
+     * 幂等回填 {@code configs} 集合里 {@code commands[].index}（1 起自然数）。
+     * 旧文档没有 index，须在读取前补齐，否则虚拟设备生成时 action iid 无法对应；
+     * 匹配到任一命令缺 index 的文档，就整段按数组位置重排为 1..N。
+     */
+    void migrateCommandIndex() {
+        if (mongo == null) {
+            return;
+        }
+        try {
+            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
+                    .getCollection("configs", Document.class);
+            List<Document> docs = col
+                    .find(Filters.and(
+                            Filters.exists("commands", true),
+                            Filters.elemMatch("commands", Filters.exists("index", false))))
+                    .collect().asList().await().indefinitely();
+            if (docs.isEmpty()) {
+                return;
+            }
+            int done = 0;
+            for (Document d : docs) {
+                try {
+                    Object raw = d.get("commands");
+                    if (!(raw instanceof List<?> list)) {
+                        continue;
+                    }
+                    for (int j = 0; j < list.size(); j++) {
+                        if (list.get(j) instanceof Document cmd) {
+                            cmd.put("index", j + 1);
+                        }
+                    }
+                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
+                    done++;
+                } catch (Exception ex) {
+                    logger.warnf("skip command-index backfill for _id=%s: %s", d.get("_id"), ex.getMessage());
+                }
+            }
+            if (done > 0) {
+                logger.infof("migrated %d modbus device config(s): commands[] index backfilled", done);
+            }
+        } catch (Exception ex) {
+            logger.warnf("modbus command-index migration skipped: %s", ex.getMessage());
         }
     }
 

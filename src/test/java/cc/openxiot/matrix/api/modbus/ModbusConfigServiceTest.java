@@ -22,6 +22,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import io.smallrye.mutiny.Uni;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,17 +40,25 @@ class ModbusConfigServiceTest {
     void setUp() {
         cfg = new ModbusConfig();
         cfg.orgId = "org1";
-        cfg.manufacturer = "开利";
-        cfg.model = "19XRV";
-        cfg.slaveId = 1;
+        cfg.slave.manufacturer = "开利";
+        cfg.slave.model = "19XRV";
+        cfg.slave.slaveId = 1;
         cfg.visibility = "private";
-        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
+        cfg.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
+    }
+
+    /** 包一个品类 DeviceType 包装对象。 */
+    private static ModbusDeviceType typeOf(String urn) {
+        ModbusDeviceType t = new ModbusDeviceType();
+        t.type = urn;
+        return t;
     }
 
     /** 合法的读保持寄存器动作（默认样例）。 */
     private ModbusCommand readHolding() {
         ModbusCommand c = new ModbusCommand();
         c.name = "CHW_TEMP";
+        c.index = 1;
         c.fc = "03";
         c.start = 10;
         c.quantity = 2;
@@ -97,7 +106,7 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWithBlankManufacturerFails() {
-        cfg.manufacturer = "";
+        cfg.slave.manufacturer = "";
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("manufacturer is required", ex.getMessage());
@@ -105,7 +114,7 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWithBlankModelFails() {
-        cfg.model = " ";
+        cfg.slave.model = " ";
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("model is required", ex.getMessage());
@@ -113,7 +122,7 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWithBlankSlaveIdFails() {
-        cfg.slaveId = null;
+        cfg.slave.slaveId = null;
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("slaveId is required", ex.getMessage());
@@ -121,7 +130,7 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWithInvalidSlaveIdFails() {
-        cfg.slaveId = 300;
+        cfg.slave.slaveId = 300;
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("invalid slaveId: 300", ex.getMessage());
@@ -137,7 +146,7 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWithBlankTypeFails() {
-        cfg.type = "";
+        cfg.slave.type = null;
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("type is required", ex.getMessage());
@@ -155,18 +164,23 @@ class ModbusConfigServiceTest {
     void createReadHoldingAllowed() {
         cfg.commands = List.of(readHolding());
         insertOk();
-        assertNotNull(service.create(cfg).await().indefinitely());
+        ModbusConfig created = service.create(cfg).await().indefinitely();
+        assertNotNull(created);
+        // index 随行落库（1 起自然数，排序/虚拟生成 action iid 依赖它）
+        assertEquals(1, created.commands.get(0).index);
     }
 
     @Test
     void createWriteSingleCoilAndSingleRegisterAllowed() {
         ModbusCommand coil = new ModbusCommand();
         coil.name = "PumpOn";
+        coil.index = 1;
         coil.fc = "05";
         coil.start = 0;
         coil.coilState = "on";
         ModbusCommand reg = new ModbusCommand();
         reg.name = "SetTemp";
+        reg.index = 2;
         reg.fc = "06";
         reg.start = 20;
         reg.registerValue = 120L;
@@ -179,6 +193,7 @@ class ModbusConfigServiceTest {
     void createWriteMultipleCoilsAllowed() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiCoil";
+        c.index = 1;
         c.fc = "0F";
         c.start = 30;
         ModbusCommand.Coil c1 = new ModbusCommand.Coil();
@@ -197,6 +212,7 @@ class ModbusConfigServiceTest {
     void createWriteMultipleRegistersAllowed() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiReg";
+        c.index = 1;
         c.fc = "10";
         c.start = 40;
         ModbusCommand.Register r1 = new ModbusCommand.Register();
@@ -280,6 +296,7 @@ class ModbusConfigServiceTest {
     void createWithMissingCoilStateFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "PumpOn";
+        c.index = 1;
         c.fc = "05";
         c.start = 0;
         cfg.commands = List.of(c);
@@ -292,6 +309,7 @@ class ModbusConfigServiceTest {
     void createWithOutOfRangeRegisterValueFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "SetTemp";
+        c.index = 1;
         c.fc = "06";
         c.start = 20;
         c.registerValue = 70000L;
@@ -305,6 +323,7 @@ class ModbusConfigServiceTest {
     void createWithEmptyCoilsFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiCoil";
+        c.index = 1;
         c.fc = "0F";
         c.start = 30;
         c.coils = List.of();
@@ -318,6 +337,7 @@ class ModbusConfigServiceTest {
     void createWithDuplicateCoilOffsetFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiCoil";
+        c.index = 1;
         c.fc = "0F";
         c.start = 30;
         ModbusCommand.Coil a = new ModbusCommand.Coil();
@@ -337,6 +357,7 @@ class ModbusConfigServiceTest {
     void createWithNonContiguousRegistersFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiReg";
+        c.index = 1;
         c.fc = "10";
         c.start = 40;
         ModbusCommand.Register r1 = new ModbusCommand.Register();
@@ -360,6 +381,7 @@ class ModbusConfigServiceTest {
     void createWithBadRegisterValueFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "MultiReg";
+        c.index = 1;
         c.fc = "10";
         c.start = 40;
         ModbusCommand.Register r1 = new ModbusCommand.Register();
@@ -378,6 +400,7 @@ class ModbusConfigServiceTest {
     void createReadBitQuantityTooLargeFails() {
         ModbusCommand c = new ModbusCommand();
         c.name = "AlarmBit";
+        c.index = 1;
         c.fc = "01";
         c.start = 0;
         c.quantity = 2001; // 01 单次最多 2000
@@ -385,6 +408,37 @@ class ModbusConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("invalid commands[0].quantity: 2001", ex.getMessage());
+    }
+
+    @Test
+    void createWithCommandIndexMissingFails() {
+        ModbusCommand c = readHolding();
+        c.index = null;
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("commands[0].index is required", ex.getMessage());
+    }
+
+    @Test
+    void createWithNonNaturalIndexFails() {
+        ModbusCommand c = readHolding();
+        c.index = 0;
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].index: 0 (index must be a natural number, 1-based)", ex.getMessage());
+    }
+
+    @Test
+    void createWithDuplicateIndexFails() {
+        ModbusCommand c1 = readHolding();
+        ModbusCommand c2 = readHolding();
+        c2.name = "ANOTHER_READ"; // 两条 index 都 = 1
+        cfg.commands = List.of(c1, c2);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[1].index: 1 (duplicated)", ex.getMessage());
     }
 
     @Test
@@ -401,23 +455,23 @@ class ModbusConfigServiceTest {
         ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
-        existing.manufacturer = "old";
-        existing.model = "old-model";
-        existing.slaveId = 5;
+        existing.slave.manufacturer = "old";
+        existing.slave.model = "old-model";
+        existing.slave.slaveId = 5;
         existing.visibility = "public";
         existing.creator = Person.of("acc1", "小明");
         existing.updater = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
-        cfg.manufacturer = "new";
+        cfg.slave.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of(readHolding());
         ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
-        assertEquals("new", updated.manufacturer);
-        assertEquals("19XRV", updated.model);
-        assertEquals(1, updated.slaveId);
+        assertEquals("new", updated.slave.manufacturer);
+        assertEquals("19XRV", updated.slave.model);
+        assertEquals(1, updated.slave.slaveId);
         assertEquals("private", updated.visibility);
         assertEquals("c1", updated.id);
         // 更新只替换 updater，creator 保持不变
@@ -433,8 +487,8 @@ class ModbusConfigServiceTest {
         ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
-        existing.manufacturer = "m";
-        existing.model = "mm";
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
         existing.visibility = "private";
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
@@ -442,11 +496,11 @@ class ModbusConfigServiceTest {
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 只改设备信息：patch.commands 为 null（请求体未带 commands 字段）
-        cfg.manufacturer = "new-m";
+        cfg.slave.manufacturer = "new-m";
         cfg.updater = Person.of("acc2", "小红");
         ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
-        assertEquals("new-m", updated.manufacturer);
+        assertEquals("new-m", updated.slave.manufacturer);
         // 既有功能码不被整体清空
         assertEquals(1, updated.commands.size());
         assertEquals("CHW_TEMP", updated.commands.get(0).name);
@@ -457,8 +511,8 @@ class ModbusConfigServiceTest {
         ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
-        existing.manufacturer = "m";
-        existing.model = "mm";
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
         existing.visibility = "private";
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
@@ -480,7 +534,7 @@ class ModbusConfigServiceTest {
         existing.orgId = "org1";
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
 
-        cfg.model = "";
+        cfg.slave.model = "";
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.update("org1", "c1", cfg).await().indefinitely());
         assertEquals("model is required", ex.getMessage());
@@ -491,19 +545,19 @@ class ModbusConfigServiceTest {
         ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
-        existing.manufacturer = "m";
-        existing.model = "mm";
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
         existing.visibility = "private";
-        existing.type = "urn:xiot-spec:device:old:00000001";
+        existing.slave.type = typeOf("urn:xiot-spec:device:old:00000001");
         existing.creator = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         cfg.updater = Person.of("acc2", "小红");
-        cfg.type = "urn:xiot-spec:device:chiller:0000A005";
+        cfg.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
         ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.type);
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.slave.type.type);
     }
 
     @Test
@@ -511,21 +565,21 @@ class ModbusConfigServiceTest {
         ModbusConfig existing = new ModbusConfig();
         existing.id = "c1";
         existing.orgId = "org1";
-        existing.manufacturer = "m";
-        existing.model = "mm";
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
         existing.visibility = "private";
-        existing.type = "urn:xiot-spec:device:chiller:0000A005";
+        existing.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
         existing.creator = Person.of("acc1", "小明");
         when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 只改设备信息、请求体未带 type（旧客户端/存量配置），不清空既有 type
-        cfg.type = null;
-        cfg.manufacturer = "new-m";
+        cfg.slave.type = null;
+        cfg.slave.manufacturer = "new-m";
         cfg.updater = Person.of("acc2", "小红");
         ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
 
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.type);
+        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.slave.type.type);
     }
 
     @Test
