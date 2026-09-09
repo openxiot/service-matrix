@@ -1,6 +1,8 @@
 package cc.openxiot.matrix.db.modbus.virtual;
 
+import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
@@ -30,5 +32,19 @@ public class ModbusVirtualDeviceRepository implements ReactivePanacheMongoReposi
     /** 新增一条虚拟设备（did 由上层生成）。 */
     public Uni<Void> insert(ModbusVirtualDevice v) {
         return collection().insertOne(v).replaceWithVoid();
+    }
+
+    /** 按 orgId + did 查询单条（org 约束防跨组织删除）。 */
+    public Uni<ModbusVirtualDevice> findByIdAndOrg(String did, String orgId) {
+        return collection()
+                .find(Filters.and(Filters.eq("orgId", orgId), Filters.eq("_id", did)))
+                .collect().first();
+    }
+
+    /** 按 orgId + did 删除（org 约束防跨组织删除）；返回删除条数。 */
+    public Uni<Long> deleteByIdAndOrg(String did, String orgId) {
+        return collection()
+                .deleteOne(Filters.and(Filters.eq("orgId", orgId), Filters.eq("_id", did)))
+                .map(DeleteResult::getDeletedCount);
     }
 }

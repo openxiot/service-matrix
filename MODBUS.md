@@ -94,6 +94,16 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
   parentId=父 did、rootId=父所在树的根（父为根时即父 did）、复制父所在 `space`、protocol=`modbus`、离线起步
   （online=false），使虚拟子设备出现在父设备所在空间的设备列表。`createOne` 返回该 DeviceEntity。
 
+### 5. 删除
+
+接口：`DELETE /matrix/v1/modbus/virtual/one?did=<虚拟设备ID>`（`X-Org-Id` 需为该组织成员；`did` 指虚拟设备
+自身 ID，即 createOne 生成的 UUID，不是父设备 did）。
+
+* 先按 `orgId + did` 查 `virtual-devices` 定义文档：不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
+* 再删同 did 的矩阵 `DeviceEntity`（`deviceService.deleteByDeviceIds`，createOne 的镜像）与 `virtual-devices`
+  定义文档；矩阵子设备可能已被先行删除（条数 0）不视为失败。
+* 不守卫子设备（沿用 device 模块本地删除口径），子树理论上可能悬空。
+
 ## 二、参考文档
 
 /Users/ouyang/works/openxiot/service/webapp-docs/docs/spec/spec.mdx
@@ -101,6 +111,9 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 ## 三、变更记录
 
 ### 2026-09-09
+* 新增删除虚拟设备 `deleteOne`：`DELETE /matrix/v1/modbus/virtual/one?did=...`（需 `X-Org-Id` 为该组织成员）。
+  按当前组织删除 `virtual-devices` 定义文档 + 同 did 的矩阵 `DeviceEntity`（createOne 的镜像清理，不做子设备守卫）；
+  不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
 * 点表配置新增 `lifecycle`（生命周期，存储串与 xiot-spec `Lifecycle` 对齐：`development`/`preview`/`released`）：
   新建一律从 `development` 开始（忽略请求里指定的值）；**仅 `development` 态可 update/delete**，
   `preview`/`released` 被后端拒绝（语义仿 service-product，仅多一个 modbus 前缀的报错文案）；普通更新不流转生命周期。

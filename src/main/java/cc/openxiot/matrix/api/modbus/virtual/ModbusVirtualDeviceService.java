@@ -102,6 +102,28 @@ public class ModbusVirtualDeviceService {
                 });
     }
 
+    /**
+     * 删除一条虚拟设备：先按 orgId 校验定义文档归属（不存在 → not found），再删同 did 的矩阵
+     * {@link DeviceEntity} 子设备与 {@code virtual-devices} 定义文档（createOne 的镜像清理）。
+     * 不守卫子设备（沿用 device 模块本地删除口径）；DeviceEntity 已先行删除时设备删除条数为 0 不视为失败。
+     */
+    public Uni<Void> delete(String orgId, String did) {
+        if (did == null || did.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("did is required"));
+        }
+        return repo.findByIdAndOrg(did, orgId)
+                .chain(existing -> {
+                    if (existing == null) {
+                        return Uni.createFrom().failure(
+                                new IllegalArgumentException("modbus virtual device not found: " + did));
+                    }
+                    // 先删矩阵子设备（本组织可见设备），再删定义文档；任一步失败都中断
+                    return deviceService.deleteByDeviceIds(List.of(did))
+                            .chain(count -> repo.deleteByIdAndOrg(did, orgId))
+                            .replaceWithVoid();
+                });
+    }
+
     // ===== 校验 =====
 
     private String validate(ModbusMapping mapping) {

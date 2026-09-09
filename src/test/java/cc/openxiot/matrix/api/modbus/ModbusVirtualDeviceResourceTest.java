@@ -273,4 +273,66 @@ class ModbusVirtualDeviceResourceTest {
                 .body("success", equalTo(false))
                 .body("message", containsString("parent device not found"));
     }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void deleteRequiresOrgHeaderFails() {
+        given().queryParam("did", "virt-1")
+                .when().delete("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("X-Org-Id"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void deleteNotFoundFails() {
+        allowMember();
+        when(repo.findByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().nullItem());
+
+        given().header("X-Org-Id", "org1")
+                .queryParam("did", "virt-1")
+                .when().delete("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("not found"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void deleteOkRemovesDefinitionDocAndMatrixChild() {
+        allowMember();
+        ModbusVirtualDevice v = new ModbusVirtualDevice();
+        v.did = "virt-1";
+        v.orgId = "org1";
+        when(repo.findByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().item(v));
+        // 矩阵子设备可能已被先行删除（条数 0），不应视为失败：定义文档仍须删除
+        when(deviceService.deleteByDeviceIds(List.of("virt-1"))).thenReturn(Uni.createFrom().item(0L));
+        when(repo.deleteByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().item(1L));
+
+        given().header("X-Org-Id", "org1")
+                .queryParam("did", "virt-1")
+                .when().delete("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(true));
+
+        // 镜像 createOne：同 did 的矩阵 DeviceEntity 子设备 + virtual-devices 定义文档都删
+        verify(deviceService).deleteByDeviceIds(List.of("virt-1"));
+        verify(repo).deleteByIdAndOrg("virt-1", "org1");
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void deleteCrossOrgIsRejected() {
+        allowMember();
+        // 定义文档归属 org2；以 org1 身份删除 → 查不到（org 约束防跨组织删除）
+        when(repo.findByIdAndOrg("virt-1", "org1")).thenReturn(Uni.createFrom().nullItem());
+
+        given().header("X-Org-Id", "org1")
+                .queryParam("did", "virt-1")
+                .when().delete("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("not found"));
+    }
 }

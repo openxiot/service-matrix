@@ -10,12 +10,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -28,6 +23,9 @@ import org.jboss.logging.Logger;
  * <p>createOne = 生成虚拟设备实例定义并落库（{@code virtual-devices} 定义注册表），再把它作为父设备
  * （请求 {@code did}）下的子设备创建矩阵 {@code DeviceEntity}（复制父设备所在 space，离线起步）并返回该设备。
  * 取组织内可见的 Modbus 点表配置；父设备不存在则报错。</p>
+ *
+ * <p>deleteOne = 反向清理：删除归属当前组织的虚拟设备定义文档，并连同删掉同 did 的矩阵子设备
+ * （createOne 的镜像，不做子设备守卫）。</p>
  */
 @Path("/matrix/v1/modbus/virtual")
 @Produces(MediaType.APPLICATION_JSON)
@@ -75,5 +73,20 @@ public class ModbusVirtualDeviceResource extends AbstractResource {
             return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
         }
         return orgAccessService.checkMember(orgId, getUserId()).map(ignored -> orgId);
+    }
+
+    @DELETE
+    @Path("/one")
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> deleteOne(
+            @HeaderParam("X-Org-Id") String orgId,
+            @QueryParam("did") String did
+    ) {
+        logger.infov("delete virtual device, org: {0}, did: {1}", orgId, did);
+        return requireMember(orgId)
+                .chain(o -> service.delete(o, did))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 }
