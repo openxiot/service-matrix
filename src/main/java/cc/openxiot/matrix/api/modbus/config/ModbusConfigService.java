@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.api.modbus.config;
 
+import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
@@ -32,6 +33,12 @@ public class ModbusConfigService {
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
     private static final Set<String> COIL_STATES = Set.of("on", "off");
     private static final Set<String> VISIBILITIES = Set.of("private", "public");
+    /** 生命周期门禁用（与 xiot-spec Lifecycle 存储串一致）。 */
+    private static final String LIFECYCLE_DEVELOPMENT = "development";
+    private static final String LIFECYCLE_PREVIEW = "preview";
+    private static final String LIFECYCLE_RELEASED = "released";
+    /** lifecycle 接口允许的目标值（development / preview / released；不校验流转，服务端直接覆盖）。 */
+    private static final Set<String> LIFECYCLES = Set.of(LIFECYCLE_DEVELOPMENT, LIFECYCLE_PREVIEW, LIFECYCLE_RELEASED);
     /** 读功能码单次上限：位(01/02) 2000，寄存器(03/04) 125；写多线圈 0F 1968、写多寄存器 10 123。 */
     private static final int MAX_READ_BITS = 2000;
     private static final int MAX_READ_REGISTERS = 125;
@@ -59,6 +66,7 @@ public class ModbusConfigService {
         migrateFlatSlave();
         migrateLegacySlaveType();
         migrateCommandIndex();
+        migrateLifecycle();
         repo.ensureIndexes().await().indefinitely();
     }
 
@@ -68,6 +76,8 @@ public class ModbusConfigService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         cfg.id = UUID.randomUUID().toString();
+        // 新建一律从「开发」态开始；生命周期只经后续发布流转，禁止在创建请求里直接指定。
+        cfg.lifecycle = LIFECYCLE_DEVELOPMENT;
         return repo.insert(cfg).replaceWith(cfg);
     }
 
@@ -80,6 +90,11 @@ public class ModbusConfigService {
                 .onItem().transformToUni(existing -> {
                     if (existing == null) {
                         return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
+                    }
+                    // 生命周期门禁：仅「开发」态配置允许修改（仿 service-product，released/preview 拒绝）。
+                    String lifecycleErr = lifecycleEditError(existing);
+                    if (lifecycleErr != null) {
+                        return Uni.createFrom().failure(new IllegalArgumentException(lifecycleErr));
                     }
                     String contentErr = validateContent(patch);
                     if (contentErr != null) {
@@ -165,13 +180,68 @@ public class ModbusConfigService {
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        return repo.deleteByIdAndOrg(id, orgId)
-                .onItem().transformToUni(count -> {
-                    if (count == null || count == 0L) {
+        return repo.findByIdAndOrg(id, orgId)
+                .onItem().transformToUni(existing -> {
+                    if (existing == null) {
                         return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
                     }
-                    return Uni.createFrom().item(count);
+                    // 删除同为修改：仅「开发」态配置可删除（released/preview 拒绝）。
+                    String lifecycleErr = lifecycleEditError(existing);
+                    if (lifecycleErr != null) {
+                        return Uni.createFrom().failure(new IllegalArgumentException(lifecycleErr));
+                    }
+                    return repo.deleteByIdAndOrg(id, orgId)
+                            .onItem().transformToUni(count -> {
+                                if (count == null || count == 0L) {
+                                    return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
+                                }
+                                return Uni.createFrom().item(count);
+                            });
                 });
+    }
+
+    // ===== 生命周期 =====
+
+    /**
+     * 独立流转生命周期（预览/发布/下线专用接口）：普通 update 永远不触碰 lifecycle。
+     * 仅校验目标值是合法生命周期（development/preview/released），不限制来源态——
+     * development→preview（预览）、preview→released（发布）、released/preview→development（下线）都允许，
+     * 与 service-product ProductBasicService.update(productId, lifecycle) 口径一致。
+     */
+    public Uni<ModbusConfig> changeLifecycle(String orgId, String id, String lifecycle, Person updater) {
+        String err = checkId(orgId, id);
+        if (err != null) {
+            return Uni.createFrom().failure(new IllegalArgumentException(err));
+        }
+        if (lifecycle == null || !LIFECYCLES.contains(lifecycle)) {
+            return Uni.createFrom().failure(new IllegalArgumentException("invalid lifecycle: " + lifecycle));
+        }
+        return repo.findByIdAndOrg(id, orgId)
+                .onItem().transformToUni(existing -> {
+                    if (existing == null) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
+                    }
+                    existing.lifecycle = lifecycle;
+                    if (updater != null) {
+                        existing.updater = updater;
+                    }
+                    return repo.replace(existing).replaceWith(existing);
+                });
+    }
+
+    /**
+     * 生命周期门禁：仅「开发」(development) 态可修改/删除；null 视作 development（兼容极早期未落库文档）。
+     * released / preview 返回拒绝文案，其余（undefined/未知）放行，与 service-product 口径一致。
+     */
+    private String lifecycleEditError(ModbusConfig cfg) {
+        String lc = cfg.lifecycle == null ? LIFECYCLE_DEVELOPMENT : cfg.lifecycle;
+        if (LIFECYCLE_RELEASED.equals(lc)) {
+            return "modbus device config is released, only development config can be modified: " + cfg.id;
+        }
+        if (LIFECYCLE_PREVIEW.equals(lc)) {
+            return "modbus device config is preview, only development config can be modified: " + cfg.id;
+        }
+        return null;
     }
 
     // ===== 校验 =====
@@ -613,6 +683,41 @@ public class ModbusConfigService {
             }
         } catch (Exception ex) {
             logger.warnf("modbus command-index migration skipped: %s", ex.getMessage());
+        }
+    }
+
+    /**
+     * 幂等回填 {@code configs} 集合里缺省 {@code lifecycle} 的文档 → {@code "development"}。
+     * 存量配置没有生命周期字段，补齐为开发态后即可正常编辑（缺省读侧已按 development 处理，这里让落库显式）。
+     */
+    void migrateLifecycle() {
+        if (mongo == null) {
+            return;
+        }
+        try {
+            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
+                    .getCollection("configs", Document.class);
+            List<Document> docs = col
+                    .find(Filters.exists("lifecycle", false))
+                    .collect().asList().await().indefinitely();
+            if (docs.isEmpty()) {
+                return;
+            }
+            int done = 0;
+            for (Document d : docs) {
+                try {
+                    d.put("lifecycle", LIFECYCLE_DEVELOPMENT);
+                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
+                    done++;
+                } catch (Exception ex) {
+                    logger.warnf("skip lifecycle backfill for _id=%s: %s", d.get("_id"), ex.getMessage());
+                }
+            }
+            if (done > 0) {
+                logger.infof("migrated %d modbus device config(s): lifecycle backfilled to development", done);
+            }
+        } catch (Exception ex) {
+            logger.warnf("modbus lifecycle migration skipped: %s", ex.getMessage());
         }
     }
 

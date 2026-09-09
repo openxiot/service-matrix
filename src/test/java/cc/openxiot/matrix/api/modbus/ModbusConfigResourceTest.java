@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +52,7 @@ class ModbusConfigResourceTest {
         deviceType.typeDescription = Map.of("zh-CN", "冷水机组", "en-US", "Chiller");
         cfg.slave.type = deviceType;
         cfg.visibility = "private";
+        cfg.lifecycle = "development";
         cfg.creator = Person.of("acc1", "小明");
         cfg.updater = Person.of("acc1", "小明");
         return cfg;
@@ -99,6 +101,7 @@ class ModbusConfigResourceTest {
                 .body("data.visibility", equalTo("private"))
                 .body("data.slave.type.type", equalTo("urn:xiot-spec:device:chiller:0000A005"))
                 .body("data.slave.type.typeDescription.zh-CN", equalTo("冷水机组"))
+                .body("data.lifecycle", equalTo("development"))
                 .body("data.id", equalTo("c1"));
 
         ArgumentCaptor<ModbusConfig> captor = ArgumentCaptor.forClass(ModbusConfig.class);
@@ -248,5 +251,45 @@ class ModbusConfigResourceTest {
                 .when().delete("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void changeLifecycleOk() {
+        allowMember();
+        ModbusConfig preview = sample();
+        preview.lifecycle = "preview";
+        when(service.changeLifecycle(eq("org1"), eq("c1"), eq("preview"), any(Person.class)))
+                .thenReturn(Uni.createFrom().item(preview));
+
+        given().header("X-Org-Id", "org1")
+                .when().put("/matrix/v1/modbus/config/one/c1/lifecycle/preview")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.lifecycle", equalTo("preview"));
+        verify(service).changeLifecycle(eq("org1"), eq("c1"), eq("preview"), any(Person.class));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void changeLifecycleInvalidValueIsHttp200() {
+        allowMember();
+        when(service.changeLifecycle(anyString(), anyString(), anyString(), any(Person.class)))
+                .thenThrow(new IllegalArgumentException("invalid lifecycle: archive"));
+
+        given().header("X-Org-Id", "org1")
+                .when().put("/matrix/v1/modbus/config/one/c1/lifecycle/archive")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("invalid lifecycle"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void changeLifecycleMissingOrgFails() {
+        given().when().put("/matrix/v1/modbus/config/one/c1/lifecycle/preview")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("X-Org-Id"));
     }
 }

@@ -33,6 +33,9 @@ public final class ModbusJson {
         if (c.visibility != null) {
             o.put("visibility", c.visibility);
         }
+        if (c.lifecycle != null) {
+            o.put("lifecycle", c.lifecycle);
+        }
         JsonArray arr = new JsonArray();
         if (c.commands != null) {
             for (ModbusCommand cmd : c.commands) {

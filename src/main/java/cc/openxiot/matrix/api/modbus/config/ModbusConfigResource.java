@@ -153,6 +153,26 @@ public class ModbusConfigResource extends AbstractResource {
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
+    /**
+     * 独立流转 lifecycle（预览/发布/下线）。与普通 update 分开：update 永不会修改 lifecycle，
+     * 这里只允许 development / preview / released 三个目标值（后端不校验流转，直接覆盖）。
+     */
+    @PUT
+    @Path("/one/{id}/lifecycle/{lifecycle}")
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> changeLifecycle(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("id") String id,
+            @PathParam("lifecycle") String lifecycle
+    ) {
+        logger.infov("change modbus device config lifecycle, org: {0}, id: {1}, lifecycle: {2}", orgId, id, lifecycle);
+        return requireMember(orgId)
+                .chain(o -> service.changeLifecycle(o, id, lifecycle, currentUser()))
+                .map(updated -> OxResponse.ok(ModbusJson.toJson(updated)))
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
     @DELETE
     @Path("/one/{id}")
     @RolesAllowed({OxRole.USER})

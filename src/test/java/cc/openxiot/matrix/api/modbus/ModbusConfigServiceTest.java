@@ -675,6 +675,9 @@ class ModbusConfigServiceTest {
 
     @Test
     void deleteZeroFailsAsNotFound() {
+        // 生命周期门禁先按 id 读原档：开发态才放行到删除
+        ModbusConfig existing = devConfig("c1");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.deleteByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(0L));
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.delete("org1", "c1").await().indefinitely());
@@ -683,7 +686,149 @@ class ModbusConfigServiceTest {
 
     @Test
     void deleteDelegates() {
+        ModbusConfig existing = devConfig("c1");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.deleteByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(1L));
         assertEquals(1L, service.delete("org1", "c1").await().indefinitely());
+    }
+
+    // ===== 生命周期：仅开发态可修改/删除 =====
+
+    /** 造一条已落库的配置骨架（生命周期可另指定），用于 update/delete 门禁测试。 */
+    private ModbusConfig devConfig(String id) {
+        ModbusConfig existing = new ModbusConfig();
+        existing.id = id;
+        existing.orgId = "org1";
+        existing.lifecycle = "development";
+        existing.visibility = "private";
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
+        existing.creator = Person.of("acc1", "小明");
+        return existing;
+    }
+
+    @Test
+    void createDefaultsLifecycleToDevelopment() {
+        cfg.commands = List.of(readHolding());
+        insertOk();
+        ModbusConfig created = service.create(cfg).await().indefinitely();
+        assertEquals("development", created.lifecycle);
+    }
+
+    @Test
+    void createForcesLifecycleToDevelopmentRegardlessOfRequest() {
+        cfg.lifecycle = "released"; // 客户端请求里带的生命周期被忽略，一律回到开发态
+        insertOk();
+        ModbusConfig created = service.create(cfg).await().indefinitely();
+        assertEquals("development", created.lifecycle);
+    }
+
+    @Test
+    void updateDevelopmentConfigAllowed() {
+        ModbusConfig existing = devConfig("c1");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        cfg.slave.manufacturer = "new";
+        cfg.updater = Person.of("acc2", "小红");
+        cfg.commands = List.of(readHolding());
+        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        assertEquals("new", updated.slave.manufacturer);
+        // 生命周期不随普通更新流转，仍停留在开发态
+        assertEquals("development", updated.lifecycle);
+    }
+
+    @Test
+    void updateReleasedConfigFails() {
+        ModbusConfig existing = devConfig("c1");
+        existing.lifecycle = "released";
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+
+        cfg.slave.manufacturer = "new";
+        cfg.updater = Person.of("acc2", "小红");
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.update("org1", "c1", cfg).await().indefinitely());
+        assertEquals("modbus device config is released, only development config can be modified: c1", ex.getMessage());
+    }
+
+    @Test
+    void updatePreviewConfigFails() {
+        ModbusConfig existing = devConfig("c1");
+        existing.lifecycle = "preview";
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+
+        cfg.slave.manufacturer = "new";
+        cfg.updater = Person.of("acc2", "小红");
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.update("org1", "c1", cfg).await().indefinitely());
+        assertEquals("modbus device config is preview, only development config can be modified: c1", ex.getMessage());
+    }
+
+    @Test
+    void deleteReleasedConfigFails() {
+        ModbusConfig existing = devConfig("c1");
+        existing.lifecycle = "released";
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.delete("org1", "c1").await().indefinitely());
+        assertEquals("modbus device config is released, only development config can be modified: c1", ex.getMessage());
+    }
+
+    @Test
+    void changeLifecycleInvalidValueFails() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.changeLifecycle("org1", "c1", "archive", null).await().indefinitely());
+        assertEquals("invalid lifecycle: archive", ex.getMessage());
+    }
+
+    @Test
+    void changeLifecycleNullValueFails() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.changeLifecycle("org1", "c1", null, null).await().indefinitely());
+        assertEquals("invalid lifecycle: null", ex.getMessage());
+    }
+
+    @Test
+    void changeLifecycleNotFoundFails() {
+        when(repo.findByIdAndOrg("ghost", "org1")).thenReturn(Uni.createFrom().nullItem());
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.changeLifecycle("org1", "ghost", "preview", null).await().indefinitely());
+        assertEquals("modbus device config not found: ghost", ex.getMessage());
+    }
+
+    @Test
+    void changeLifecycleDevelopmentToPreviewUpdates() {
+        ModbusConfig existing = devConfig("c1");
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        Person who = Person.of("acc2", "小红");
+        ModbusConfig updated = service.changeLifecycle("org1", "c1", "preview", who).await().indefinitely();
+        assertEquals("preview", updated.lifecycle);
+        assertEquals(who, updated.updater);
+        verify(repo).replace(eq(existing));
+    }
+
+    @Test
+    void changeLifecyclePreviewToReleasedAllowed() {
+        ModbusConfig existing = devConfig("c1");
+        existing.lifecycle = "preview";
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        ModbusConfig updated = service.changeLifecycle("org1", "c1", "released", null).await().indefinitely();
+        assertEquals("released", updated.lifecycle);
+    }
+
+    @Test
+    void changeLifecycleReleasedToDevelopmentUpdates() {
+        ModbusConfig existing = devConfig("c1");
+        existing.lifecycle = "released";
+        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        ModbusConfig updated = service.changeLifecycle("org1", "c1", "development", null).await().indefinitely();
+        assertEquals("development", updated.lifecycle);
     }
 }
