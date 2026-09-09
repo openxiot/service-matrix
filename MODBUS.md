@@ -3,8 +3,10 @@
 Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理设备的寄存器 / 线圈点表。
 「创建 Modbus 虚拟设备」即把这套点表自动生成一个虚拟设备的**实例定义**，挂到用户选中的父设备之下。
 
-> 范围：**仅生成定义并落库，不注册真实设备**。后续如需真正接入，可基于落库的 `definition`
-> （`DeviceInstanceCodec` 编码的 DeviceInstance JSON）与派生 DeviceType 注册产品实例。
+> 流程：生成虚拟设备**实例定义**并落库（`virtual-devices` 定义注册表），随后以同一 did / 派生类型创建
+> 矩阵 **DeviceEntity**（挂在父设备下、复制其所在 space，离线起步），`createOne` 返回该设备。
+> 尚未打通「真实 Modbus 接入」（实例注册 / I/O 桥接）；后续可基于落库的 `definition`
+> （`DeviceInstanceCodec` 编码的 DeviceInstance JSON）与派生 DeviceType 做真正的接入。
 
 ## 一、创建 Modbus 虚拟设备
 
@@ -25,15 +27,18 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 
 ### 2. 输出
 
-`OxResponse.ok(data)`，字段：
+`OxResponse.ok(data)`，`data` = 新建的矩阵 `DeviceEntity`（形状与设备模块 `GET /matrix/v1/device/one/...` 一致）：
 
 | 字段 | 说明 |
 |---|---|
-| `virtualDeviceId` | 虚拟设备 ID（服务端生成的 UUID，即摘要里的 `did`；后续接入真实注册时作为子设备 did） |
-| `deviceSummary` | 对齐矩阵设备形状：`{ did: 虚拟设备ID, type: 派生DeviceType, online: false, protocol: "modbus", rootId: 父did, parentId: 父did }` |
-| `mapping` | 请求原样回显：`{ configId, did, siid, aiid }` |
-| `description` | 点表配置的描述（若有） |
-| `definition` | 生成的实例定义（DeviceInstanceCodec 编码后的 JSON） |
+| `did` | 虚拟设备 ID（服务端生成的 UUID） |
+| `type` | 派生 DeviceType（继承点表 `type` + 追加父 did / 配置 id / version=1，全小写） |
+| `online` / `protocol` | `false` / `modbus`（离线起步，尚未接真实 I/O） |
+| `parentId` / `rootId` | 父设备 did；rootId = 父所在树的根（父为根时即父 did） |
+| `space` | 复制父设备所在 space：`{ spaceId, rootId }` |
+
+> 映射 `mapping`（configId / did / siid / aiid）与实例 `definition`（DeviceInstanceCodec 编码）不再于响应回显，
+> 随 `virtual-devices` 文档落库，供后续真实接入使用。
 
 ### 3. 生成规则
 
@@ -84,6 +89,10 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
   解码错乱）。字段 = orgId + `mapping` 子文档（`configId` / `did` / `siid` / `aiid`）+
   `instance` 子文档（派生 DeviceType + description + `definition`）+ 创建人 / 创建时间。
 * **归属 = 请求组织（`X-Org-Id`），而非点表所属组织**——跨组织公开点表可被本组织虚拟化，虚拟设备记入操作方组织。
+* 定义落库前先校验父设备存在（`DeviceService.getByDeviceId(did)`；无 → `parent device not found: <did>`，避免“半注册”），
+  落库后再把虚拟设备作为父设备下的子设备创建矩阵 `DeviceEntity`（`DeviceService.save`）：did=虚拟设备 id、
+  parentId=父 did、rootId=父所在树的根（父为根时即父 did）、复制父所在 `space`、protocol=`modbus`、离线起步
+  （online=false），使虚拟子设备出现在父设备所在空间的设备列表。`createOne` 返回该 DeviceEntity。
 
 ## 二、参考文档
 
@@ -92,11 +101,28 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 ## 三、变更记录
 
 ### 2026-09-09
+* 点表配置新增 `lifecycle`（生命周期，存储串与 xiot-spec `Lifecycle` 对齐：`development`/`preview`/`released`）：
+  新建一律从 `development` 开始（忽略请求里指定的值）；**仅 `development` 态可 update/delete**，
+  `preview`/`released` 被后端拒绝（语义仿 service-product，仅多一个 modbus 前缀的报错文案）；普通更新不流转生命周期。
+  对外 JSON 输出 `lifecycle`；存量缺省文档启动时幂等回填 `development`（`migrateLifecycle`）。
+  前端：设备点表详情页「设备信息」卡片顶部展示生命周期标签、列表新增「状态」列；非 development 的点表隐藏编辑/删除入口。
+* lifecycle 改为经**专用接口**流转：`PUT /matrix/v1/modbus/config/one/{id}/lifecycle/{lifecycle}`
+  （需 `X-Org-Id` 且为该组织成员；目标值仅 development / preview / released，后端不校验流转、直接覆盖，
+  仿 service-product `ProductBasicService.update(productId, lifecycle)`）。普通内容 `update` **永不触碰 lifecycle**
+  （且仍仅 development 态可 update/delete，preview/released 报错）。
+  前端：设备点表详情页去掉整页「保存」——设备信息 / 功能码 任一变更（编辑对话框确定、删除弹窗确认、拖拽重排）即改即存；
+  原「保存」位置按状态显示动作组：development→**预览**、preview→**发布**/**下线**、released→**下线**
+  （仿 webapp-product ProductBasicComponent，按钮态随 lifecycle 标签实时刷新）。
 * 点表配置新增必填 `type`：存**完整品类 DeviceType**；前端（点表编辑器）改成两级选择器（名字空间 → 设备类型，
   值存完整 URN），不再支持手工输入；详情页按 `namespace · name` 回显、可由选择器编辑；新建强制、编辑存量配置可暂缺
   （后端 patch 无 `type` 时不覆盖旧值）。
 * 实现创建虚拟设备 `createOne`（上一节）：用 xiot-spec 模型构造 `DeviceInstance`，经 `DeviceInstanceCodec` 编码后落库，
   不手拼 JSON；范围仅生成定义、不注册真实设备。
+* **createOne 扩展为「生成定义 + 创建矩阵 DeviceEntity」**：落库 `virtual-devices` 定义注册表后，把虚拟设备作为
+  父设备（请求 `did`）下的子设备创建矩阵 `DeviceEntity`（parentId=父 did、rootId=父所在树根、复制父所在 space、
+  protocol=`modbus`、离线起步）；父设备需真实存在（先校验，无 → `parent device not found: <did>`）。
+  响应由 `toData` 摘要改为直接返回该 `DeviceEntity`（与设备模块 `/one` 回显同形），`toData` 已移除；
+  `mapping` / `definition` 仍随 `virtual-devices` 落库、不再于响应回显。
 * 虚拟设备落库独立集合 `virtual-devices`；归属当前操作组织（`X-Org-Id`）。
 * 映射信息抽成值对象 `ModbusMapping`（原 `CreateModbusVirtualDeviceRequest` → `ModbusVirtualMapping`，居 db/virtual 包）；
   实体名 `ModbusVirtualDevice`。createOne 请求体 / 实体 `mapping` 子文档 / 响应 `mapping` 回显复用同一类型，

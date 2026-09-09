@@ -21,6 +21,9 @@ import org.mockito.ArgumentCaptor;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.device.DeviceService;
+import cc.openxiot.matrix.db.device.DeviceEntity;
+import cc.openxiot.matrix.db.device.DeviceSpace;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
@@ -46,6 +49,9 @@ class ModbusVirtualDeviceResourceTest {
 
     @InjectMock
     ModbusVirtualDeviceRepository repo;
+
+    @InjectMock
+    DeviceService deviceService;
 
     @InjectMock
     OrgAccessService orgAccessService;
@@ -91,6 +97,24 @@ class ModbusVirtualDeviceResourceTest {
 
     private void allowConfig(ModbusConfig cfg) {
         when(configService.get(anyString(), anyString())).thenReturn(Uni.createFrom().item(cfg));
+    }
+
+    /** 父设备（matrix DeviceEntity）：作为树根（rootId 空）+ 所在空间，供虚拟子设备挂载 / 复制 space。 */
+    private void allowParentDevice() {
+        DeviceEntity parent = new DeviceEntity();
+        parent.did = "parent-device-1";
+        parent.type = "urn:xiot-spec:device:gateway:0000A001";
+        DeviceSpace space = new DeviceSpace();
+        space.spaceId = "space-1";
+        space.rootId = "root-1";
+        parent.space = space;
+        when(deviceService.getByDeviceId("parent-device-1")).thenReturn(Uni.createFrom().item(parent));
+    }
+
+    /** save 回写同一个 DeviceEntity 实例（persistOrUpdate 语义）。 */
+    private void allowSave() {
+        when(deviceService.save(any(DeviceEntity.class)))
+                .thenAnswer(invocation -> Uni.createFrom().item((DeviceEntity) invocation.getArgument(0)));
     }
 
     @Test
@@ -160,52 +184,64 @@ class ModbusVirtualDeviceResourceTest {
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void createOkGeneratesDefinitionAndPersists() {
+    void createOkRegistersChildDeviceAndPersistsDefinition() {
         allowMember();
         allowConfig(sample());
         when(repo.insert(any(ModbusVirtualDevice.class))).thenReturn(Uni.createFrom().voidItem());
+        allowParentDevice();
+        allowSave();
 
-        String virtualDeviceId = given().header("X-Org-Id", "org1")
+        String did = given().header("X-Org-Id", "org1")
                 .contentType(ContentType.JSON)
                 .body("{\"configId\":\"c1\",\"did\":\"parent-device-1\",\"siid\":3,\"aiid\":2}")
                 .when().post("/matrix/v1/modbus/virtual/one")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.virtualDeviceId", notNullValue())
+                // createOne 现在直接返回创建的矩阵 DeviceEntity
+                .body("data.did", notNullValue())
                 // 派生类型：继承点表 type，追加 vendor(父 did) + model(配置 id) + version=1，全小写
-                .body("data.deviceSummary.type",
-                        equalTo("urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1"))
-                .body("data.deviceSummary.did", notNullValue())
-                .body("data.deviceSummary.online", equalTo(false))
-                .body("data.deviceSummary.protocol", equalTo("modbus"))
-                .body("data.deviceSummary.rootId", equalTo("parent-device-1"))
-                .body("data.deviceSummary.parentId", equalTo("parent-device-1"))
-                .body("data.mapping.configId", equalTo("c1"))
-                .body("data.mapping.did", equalTo("parent-device-1"))
-                .body("data.mapping.siid", equalTo(3))
-                .body("data.mapping.aiid", equalTo(2))
-                .body("data.definition.services[0].properties", notNullValue())
-                .extract().path("data.virtualDeviceId");
+                .body("data.type", equalTo("urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1"))
+                .body("data.online", equalTo(false))
+                .body("data.protocol", equalTo("modbus"))
+                // 挂在父设备下；父为树根 → rootId = 父 did
+                .body("data.parentId", equalTo("parent-device-1"))
+                .body("data.rootId", equalTo("parent-device-1"))
+                .body("data.space.spaceId", equalTo("space-1"))
+                .body("data.space.rootId", equalTo("root-1"))
+                .extract().path("data.did");
 
-        assertNotNull(virtualDeviceId);
+        assertNotNull(did);
 
-        // 落库实体校验
-        ArgumentCaptor<ModbusVirtualDevice> captor = ArgumentCaptor.forClass(ModbusVirtualDevice.class);
-        verify(repo).insert(captor.capture());
-        ModbusVirtualDevice saved = captor.getValue();
-        assertEquals(virtualDeviceId, saved.did);
+        // 虚拟设备定义文档仍按原样落库（映射信息 + 派生类型 + 编码定义）
+        ArgumentCaptor<ModbusVirtualDevice> vCaptor = ArgumentCaptor.forClass(ModbusVirtualDevice.class);
+        verify(repo).insert(vCaptor.capture());
+        ModbusVirtualDevice saved = vCaptor.getValue();
+        assertEquals(did, saved.did);
         assertEquals("org1", saved.orgId);
         assertNotNull(saved.mapping);
         assertEquals("c1", saved.mapping.configId);
         assertEquals("parent-device-1", saved.mapping.did);
         assertEquals(3, saved.mapping.siid);
         assertEquals(2, saved.mapping.aiid);
-        assertNotNull(saved.instance);
         assertEquals("某冷水机组点表", saved.instance.description);
         assertEquals("urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1", saved.instance.type);
         assertNotNull(saved.instance.definition);
         assertEquals("tester", saved.creator.id);
         assertNotNull(saved.creator.timestamp);
+
+        // 矩阵 DeviceEntity 子设备：复制父设备所在空间，挂在父 did 下
+        ArgumentCaptor<DeviceEntity> eCaptor = ArgumentCaptor.forClass(DeviceEntity.class);
+        verify(deviceService).save(eCaptor.capture());
+        DeviceEntity child = eCaptor.getValue();
+        assertEquals(did, child.did);
+        assertEquals("urn:xiot-spec:device:chiller:0000a005:parent-device-1:c1:1", child.type);
+        assertEquals(false, child.online);
+        assertEquals("modbus", child.protocol);
+        assertEquals("parent-device-1", child.parentId);
+        assertEquals("parent-device-1", child.rootId);
+        assertNotNull(child.space);
+        assertEquals("space-1", child.space.spaceId);
+        assertEquals("root-1", child.space.rootId);
 
         // 定义可经 DeviceInstanceCodec 回环解码
         DeviceInstance decoded = DeviceInstanceCodec.decode(new JsonObject(saved.instance.definition));
@@ -220,5 +256,21 @@ class ModbusVirtualDeviceResourceTest {
         assertEquals(Set.of(1, 3), svc.actions().keySet());
         assertTrue(svc.actions().values().stream().anyMatch(a -> a.out().containsKey(1)),
                 "read command action should reference backing property via out");
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void createParentDeviceMissingFails() {
+        allowMember();
+        allowConfig(sample());
+        when(deviceService.getByDeviceId("parent-device-1")).thenReturn(Uni.createFrom().nullItem());
+
+        given().header("X-Org-Id", "org1")
+                .contentType(ContentType.JSON)
+                .body("{\"configId\":\"c1\",\"did\":\"parent-device-1\",\"siid\":1,\"aiid\":1}")
+                .when().post("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("parent device not found"));
     }
 }

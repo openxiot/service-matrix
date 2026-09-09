@@ -8,7 +8,10 @@ import java.util.Map;
 import java.util.UUID;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
+import cc.openxiot.matrix.db.device.DeviceEntity;
+import cc.openxiot.matrix.db.device.DeviceSpace;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtualDevice;
@@ -28,23 +31,27 @@ import cn.geekcity.xiot.spec.instance.DeviceInstance;
 import cn.geekcity.xiot.spec.instance.Property;
 import cn.geekcity.xiot.spec.instance.Service;
 import io.smallrye.mutiny.Uni;
-import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 /**
- * Modbus 虚拟设备生成：把一条 Modbus 点表配置虚拟成一个挂在父设备下的子设备实例定义。
+ * Modbus 虚拟设备生成：把一条 Modbus 点表配置虚拟成一个挂在父设备下的子设备，并落库为矩阵设备。
  *
- * <p>范围 = 仅生成定义并落库（不注册真实设备）。虚拟设备 DeviceType 继承点表配置的 {@code type}（品类 DeviceType），
- * 只追加 vendor（父 did）、model（点表配置 id）、version=1，即 8 段 XIOT 实例类型。</p>
+ * <p>流程 = 生成并持久化虚拟设备文档（定义注册表，见 {@link ModbusVirtualDevice}），再以同一 did / 派生类型
+ * 创建矩阵 {@link DeviceEntity}（挂在父设备 {@code mapping.did} 下、复制其所在 space，parentId=父 did，
+ * rootId=父所在树的根），使虚拟子设备出现在父设备所在空间的设备列表。createOne 返回该 DeviceEntity。</p>
+ *
+ * <p>虚拟设备 DeviceType 继承点表配置的 {@code type}（品类 DeviceType），只追加 vendor（父 did）、
+ * model（点表配置 id）、version=1，即 8 段 XIOT 实例类型。</p>
  *
  * <p>实例定义用 xiot-spec 模型代码构造 {@link DeviceInstance}（单个 modbus Service），再经
  * {@link DeviceInstanceCodec} 编码为 JSON 文本落库，不手拼 JSON。读命令（fc 01/02/03/04）产出一个
- * 只读 backing property + 带 {@code out} 参数的 action；写命令（fc 05/06/0F/10）仅产出无参 action。</p>
+ * 只读 backing property + 带 {@code out} 参数的 action；写命令（fc 05/06/0F/10）仅产出无参 action。
+ * 定义留档在 {@code virtual-devices}，供后续真正的 Modbus 接入（实例注册 / I/O 桥接）使用。</p>
  *
  * <p>挂载描述（源配置 + 父设备挂载点）即 {@link ModbusMapping}：同对象作请求体 / 实体 {@code mapping}
- * 子文档 / 响应 {@code mapping} 回显，不在实体中平铺重复字段。</p>
+ * 子文档复用，不在实体中平铺重复字段。</p>
  */
 @ApplicationScoped
 public class ModbusVirtualDeviceService {
@@ -61,22 +68,37 @@ public class ModbusVirtualDeviceService {
     @Inject
     ModbusVirtualDeviceRepository repo;
 
+    @Inject
+    DeviceService deviceService;
+
     /**
-     * 校验 → 取点表配置 → 构造 DeviceInstance 并编码 → 落库 → 返回摘要数据。
+     * 校验 → 取点表配置 → 构造 DeviceInstance 并编码落库（定义注册表）→ 创建矩阵 DeviceEntity 子设备 → 返回该设备。
      */
-    public Uni<JsonObject> create(String orgId, ModbusMapping mapping, Person who) {
+    public Uni<DeviceEntity> create(String orgId, ModbusMapping mapping, Person who) {
         String err = validate(mapping);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         return configService.get(orgId, mapping.configId)
                 .onItem().transformToUni(cfg -> {
+                    ModbusVirtualDevice v;
                     try {
-                        ModbusVirtualDevice v = build(cfg, mapping, orgId, who);
-                        return repo.insert(v).map(ignored -> toData(v));
+                        v = build(cfg, mapping, orgId, who);
                     } catch (IllegalArgumentException e) {
                         return Uni.createFrom().failure(e);
                     }
+                    // 虚拟子设备要挂在真实存在的父设备下：取父设备（matrix DeviceEntity）以复制其所在 space / 树根
+                    return deviceService.getByDeviceId(mapping.did)
+                            .onItem().transformToUni(parent -> {
+                                if (parent == null) {
+                                    return Uni.createFrom().failure(
+                                            new IllegalArgumentException("parent device not found: " + mapping.did));
+                                }
+                                // 先落定义注册表（失败仅多一条孤文档、不会出现“半注册”设备），
+                                // 再创建并持久化矩阵子设备，最终返回该 DeviceEntity
+                                return repo.insert(v)
+                                        .chain(ignored -> deviceService.save(buildDeviceEntity(v, parent)));
+                            });
                 });
     }
 
@@ -170,6 +192,28 @@ public class ModbusVirtualDeviceService {
         return v;
     }
 
+    /**
+     * 由虚拟设备定义生成矩阵 {@link DeviceEntity} 子设备：
+     * did=虚拟设备 id、type=派生 DeviceType、protocol=modbus、离线起步；挂在父设备 {@code mapping.did} 下
+     * （parentId=父 did，rootId=父所在树的根：父为根时即父 did），并复制父设备所在 space，让子设备同空间可见。
+     */
+    private DeviceEntity buildDeviceEntity(ModbusVirtualDevice v, DeviceEntity parent) {
+        DeviceEntity child = new DeviceEntity();
+        child.did = v.did;
+        child.type = v.instance.type;
+        child.online = false;
+        child.protocol = "modbus";
+        child.parentId = parent.did;
+        child.rootId = parent.rootId == null || parent.rootId.isBlank() ? parent.did : parent.rootId;
+        if (parent.space != null) {
+            DeviceSpace space = new DeviceSpace();
+            space.spaceId = parent.space.spaceId;
+            space.rootId = parent.space.rootId;
+            child.space = space;
+        }
+        return child;
+    }
+
     /** 品类 DeviceType（SPEC/XIOT 均可）解析失败时给出引导文案。 */
     private DeviceType parseDeviceType(String type) {
         if (type == null || type.isBlank()) {
@@ -224,25 +268,4 @@ public class ModbusVirtualDeviceService {
         };
     }
 
-    // ===== 回显 =====
-
-    /** 落库后的摘要：虚拟设备形状对齐矩阵设备 + 映射信息原样回显。 */
-    private JsonObject toData(ModbusVirtualDevice v) {
-        JsonObject summary = new JsonObject()
-                .put("did", v.did)
-                .put("type", v.instance.type)
-                .put("online", false)
-                .put("protocol", "modbus")
-                .put("rootId", v.mapping.did)
-                .put("parentId", v.mapping.did);
-        JsonObject o = new JsonObject()
-                .put("virtualDeviceId", v.did)
-                .put("deviceSummary", summary)
-                .put("mapping", JsonObject.mapFrom(v.mapping));
-        if (v.instance.description != null) {
-            o.put("description", v.instance.description);
-        }
-        o.put("definition", new JsonObject(v.instance.definition));
-        return o;
-    }
 }

@@ -25,8 +25,9 @@ import org.jboss.logging.Logger;
  * Modbus 虚拟化 API。org 一律取 {@code X-Org-Id} 请求头，并经
  * {@link OrgAccessService#checkMember} 校验（需为组织成员），口径与 device/space 一致。
  *
- * <p>createOne 范围 = 仅生成虚拟设备实例定义并落库（不注册真实设备）：取组织内可见的 Modbus 点表配置，
- * 构造 {@code DeviceInstance} 经 codec 编码后持久化到 {@code virtual-devices} 集合，回显设备摘要与映射信息。</p>
+ * <p>createOne = 生成虚拟设备实例定义并落库（{@code virtual-devices} 定义注册表），再把它作为父设备
+ * （请求 {@code did}）下的子设备创建矩阵 {@code DeviceEntity}（复制父设备所在 space，离线起步）并返回该设备。
+ * 取组织内可见的 Modbus 点表配置；父设备不存在则报错。</p>
  */
 @Path("/matrix/v1/modbus/virtual")
 @Produces(MediaType.APPLICATION_JSON)
