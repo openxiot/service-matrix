@@ -246,14 +246,17 @@ public class ModbusVirtualDeviceService {
 
     /**
      * 由虚拟设备定义生成矩阵 {@link DeviceEntity} 子设备：
-     * did=虚拟设备 id、type=派生 DeviceType、protocol=modbus、离线起步；挂在父设备 {@code mapping.did} 下
+     * did=虚拟设备 id、type=派生 DeviceType、protocol=modbus；挂在父设备 {@code mapping.did} 下
      * （parentId=父 did，rootId=父所在树的根：父为根时即父 did），并复制父设备所在 space，让子设备同空间可见。
+     *
+     * <p>虚拟子设备无独立在线状态：online 起步即镜像父设备当前 online（父离线则子离线），
+     * 后续读取面也会在 {@link DeviceService} 统一按父设备在线状态归一（见其 read 方法）。</p>
      */
     private DeviceEntity buildDeviceEntity(ModbusVirtualDevice v, DeviceEntity parent) {
         DeviceEntity child = new DeviceEntity();
         child.did = v.did;
         child.type = v.instance.type;
-        child.online = false;
+        child.online = parent.online;
         child.protocol = "modbus";
         child.parentId = parent.did;
         child.rootId = parent.rootId == null || parent.rootId.isBlank() ? parent.did : parent.rootId;

@@ -4,9 +4,10 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 「创建 Modbus 虚拟设备」即把这套点表自动生成一个虚拟设备的**实例定义**，挂到用户选中的父设备之下。
 
 > 流程：生成虚拟设备**实例定义**并落库（`virtual-devices` 定义注册表），随后以同一 did / 派生类型创建
-> 矩阵 **DeviceEntity**（挂在父设备下、复制其所在 space，离线起步），`createOne` 返回该设备。
-> 尚未打通「真实 Modbus 接入」（实例注册 / I/O 桥接）；后续可基于落库的 `definition`
-> （`DeviceInstanceCodec` 编码的 DeviceInstance JSON）与派生 DeviceType 做真正的接入。
+> 矩阵 **DeviceEntity**（挂在父设备下、复制其所在 space），`createOne` 返回该设备。
+> 虚拟子设备无独立在线状态：online 始终镜像父设备（创建时复制父 online，读取时由 `DeviceService`
+> 按父设备在线状态归一，见下）。尚未打通「真实 Modbus 接入」（实例注册 / I/O 桥接）；后续可基于落库的
+> `definition`（`DeviceInstanceCodec` 编码的 DeviceInstance JSON）与派生 DeviceType 做真正的接入。
 
 ## 一、创建 Modbus 虚拟设备
 
@@ -33,7 +34,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 |---|---|
 | `did` | 虚拟设备 ID（服务端生成的 UUID） |
 | `type` | 派生 DeviceType（继承点表 `type` + 追加父 did / 配置 id / version=1，全小写） |
-| `online` / `protocol` | `false` / `modbus`（离线起步，尚未接真实 I/O） |
+| `online` / `protocol` | `modbus`；`online` = 创建时父设备在线状态（虚拟子设备无独立在线，镜像父设备） |
 | `parentId` / `rootId` | 父设备 did；rootId = 父所在树的根（父为根时即父 did） |
 | `space` | 复制父设备所在 space：`{ spaceId, rootId }` |
 
@@ -91,8 +92,19 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 * **归属 = 请求组织（`X-Org-Id`），而非点表所属组织**——跨组织公开点表可被本组织虚拟化，虚拟设备记入操作方组织。
 * 定义落库前先校验父设备存在（`DeviceService.getByDeviceId(did)`；无 → `parent device not found: <did>`，避免“半注册”），
   落库后再把虚拟设备作为父设备下的子设备创建矩阵 `DeviceEntity`（`DeviceService.save`）：did=虚拟设备 id、
-  parentId=父 did、rootId=父所在树的根（父为根时即父 did）、复制父所在 `space`、protocol=`modbus`、离线起步
-  （online=false），使虚拟子设备出现在父设备所在空间的设备列表。`createOne` 返回该 DeviceEntity。
+  parentId=父 did、rootId=父所在树的根（父为根时即父 did）、复制父所在 `space`、protocol=`modbus`，
+  **online = 父设备当前 online**（虚拟子设备无独立在线），使虚拟子设备出现在父设备所在空间的设备列表。
+  `createOne` 返回该 DeviceEntity。
+
+### 4.1 online 与父设备保持一致
+
+虚拟子设备不接真实 I/O、无独立在线状态，其 `online` 语义 = 父设备在线状态：
+
+* 创建时镜像父设备当前 `online`（见上一节 `buildDeviceEntity`）。
+* 读取时由 `DeviceService` 统一归一：`getBySpaceId` / `getByDeviceIds` / `getByDeviceId` 返回前，凡
+  protocol=`modbus` 且 parentId 非空的设备，online 改写为可上溯祖先（父链若仍是虚拟设备则继续上溯）的 online；
+  父设备不在批量结果内时按 parentId 补查。故父设备在线状态在 DB 侧更新后，虚拟子设备随读即同步，
+  无需单独刷新子设备记录。
 
 ### 5. 删除
 
@@ -122,6 +134,10 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 ## 三、变更记录
 
 ### 2026-09-09
+* **虚拟子设备 online 与父设备保持一致**：虚拟子设备无独立在线状态。创建时 `online` 镜像父设备当前状态
+  （不再固定离线起步）；读取面 `DeviceService.getBySpaceId` / `getByDeviceIds` / `getByDeviceId` 返回前对
+  protocol=`modbus` 且 parentId 非空的设备按其父链 online 归一（父不在批量结果内时补查，父链再嵌套则上溯）。
+  故父设备 DB online 更新后，虚拟子设备随读即同步。详见第 4.1 节。
 * 虚拟设备 createOne / deleteOne 授权从「组织成员」收紧为「**组织管理员**」（`OrgAccessService.checkAdmin`），
   仅 `getInstance` 保持公开只读。
 * 新增公开只读 `getInstance`：`GET /matrix/v1/modbus/virtual/instance/{type}`（无需鉴权），按派生的实例

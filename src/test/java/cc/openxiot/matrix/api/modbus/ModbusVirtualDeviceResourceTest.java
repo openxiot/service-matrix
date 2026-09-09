@@ -112,9 +112,15 @@ class ModbusVirtualDeviceResourceTest {
 
     /** 父设备（matrix DeviceEntity）：作为树根（rootId 空）+ 所在空间，供虚拟子设备挂载 / 复制 space。 */
     private void allowParentDevice() {
+        allowParentDevice(false);
+    }
+
+    /** 带父设备 online 状态重载：虚拟子设备 online 起步即镜像父设备。 */
+    private void allowParentDevice(boolean parentOnline) {
         DeviceEntity parent = new DeviceEntity();
         parent.did = "parent-device-1";
         parent.type = "urn:xiot-spec:device:gateway:0000A001";
+        parent.online = parentOnline;
         DeviceSpace space = new DeviceSpace();
         space.spaceId = "space-1";
         space.rootId = "root-1";
@@ -267,6 +273,30 @@ class ModbusVirtualDeviceResourceTest {
         assertEquals(Set.of(1, 3), svc.actions().keySet());
         assertTrue(svc.actions().values().stream().anyMatch(a -> a.out().containsKey(1)),
                 "read command action should reference backing property via out");
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void createChildOnlineMirrorsParentOnline() {
+        allowAdmin();
+        allowConfig(sample());
+        when(repo.insert(any(ModbusVirtualDevice.class))).thenReturn(Uni.createFrom().voidItem());
+        allowParentDevice(true); // 父设备在线 → 新建虚拟子设备在线，而非固定离线
+        allowSave();
+
+        given().header("X-Org-Id", "org1")
+                .contentType(ContentType.JSON)
+                .body("{\"configId\":\"c1\",\"did\":\"parent-device-1\",\"siid\":1,\"aiid\":1}")
+                .when().post("/matrix/v1/modbus/virtual/one")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.online", equalTo(true))
+                .body("data.protocol", equalTo("modbus"))
+                .body("data.parentId", equalTo("parent-device-1"));
+
+        ArgumentCaptor<DeviceEntity> eCaptor = ArgumentCaptor.forClass(DeviceEntity.class);
+        verify(deviceService).save(eCaptor.capture());
+        assertEquals(true, eCaptor.getValue().online);
     }
 
     @Test
