@@ -3,11 +3,15 @@
   "name": "xxx",
   "version": 1,
   "configId": "Modbus配置ID",
-  "parent": {
+  "device": {
     "did": "xxx",
     "siid": 1,
     "aiid": 1,
-    "argument": 1
+    "argument": 1,
+    "space": {
+      "spaceId": "该设备所在空间ID",
+      "rootId": "根空间ID"
+    }
   },
   "functions": [
     {

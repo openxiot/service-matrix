@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.device;
 
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOn;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -54,7 +54,7 @@ public class DeviceService {
         return deviceRepository.findByDeviceId(did)
                 .chain(device -> {
                     if (device != null) {
-                        DeviceSpace space = new DeviceSpace();
+                        SpaceOn space = new SpaceOn();
                         space.spaceId = spaceId;
                         space.rootId = rootSpaceId;
                         device.space = space;

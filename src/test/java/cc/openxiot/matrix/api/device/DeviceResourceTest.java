@@ -6,7 +6,7 @@ import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOn;
 import cn.geekcity.xiot.spec.device.Device;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
@@ -179,7 +179,7 @@ class DeviceResourceTest {
 
         DeviceEntity device = new DeviceEntity();
         device.did = "d1";
-        DeviceSpace ds = new DeviceSpace();
+        SpaceOn ds = new SpaceOn();
         ds.spaceId = "sid";
         device.space = ds;
 

@@ -19,11 +19,10 @@ import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
@@ -126,7 +125,7 @@ class ModbusVirtualDeviceResourceTest {
         parent.did = "parent-device-1";
         parent.type = "urn:xiot-spec:device:gateway:0000A001";
         parent.online = parentOnline;
-        DeviceSpace space = new DeviceSpace();
+        SpaceOn space = new SpaceOn();
         space.spaceId = "space-1";
         space.rootId = "root-1";
         parent.space = space;

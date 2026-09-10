@@ -4,7 +4,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceParent;
+import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -47,7 +47,7 @@ public class ModbusServiceService {
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
-    /** 启动只做建索引（orgId / parent.did），沿用点表那个开关。 */
+    /** 启动只做建索引（orgId / device.did / device.space.spaceId），沿用点表那个开关。 */
     void init(@Observes StartupEvent event) {
         if (!indexEnabled) {
             return;
@@ -126,6 +126,18 @@ public class ModbusServiceService {
         return repo.listByParent(did, orgId);
     }
 
+    /**
+     * 按空间列出服务的精简信息（空间图用）：只读 id 与 name，整份定义（functions / response）不上网络。
+     *
+     * <p>返回的 {@code ModbusService} 只有 {@code id} / {@code name} 有值，别当完整定义用。</p>
+     */
+    public Uni<List<ModbusService>> getBriefBySpaceId(String spaceId) {
+        if (spaceId == null || spaceId.isBlank()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return repo.findBriefBySpaceId(spaceId);
+    }
+
     public Uni<Long> delete(String orgId, String id) {
         String err = checkId(orgId, id);
         if (err != null) {
@@ -167,15 +179,15 @@ public class ModbusServiceService {
             return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + functionIndex));
         }
 
-        String coordinateErr = ModbusServiceValidator.checkParent(service.parent);
+        String coordinateErr = ModbusServiceValidator.checkDevice(service.device);
         if (coordinateErr != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(coordinateErr));
         }
 
-        // 一次调用一帧：父设备承载数据的动作只有一个入参，请求帧原样填进去
-        ModbusServiceParent parent = service.parent;
-        ActionOperation action = new ActionOperation(new ActionID(parent.did, parent.siid, parent.aiid));
-        action.in().put(parent.argument, new ArgumentOperation(parent.argument, function.request));
+        // 一次调用一帧：依赖设备的动作只有一个入参，请求帧原样填进去
+        DeviceOn device = service.device;
+        ActionOperation action = new ActionOperation(new ActionID(device.did, device.siid, device.aiid));
+        action.in().put(device.argument, new ArgumentOperation(device.argument, function.request));
 
         String body = ActionOperationCodec.QUERY.encode(List.of(action)).toString();
         return manipulationService.invokeActions(orgId, body)
@@ -247,7 +259,7 @@ public class ModbusServiceService {
         merged.name = patch.name != null ? patch.name : existing.name;
         merged.version = patch.version != null ? patch.version : existing.version;
         merged.configId = patch.configId != null ? patch.configId : existing.configId;
-        merged.parent = patch.parent != null ? patch.parent : existing.parent;
+        merged.device = patch.device != null ? patch.device : existing.device;
         merged.functions = patch.functions != null ? patch.functions : existing.functions;
         return merged;
     }

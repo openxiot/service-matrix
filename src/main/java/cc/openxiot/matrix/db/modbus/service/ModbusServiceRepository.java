@@ -2,6 +2,8 @@ package cc.openxiot.matrix.db.modbus.service;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
+import io.quarkus.mongodb.FindOptions;
 import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
@@ -31,11 +33,12 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
         return id != null && ObjectId.isValid(id) ? new ObjectId(id) : null;
     }
 
-    /** 启动时确保 orgId / parent.did 索引存在（幂等；失败仅告警，不阻断启动）。 */
+    /** 启动时确保 orgId / device.did / device.space.spaceId 索引存在（幂等；失败仅告警，不阻断启动）。 */
     public Uni<Void> ensureIndexes() {
         return collection()
                 .createIndex(Indexes.ascending("orgId"))
-                .chain(ignored -> collection().createIndex(Indexes.ascending("parent.did")))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("device.did")))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("device.space.spaceId")))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
@@ -68,10 +71,25 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
         return collection().find(Filters.eq("orgId", orgId)).collect().asList();
     }
 
-    /** 列出挂在指定父设备下的服务（org 约束防跨组织读取）。 */
+    /** 列出挂在指定设备下的服务（org 约束防跨组织读取）。 */
     public Uni<List<ModbusService>> listByParent(String did, String orgId) {
         return collection()
-                .find(Filters.and(Filters.eq("orgId", orgId), Filters.eq("parent.did", did)))
+                .find(Filters.and(Filters.eq("orgId", orgId), Filters.eq("device.did", did)))
+                .collect().asList();
+    }
+
+    /**
+     * 列出依赖的设备落在该空间的服务，**只取 id 与 name**（{@code _id} 由 Mongo 默认带出）。
+     *
+     * <p>给空间图这类「只要列个清单」的地方用：服务文档带上 functions / response 动辄几十 KB，
+     * 一个空间下面挂了十几个就不适合整份拉回来。投影在 Mongo 侧就生效，其余字段不上网络；
+     * 返回的对象只有 {@code id} / {@code name} 有值，**不要当成完整定义用**（要详情另按 id 查）。</p>
+     */
+    public Uni<List<ModbusService>> findBriefBySpaceId(String spaceId) {
+        // 这个版本的 ReactiveMongoCollection.find() 直接给 Multi，投影只能经 FindOptions 传
+        return collection()
+                .find(Filters.eq("device.space.spaceId", spaceId),
+                        new FindOptions().projection(Projections.include("name")))
                 .collect().asList();
     }
 

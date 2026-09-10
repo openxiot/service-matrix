@@ -12,7 +12,7 @@ import java.util.List;
  * Modbus 服务：把一条 Modbus 点表映射成一组可直接调用的「方法」。
  *
  * <p>与 {@code ModbusVirtualDevice}（MODBUS.md 的方案一：生成设备实例定义、走通用设备接口 + 拦截器翻译）
- * 并存但不共用路径：本方案把「怎么调父设备、发什么帧、怎么解应答」在**创建时**一次性展开存进本文档，
+ * 并存但不共用路径：本方案把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**一次性展开存进本文档，
  * 调用时只读这一条记录即可组装出 {@code ActionOperation}，不需要再读点表、父设备、产品实例定义。</p>
  *
  * <p>独立集合 {@code services}（库 {@code modbus}，与点表 {@code configs}、方案一的 {@code devices} 分集合）。
@@ -36,8 +36,8 @@ public class ModbusService extends ReactivePanacheMongoEntity {
     @Schema(description = "源点表配置 ID（溯源用：本服务由哪条点表映射而来）")
     public String configId;
 
-    @Schema(description = "父设备调用坐标（调哪个设备/服务/方法、请求帧填在哪个入参 piid）", required = true)
-    public ModbusServiceParent parent = new ModbusServiceParent();
+    @Schema(description = "依赖的设备调用坐标（调哪个设备/服务/方法、请求帧填在哪个入参 piid）", required = true)
+    public DeviceOn device = new DeviceOn();
 
     @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写）", required = true)
     public List<ModbusServiceFunction> functions;

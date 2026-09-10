@@ -4,7 +4,7 @@ import cc.openxiot.matrix.api.device.interceptor.modbus.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceParent;
+import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 
 import java.util.HashSet;
 import java.util.List;
@@ -26,7 +26,7 @@ public final class ModbusServiceValidator {
     private ModbusServiceValidator() {
     }
 
-    /** 整份定义：orgId / name / version / parent / functions 逐层校验。 */
+    /** 整份定义：orgId / name / version / device / functions 逐层校验。 */
     public static String validate(ModbusService service) {
         if (service == null) {
             return "body is required";
@@ -41,29 +41,29 @@ public final class ModbusServiceValidator {
             return "version is required";
         }
 
-        String parentErr = checkParent(service.parent);
-        if (parentErr != null) {
-            return parentErr;
+        String deviceErr = checkDevice(service.device);
+        if (deviceErr != null) {
+            return deviceErr;
         }
         return validateFunctions(service.functions);
     }
 
-    /** 父设备调用坐标：invoke 前也要查一遍（文档可能来自更早的口径）。 */
-    public static String checkParent(ModbusServiceParent parent) {
-        if (parent == null) {
-            return "parent is required";
+    /** 依赖设备的调用坐标：invoke 前也要查一遍（文档可能来自更早的口径）。 */
+    public static String checkDevice(DeviceOn device) {
+        if (device == null) {
+            return "device is required";
         }
-        if (parent.did == null || parent.did.isBlank()) {
-            return "parent.did is required";
+        if (device.did == null || device.did.isBlank()) {
+            return "device.did is required";
         }
-        if (parent.siid == null || parent.siid < 1) {
-            return "parent.siid is required";
+        if (device.siid == null || device.siid < 1) {
+            return "device.siid is required";
         }
-        if (parent.aiid == null || parent.aiid < 1) {
-            return "parent.aiid is required";
+        if (device.aiid == null || device.aiid < 1) {
+            return "device.aiid is required";
         }
-        if (parent.argument == null || parent.argument < 1) {
-            return "parent.argument is required";
+        if (device.argument == null || device.argument < 1) {
+            return "device.argument is required";
         }
         return null;
     }

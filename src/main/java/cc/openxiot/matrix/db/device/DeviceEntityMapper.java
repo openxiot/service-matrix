@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.device;
 
+import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cn.geekcity.xiot.spec.device.Device;
 import cn.geekcity.xiot.spec.summary.Summary;
@@ -11,7 +12,7 @@ public class DeviceEntityMapper {
     public static DeviceEntity from(Device device, SpaceEntity space) {
         DeviceEntity entity = new DeviceEntity();
         entity.did = device.did();
-        entity.space = new DeviceSpace(space);
+        entity.space = new SpaceOn(space);
 
         Summary summary = device.summary();
         if (summary != null) {

@@ -29,7 +29,7 @@ class ModbusServiceCodecTest {
               "name": "1 号冷水机组",
               "version": 1,
               "configId": "65f0c0ffee0123456789abcd",
-              "parent": { "did": "did-1", "siid": 1, "aiid": 1, "argument": 1 },
+              "device": { "did": "did-1", "siid": 1, "aiid": 1, "argument": 1 },
               "functions": [
                 {
                   "index": 1,
@@ -70,10 +70,10 @@ class ModbusServiceCodecTest {
         assertNull(service.id);      // id 不由请求体决定
         assertNull(service.orgId);   // org 取 X-Org-Id
 
-        assertEquals("did-1", service.parent.did);
-        assertEquals(1, service.parent.siid.intValue());
-        assertEquals(1, service.parent.aiid.intValue());
-        assertEquals(1, service.parent.argument.intValue());
+        assertEquals("did-1", service.device.did);
+        assertEquals(1, service.device.siid.intValue());
+        assertEquals(1, service.device.aiid.intValue());
+        assertEquals(1, service.device.argument.intValue());
 
         assertEquals(2, service.functions.size());
         ModbusServiceFunction first = service.functions.get(0);
@@ -157,7 +157,32 @@ class ModbusServiceCodecTest {
     }
 
     @Test
+    void encodeBriefKeepsOnlyIdNameAndType() {
+        ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
+        service.id = new ObjectId("65f0c0ffee0123456789abcd");
+        service.orgId = "org-1";
+
+        JsonObject o = ModbusServiceCodec.encodeBrief(service);
+        // 空间图这类清单只认 id / name / type：整份定义（functions / response）不进图
+        assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
+        assertEquals("1 号冷水机组", o.getString("name"));
+        assertEquals("modbus", o.getString("type"));
+        assertEquals(3, o.size());
+
+        JsonArray arr = ModbusServiceCodec.encodeBrief(List.of(service));
+        assertEquals(1, arr.size());
+        assertEquals("modbus", arr.getJsonObject(0).getString("type"));
+
+        // 主键没生成 / 名字为空时不硬塞 null
+        JsonObject bare = ModbusServiceCodec.encodeBrief(new ModbusService());
+        assertEquals("modbus", bare.getString("type"));
+        assertEquals(1, bare.size());
+    }
+
+    @Test
     void nullsEncodeToEmptyContainers() {
+        assertTrue(ModbusServiceCodec.encodeBrief((ModbusService) null).isEmpty());
+        assertTrue(ModbusServiceCodec.encodeBrief((List<ModbusService>) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((ModbusService) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((List<ModbusService>) null).isEmpty());
         assertTrue(ModbusServiceFunctionCodec.encode((ModbusServiceFunction) null).isEmpty());

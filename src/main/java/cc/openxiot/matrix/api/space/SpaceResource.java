@@ -4,6 +4,9 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
+import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -24,6 +27,7 @@ import org.jboss.logging.Logger;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 @Path("/matrix/v1/space")
 @Produces(MediaType.APPLICATION_JSON)
@@ -39,6 +43,9 @@ public class SpaceResource extends AbstractResource {
 
     @Inject
     DeviceService deviceService;
+
+    @Inject
+    ModbusServiceService modbusServiceService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -171,14 +178,17 @@ public class SpaceResource extends AbstractResource {
         return getSpaceIfMember(rootId, orgId)
                 .chain(ignored -> service.getDescendants(rootId))
                 .chain(spaces -> {
+                    // 设备与服务都按空间取：同一个空间一次查询，两个列表并行，再各自拍平成一张表。
+                    // 服务只出精简视图（id/name/type）：投影在 Mongo 侧就把 functions/response 挡掉了，只回来 id/name。
                     List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
-                    List<Uni<List<DeviceEntity>>> deviceUnis = spaceIds.stream().map(deviceService::getBySpaceId).toList();
-                    return Uni.join().all(deviceUnis).andFailFast()
-                            .map(deviceLists -> {
-                                List<DeviceEntity> allDevices = deviceLists.stream().flatMap(List::stream).toList();
+                    Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
+                    Uni<List<ModbusService>> services = bySpace(spaceIds, modbusServiceService::getBriefBySpaceId);
+                    return Uni.combine().all().unis(devices, services).asTuple()
+                            .map(tuple -> {
                                 Map<String, Object> graph = new HashMap<>();
                                 graph.put("spaces", spaces);
-                                graph.put("devices", allDevices);
+                                graph.put("devices", tuple.getItem1());
+                                graph.put("services", ModbusServiceCodec.encodeBrief(tuple.getItem2()));
                                 return OxResponse.ok(graph);
                             });
                 })
@@ -187,6 +197,14 @@ public class SpaceResource extends AbstractResource {
     }
 
     // -- helper methods --
+
+    /** 按空间逐个并行取，再拍平成一张表（spaces / devices / services 走同一条路径）。 */
+    private static <T> Uni<List<T>> bySpace(List<String> spaceIds, Function<String, Uni<List<T>>> loader) {
+        return Uni.join()
+                .all(spaceIds.stream().map(loader).toList())
+                .andFailFast()
+                .map(lists -> lists.stream().flatMap(List::stream).toList());
+    }
 
     private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
         return service.getById(spaceId)

@@ -4,14 +4,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.modbus.config.ModbusConfigService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.device.DeviceSpace;
+import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.virtual.ModbusVirtualDevice;
@@ -267,7 +266,7 @@ public class ModbusVirtualDeviceService {
         child.parentId = parent.did;
         child.rootId = parent.rootId == null || parent.rootId.isBlank() ? parent.did : parent.rootId;
         if (parent.space != null) {
-            DeviceSpace space = new DeviceSpace();
+            SpaceOn space = new SpaceOn();
             space.spaceId = parent.space.spaceId;
             space.rootId = parent.space.rootId;
             child.space = space;

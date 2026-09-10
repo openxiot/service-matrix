@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.db.device;
 
+import cc.openxiot.matrix.db.space.SpaceOn;
+
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntityBase;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -45,7 +47,7 @@ public class DeviceEntity extends ReactivePanacheMongoEntityBase {
     public Date lastOffline;
 
     @Schema(description = "设备所在的空间", required = false)
-    public DeviceSpace space;
+    public SpaceOn space;
 
     @Schema(description = "创建时间", required = false)
     public Date create;

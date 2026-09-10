@@ -4,7 +4,7 @@ import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceParent;
+import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -50,22 +50,22 @@ class ModbusServiceValidatorTest {
     }
 
     @Test
-    void rejectsBadParent() {
-        ModbusService noParent = service();
-        noParent.parent = null;
-        assertEquals("parent is required", ModbusServiceValidator.validate(noParent));
+    void rejectsBadDevice() {
+        ModbusService noDevice = service();
+        noDevice.device = null;
+        assertEquals("device is required", ModbusServiceValidator.validate(noDevice));
 
         ModbusService noDid = service();
-        noDid.parent.did = " ";
-        assertEquals("parent.did is required", ModbusServiceValidator.validate(noDid));
+        noDid.device.did = " ";
+        assertEquals("device.did is required", ModbusServiceValidator.validate(noDid));
 
         ModbusService zeroSiid = service();
-        zeroSiid.parent.siid = 0;
-        assertEquals("parent.siid is required", ModbusServiceValidator.validate(zeroSiid));
+        zeroSiid.device.siid = 0;
+        assertEquals("device.siid is required", ModbusServiceValidator.validate(zeroSiid));
 
         ModbusService zeroArgument = service();
-        zeroArgument.parent.argument = 0;
-        assertEquals("parent.argument is required", ModbusServiceValidator.validate(zeroArgument));
+        zeroArgument.device.argument = 0;
+        assertEquals("device.argument is required", ModbusServiceValidator.validate(zeroArgument));
     }
 
     // ===== functions =====
@@ -182,12 +182,12 @@ class ModbusServiceValidatorTest {
         service.name = "1 号冷水机组";
         service.version = 1;
 
-        ModbusServiceParent parent = new ModbusServiceParent();
-        parent.did = "did-1";
-        parent.siid = 1;
-        parent.aiid = 1;
-        parent.argument = 1;
-        service.parent = parent;
+        DeviceOn device = new DeviceOn();
+        device.did = "did-1";
+        device.siid = 1;
+        device.aiid = 1;
+        device.argument = 1;
+        service.device = device;
 
         service.functions = new ArrayList<>(List.of(function(1), function(2)));
         return service;

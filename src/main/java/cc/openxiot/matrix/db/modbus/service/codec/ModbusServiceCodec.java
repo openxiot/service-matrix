@@ -13,8 +13,14 @@ import java.util.List;
  * <p>{@link #encode} 用于返回给前端：主键输出为十六进制字符串，子结构逐个委派给各自的 Codec。
  * {@link #decode} 把请求体转成实体：{@code id} / {@code orgId} / {@code creator} / {@code updater}
  * 不由请求体决定（id 由 Panache 生成、org 取 {@code X-Org-Id}、人员取当前登录用户），故不在这里解。</p>
+ *
+ * <p>{@link #encodeBrief} 是「只够列个清单」的精简视图，给空间图这类一次要带很多实体的地方用：
+ * 整份定义（functions / response）动辄几十 KB，清单里用不上。</p>
  */
 public final class ModbusServiceCodec {
+
+    /** 精简视图的 {@code type}：前端把服务与设备混在一张表里渲染时，靠它区分。 */
+    private static final String TYPE = "modbus";
 
     private ModbusServiceCodec() {
     }
@@ -40,7 +46,7 @@ public final class ModbusServiceCodec {
         if (service.configId != null) {
             o.put("configId", service.configId);
         }
-        o.put("parent", ModbusServiceParentCodec.encode(service.parent));
+        o.put("device", DeviceOnCodec.encode(service.device));
         o.put("functions", ModbusServiceFunctionCodec.encode(service.functions));
         if (service.creator != null) {
             o.put("creator", personToJson(service.creator));
@@ -61,6 +67,32 @@ public final class ModbusServiceCodec {
         return arr;
     }
 
+    /** 精简视图：只带 {@code id} / {@code name} / {@code type}（固定 {@code modbus}），取详情另调 `/one/{id}`。 */
+    public static JsonObject encodeBrief(ModbusService service) {
+        JsonObject o = new JsonObject();
+        if (service == null) {
+            return o;
+        }
+        if (service.id != null) {
+            o.put("id", service.id.toHexString());
+        }
+        if (service.name != null) {
+            o.put("name", service.name);
+        }
+        o.put("type", TYPE);
+        return o;
+    }
+
+    public static JsonArray encodeBrief(List<ModbusService> services) {
+        JsonArray arr = new JsonArray();
+        if (services != null) {
+            for (ModbusService service : services) {
+                arr.add(encodeBrief(service));
+            }
+        }
+        return arr;
+    }
+
     public static ModbusService decode(JsonObject o) {
         if (o == null) {
             return null;
@@ -69,7 +101,7 @@ public final class ModbusServiceCodec {
         service.name = o.getString("name");
         service.version = o.getInteger("version");
         service.configId = o.getString("configId");
-        service.parent = ModbusServiceParentCodec.decode(o.getJsonObject("parent"));
+        service.device = DeviceOnCodec.decode(o.getJsonObject("device"));
         service.functions = ModbusServiceFunctionCodec.decode(o.getJsonArray("functions"));
         return service;
     }
