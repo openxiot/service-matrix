@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.service;
 
-import cc.openxiot.matrix.api.device.interceptor.modbus.ModbusFrameCodec;
+import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * {@link ModbusService} 定义的内容校验（规则见 MODBUS2.md 第四节）。
+ * {@link ModbusService} 定义的内容校验（规则见 MODBUS.md 第七节）。
  *
  * <p>纯函数、无状态、不碰数据库：返回 {@code null} 表示通过，否则返回给前端看的错误文案。
  * 调用方（{@link ModbusServiceService}）把它转成 {@link IllegalArgumentException}。</p>

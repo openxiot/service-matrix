@@ -20,7 +20,7 @@ import org.jboss.logging.Logger;
 
 
 /**
- * Modbus 服务 API（MODBUS2.md 的方案二：把点表映射成可直接调用的服务，不再生成设备实例）。
+ * Modbus 服务 API：把点表映射成可直接调用的服务（不生成设备实例，见 MODBUS.md）。
  *
  * <p>org 取 {@code X-Org-Id} 请求头：创建 / 修改 / 删除经 {@link OrgAccessService#checkAdmin}
  * 校验（需为组织管理员），查询与 {@code invoke} 经 {@link OrgAccessService#checkMember}

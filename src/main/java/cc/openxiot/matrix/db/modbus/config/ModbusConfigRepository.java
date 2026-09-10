@@ -15,7 +15,7 @@ import java.util.List;
  * Modbus 设备点表配置的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code configs}）。
  *
  * <p>落库主键 {@code _id} 是系统生成的 ObjectId（见 {@link ModbusConfig}），但对外（HTTP 路径参数、
- * 虚拟设备 {@code mapping.configId} 引用、JSON）一律是十六进制字符串：本仓储的方法签名保持 String，
+ * 服务 {@code configId} 引用、JSON）一律是十六进制字符串：本仓储的方法签名保持 String，
  * 内部再转 ObjectId，接口契约与 id 生成方式解耦。非法 id（非 24 位十六进制）按「未命中」处理，不抛错。
  * 所有按 id 的读/删都带 orgId 约束，防跨组织访问。</p>
  */

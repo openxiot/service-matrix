@@ -1,209 +1,173 @@
-# 将 Modbus 定义的设备，映射成虚拟设备（作为选中父设备的一个子设备）
+# 将 Modbus 配置，生成具体的 Modbus 服务
 
-Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理设备的寄存器 / 线圈点表。
-「创建 Modbus 虚拟设备」即把这套点表自动生成一个虚拟设备的**实例定义**，挂到用户选中的父设备之下。
+## 一、设计思想
 
-> 流程：生成虚拟设备**实例定义**并落库（`modbus`/`devices` 定义注册表），随后以同一 did / 派生类型创建
-> 矩阵 **DeviceEntity**（挂在父设备下、复制其所在 space），`createOne` 返回该设备。
-> 虚拟子设备无独立在线状态：online 始终镜像父设备（创建时复制父 online，读取时由 `DeviceService`
-> 按父设备在线状态归一，见下）。尚未打通「真实 Modbus 接入」（实例注册 / I/O 桥接）；后续可基于落库的
-> `definition`（`DeviceInstanceCodec` 编码的 DeviceInstance JSON）与派生 DeviceType 做真正的接入。
+Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一台物理设备的寄存器 / 线圈点表。
+把它变成「可调用的东西」有两条路，本项目走过前一条、最终落在后一条：
 
-## 一、创建 Modbus 虚拟设备
+* **生成设备实例**（**已废弃**）：把点表展开成一台虚拟设备的实例定义，作为依赖设备（DTU）的子设备挂进设备表，
+  读属性 / 写属性 / 执行方法都复用通用的设备接口（`DeviceResource`）。
+  优点是不用另设接口；缺点是每个请求都要经过设备拦截器翻译指令（虚拟 action ↔ 父设备“发送”），
+  步骤繁多，且要读好几次数据库。
+* **生成 Modbus 服务**（**现行方案，本文档**）：把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**
+  一次性展开成一份 `ModbusService` 文档；调用时只读这一条记录即可组装出父设备调用。
+  优点是简单、一次数据库访问；缺点是需要单独设计一套 API（`ModbusServiceResource`）。
 
-接口：`POST /matrix/v1/modbus/virtual/one`（`X-Org-Id` 请求头携带操作组织，需为该组织管理员）。
+前者的代码（虚拟设备资源 / 实体 / 仓储、`DeviceInterceptor`、`DeviceManipulator`、以及 `DeviceService` 里
+为虚拟子设备做的 online 归一）已整体删除，见变更记录。**现在只剩这一条路径**：
+通用的设备线（`DeviceResource` 直接调 `ManipulationService`）+ 点表配置线 + Modbus 服务线。
 
-### 1. 输入
+## 二、示例
 
-```json
-{
-  "configId": "<被虚拟化的点表配置 ID>",
-  "did": "<父设备 ID（虚拟设备挂载到其下）>",
-  "siid": 1,
-  "aiid": 1
-}
+./modbus-service-example.json
+
+## 三、数据模型（落库 `modbus`/`services`，Panache 生成 ObjectId，对外十六进制字符串）
+
+```
+ModbusService        orgId / name / version / configId / device / functions[] / creator / updater
+DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
+SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
+ModbusServiceFunction index / name / request / response[]
+ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[]
 ```
 
-`siid` / `aiid` 是父设备侧的「服务 ID / 方法 ID」，仅作映射信息原样保留。
+* `device.argument` = 依赖设备的方法**入参的 piid**，请求帧填在这里。DTU 承载数据的动作只有一个入参，
+  故提到 device 级、对该服务的所有方法共用（不同型号 piid 不同：s710ym 是 1/2/2、dtu.json 是 1/1/1，
+  由前端按型号写入，后端不去产品定义推算）。
+* `device.space` 记录该设备所在的空间（`cc.openxiot.matrix.db.space.SpaceOn`，`DeviceEntity.space`
+  用的是同一个类）。空间图要按空间反查服务（`ModbusServiceRepository.findBriefBySpaceId`，见第六节），
+  落库时带上就不必再到设备表里绕一圈。它不参与校验：缺省的服务只是不出现在按空间的查询里。
+* `function.request` = 完整的 Modbus RTU 帧（含 CRC16），**由前端生成**，后端原样交给父设备透传。
+* `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
 
-### 2. 输出
+## 四、接口
 
-`OxResponse.ok(data)`，`data` = 新建的矩阵 `DeviceEntity`（形状与设备模块 `GET /matrix/v1/device/one/...` 一致）：
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/matrix/v1/modbus/service/many` | 组织成员 | 按组织列出 |
+| GET | `/matrix/v1/modbus/service/parent/{did}` | 组织成员 | 按依赖设备 did 列出（路径里的 `parent` 暂未随字段改名） |
+| GET | `/matrix/v1/modbus/service/one/{id}` | 组织成员 | 指定 ID 查找 |
+| POST | `/matrix/v1/modbus/service/one` | 组织管理员 | 创建（body = 完整 ModbusService，org 取 `X-Org-Id`） |
+| PUT | `/matrix/v1/modbus/service/one/{id}` | 组织管理员 | 修改（缺省字段保留既有值） |
+| DELETE | `/matrix/v1/modbus/service/one/{id}` | 组织管理员 | 删除 |
+| POST | `/matrix/v1/modbus/service/invoke` | 组织成员 | 调用方法，body `{"service": "<id>", "function": <index>}` |
 
-| 字段 | 说明 |
-|---|---|
-| `did` | 虚拟设备 ID（服务端生成的 UUID） |
-| `type` | 派生 DeviceType（继承点表 `type` + 追加父 did / 配置 id / version=1，全小写） |
-| `online` / `protocol` | `modbus`；`online` = 创建时父设备在线状态（虚拟子设备无独立在线，镜像父设备） |
-| `parentId` / `rootId` | 父设备 did；rootId = 父所在树的根（父为根时即父 did） |
-| `space` | 复制父设备所在 space：`{ spaceId, rootId }` |
+## 五、invoke 的调用链与返回
 
-> 映射 `mapping`（configId / did / siid / aiid）与实例 `definition`（DeviceInstanceCodec 编码）不再于响应回显，
-> 随 `devices` 文档落库，供后续真实接入使用。
+`ModbusServiceService.invoke`：按 org + id **读一次** `ModbusService` 文档 → 取该 index 的 function →
+组装依赖设备的 `ActionOperation`（did/siid/aiid 取 `device`，in 填 `{argument: request}`）→
+交 `ManipulationService.invokeActions`（DTU 的“发送”把帧透传到 RS485）→ 把应答帧按 `response[]` 解成字段值。
 
-### 3. 生成规则
+* 应答帧按 `[slave][fc][byteCount][data...][crc16]` 校验（长度 / 异常码 `fc|0x80` / CRC16，复用
+  `ModbusFrameCodec` 的 CRC 与字节序原语），数据区按 `response[].index` 升序、以 `bytes` **依次累加偏移**切分，
+  各字段 bytes 之和必须等于 byteCount。
+* 取值：原始值命中 `value-list` → 输出其 `description`（不再应用 scale）；否则输出 scale 后的数值；
+  `unit` 只做展示、不参与取值（调用方从服务定义里查）。
+* 返回 `OxResponse.ok(data)`，`data` = **字段 → 值**：
 
-前提：点表配置带一个完整的**品类 DeviceType**（`slave.type.type`，如 `urn:xiot-spec:device:chiller:0000A005`。
-新建点表必填，前端从规范目录两级选择、不手工输入；存量配置编辑允许暂缺，后端保留旧值）。
-`slave.type` 是包装对象：除 `type`（DeviceType URN）外还快照 `specDescription`（产品规范多语文案）与
-`typeDescription`（产品类型多语文案），前端直接展示无需回产品目录查询；详情回显见「点表配置 JSON」说明。
+  ```json
+  { "success": true, "data": { "进水温度": 61.5, "开关状态": "ON" } }
+  ```
 
-* **前提（点表功能码）**：点表每条功能码动作带 `index`（1 起自然数，行内唯一）。前端行排序依赖它，
-  生成顺序与 action iid 也取它。新建/编辑由前端按行序写入；后端校验 index 必填 / ≥1 / 不重复。
+  写方法（`response` 为空）的应答是请求回显、没有读值，`data` 为空对象。
+  父设备报错 / 帧非法 / CRC 不符 / 异常码一律 `OxResponse.error(message)`，不做部分成功。
 
-* **虚拟设备 DeviceType**：继承配置 `type` 的 ns / name，只追加 vendor + model + version，拼成 8 段 XIOT 实例类型：
-  `urn:<ns>:device:<name>:<head>:<vendor>:<model>:1`
-  * `vendor` = 父设备 `did`（小写）
-  * `model` = `configId`（小写）
-  * `head` = 由 `type` 的 value 段重编码为 8 位小写十六进制（确定性，重复生成一致）
-* **设备描述**：取点表配置描述。
+## 六、空间图里的服务
 
-* **功能定义只有一个 service（iid=1）**：
-  `urn:<ns>:service:modbus:<hex>:<vendor>:<model>:1`（ns / vendor / model 与 DeviceType 一致，name 固定 `modbus`）
+`/matrix/v1/space/graph/{rootId}` 在 `spaces` / `devices` 之外平级返回 `services`：取该根空间下全部子孙空间，
+逐个按空间并行查设备（`DeviceService.getBySpaceId`）与服务（`ModbusServiceService.getBriefBySpaceId`），
+再各自拍平成一张表。
 
-* service 内，点表每条功能码（command）对应生成一个 **Action**，**iid = 该 command 的 `index`**（1 起自然数）：
-  生成前按 `index` 升序排序，name 依序为 `a0、a1、…`：
-  `urn:<ns>:action:a<i>:<hex>:<vendor>:<model>:1`；action 描述 = 功能名称。
-  * **读操作**（fc 01/02/03/04）：无输入参数；额外生成一条**只读** backing Property
-    （按出现顺序 name 为 `v0、v1、…`），DataFormat 由点表解析（见下表），unit 取功能码单位；
-    该 Action 的 `out` 参数 = `[{ piid: 该 Property 的 iid }]`（只引用、不内联值）。
-  * **写操作**（fc 05/06/0F/10）：无输入、无输出参数。
+* 两个列表走 `SpaceResource` 里同一个泛型 helper（`bySpace(spaceIds, loader)`），
+  再 `Uni.combine().all().unis(...)` 并行等齐。
+* 服务侧 `ModbusServiceRepository.findBriefBySpaceId` 用 Mongo 投影（`FindOptions.projection`）只带
+  `_id` / `name` / `device.did` / `device.space.spaceId` 回来（命中 `device.space.spaceId` 索引）：
+  文档里的 functions / response 一个字节都不上网络。代价是返回的实体只有这几个字段有值——
+  **别当完整定义用**，要详情另按 id 查。
+* `services` 用 `ModbusServiceCodec.encodeBrief(List)` 出**精简视图**，只有五个字段：
 
-  DataFormat 解析（读功能码）：
+  ```json
+  { "id": "65f0c0ffee0123456789abcd", "name": "1 号冷水机组", "type": "modbus",
+    "did": "did-1", "spaceId": "space-1" }
+  ```
 
-  | 功能码 | 点表 dataType | DataFormat |
-  |---|---|---|
-  | 01 / 02（线圈 / 离散输入） | — | bool |
-  | 03 / 04 | int16 / uint16 / int32 / uint32 | int16 / uint16 / int32 / uint32 |
-  | 03 / 04 | float32 | float |
-  | 03 / 04 | string（或缺失） | string |
+  `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；`did` / `spaceId` 是依赖设备及其落点，
+  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{id}`。
+  整份定义（functions / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
 
-* 各子类型（service / action / property）的 value 段 `hex` = 由稳定字符串（配置 ID + 种类 + 序号）哈希出的
-  8 位小写十六进制，保证同一点表重复生成得到同一套类型；ns / vendor / model 与 DeviceType 对齐。
+## 七、校验
 
-### 4. 校验与落库
+规则实现在 `ModbusServiceValidator`（纯静态函数，返回 `null` = 通过，否则是给前端的错误文案），
+`ModbusServiceService` 只负责把文案转成 `IllegalArgumentException`。
 
-* 入参校验：`configId`、`did` 必填；`did` 不能含 `:`；`siid`、`aiid` 必须 > 0。
-* 点表配置不存在 → `modbus device config not found: <id>`；`type` 缺失 / 非法 → 引导先到点表页选择设备类型。
-* 落库：`db=modbus`、`collection=devices`（与点表配置 `configs` 分集合，避免 Panache 双类型同集合
-  解码错乱）。字段 = orgId + `mapping` 子文档（`configId` / `did` / `siid` / `aiid`）+
-  `instance` 子文档（派生 DeviceType + description + `definition`）+ 创建人 / 创建时间。
-* **归属 = 请求组织（`X-Org-Id`），而非点表所属组织**——跨组织公开点表可被本组织虚拟化，虚拟设备记入操作方组织。
-* 定义落库前先校验父设备存在（`DeviceService.getByDeviceId(did)`；无 → `parent device not found: <did>`，避免“半注册”），
-  落库后再把虚拟设备作为父设备下的子设备创建矩阵 `DeviceEntity`（`DeviceService.save`）：did=虚拟设备 id、
-  parentId=父 did、rootId=父所在树的根（父为根时即父 did）、复制父所在 `space`、protocol=`modbus`，
-  **online = 父设备当前 online**（虚拟子设备无独立在线），使虚拟子设备出现在父设备所在空间的设备列表。
-  `createOne` 返回该 DeviceEntity。
+* `name`：服务名称（展示用）必填。
+* `version`：必填（定义格式口径，当前只认 `1`；后端在 service 里的缺省填充因此形同虚设，前端要带上）。
+* `device`：did 非空、siid/aiid/argument ≥ 1。
+* `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填且是合法完整的 16 进制
+  （CRC 正确性留给运行期应答校验）。
+* `response`：index 必填 / ≥1 / 组内唯一；field 必填；bytes ≥ 1；format ∈
+  `int8/uint8/int16/uint16/int32/uint32/float32/string`，且非 string 时 bytes 必须等于该格式的宽度；
+  bytes > 1 时 byteOrder 必填且 ∈ `ABCD/DCBA/BADC/CDAB`；value-list 内 value/description 必填且 value 不重复。
 
-### 4.1 online 与父设备保持一致
-
-虚拟子设备不接真实 I/O、无独立在线状态，其 `online` 语义 = 父设备在线状态：
-
-* 创建时镜像父设备当前 `online`（见上一节 `buildDeviceEntity`）。
-* 读取时由 `DeviceService` 统一归一：`getBySpaceId` / `getByDeviceIds` / `getByDeviceId` 返回前，凡
-  protocol=`modbus` 且 parentId 非空的设备，online 改写为可上溯祖先（父链若仍是虚拟设备则继续上溯）的 online；
-  父设备不在批量结果内时按 parentId 补查。故父设备在线状态在 DB 侧更新后，虚拟子设备随读即同步，
-  无需单独刷新子设备记录。
-
-### 5. 删除
-
-接口：`DELETE /matrix/v1/modbus/virtual/one?did=<虚拟设备ID>`（`X-Org-Id` 需为该组织管理员；`did` 指虚拟设备
-自身 ID，即 createOne 生成的 UUID，不是父设备 did）。
-
-* 先按 `orgId + did` 查 `devices` 定义文档：不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
-* 再删同 did 的矩阵 `DeviceEntity`（`deviceService.deleteByDeviceIds`，createOne 的镜像）与 `devices`
-  定义文档；矩阵子设备可能已被先行删除（条数 0）不视为失败。
-* 不守卫子设备（沿用 device 模块本地删除口径），子树理论上可能悬空。
-
-### 6. 读取虚拟设备实例
-
-接口：`GET /matrix/v1/modbus/virtual/instance/{type}`（**公开只读**，无需 `X-Org-Id` 与成员校验）。
-
-* `type` = createOne 派生的**实例 DeviceType**（8 段实例类型，与矩阵 `DeviceEntity` 的 `type` 一致，
-  如 `urn:xiot-spec:device:chiller:0000a005:<父did>:<cfgid>:1`，经路径传参）。
-* 按 `instance.type` **跨组织**精确匹配 `devices` 定义文档，把落库 `definition`
-  （`DeviceInstanceCodec` 编码 JSON）解析回 xiot-spec 模型并重新编码返回；
-  未命中 → `modbus virtual device instance not found: <type>`。
-* 供仅持类型、无组织上下文的调用方（真实 Modbus 接入 / 实例注册侧）读取实例定义。
-
-## 二、参考文档
-
-/Users/ouyang/works/openxiot/service/webapp-docs/docs/spec/spec.mdx
-
-## 三、变更记录
+## 八、变更记录
 
 ### 2026-09-10
-* **JSON 投影拆成「一实体一 Codec」**：`api/modbus/config/ModbusJson` 改名为
-  `db/modbus/config/codec/ModbusConfigCodec`，并按实体拆出 `ModbusSlaveCodec` /
-  `ModbusDeviceTypeCodec`（随类型一起废弃）/ `ModbusCommandCodec` / `ModbusCommandCoilCodec` /
-  `ModbusCommandRegisterCodec`，统一 `encode(X)` / `encode(List)`，形状与拆分前逐字一致
-  （对外 JSON 契约不变）。人员（creator / updater）的写法与 `ModbusServiceCodec` 共用
-  新的 `db/codec/PersonCodec`。附纯单测 `ModbusConfigCodecTest`（3 例）。
-* **点表配置主键改为系统生成**（不再由服务层自造 UUID）：`ModbusConfig` 由
-  `ReactivePanacheMongoEntityBase + @BsonId String id` 改为继承 `ReactivePanacheMongoEntity`，
-  `_id` 落库为 Panache 生成的 **ObjectId**（口径同 `SpaceEntity`）；`create` 不再赋 id，
-  由仓储 `persist` 生成并回写 `cfg.id`。**对外契约不变**：JSON（`ModbusConfigCodec`）、URL 路径参数、
-  虚拟设备 `mapping.configId` 仍是十六进制字符串——仓储方法签名保持 String、内部转 ObjectId，
-  非法 id 按「未命中」处理（不再可能抛 400/500）。虚拟设备派生类型 / 子 URN 里的点表主键段相应改为该 hex 串。
-* **启动迁移全部移除**：各环境均已重建为全新库，存量文档不复存在，`ModbusConfigService.init` 只保留
-  `repo.ensureIndexes()`（仍受 `modbus.index.enabled` 开关约束）。随之删除六个启动迁移
-  （旧 `points[]` → `commands[]`、扁平字段 → `slave`、`slave.type` 字符串 → 对象、`commands[].index` 回填、
-  `lifecycle` 回填、字符串主键 → ObjectId）及其 `legacyPointToCommand` / `logicalBase` 辅助方法与
-  `mongo`（`ReactiveMongoClient`）/ `logger` 注入——旧结构数据不再有兜底改写，新结构由写入侧校验保证。
-* **虚拟设备集合改名 `virtual-devices` → `devices`**：`ModbusVirtualDevice` 落库集合改为 `modbus`/`devices`
-  （与矩阵库 `matrix` 的 `devices` 同名但不同库，互不影响）。纯落库位置变更：HTTP 路由、类名、`did`、
-  响应结构与前端零改动；库已清空，无迁移。
 
-### 2026-09-09
-* **虚拟子设备 online 与父设备保持一致**：虚拟子设备无独立在线状态。创建时 `online` 镜像父设备当前状态
-  （不再固定离线起步）；读取面 `DeviceService.getBySpaceId` / `getByDeviceIds` / `getByDeviceId` 返回前对
-  protocol=`modbus` 且 parentId 非空的设备按其父链 online 归一（父不在批量结果内时补查，父链再嵌套则上溯）。
-  故父设备 DB online 更新后，虚拟子设备随读即同步。详见第 4.1 节。
-* 虚拟设备 createOne / deleteOne 授权从「组织成员」收紧为「**组织管理员**」（`OrgAccessService.checkAdmin`），
-  仅 `getInstance` 保持公开只读。
-* 新增公开只读 `getInstance`：`GET /matrix/v1/modbus/virtual/instance/{type}`（无需鉴权），按派生的实例
-  DeviceType 跨组织读取 `virtual-devices` 定义文档并把 `definition` 解码为 `DeviceInstance` 返回
-  （未命中 / 存量定义损坏 → 明确报错）。
-* 新增删除虚拟设备 `deleteOne`：`DELETE /matrix/v1/modbus/virtual/one?did=...`（需 `X-Org-Id` 为该组织管理员）。
-  按当前组织删除 `virtual-devices` 定义文档 + 同 did 的矩阵 `DeviceEntity`（createOne 的镜像清理，不做子设备守卫）；
-  不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
-* 点表配置新增 `lifecycle`（生命周期，存储串与 xiot-spec `Lifecycle` 对齐：`development`/`preview`/`released`）：
-  新建一律从 `development` 开始（忽略请求里指定的值）；**仅 `development` 态可 update/delete**，
-  `preview`/`released` 被后端拒绝（语义仿 service-product，仅多一个 modbus 前缀的报错文案）；普通更新不流转生命周期。
-  对外 JSON 输出 `lifecycle`；存量缺省文档启动时幂等回填 `development`（`migrateLifecycle`）。
-  前端：设备点表详情页「设备信息」卡片顶部展示生命周期标签、列表新增「状态」列；非 development 的点表隐藏编辑/删除入口。
-* lifecycle 改为经**专用接口**流转：`PUT /matrix/v1/modbus/config/one/{id}/lifecycle/{lifecycle}`
-  （需 `X-Org-Id` 且为该组织成员；目标值仅 development / preview / released，后端不校验流转、直接覆盖，
-  仿 service-product `ProductBasicService.update(productId, lifecycle)`）。普通内容 `update` **永不触碰 lifecycle**
-  （且仍仅 development 态可 update/delete，preview/released 报错）。
-  前端：设备点表详情页去掉整页「保存」——设备信息 / 功能码 任一变更（编辑对话框确定、删除弹窗确认、拖拽重排）即改即存；
-  原「保存」位置按状态显示动作组：development→**预览**、preview→**发布**/**下线**、released→**下线**
-  （仿 webapp-product ProductBasicComponent，按钮态随 lifecycle 标签实时刷新）。
-* 点表配置新增必填 `type`：存**完整品类 DeviceType**；前端（点表编辑器）改成两级选择器（名字空间 → 设备类型，
-  值存完整 URN），不再支持手工输入；详情页按 `namespace · name` 回显、可由选择器编辑；新建强制、编辑存量配置可暂缺
-  （后端 patch 无 `type` 时不覆盖旧值）。
-* 实现创建虚拟设备 `createOne`（上一节）：用 xiot-spec 模型构造 `DeviceInstance`，经 `DeviceInstanceCodec` 编码后落库，
-  不手拼 JSON；范围仅生成定义、不注册真实设备。
-* **createOne 扩展为「生成定义 + 创建矩阵 DeviceEntity」**：落库 `virtual-devices` 定义注册表后，把虚拟设备作为
-  父设备（请求 `did`）下的子设备创建矩阵 `DeviceEntity`（parentId=父 did、rootId=父所在树根、复制父所在 space、
-  protocol=`modbus`、离线起步）；父设备需真实存在（先校验，无 → `parent device not found: <did>`）。
-  响应由 `toData` 摘要改为直接返回该 `DeviceEntity`（与设备模块 `/one` 回显同形），`toData` 已移除；
-  `mapping` / `definition` 仍随 `virtual-devices` 落库、不再于响应回显。
-* 虚拟设备落库独立集合 `virtual-devices`；归属当前操作组织（`X-Org-Id`）。
-* 映射信息抽成值对象 `ModbusMapping`（原 `CreateModbusVirtualDeviceRequest` → `ModbusVirtualMapping`，居 db/virtual 包）；
-  实体名 `ModbusVirtualDevice`。createOne 请求体 / 实体 `mapping` 子文档 / 响应 `mapping` 回显复用同一类型，
-  实体不再平铺重复字段。
-* **点表配置对外 JSON 改嵌套 `slave`**（破坏性 wire 变更）：厂家 / 型号 / 从站地址 / 设备类型 / 描述 五个平铺字段
-  收拢为 `{ slave: { manufacturer, model, slaveId, type, description }, visibility, commands }`（新建必填 `slave`；
-  编辑可带空 `slave` 仅更可见度/命令，type 缺省时不覆盖存量）。实体与响应统一走 `ModbusSlave` 值对象；
-  `/one` 响应 `slave` 子对象回显，`mapping`/虚拟设备生成改从 `cfg.slave.type` / `cfg.slave.description` 读取。
-  存量平铺文档启动时幂等迁移：`manufacturer` 等顶层键收拢进 `slave` 子文档并删除原键（`migrateFlatSlave`）。
-* **`slave.type` 再包装为 `ModbusDeviceType`**（破坏性 wire 变更）：设备类型由字符串改为子对象
-  `type: { type: <DeviceType URN>, specDescription: {…多语文案}, typeDescription: {…多语文案} }`——
-  新建/编辑时随选择把「产品规范（名字空间）」「产品类型」的多语文案快照落库，前端直接展示、无需回产品目录查询；
-  校验读取 `type.type`，update 缺省 type 保留既有（含文案）。虚拟设备生成读 `slave.type.type`。
-  存量 `slave.type` 仍是字符串的文档启动时幂等包装为对象（`migrateLegacySlaveType`，文案缺省前端回退解析）。
-* 虚拟设备落库的 派生 DeviceType / description / definition 三字段收拢为 `instance` 子文档
-  （值对象 `ModbusDeviceInstance`）；createOne 响应结构不变。
-* 功能码动作新增 `index`（1 起自然数、行内唯一）：前端排序依赖它；虚拟设备生成的 action iid = `index`
-  （不再按数组位置 i+1）；后端校验 index 必填 / ≥1 / 去重；启动迁移回填存量（`migrateCommandIndex`）。
+* **删掉 `slave.type`（推翻本节下面那条「先标记 `@Deprecated`、不删」的决定）**：点表不再记产品品类，
+  后端删 `ModbusDeviceType` 与 `ModbusDeviceTypeCodec`，`ModbusSlave.type` 字段、`ModbusSlaveCodec` 的 type 编码、
+  `ModbusConfigService.validate` 的 `type is required` 校验、以及 update 里「patch 缺 type 时保留既有值」的
+  兼容逻辑一并移除（`slave` 现在整体替换）。存量文档里遗留的 `slave.type` 因 `@JsonIgnoreProperties` 被忽略，
+  下次 update 落库时自然消失。前端 webapp-matrix 同步：`Modbus.ts` 删 `ModbusDeviceType` 与 `ModbusSlave.type`，
+  设备信息对话框去掉「名字空间 → 设备类型」级联（连带 `ProductService` 依赖）、详情页去掉类型标签，
+  点表类型 `ModbusDeviceConfig` 改名 `ModbusConfig`（与后端同名）。
+* **文档整理**：删除方案一的 `MODBUS.md`，原 `MODBUS2.md` 更名为 `MODBUS.md`（本节即由此而来），
+  并按实现校正正文：去掉已完成的实施步骤清单、补 `version` 校验、把「按空间反查」的方法名写成实际的
+  `findBriefBySpaceId`。
+* **删除方案一的全部代码**（本方案就此成为唯一路径）：删掉虚拟设备资源 / 服务
+  （`ModbusVirtualDeviceResource` / `ModbusVirtualDeviceService`）、实体与仓储（整个 `db/modbus/virtual` 包：
+  `ModbusVirtualDevice` / `ModbusMapping` / `ModbusDeviceInstance` / `ModbusVirtualDeviceRepository`）、
+  拦截器与转发层（整个 `api/device/interceptor` 包：`DeviceInterceptor` + 产品实例客户端 `ProductService` /
+  `ProductClient`；`DeviceManipulator`）以及 `ModbusVirtualDeviceResourceTest`。
+  * `DeviceResource` 改为直接注入 `ManipulationService`：写设备 / 读影子 / 读写属性 / 执行方法原样转发，
+    按设备分组下发的那层逻辑随拦截器一起去掉（`invokeActions` 现在只透传请求体）。
+  * `DeviceService` 去掉为虚拟子设备做的 online 归一（`isModbusVirtual` / `withParentOnline` 及其 helpers）：
+    `getBySpaceId` / `getByDeviceIds` / `getByDeviceId` 现在直接返回仓储结果。
+  * 随之停用的 HTTP 路由：`POST /matrix/v1/modbus/virtual/one`、`DELETE /matrix/v1/modbus/virtual/one`、
+    `GET /matrix/v1/modbus/virtual/instance/{type}`（**前端 webapp-matrix 仍有调用点，待同步清理**）。
+  * `DeviceEntity.parentId` / `protocol` 字段保留（来自产品摘要，非虚拟设备专有）。
+* `ModbusFrameCodec` 由 `api/device/interceptor/modbus` 移到 `api/modbus/frame`：它仍被本方案的
+  `ModbusResponseParser` / `ModbusServiceValidator` 复用，包名不必再挂着已删的 interceptor。
+* `ModbusSlave.type` 与 `ModbusDeviceType` 标记 `@Deprecated`（**不删**，保留回滚与兼容存量文档）：
+  新的服务方案只认点表与依赖设备，不再需要产品品类/规范快照。注意 `ModbusConfigService.validate`
+  目前仍要求 `slave.type.type` 非空，前端不传会报 `type is required`。
+* 空间图的 `services` 每个元素补 `did` / `spaceId`（依赖设备及其落点），
+  精简查询的投影相应地多带 `device.did` / `device.space.spaceId`。
+* 空间图补齐 `services`：`ModbusServiceRepository.findBySpaceId` / `ModbusServiceService.getBySpaceId`
+  （与 `DeviceService.getBySpaceId` 同形），`SpaceResource.getGraph` 用统一的 `bySpace` helper 并行取两个列表；
+  服务只读 id / name（Mongo 投影），出图时包一层精简视图（`ModbusServiceCodec.encodeBrief`：id / name / type）。
+* `ModbusServiceParent` 改名 `DeviceOn`（`ModbusServiceParentCodec` → `DeviceOnCodec`），
+  并加 `space` 字段；`DeviceSpace` 改名 `SpaceOn` 并上移到 `cc.openxiot.matrix.db.space`，
+  设备实体与 Modbus 服务共用（原来挂在 `db/device` 下，服务侧的依赖不该引设备包的类）。
+* `ModbusService.parent` 字段改名 `device`，**JSON 键同步由 `parent` 改为 `device`**（前端请求体与响应都变），
+  Mongo 查询路径 `parent.did` / `parent.space.spaceId` 一并改；校验文案改为 `device.did is required` 等，
+  `ModbusServiceValidator.checkParent` 改名 `checkDevice`。
+  列表接口的路径 `/matrix/v1/modbus/service/parent/{did}` 与 `listByParent` 方法名**未动**。
+* `ModbusServiceRepository.ensureIndexes` 增加 `device.space.spaceId` 索引。
+* `modbus-service-example.json` 的 `parent` 改名为 `device`，并补上 `space`。
+* 按本节落地方案二：`ModbusService` 实体（含 device / functions / response 值对象）、
+  `ModbusServiceRepository`（orgId / device.did 索引）、`ModbusServiceService`（增删改查 + invoke）、
+  `ModbusServiceResource`（上表 7 个接口）。
+* JSON 互转按「一个实体一个 Codec」拆开、放在实体的 `codec` 子包
+  （`cc.openxiot.matrix.db.modbus.service.codec`），统一 `JsonObject encode(X)` / `X decode(JsonObject)`：
+  `ModbusServiceCodec`（主键按十六进制串输出，另带 `JsonArray encode(List)`）、
+  `DeviceOnCodec`（时名 `ModbusServiceParentCodec`）、`ModbusServiceFunctionCodec`、`ModbusServiceFieldCodec`、
+  `ModbusServiceFieldValueCodec`。
+* 应答帧的解析单独放在 `ModbusResponseParser.parse(fields, frameHex)`（复用了
+  `ModbusFrameCodec` 的 CRC 与字节序原语），名字与 JSON 编解码区分开。
+* `ModbusFrameCodec` 的 `checkCrc` / `reorder` 由 private 改为 public（仅可见性，行为不变，供本方案复用），
+  并让 `reorder` 对非 2/4 字节宽度原样返回（原先会越界）。
+* 定义校验从 Service 里抽出为 `ModbusServiceValidator`（`api/modbus/service`，纯静态函数，无状态、不碰数据库），
+  `ModbusServiceService` 从 432 行降到 252 行；`invoke` 前的调用坐标检查复用其 `checkDevice`。
+* 附纯单测 `ModbusResponseParserTest`（10 例：多字段偏移、取值表、缩放、字节序、异常帧）与
+  `ModbusServiceCodecTest`（7 例：按示例报文解码、encode∘decode 稳定、id 十六进制串、value-list 键名、精简视图）
+  与 `ModbusServiceValidatorTest`（12 例：顶层字段 / device / functions / request / response / value-list）。

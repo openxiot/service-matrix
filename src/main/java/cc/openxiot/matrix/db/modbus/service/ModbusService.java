@@ -11,11 +11,10 @@ import java.util.List;
 /**
  * Modbus 服务：把一条 Modbus 点表映射成一组可直接调用的「方法」。
  *
- * <p>与 {@code ModbusVirtualDevice}（MODBUS.md 的方案一：生成设备实例定义、走通用设备接口 + 拦截器翻译）
- * 并存但不共用路径：本方案把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**一次性展开存进本文档，
+ * <p>把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**一次性展开存进本文档，
  * 调用时只读这一条记录即可组装出 {@code ActionOperation}，不需要再读点表、父设备、产品实例定义。</p>
  *
- * <p>独立集合 {@code services}（库 {@code modbus}，与点表 {@code configs}、方案一的 {@code devices} 分集合）。
+ * <p>独立集合 {@code services}（库 {@code modbus}，与点表 {@code configs} 分集合）。
  * 主键 {@code _id} 由 Panache 生成 ObjectId，对外（URL / JSON / invoke 请求体）一律以十六进制字符串呈现；
  * 持久化经 {@link ModbusServiceRepository}。</p>
  */

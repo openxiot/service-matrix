@@ -11,11 +11,15 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.jboss.logging.Logger;
 
 import java.util.List;
 
 @ApplicationScoped
 public class ManipulationService {
+
+    @Inject
+    Logger logger;
 
     @Inject
     @RestClient
@@ -95,6 +99,8 @@ public class ManipulationService {
     }
 
     public Uni<JsonArray> invokeActions(String orgId, String body) {
+        logger.infov("invokeActions: {0}", body);
+
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
         return client.invokeActions(appId, authorization, body)
                 .map(this::getJsonArray);

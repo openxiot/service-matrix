@@ -3,7 +3,6 @@ package cc.openxiot.matrix.api.modbus.config;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusCommandCodec;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
@@ -13,7 +12,6 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,7 +28,7 @@ class ModbusConfigCodecTest {
         ModbusConfig config = config();
 
         JsonObject o = ModbusConfigCodec.encode(config);
-        // 主键对外一律十六进制字符串（URL 路径参数、虚拟设备 configId 同口径）
+        // 主键对外一律十六进制字符串（URL 路径参数、服务 configId 同口径）
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
         assertEquals("org-1", o.getString("orgId"));
         assertEquals("public", o.getString("visibility"));
@@ -41,9 +39,6 @@ class ModbusConfigCodecTest {
         assertEquals("19XRV", slave.getString("model"));
         assertEquals(1, slave.getInteger("slaveId").intValue());
         assertEquals("离心机", slave.getString("description"));
-        // 已废弃的类型快照仍然照原样回显（存量文档兼容）
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", slave.getJsonObject("type").getString("type"));
-        assertEquals("冷水机组", slave.getJsonObject("type").getJsonObject("typeDescription").getString("zh-CN"));
 
         JsonObject read = o.getJsonArray("commands").getJsonObject(0);
         assertEquals("读进水温度", read.getString("name"));
@@ -111,10 +106,6 @@ class ModbusConfigCodecTest {
         slave.model = "19XRV";
         slave.slaveId = 1;
         slave.description = "离心机";
-        ModbusDeviceType type = new ModbusDeviceType();
-        type.type = "urn:xiot-spec:device:chiller:0000A005";
-        type.typeDescription = Map.of("zh-CN", "冷水机组");
-        slave.type = type;
         config.slave = slave;
 
         ModbusCommand read = new ModbusCommand();

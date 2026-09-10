@@ -29,7 +29,7 @@ public class ModbusConfig extends ReactivePanacheMongoEntity {
     @Schema(description = "可见度：private 私有 / public 公开", examples = {"private"}, required = true)
     public String visibility;
 
-    @Schema(description = "从站设备信息（厂家/型号/从站地址/设备类型/描述）", required = true)
+    @Schema(description = "从站设备信息（厂家/型号/从站地址/描述）", required = true)
     public ModbusSlave slave = new ModbusSlave();
 
     @Schema(description = "功能码动作列表（有序；每个动作按功能码读一个参数或写一段）", required = true)

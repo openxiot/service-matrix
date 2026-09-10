@@ -28,7 +28,7 @@ public class ModbusCommand {
     @Schema(description = "功能码：01/02/03/04/05/06/0F/10（十六进制大写）", examples = {"03"}, required = true)
     public String fc;
 
-    @Schema(description = "序号（1 起自然数）：功能码动作在点表内的顺序；前端排序依赖它，生成虚拟设备实例时 action 的 iid = 该 index",
+    @Schema(description = "序号（1 起自然数）：功能码动作在点表内的顺序；前端排序依赖它，生成服务方法时 method 的 index = 该 index",
             examples = {"1"}, required = true)
     public Integer index;
 

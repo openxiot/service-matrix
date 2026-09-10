@@ -22,7 +22,6 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
-import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 
@@ -51,14 +50,6 @@ class ModbusConfigServiceTest {
         cfg.slave.model = "19XRV";
         cfg.slave.slaveId = 1;
         cfg.visibility = "private";
-        cfg.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
-    }
-
-    /** 包一个品类 DeviceType 包装对象。 */
-    private static ModbusDeviceType typeOf(String urn) {
-        ModbusDeviceType t = new ModbusDeviceType();
-        t.type = urn;
-        return t;
     }
 
     /** 合法的读保持寄存器动作（默认样例）。 */
@@ -154,14 +145,6 @@ class ModbusConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("visibility is required", ex.getMessage());
-    }
-
-    @Test
-    void createWithBlankTypeFails() {
-        cfg.slave.type = null;
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("type is required", ex.getMessage());
     }
 
     @Test
@@ -550,48 +533,6 @@ class ModbusConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.update("org1", "c1", cfg).await().indefinitely());
         assertEquals("model is required", ex.getMessage());
-    }
-
-    @Test
-    void updateCopiesTypeWhenPresent() {
-        ModbusConfig existing = new ModbusConfig();
-        existing.id = CID;
-        existing.orgId = "org1";
-        existing.slave.manufacturer = "m";
-        existing.slave.model = "mm";
-        existing.visibility = "private";
-        existing.slave.type = typeOf("urn:xiot-spec:device:old:00000001");
-        existing.creator = Person.of("acc1", "小明");
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
-
-        cfg.updater = Person.of("acc2", "小红");
-        cfg.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
-
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.slave.type.type);
-    }
-
-    @Test
-    void updateWithoutTypeKeepsExisting() {
-        ModbusConfig existing = new ModbusConfig();
-        existing.id = CID;
-        existing.orgId = "org1";
-        existing.slave.manufacturer = "m";
-        existing.slave.model = "mm";
-        existing.visibility = "private";
-        existing.slave.type = typeOf("urn:xiot-spec:device:chiller:0000A005");
-        existing.creator = Person.of("acc1", "小明");
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
-
-        // 只改设备信息、请求体未带 type（旧客户端/存量配置），不清空既有 type
-        cfg.slave.type = null;
-        cfg.slave.manufacturer = "new-m";
-        cfg.updater = Person.of("acc2", "小红");
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
-
-        assertEquals("urn:xiot-spec:device:chiller:0000A005", updated.slave.type.type);
     }
 
     @Test

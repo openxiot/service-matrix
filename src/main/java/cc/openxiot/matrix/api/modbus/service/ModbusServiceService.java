@@ -27,8 +27,8 @@ import java.util.List;
  * 应答解析规则」，据此组装成父设备的 {@code ActionOperation} 交给 manipulation 服务执行
  * （DTU 的“发送”方法把帧透传到 RS485），再把回传的应答帧按 response 规则解成「字段 → 值」。</p>
  *
- * <p>与 MODBUS.md 的方案一（虚拟设备 + {@code DeviceInterceptor} 翻译）并存：本类不碰虚拟设备、
- * 点表和产品实例定义，也不经过 {@code DeviceManipulator}。</p>
+ * <p>调用只经 manipulation 服务、不读别的库：定义的「坐标 + 请求帧 + 应答规则」在创建时已展开落库，
+ * 故调用不碰点表配置，也不需要产品实例定义。</p>
  *
  * <p>定义内容的校验不在这里，见 {@link ModbusServiceValidator}。</p>
  */

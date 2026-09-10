@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * {@link ModbusServiceValidator} 的规则校验（MODBUS2.md 第四节）。
+ * {@link ModbusServiceValidator} 的规则校验（MODBUS.md 第七节）。
  *
  * <p>纯函数，不需要数据库：这是这套校验唯一能跑起来的地方（{@code @QuarkusTest} 要连 Mongo）。</p>
  */

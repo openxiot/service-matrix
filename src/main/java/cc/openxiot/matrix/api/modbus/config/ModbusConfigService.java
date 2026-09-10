@@ -4,7 +4,6 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
-import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -88,14 +87,8 @@ public class ModbusConfigService {
                     if (contentErr != null) {
                         return Uni.createFrom().failure(new IllegalArgumentException(contentErr));
                     }
-                    // slave 必填（validateContent 已保证），整体替换；type 子对象缺省/为 null 时保留既有值
-                    // （兼容存量无 type 的旧配置，编辑其他字段不清空——含已随 type 落库的规范/类型文案）。
-                    ModbusDeviceType keepType =
-                            (patch.slave.type == null && existing.slave != null) ? existing.slave.type : null;
+                    // slave 必填（validateContent 已保证），整体替换
                     existing.slave = patch.slave;
-                    if (keepType != null) {
-                        existing.slave.type = keepType;
-                    }
                     existing.visibility = patch.visibility;
                     // commands 缺省/为 null 时保留既有列表，避免旧客户端或“只改设备信息”的请求体
                     // 不带 commands 字段而把已配置的功能码整体清空（显式传 [] 才表示清空全部）。
@@ -250,9 +243,6 @@ public class ModbusConfigService {
         }
         if (cfg.orgId == null || cfg.orgId.isBlank()) {
             return "orgId is required";
-        }
-        if (cfg.slave == null || cfg.slave.type == null || cfg.slave.type.type == null || cfg.slave.type.type.isBlank()) {
-            return "type is required";
         }
         return validateContent(cfg);
     }

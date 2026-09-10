@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.service;
 
-import cc.openxiot.matrix.api.device.interceptor.modbus.ModbusFrameCodec;
+import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import io.vertx.core.json.JsonObject;

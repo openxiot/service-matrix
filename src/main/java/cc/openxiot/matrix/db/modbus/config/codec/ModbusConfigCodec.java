@@ -25,7 +25,7 @@ public final class ModbusConfigCodec {
             return o;
         }
         if (c.id != null) {
-            // 落库主键是 ObjectId，对外一律十六进制字符串（URL 路径参数、虚拟设备 configId 同口径）
+            // 落库主键是 ObjectId，对外一律十六进制字符串（URL 路径参数、服务 configId 同口径）
             o.put("id", c.id.toHexString());
         }
         if (c.orgId != null) {
