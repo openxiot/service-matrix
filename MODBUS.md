@@ -133,10 +133,16 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 ## 三、变更记录
 
 ### 2026-09-10
+* **JSON 投影拆成「一实体一 Codec」**：`api/modbus/config/ModbusJson` 改名为
+  `db/modbus/config/codec/ModbusConfigCodec`，并按实体拆出 `ModbusSlaveCodec` /
+  `ModbusDeviceTypeCodec`（随类型一起废弃）/ `ModbusCommandCodec` / `ModbusCommandCoilCodec` /
+  `ModbusCommandRegisterCodec`，统一 `encode(X)` / `encode(List)`，形状与拆分前逐字一致
+  （对外 JSON 契约不变）。人员（creator / updater）的写法与 `ModbusServiceCodec` 共用
+  新的 `db/codec/PersonCodec`。附纯单测 `ModbusConfigCodecTest`（3 例）。
 * **点表配置主键改为系统生成**（不再由服务层自造 UUID）：`ModbusConfig` 由
   `ReactivePanacheMongoEntityBase + @BsonId String id` 改为继承 `ReactivePanacheMongoEntity`，
   `_id` 落库为 Panache 生成的 **ObjectId**（口径同 `SpaceEntity`）；`create` 不再赋 id，
-  由仓储 `persist` 生成并回写 `cfg.id`。**对外契约不变**：JSON（`ModbusJson`）、URL 路径参数、
+  由仓储 `persist` 生成并回写 `cfg.id`。**对外契约不变**：JSON（`ModbusConfigCodec`）、URL 路径参数、
   虚拟设备 `mapping.configId` 仍是十六进制字符串——仓储方法签名保持 String、内部转 ObjectId，
   非法 id 按「未命中」处理（不再可能抛 400/500）。虚拟设备派生类型 / 子 URN 里的点表主键段相应改为该 hex 串。
 * **启动迁移全部移除**：各环境均已重建为全新库，存量文档不复存在，`ModbusConfigService.init` 只保留

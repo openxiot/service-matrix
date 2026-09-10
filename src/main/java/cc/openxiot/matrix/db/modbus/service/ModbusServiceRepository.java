@@ -24,6 +24,9 @@ import java.util.List;
 @ApplicationScoped
 public class ModbusServiceRepository implements ReactivePanacheMongoRepository<ModbusService> {
 
+    /** 精简查询（{@link #findBriefBySpaceId}）要带回来的字段；{@code _id} 由 Mongo 默认带出。 */
+    private static final List<String> BRIEF_FIELDS = List.of("name", "device.did", "device.space.spaceId");
+
     private ReactiveMongoCollection<ModbusService> collection() {
         return mongoCollection();
     }
@@ -79,17 +82,18 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
     }
 
     /**
-     * 列出依赖的设备落在该空间的服务，**只取 id 与 name**（{@code _id} 由 Mongo 默认带出）。
+     * 列出依赖的设备落在该空间的服务，**只取清单用得到的字段**：{@code _id}（Mongo 默认带出）、
+     * {@code name}、{@code device.did}、{@code device.space.spaceId}（见 {@link #BRIEF_FIELDS}）。
      *
      * <p>给空间图这类「只要列个清单」的地方用：服务文档带上 functions / response 动辄几十 KB，
      * 一个空间下面挂了十几个就不适合整份拉回来。投影在 Mongo 侧就生效，其余字段不上网络；
-     * 返回的对象只有 {@code id} / {@code name} 有值，**不要当成完整定义用**（要详情另按 id 查）。</p>
+     * 返回的对象只有上述字段有值，**不要当成完整定义用**（要详情另按 id 查）。</p>
      */
     public Uni<List<ModbusService>> findBriefBySpaceId(String spaceId) {
         // 这个版本的 ReactiveMongoCollection.find() 直接给 Multi，投影只能经 FindOptions 传
         return collection()
                 .find(Filters.eq("device.space.spaceId", spaceId),
-                        new FindOptions().projection(Projections.include("name")))
+                        new FindOptions().projection(Projections.include(BRIEF_FIELDS)))
                 .collect().asList();
     }
 

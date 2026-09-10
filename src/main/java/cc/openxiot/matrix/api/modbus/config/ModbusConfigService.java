@@ -63,7 +63,7 @@ public class ModbusConfigService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         // id 不在此生成：主键由 Panache/Mongo 在落库时生成（见 ModbusConfig extends ReactivePanacheMongoEntity），
-        // insert 后回写到 cfg.id，随返回体（ModbusJson 输出十六进制串）交给前端。
+        // insert 后回写到 cfg.id，随返回体（ModbusConfigCodec 输出十六进制串）交给前端。
         // 新建一律从「开发」态开始；生命周期只经后续发布流转，禁止在创建请求里直接指定。
         cfg.lifecycle = LIFECYCLE_DEVELOPMENT;
         return repo.insert(cfg).replaceWith(cfg);

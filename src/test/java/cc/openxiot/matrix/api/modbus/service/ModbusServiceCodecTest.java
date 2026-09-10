@@ -1,8 +1,10 @@
 package cc.openxiot.matrix.api.modbus.service;
 
+import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceFieldCodec;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceFunctionCodec;
@@ -59,6 +61,14 @@ class ModbusServiceCodecTest {
               ]
             }
             """;
+
+    /** 依赖设备落点的夹具（投影 / 精简视图都只认 spaceId）。 */
+    private static SpaceOn space(String spaceId, String rootId) {
+        SpaceOn space = new SpaceOn();
+        space.spaceId = spaceId;
+        space.rootId = rootId;
+        return space;
+    }
 
     @Test
     void decodesExampleBody() {
@@ -157,26 +167,42 @@ class ModbusServiceCodecTest {
     }
 
     @Test
-    void encodeBriefKeepsOnlyIdNameAndType() {
+    void encodeBriefKeepsOnlyListFields() {
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
         service.id = new ObjectId("65f0c0ffee0123456789abcd");
         service.orgId = "org-1";
+        service.device.space = space("space-1", "root-1");
 
         JsonObject o = ModbusServiceCodec.encodeBrief(service);
-        // 空间图这类清单只认 id / name / type：整份定义（functions / response）不进图
+        // 空间图这类清单只认这五个字段：整份定义（functions / response）不进图
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
         assertEquals("1 号冷水机组", o.getString("name"));
         assertEquals("modbus", o.getString("type"));
-        assertEquals(3, o.size());
+        assertEquals("did-1", o.getString("did"));
+        assertEquals("space-1", o.getString("spaceId"));
+        assertEquals(5, o.size());
 
         JsonArray arr = ModbusServiceCodec.encodeBrief(List.of(service));
         assertEquals(1, arr.size());
         assertEquals("modbus", arr.getJsonObject(0).getString("type"));
 
-        // 主键没生成 / 名字为空时不硬塞 null
+        // 主键没生成 / 名字为空 / 没有依赖设备时不硬塞 null
         JsonObject bare = ModbusServiceCodec.encodeBrief(new ModbusService());
         assertEquals("modbus", bare.getString("type"));
         assertEquals(1, bare.size());
+
+        // 精简查询投影只带 id / name / did / spaceId，space 子文档没有 rootId
+        ModbusService projected = new ModbusService();
+        projected.id = new ObjectId("65f0c0ffee0123456789abcd");
+        projected.name = "1 号冷水机组";
+        projected.device = new DeviceOn();
+        projected.device.did = "did-1";
+        projected.device.space = new SpaceOn();
+        projected.device.space.spaceId = "space-1";
+        JsonObject brief = ModbusServiceCodec.encodeBrief(projected);
+        assertEquals(5, brief.size());
+        assertEquals("did-1", brief.getString("did"));
+        assertEquals("space-1", brief.getString("spaceId"));
     }
 
     @Test

@@ -90,15 +90,18 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 * 两个列表走 `SpaceResource` 里同一个泛型 helper（`bySpace(spaceIds, loader)`），
   再 `Uni.combine().all().unis(...)` 并行等齐。
 * 服务侧 `ModbusServiceRepository.findBriefBySpaceId` 用 Mongo 投影（`FindOptions.projection`）只带
-  `_id` 与 `name` 回来（命中 `device.space.spaceId` 索引）：文档里的 functions / response 一个字节都不上网络。
-  代价是返回的实体只有这两个字段有值——**别当完整定义用**，要详情另按 id 查。
-* `services` 用 `ModbusServiceCodec.encodeBrief(List)` 出**精简视图**，只有三个字段：
+  `_id` / `name` / `device.did` / `device.space.spaceId` 回来（命中 `device.space.spaceId` 索引）：
+  文档里的 functions / response 一个字节都不上网络。代价是返回的实体只有这几个字段有值——
+  **别当完整定义用**，要详情另按 id 查。
+* `services` 用 `ModbusServiceCodec.encodeBrief(List)` 出**精简视图**，只有五个字段：
 
   ```json
-  { "id": "65f0c0ffee0123456789abcd", "name": "1 号冷水机组", "type": "modbus" }
+  { "id": "65f0c0ffee0123456789abcd", "name": "1 号冷水机组", "type": "modbus",
+    "did": "did-1", "spaceId": "space-1" }
   ```
 
-  `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；详情另调 `/matrix/v1/modbus/service/one/{id}`。
+  `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；`did` / `spaceId` 是依赖设备及其落点，
+  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{id}`。
   整份定义（functions / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
 
 ### 5. 校验
@@ -118,6 +121,11 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-10
 
+* `ModbusSlave.type` 与 `ModbusDeviceType` 标记 `@Deprecated`（**不删**，保留回滚与兼容存量文档）：
+  新的服务方案只认点表与依赖设备，不再需要产品品类/规范快照。注意 `ModbusConfigService.validate`
+  目前仍要求 `slave.type.type` 非空，前端不传会报 `type is required`。
+* 空间图的 `services` 每个元素补 `did` / `spaceId`（依赖设备及其落点），
+  精简查询的投影相应地多带 `device.did` / `device.space.spaceId`。
 * 空间图补齐 `services`：`ModbusServiceRepository.findBySpaceId` / `ModbusServiceService.getBySpaceId`
   （与 `DeviceService.getBySpaceId` 同形），`SpaceResource.getGraph` 用统一的 `bySpace` helper 并行取两个列表；
   服务只读 id / name（Mongo 投影），出图时包一层精简视图（`ModbusServiceCodec.encodeBrief`：id / name / type）。

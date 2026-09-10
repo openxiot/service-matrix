@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.service.codec;
 
-import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.codec.PersonCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -49,10 +49,10 @@ public final class ModbusServiceCodec {
         o.put("device", DeviceOnCodec.encode(service.device));
         o.put("functions", ModbusServiceFunctionCodec.encode(service.functions));
         if (service.creator != null) {
-            o.put("creator", personToJson(service.creator));
+            o.put("creator", PersonCodec.encode(service.creator));
         }
         if (service.updater != null) {
-            o.put("updater", personToJson(service.updater));
+            o.put("updater", PersonCodec.encode(service.updater));
         }
         return o;
     }
@@ -67,7 +67,14 @@ public final class ModbusServiceCodec {
         return arr;
     }
 
-    /** 精简视图：只带 {@code id} / {@code name} / {@code type}（固定 {@code modbus}），取详情另调 `/one/{id}`。 */
+    /**
+     * 精简视图：{@code id} / {@code name} / {@code type}（固定 {@code modbus}）+ 依赖设备的
+     * {@code spaceId} 与 {@code did}，取详情另调 `/one/{id}`。
+     *
+     * <p>{@code spaceId} / {@code did} 来自 {@link ModbusService#device}：清单里靠它们把服务和设备对上
+     * （同一张表渲染、按空间/设备筛选），所以精简查询也要投影这两个字段（见
+     * {@code ModbusServiceRepository.findBriefBySpaceId}）。</p>
+     */
     public static JsonObject encodeBrief(ModbusService service) {
         JsonObject o = new JsonObject();
         if (service == null) {
@@ -80,6 +87,14 @@ public final class ModbusServiceCodec {
             o.put("name", service.name);
         }
         o.put("type", TYPE);
+        if (service.device != null) {
+            if (service.device.did != null) {
+                o.put("did", service.device.did);
+            }
+            if (service.device.space != null && service.device.space.spaceId != null) {
+                o.put("spaceId", service.device.space.spaceId);
+            }
+        }
         return o;
     }
 
@@ -104,19 +119,5 @@ public final class ModbusServiceCodec {
         service.device = DeviceOnCodec.decode(o.getJsonObject("device"));
         service.functions = ModbusServiceFunctionCodec.decode(o.getJsonArray("functions"));
         return service;
-    }
-
-    private static JsonObject personToJson(Person p) {
-        JsonObject o = new JsonObject();
-        if (p.id != null) {
-            o.put("id", p.id);
-        }
-        if (p.name != null) {
-            o.put("name", p.name);
-        }
-        if (p.timestamp != null) {
-            o.put("timestamp", p.timestamp.getTime());
-        }
-        return o;
     }
 }

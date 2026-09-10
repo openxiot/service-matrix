@@ -5,6 +5,7 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -56,7 +57,7 @@ public class ModbusConfigResource extends AbstractResource {
         logger.infov("list modbus device configs, org: {0}", orgId);
         return requireMember(orgId)
                 .chain(o -> service.listByOrg(o))
-                .map(list -> OxResponse.ok(ModbusJson.toArray(list)))
+                .map(list -> OxResponse.ok(ModbusConfigCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -68,7 +69,7 @@ public class ModbusConfigResource extends AbstractResource {
         logger.infov("list visible modbus device configs, org: {0}", orgId);
         return requireMember(orgId)
                 .chain(o -> service.listVisible(o))
-                .map(list -> OxResponse.ok(ModbusJson.toArray(list)))
+                .map(list -> OxResponse.ok(ModbusConfigCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -79,7 +80,7 @@ public class ModbusConfigResource extends AbstractResource {
     public Uni<Response> getPublic() {
         logger.info("list public modbus device configs");
         return service.listPublic()
-                .map(list -> OxResponse.ok(ModbusJson.toArray(list)))
+                .map(list -> OxResponse.ok(ModbusConfigCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -95,14 +96,14 @@ public class ModbusConfigResource extends AbstractResource {
         if (orgId == null || orgId.isBlank()) {
             // 未携带组织头（未选组织浏览）：仅放行公开配置的只读查看
             return service.getPublic(id)
-                    .map(config -> OxResponse.ok(ModbusJson.toJson(config)))
+                    .map(config -> OxResponse.ok(ModbusConfigCodec.encode(config)))
                     .onFailure(IllegalArgumentException.class)
                     .recoverWithItem(e -> OxResponse.error(e.getMessage()));
         }
         // 已带组织头：需为成员，可读「本组织配置或任意公开配置」
         return requireMember(orgId)
                 .chain(o -> service.get(o, id))
-                .map(config -> OxResponse.ok(ModbusJson.toJson(config)))
+                .map(config -> OxResponse.ok(ModbusConfigCodec.encode(config)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -127,7 +128,7 @@ public class ModbusConfigResource extends AbstractResource {
                     cfg.updater = who;
                     return service.create(cfg);
                 })
-                .map(created -> OxResponse.ok(ModbusJson.toJson(created)))
+                .map(created -> OxResponse.ok(ModbusConfigCodec.encode(created)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -148,7 +149,7 @@ public class ModbusConfigResource extends AbstractResource {
         cfg.updater = currentUser();
         return requireMember(orgId)
                 .chain(o -> service.update(o, id, cfg))
-                .map(updated -> OxResponse.ok(ModbusJson.toJson(updated)))
+                .map(updated -> OxResponse.ok(ModbusConfigCodec.encode(updated)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -168,7 +169,7 @@ public class ModbusConfigResource extends AbstractResource {
         logger.infov("change modbus device config lifecycle, org: {0}, id: {1}, lifecycle: {2}", orgId, id, lifecycle);
         return requireMember(orgId)
                 .chain(o -> service.changeLifecycle(o, id, lifecycle, currentUser()))
-                .map(updated -> OxResponse.ok(ModbusJson.toJson(updated)))
+                .map(updated -> OxResponse.ok(ModbusConfigCodec.encode(updated)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
