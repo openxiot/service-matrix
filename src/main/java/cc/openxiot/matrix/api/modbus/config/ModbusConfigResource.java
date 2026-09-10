@@ -62,11 +62,24 @@ public class ModbusConfigResource extends AbstractResource {
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
+    /**
+     * 可见点表：公开的 + 本组织的私有，供设备映射页选源点表。
+     *
+     * <p>未携带组织头（未选组织 / 账号没有组织）时**不校验组织成员**，直接回公开集——
+     * 映射的是空间（设备）不是组织，不该被「组织成员」挡在门外。
+     * 带了组织头才校验成员：这个头是客户端自己填的，不校验就能拿别人的组织 id 读走其私有配置。</p>
+     */
     @GET
     @Path("/visible")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getVisible(@HeaderParam("X-Org-Id") String orgId) {
         logger.infov("list visible modbus device configs, org: {0}", orgId);
+        if (orgId == null || orgId.isBlank()) {
+            return service.listVisible(null)
+                    .map(list -> OxResponse.ok(ModbusConfigCodec.encode(list)))
+                    .onFailure(IllegalArgumentException.class)
+                    .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+        }
         return requireMember(orgId)
                 .chain(o -> service.listVisible(o))
                 .map(list -> OxResponse.ok(ModbusConfigCodec.encode(list)))

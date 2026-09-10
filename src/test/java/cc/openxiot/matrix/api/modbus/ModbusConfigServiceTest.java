@@ -620,10 +620,11 @@ class ModbusConfigServiceTest {
     }
 
     @Test
-    void listVisibleBlankOrgFails() {
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.listVisible(" ").await().indefinitely());
-        assertEquals("orgId is required", ex.getMessage());
+    void listVisibleBlankOrgFallsBackToPublic() {
+        // 没有组织上下文：退化成公开集，而不是报错（设备映射页要能读到点表）
+        when(repo.listPublic()).thenReturn(Uni.createFrom().item(List.of(cfg)));
+        assertEquals(1, service.listVisible(" ").await().indefinitely().size());
+        verify(repo).listPublic();
     }
 
     @Test

@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -152,6 +154,23 @@ class ModbusConfigResourceTest {
                 .body("success", equalTo(true))
                 .body("data", hasSize(1))
                 .body("data[0].visibility", equalTo("private"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void visibleWithoutOrgNeedsNoMembership() {
+        // 未带组织头：不校验组织成员，直接回公开集（设备映射页在没有组织时也要读得到点表）
+        ModbusConfig pub = sample();
+        pub.visibility = "public";
+        when(service.listVisible(isNull())).thenReturn(Uni.createFrom().item(List.of(pub)));
+
+        given().when().get("/matrix/v1/modbus/config/visible")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data", hasSize(1))
+                .body("data[0].visibility", equalTo("public"));
+
+        verify(orgAccessService, never()).checkMember(anyString(), anyString());
     }
 
     @Test

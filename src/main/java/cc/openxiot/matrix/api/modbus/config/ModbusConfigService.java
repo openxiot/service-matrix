@@ -149,9 +149,14 @@ public class ModbusConfigService {
         return repo.listPublic();
     }
 
+    /**
+     * 可见点表：公开的 + 本组织的私有（口径同 {@link ModbusConfigRepository#listVisible}）。
+     * {@code orgId} 可空：没有组织上下文时退化成公开集（同 {@link #listPublic}），
+     * 让设备映射页在「未选组织 / 无组织」时也读得到点表。
+     */
     public Uni<List<ModbusConfig>> listVisible(String orgId) {
         if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("orgId is required"));
+            return repo.listPublic();
         }
         return repo.listVisible(orgId);
     }

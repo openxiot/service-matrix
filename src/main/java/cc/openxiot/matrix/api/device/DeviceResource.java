@@ -6,6 +6,7 @@ import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
 import cc.openxiot.matrix.api.device.request.DeviceUpdateSpaceRequest;
+import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -43,6 +44,10 @@ public class DeviceResource extends AbstractResource {
     /** 设备操作入口：写设备/读影子/读写属性/执行方法都转发到 manipulation 服务 */
     @Inject
     ManipulationService manipulationService;
+
+    /** 删设备时级联清理该设备下的 Modbus 服务（按 device.did 匹配） */
+    @Inject
+    ModbusServiceService modbusServiceService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -89,6 +94,9 @@ public class DeviceResource extends AbstractResource {
     ) {
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(ignored -> manipulationService.removeDevice(orgId, did))
+                // 级联清理该设备下的 Modbus 服务（按 device.did 匹配，不限组织）：
+                // 服务先删、设备行后删，任一步失败整链失败还能重试，不会留下删不掉的服务
+                .chain(ignore -> modbusServiceService.deleteByDeviceDids(List.of(did)))
                 .chain(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -147,6 +155,8 @@ public class DeviceResource extends AbstractResource {
     ) {
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(ignored -> manipulationService.removeDevices(orgId, did))
+                // 级联清理这批设备下的 Modbus 服务（一次删完，不限组织）
+                .chain(ignore -> modbusServiceService.deleteByDeviceDids(did))
                 .chain(ignore -> deviceService.deleteByDeviceIds(did))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)

@@ -26,13 +26,14 @@ public final class ModbusServiceValidator {
     private ModbusServiceValidator() {
     }
 
-    /** 整份定义：orgId / name / version / device / functions 逐层校验。 */
+    /**
+     * 整份定义：name / version / device / functions 逐层校验。
+     *
+     * <p>{@code orgId} 不在校验之列：它只记录创建时的组织，不参与鉴权（按空间判）与查询。</p>
+     */
     public static String validate(ModbusService service) {
         if (service == null) {
             return "body is required";
-        }
-        if (service.orgId == null || service.orgId.isBlank()) {
-            return "orgId is required";
         }
         if (service.name == null || service.name.isBlank()) {
             return "name is required";

@@ -5,8 +5,10 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.params.InvokeModbusServiceRequest;
+import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
+import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -22,9 +24,14 @@ import org.jboss.logging.Logger;
 /**
  * Modbus 服务 API：把点表映射成可直接调用的服务（不生成设备实例，见 MODBUS.md）。
  *
- * <p>org 取 {@code X-Org-Id} 请求头：创建 / 修改 / 删除经 {@link OrgAccessService#checkAdmin}
- * 校验（需为组织管理员），查询与 {@code invoke} 经 {@link OrgAccessService#checkMember}
- * 校验（组织成员即可）。全部按组织隔离：查不到 / 不属于本组织一律视为 not found。</p>
+ * <p><b>按空间鉴权</b>（与 {@code DeviceResource} 同口径）：路径上的 {@code spaceId} 是当前项目空间，
+ * 增删改要该空间的**管理员**、查询与 {@code invoke} 要该空间的**成员**，判定见
+ * {@link OrgAccessService#checkSpaceAdmin} / {@link OrgAccessService#checkSpaceMember}
+ * （空间 accesses 里的组织条目 + {@code X-Org-Id} 命中时，组织管理员 / 组织成员同样通过）。</p>
+ *
+ * <p>{@code spaceId} 只作**鉴权锚点**：判定通过后一律按 id 操作，不再校验「服务是否真属于该空间」
+ * ——与 {@code DeviceResource} 的 {@code spaceId} 一样（前端统一传当前项目根空间）。
+ * {@code X-Org-Id} 头因此在增删改上不再是必填，只在空间判定里作为组织条目的匹配依据。</p>
  *
  * <p>invoke 一次调用一个 function（一次父设备往返），返回「字段 → 值」；写方法没有读值，
  * 返回空对象。</p>
@@ -44,71 +51,82 @@ public class ModbusServiceResource extends AbstractResource {
     @Inject
     OrgAccessService orgAccessService;
 
+    @Inject
+    SpaceService spaceService;
+
     @GET
     public Uni<Response> hello() {
         logger.info("hello");
         return Uni.createFrom().item(OxResponse.ok("Hello from ModbusServiceResource"));
     }
 
+    /** 列出设备落点在该空间的服务（设备落点 = 服务里记录的 {@code device.space.spaceId}）。 */
     @GET
-    @Path("/many")
+    @Path("/many/{spaceId}")
     @RolesAllowed({OxRole.USER})
-    public Uni<Response> listByOrg(@HeaderParam("X-Org-Id") String orgId) {
-        logger.infov("list modbus services, org: {0}", orgId);
-        return requireMember(orgId)
-                .chain(o -> service.listByOrg(o))
+    public Uni<Response> listBySpace(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId
+    ) {
+        logger.infov("list modbus services, space: {0}", spaceId);
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> service.listBySpaceId(spaceId))
                 .map(list -> OxResponse.ok(ModbusServiceCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    /** 按父设备 did 查：该父设备下挂的全部服务。 */
+    /** 按依赖设备 did 查：该设备下挂的全部服务。 */
     @GET
-    @Path("/parent/{did}")
+    @Path("/parent/{spaceId}/{did}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> listByParent(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        logger.infov("list modbus services, org: {0}, parent: {1}", orgId, did);
-        return requireMember(orgId)
-                .chain(o -> service.listByParent(o, did))
+        logger.infov("list modbus services, space: {0}, parent: {1}", spaceId, did);
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> service.listByParent(did))
                 .map(list -> OxResponse.ok(ModbusServiceCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @GET
-    @Path("/one/{id}")
+    @Path("/one/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             @PathParam("id") String id
     ) {
-        logger.infov("get modbus service, org: {0}, id: {1}", orgId, id);
-        return requireMember(orgId)
-                .chain(o -> service.get(o, id))
+        logger.infov("get modbus service, space: {0}, id: {1}", spaceId, id);
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> service.get(id))
                 .map(found -> OxResponse.ok(ModbusServiceCodec.encode(found)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @POST
-    @Path("/one")
+    @Path("/one/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> createOne(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             ModbusService body
     ) {
-        logger.infov("create modbus service, org: {0}", orgId);
+        logger.infov("create modbus service, space: {0}", spaceId);
         if (body == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         Person who = currentUser();
-        return requireAdmin(orgId)
-                .chain(o -> {
-                    body.orgId = o;
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> {
+                    // orgId 只是「创建时的组织」的记录（可空）：鉴权按空间判，不再要求 X-Org-Id
+                    body.orgId = orgId;
                     body.creator = who;
                     body.updater = who;
                     return service.create(body);
@@ -119,36 +137,38 @@ public class ModbusServiceResource extends AbstractResource {
     }
 
     @PUT
-    @Path("/one/{id}")
+    @Path("/one/{spaceId}/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> updateOne(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             @PathParam("id") String id,
             ModbusService body
     ) {
-        logger.infov("update modbus service, org: {0}, id: {1}", orgId, id);
+        logger.infov("update modbus service, space: {0}, id: {1}", spaceId, id);
         if (body == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         body.updater = currentUser();
-        return requireAdmin(orgId)
-                .chain(o -> service.update(o, id, body))
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> service.update(id, body))
                 .map(updated -> OxResponse.ok(ModbusServiceCodec.encode(updated)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     @DELETE
-    @Path("/one/{id}")
+    @Path("/one/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> deleteOne(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             @PathParam("id") String id
     ) {
-        logger.infov("delete modbus service, org: {0}, id: {1}", orgId, id);
-        return requireAdmin(orgId)
-                .chain(o -> service.delete(o, id))
+        logger.infov("delete modbus service, space: {0}, id: {1}", spaceId, id);
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> service.deleteById(id))
                 .map(v -> OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -159,20 +179,21 @@ public class ModbusServiceResource extends AbstractResource {
      * 返回该方法的「字段 → 值」（写方法为空对象）。
      */
     @POST
-    @Path("/invoke")
+    @Path("/invoke/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> invoke(
             @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
             InvokeModbusServiceRequest req
     ) {
         if (req == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
-        logger.infov("invoke modbus service, org: {0}, service: {1}, function: {2}",
-                orgId, req.service, req.function);
-        return requireMember(orgId)
-                .chain(o -> service.invoke(o, req.service, req.function))
+        logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}",
+                spaceId, req.service, req.function);
+        return requireSpaceMember(spaceId, orgId)
+                .chain(ignored -> service.invoke(orgId, req.service, req.function))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -180,17 +201,27 @@ public class ModbusServiceResource extends AbstractResource {
 
     // -- helper methods --
 
-    private Uni<String> requireAdmin(String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-        return orgAccessService.checkAdmin(orgId, getUserId()).map(ignored -> orgId);
+    /** 空间管理员（增删改）：空间不存在按「无权限」处理，不区分 404（与 DeviceResource 同口径）。 */
+    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
+        return spaceService.getById(spaceId)
+                .chain(space -> {
+                    if (space == null) {
+                        throw new IllegalArgumentException("No access to this space");
+                    }
+                    return orgAccessService.checkSpaceAdmin(space, orgId, getUserId())
+                            .map(ignored -> space);
+                });
     }
 
-    private Uni<String> requireMember(String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required"));
-        }
-        return orgAccessService.checkMember(orgId, getUserId()).map(ignored -> orgId);
+    /** 空间成员（查询与 invoke）。 */
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+        return spaceService.getById(spaceId)
+                .chain(space -> {
+                    if (space == null) {
+                        throw new IllegalArgumentException("No access to this space");
+                    }
+                    return orgAccessService.checkSpaceMember(space, orgId, getUserId())
+                            .map(ignored -> space);
+                });
     }
 }

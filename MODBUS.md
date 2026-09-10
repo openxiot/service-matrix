@@ -31,6 +31,8 @@ ModbusServiceFunction index / name / request / response[]
 ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[]
 ```
 
+* `orgId` = 创建时的组织（取 `X-Org-Id`，可空）：**只作记录**，不参与鉴权（接口按空间判，见第四节）
+  也不参与查询；索引留着供运维按组织翻数据。
 * `device.argument` = 依赖设备的方法**入参的 piid**，请求帧填在这里。DTU 承载数据的动作只有一个入参，
   故提到 device 级、对该服务的所有方法共用（不同型号 piid 不同：s710ym 是 1/2/2、dtu.json 是 1/1/1，
   由前端按型号写入，后端不去产品定义推算）。
@@ -44,13 +46,28 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/matrix/v1/modbus/service/many` | 组织成员 | 按组织列出 |
-| GET | `/matrix/v1/modbus/service/parent/{did}` | 组织成员 | 按依赖设备 did 列出（路径里的 `parent` 暂未随字段改名） |
-| GET | `/matrix/v1/modbus/service/one/{id}` | 组织成员 | 指定 ID 查找 |
-| POST | `/matrix/v1/modbus/service/one` | 组织管理员 | 创建（body = 完整 ModbusService，org 取 `X-Org-Id`） |
-| PUT | `/matrix/v1/modbus/service/one/{id}` | 组织管理员 | 修改（缺省字段保留既有值） |
-| DELETE | `/matrix/v1/modbus/service/one/{id}` | 组织管理员 | 删除 |
-| POST | `/matrix/v1/modbus/service/invoke` | 组织成员 | 调用方法，body `{"service": "<id>", "function": <index>}` |
+| GET | `/matrix/v1/modbus/service/many/{spaceId}` | 空间成员 | 列出设备落点在该空间的服务 |
+| GET | `/matrix/v1/modbus/service/parent/{spaceId}/{did}` | 空间成员 | 按依赖设备 did 列出（路径里的 `parent` 暂未随字段改名） |
+| GET | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间成员 | 指定 ID 查找 |
+| POST | `/matrix/v1/modbus/service/one/{spaceId}` | 空间管理员 | 创建（body = 完整 ModbusService） |
+| PUT | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
+| DELETE | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 删除 |
+| POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法，body `{"service": "<id>", "function": <index>}` |
+
+**权限一律按空间判，与 `DeviceResource` 同口径**：路径上的 `spaceId` 是当前项目空间（前端统一传
+当前项目根空间，与设备接口一样），增删改要该空间的**管理员**、查询与 `invoke` 要**成员**；判定是
+`OrgAccessService.checkSpaceAdmin` / `checkSpaceMember` —— 空间 accesses 里的组织条目 + `X-Org-Id` 命中时，
+组织管理员 / 组织成员同样通过，故 **`X-Org-Id` 在增删改上不再是必填**，只在组织条目匹配时起作用。
+
+`spaceId` 只作**鉴权锚点**：判定通过后一律按 id 操作，不校验「服务是否真属于该空间」（与
+`DeviceResource.removeDevice` 的「spaceId 仅用于管理员鉴权，按 did 删除」一致）；id 是不可猜的 ObjectId，
+风险与设备接口同级，换来的是「一个项目一把钥匙」的简单模型。`/many/{spaceId}` 是唯一按空间**过滤数据**
+的接口：它筛 `device.space.spaceId`（与空间图同一字段、同一索引），设备搬走后副本陈旧的服务不在其中；
+要看整个项目的服务用空间图 `/matrix/v1/space/graph/{rootId}`（按子孙空间逐个查）。
+
+**删除设备会级联删掉该设备下的服务**（`DeviceResource.removeOne` / `removeDevices` → `ModbusServiceRepository.deleteByDeviceDids`）：
+按 `device.did` 匹配、**不限组织**。设备先删服务、再删设备行，任一步失败整链失败还能重试；
+反过来会出现「设备行已删、服务永久孤儿」（既查不出来、也删不掉）。点表 `configs` 不引用设备，不参与级联。
 
 ## 五、invoke 的调用链与返回
 
@@ -92,7 +109,7 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   ```
 
   `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；`did` / `spaceId` 是依赖设备及其落点，
-  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{id}`。
+  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{spaceId}/{id}`。
   整份定义（functions / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
 
 ## 七、校验
@@ -102,6 +119,7 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 * `name`：服务名称（展示用）必填。
 * `version`：必填（定义格式口径，当前只认 `1`；后端在 service 里的缺省填充因此形同虚设，前端要带上）。
+* `orgId`：**不校验**（只作记录，见第三节）。
 * `device`：did 非空、siid/aiid/argument ≥ 1。
 * `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填且是合法完整的 16 进制
   （CRC 正确性留给运行期应答校验）。
@@ -113,6 +131,39 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-10
 
+* **`GET /matrix/v1/modbus/config/visible` 不再要求组织成员**（点表本身的增删改查仍按组织鉴权，不动）：
+  设备映射（服务）已按空间判，读点表却被「组织成员」挡着，未选组织 / 账号没有组织时选不到源点表，
+  连服务都建不出来。现在**未携带 `X-Org-Id`** 时直接回公开集（`ModbusConfigService.listVisible(null)`
+  → `repo.listPublic()`），不再报 `X-Org-Id header is required`；**带了组织头才校验成员** ——
+  这个头由客户端自己填，不校验就能拿别人的组织 id 读走其私有配置（组织 id 会从设备 URN 里露出来）。
+  要彻底不校验，去掉 `getVisible` 里的 `requireMember` 分支即可。
+* **接口全空间化（推翻下面那条「删除权限放宽到空间管理员」的半吊子口径）**：7 个接口的鉴权维度由
+  **组织** 改为 **空间**，与 `DeviceResource` 完全同口径 —— 增删改要**空间管理员**、查询与 `invoke` 要
+  **空间成员**，空间 ID 移入 Path（`/one/{spaceId}`、`/one/{spaceId}/{id}`、`/parent/{spaceId}/{did}`、
+  `/many/{spaceId}`、`/invoke/{spaceId}`）。起因：服务天然属于设备所在的空间，而「只有组织管理员能增删改」
+  把项目管理员（空间 admin 但不是组织管理员）挡在门外，同一个页面上「设备能删、服务删不掉」。
+  * 资源层改用 `requireSpaceAdmin` / `requireSpaceMember`（照抄 `DeviceResource`），
+    上一轮为删除单独加的 `requireDelete` / `requireSpaceAdminOfDevice` / `checkSpaceAdminOrRoot`
+    根空间兜底链与 `DeviceService` 注入一并删除（`spaceId` 由前端统一传当前项目根空间，兜底不再需要）。
+  * Service 层去 org 参数：`get(id)` / `update(id, patch)` / `deleteById(id)` / `listByParent(did)` /
+    新的 `listBySpaceId(spaceId)`；`getById`（裸取特例）删除 —— 现在「按 id 查」就是常态。
+    仓储删 `findByIdAndOrg` / `deleteByIdAndOrg` / `listByOrg`，新增 `listBySpaceId`（`device.space.spaceId`）。
+  * `invoke` 仍把 `X-Org-Id` 往下传给 manipulation（调用归属），但取服务不按 org 约束。
+  * `ModbusServiceValidator` 去掉 `orgId is required`；`orgId` 字段保留，只记录创建时的组织。
+  * **破坏性变更**：路径全变，前后端必须一起发布（已确认 webapp-matrix 之外的客户端都没引用这批接口）。
+  * 测试：`ModbusServiceResourceTest` 由「删除权限」专项重写为空间口径（增删改要管理员、查询 / invoke 要成员、
+    空间不存在、服务不存在），`ModbusServiceValidatorTest` 的 orgId 用例改为「不校验」。
+* **删除设备时级联删除其 Modbus 服务**（需求：设备都没了，服务留着既查不出来也删不掉）：
+  `ModbusServiceRepository.deleteByDeviceDids`（`device.did in [...]`，**不限组织**）、
+  `ModbusServiceService.deleteByDeviceDids`；`DeviceResource.removeOne` / `removeDevices` 在 manipulation
+  删归属成功之后、删设备行之前插一步级联（先删服务再删设备行，失败可整链重试）。点表不引用设备，不参与级联。
+* **（已被本节首条推翻，仅存档）删除服务的权限放宽到空间管理员**：`DELETE /matrix/v1/modbus/service/one/{id}` 除组织管理员外，
+  该服务依赖设备落点空间（含其根空间）的空间管理员也能删（与前端「项目管理员才显示删除」的口径对齐）。
+  为此新增 `findById` / `deleteById`（**不带 org 约束**）与 `ModbusServiceService.getById` / `deleteById`，
+  删除链改为「裸取服务 → 判权限 → 按 id 删」；设备落点优先取设备表现行值，设备行已不在时回落服务里的副本；
+  子空间判定失败再按根空间判一次（子空间 accesses 是创建时拷的，后加到根空间的成员不会同步）。
+* 新增 `ModbusServiceResourceTest`（组织管理员 / 空间管理员 / 根空间兜底 / 设备行已不在 / 无权限 / 服务不存在），
+  `DeviceResourceTest` 补 `ModbusServiceService` 的 mock 并断言两处删除都有级联。
 * **删掉 `slave.type`（推翻本节下面那条「先标记 `@Deprecated`、不删」的决定）**：点表不再记产品品类，
   后端删 `ModbusDeviceType` 与 `ModbusDeviceTypeCodec`，`ModbusSlave.type` 字段、`ModbusSlaveCodec` 的 type 编码、
   `ModbusConfigService.validate` 的 `type is required` 校验、以及 update 里「patch 缺 type 时保留既有值」的

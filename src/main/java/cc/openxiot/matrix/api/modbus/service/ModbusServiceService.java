@@ -69,8 +69,8 @@ public class ModbusServiceService {
         return repo.insert(service).replaceWith(service);
     }
 
-    public Uni<ModbusService> update(String orgId, String id, ModbusService patch) {
-        String err = checkId(orgId, id);
+    public Uni<ModbusService> update(String id, ModbusService patch) {
+        String err = checkId(id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
@@ -78,7 +78,7 @@ public class ModbusServiceService {
             return Uni.createFrom().failure(new IllegalArgumentException("body is required"));
         }
 
-        return repo.findByIdAndOrg(id, orgId)
+        return repo.findById(id)
                 .onItem().transformToUni(existing -> {
                     if (existing == null) {
                         return Uni.createFrom().failure(
@@ -98,32 +98,33 @@ public class ModbusServiceService {
                 });
     }
 
-    public Uni<ModbusService> get(String orgId, String id) {
-        String err = checkId(orgId, id);
+    /**
+     * 按 id 取单条（不带 org 约束，鉴权在资源层）。查不到按 not found 失败。
+     */
+    public Uni<ModbusService> get(String id) {
+        String err = checkId(id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        return repo.findByIdAndOrg(id, orgId)
+        return repo.findById(id)
                 .onItem().transformToUni(existing -> existing == null
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + id))
                         : Uni.createFrom().item(existing));
     }
 
-    public Uni<List<ModbusService>> listByOrg(String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("orgId is required"));
+    /** 列出设备落点在该空间的服务（空间口径的清单，鉴权在资源层）。 */
+    public Uni<List<ModbusService>> listBySpaceId(String spaceId) {
+        if (spaceId == null || spaceId.isBlank()) {
+            return Uni.createFrom().failure(new IllegalArgumentException("spaceId is required"));
         }
-        return repo.listByOrg(orgId);
+        return repo.listBySpaceId(spaceId);
     }
 
-    public Uni<List<ModbusService>> listByParent(String orgId, String did) {
-        if (orgId == null || orgId.isBlank()) {
-            return Uni.createFrom().failure(new IllegalArgumentException("orgId is required"));
-        }
+    public Uni<List<ModbusService>> listByParent(String did) {
         if (did == null || did.isBlank()) {
             return Uni.createFrom().failure(new IllegalArgumentException("did is required"));
         }
-        return repo.listByParent(did, orgId);
+        return repo.listByParent(did);
     }
 
     /**
@@ -138,15 +139,30 @@ public class ModbusServiceService {
         return repo.findBriefBySpaceId(spaceId);
     }
 
-    public Uni<Long> delete(String orgId, String id) {
-        String err = checkId(orgId, id);
+    /**
+     * 按 id 删除（不带 org 约束）：权限（该空间的管理员）已在资源层判过，这里只管删。
+     * 删除条数为 0 时按 not found 失败。
+     */
+    public Uni<Long> deleteById(String id) {
+        String err = checkId(id);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        return repo.deleteByIdAndOrg(id, orgId)
+        return repo.deleteById(id)
                 .onItem().transformToUni(count -> count == null || count == 0L
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + id))
                         : Uni.createFrom().item(count));
+    }
+
+    /**
+     * 按依赖设备批量删除（不限组织）：删除设备时级联清理该设备下的服务，
+     * 返回删除条数（该设备下没有服务时为 0，不算失败）。
+     */
+    public Uni<Long> deleteByDeviceDids(List<String> dids) {
+        if (dids == null || dids.isEmpty()) {
+            return Uni.createFrom().item(0L);
+        }
+        return repo.deleteByDeviceDids(dids);
     }
 
     // ===== 方法调用 =====
@@ -157,9 +173,12 @@ public class ModbusServiceService {
      * <p>返回「字段 → 值」；写方法（response 为空）应答是请求回显、没有读值，返回空对象。
      * 父设备报错、帧非法、CRC 不符、异常码等一律以 {@link IllegalArgumentException} 抛出，
      * 由 Resource 转成失败响应。</p>
+     *
+     * <p>{@code orgId} 只往下传给 manipulation（调用归属），取服务本身不再按 org 约束：
+     * 鉴权（该空间的成员）已在资源层判过。</p>
      */
     public Uni<JsonObject> invoke(String orgId, String serviceId, Integer functionIndex) {
-        String err = checkId(orgId, serviceId);
+        String err = checkId(serviceId);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
@@ -167,7 +186,7 @@ public class ModbusServiceService {
             return Uni.createFrom().failure(new IllegalArgumentException("function is required"));
         }
 
-        return repo.findByIdAndOrg(serviceId, orgId).onItem()
+        return repo.findById(serviceId).onItem()
                 .transformToUni(service -> service == null
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + serviceId))
                         : invokeFunction(orgId, service, functionIndex));
@@ -238,11 +257,8 @@ public class ModbusServiceService {
 
     // ===== 校验 =====
 
-    /** 请求参数（org / id）的检查；实体内容校验见 {@link ModbusServiceValidator}。 */
-    private String checkId(String orgId, String id) {
-        if (orgId == null || orgId.isBlank()) {
-            return "orgId is required";
-        }
+    /** 请求参数（id）的检查；实体内容校验见 {@link ModbusServiceValidator}。 */
+    private String checkId(String id) {
         if (id == null || id.isBlank()) {
             return "id is required";
         }

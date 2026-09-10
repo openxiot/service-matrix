@@ -39,9 +39,10 @@ class ModbusServiceValidatorTest {
         noVersion.version = null;
         assertEquals("version is required", ModbusServiceValidator.validate(noVersion));
 
+        // orgId 不参与校验：它只记录创建时的组织，不参与鉴权（按空间判）与查询
         ModbusService noOrg = service();
         noOrg.orgId = null;
-        assertEquals("orgId is required", ModbusServiceValidator.validate(noOrg));
+        assertNull(ModbusServiceValidator.validate(noOrg));
     }
 
     @Test
