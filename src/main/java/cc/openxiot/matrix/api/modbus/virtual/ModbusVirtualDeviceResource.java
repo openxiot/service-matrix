@@ -20,7 +20,7 @@ import org.jboss.logging.Logger;
  * Modbus 虚拟化 API。createOne / deleteOne 为组织级管理操作：org 取 {@code X-Org-Id} 请求头，经
  * {@link OrgAccessService#checkAdmin} 校验（需为组织管理员）；{@code getInstance} 为公开只读（无需鉴权）。
  *
- * <p>createOne = 生成虚拟设备实例定义并落库（{@code virtual-devices} 定义注册表），再把它作为父设备
+ * <p>createOne = 生成虚拟设备实例定义并落库（{@code devices} 定义注册表），再把它作为父设备
  * （请求 {@code did}）下的子设备创建矩阵 {@code DeviceEntity}（复制父设备所在 space，离线起步）并返回该设备。
  * 取组织内可见的 Modbus 点表配置；父设备不存在则报错。</p>
  *

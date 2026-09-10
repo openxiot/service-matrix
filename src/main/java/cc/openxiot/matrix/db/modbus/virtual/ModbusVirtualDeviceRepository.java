@@ -9,7 +9,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * Modbus 虚拟设备的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code virtual-devices}）。
+ * Modbus 虚拟设备的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code devices}）。
  *
  * <p>与点表配置（{@code configs}）分库存储：单条 Modbus 点表可被多次虚拟化（挂不同父设备/不同 siid/aiid），
  * 故虚拟设备自持 did（经 {@code @BsonId} 落 {@code _id}），不复用配置 id。</p>

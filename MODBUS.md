@@ -3,7 +3,7 @@
 Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理设备的寄存器 / 线圈点表。
 「创建 Modbus 虚拟设备」即把这套点表自动生成一个虚拟设备的**实例定义**，挂到用户选中的父设备之下。
 
-> 流程：生成虚拟设备**实例定义**并落库（`virtual-devices` 定义注册表），随后以同一 did / 派生类型创建
+> 流程：生成虚拟设备**实例定义**并落库（`modbus`/`devices` 定义注册表），随后以同一 did / 派生类型创建
 > 矩阵 **DeviceEntity**（挂在父设备下、复制其所在 space），`createOne` 返回该设备。
 > 虚拟子设备无独立在线状态：online 始终镜像父设备（创建时复制父 online，读取时由 `DeviceService`
 > 按父设备在线状态归一，见下）。尚未打通「真实 Modbus 接入」（实例注册 / I/O 桥接）；后续可基于落库的
@@ -39,7 +39,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 | `space` | 复制父设备所在 space：`{ spaceId, rootId }` |
 
 > 映射 `mapping`（configId / did / siid / aiid）与实例 `definition`（DeviceInstanceCodec 编码）不再于响应回显，
-> 随 `virtual-devices` 文档落库，供后续真实接入使用。
+> 随 `devices` 文档落库，供后续真实接入使用。
 
 ### 3. 生成规则
 
@@ -49,8 +49,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 `typeDescription`（产品类型多语文案），前端直接展示无需回产品目录查询；详情回显见「点表配置 JSON」说明。
 
 * **前提（点表功能码）**：点表每条功能码动作带 `index`（1 起自然数，行内唯一）。前端行排序依赖它，
-  生成顺序与 action iid 也取它。新建/编辑由前端按行序写入；后端校验 index 必填 / ≥1 / 不重复；
-  启动迁移对缺 `index` 的存量配置按数组位置回填 1..N（`migrateCommandIndex`）。
+  生成顺序与 action iid 也取它。新建/编辑由前端按行序写入；后端校验 index 必填 / ≥1 / 不重复。
 
 * **虚拟设备 DeviceType**：继承配置 `type` 的 ns / name，只追加 vendor + model + version，拼成 8 段 XIOT 实例类型：
   `urn:<ns>:device:<name>:<head>:<vendor>:<model>:1`
@@ -86,7 +85,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 
 * 入参校验：`configId`、`did` 必填；`did` 不能含 `:`；`siid`、`aiid` 必须 > 0。
 * 点表配置不存在 → `modbus device config not found: <id>`；`type` 缺失 / 非法 → 引导先到点表页选择设备类型。
-* 落库：`db=modbus`、`collection=virtual-devices`（与点表配置 `configs` 分集合，避免 Panache 双类型同集合
+* 落库：`db=modbus`、`collection=devices`（与点表配置 `configs` 分集合，避免 Panache 双类型同集合
   解码错乱）。字段 = orgId + `mapping` 子文档（`configId` / `did` / `siid` / `aiid`）+
   `instance` 子文档（派生 DeviceType + description + `definition`）+ 创建人 / 创建时间。
 * **归属 = 请求组织（`X-Org-Id`），而非点表所属组织**——跨组织公开点表可被本组织虚拟化，虚拟设备记入操作方组织。
@@ -111,8 +110,8 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 接口：`DELETE /matrix/v1/modbus/virtual/one?did=<虚拟设备ID>`（`X-Org-Id` 需为该组织管理员；`did` 指虚拟设备
 自身 ID，即 createOne 生成的 UUID，不是父设备 did）。
 
-* 先按 `orgId + did` 查 `virtual-devices` 定义文档：不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
-* 再删同 did 的矩阵 `DeviceEntity`（`deviceService.deleteByDeviceIds`，createOne 的镜像）与 `virtual-devices`
+* 先按 `orgId + did` 查 `devices` 定义文档：不存在 / 归属其它组织 → `modbus virtual device not found: <did>`。
+* 再删同 did 的矩阵 `DeviceEntity`（`deviceService.deleteByDeviceIds`，createOne 的镜像）与 `devices`
   定义文档；矩阵子设备可能已被先行删除（条数 0）不视为失败。
 * 不守卫子设备（沿用 device 模块本地删除口径），子树理论上可能悬空。
 
@@ -122,7 +121,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 
 * `type` = createOne 派生的**实例 DeviceType**（8 段实例类型，与矩阵 `DeviceEntity` 的 `type` 一致，
   如 `urn:xiot-spec:device:chiller:0000a005:<父did>:<cfgid>:1`，经路径传参）。
-* 按 `instance.type` **跨组织**精确匹配 `virtual-devices` 定义文档，把落库 `definition`
+* 按 `instance.type` **跨组织**精确匹配 `devices` 定义文档，把落库 `definition`
   （`DeviceInstanceCodec` 编码 JSON）解析回 xiot-spec 模型并重新编码返回；
   未命中 → `modbus virtual device instance not found: <type>`。
 * 供仅持类型、无组织上下文的调用方（真实 Modbus 接入 / 实例注册侧）读取实例定义。
@@ -132,6 +131,22 @@ Modbus 点表配置（`ModbusConfig`）描述挂在 Modbus 总线上一台物理
 /Users/ouyang/works/openxiot/service/webapp-docs/docs/spec/spec.mdx
 
 ## 三、变更记录
+
+### 2026-09-10
+* **点表配置主键改为系统生成**（不再由服务层自造 UUID）：`ModbusConfig` 由
+  `ReactivePanacheMongoEntityBase + @BsonId String id` 改为继承 `ReactivePanacheMongoEntity`，
+  `_id` 落库为 Panache 生成的 **ObjectId**（口径同 `SpaceEntity`）；`create` 不再赋 id，
+  由仓储 `persist` 生成并回写 `cfg.id`。**对外契约不变**：JSON（`ModbusJson`）、URL 路径参数、
+  虚拟设备 `mapping.configId` 仍是十六进制字符串——仓储方法签名保持 String、内部转 ObjectId，
+  非法 id 按「未命中」处理（不再可能抛 400/500）。虚拟设备派生类型 / 子 URN 里的点表主键段相应改为该 hex 串。
+* **启动迁移全部移除**：各环境均已重建为全新库，存量文档不复存在，`ModbusConfigService.init` 只保留
+  `repo.ensureIndexes()`（仍受 `modbus.index.enabled` 开关约束）。随之删除六个启动迁移
+  （旧 `points[]` → `commands[]`、扁平字段 → `slave`、`slave.type` 字符串 → 对象、`commands[].index` 回填、
+  `lifecycle` 回填、字符串主键 → ObjectId）及其 `legacyPointToCommand` / `logicalBase` 辅助方法与
+  `mongo`（`ReactiveMongoClient`）/ `logger` 注入——旧结构数据不再有兜底改写，新结构由写入侧校验保证。
+* **虚拟设备集合改名 `virtual-devices` → `devices`**：`ModbusVirtualDevice` 落库集合改为 `modbus`/`devices`
+  （与矩阵库 `matrix` 的 `devices` 同名但不同库，互不影响）。纯落库位置变更：HTTP 路由、类名、`did`、
+  响应结构与前端零改动；库已清空，无迁移。
 
 ### 2026-09-09
 * **虚拟子设备 online 与父设备保持一致**：虚拟子设备无独立在线状态。创建时 `online` 镜像父设备当前状态

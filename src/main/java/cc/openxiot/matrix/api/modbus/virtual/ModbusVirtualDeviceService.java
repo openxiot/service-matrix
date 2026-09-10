@@ -49,7 +49,7 @@ import org.jboss.logging.Logger;
  * <p>实例定义用 xiot-spec 模型代码构造 {@link DeviceInstance}（单个 modbus Service），再经
  * {@link DeviceInstanceCodec} 编码为 JSON 文本落库，不手拼 JSON。读命令（fc 01/02/03/04）产出一个
  * 只读 backing property + 带 {@code out} 参数的 action；写命令（fc 05/06/0F/10）仅产出无参 action。
- * 定义留档在 {@code virtual-devices}，供后续真正的 Modbus 接入（实例注册 / I/O 桥接）使用。</p>
+ * 定义留档在 {@code modbus}/集合 {@code devices}，供后续真正的 Modbus 接入（实例注册 / I/O 桥接）使用。</p>
  *
  * <p>挂载描述（源配置 + 父设备挂载点）即 {@link ModbusMapping}：同对象作请求体 / 实体 {@code mapping}
  * 子文档复用，不在实体中平铺重复字段。</p>
@@ -105,7 +105,7 @@ public class ModbusVirtualDeviceService {
 
     /**
      * 删除一条虚拟设备：先按 orgId 校验定义文档归属（不存在 → not found），再删同 did 的矩阵
-     * {@link DeviceEntity} 子设备与 {@code virtual-devices} 定义文档（createOne 的镜像清理）。
+     * {@link DeviceEntity} 子设备与 {@code devices} 定义文档（createOne 的镜像清理）。
      * 不守卫子设备（沿用 device 模块本地删除口径）；DeviceEntity 已先行删除时设备删除条数为 0 不视为失败。
      */
     public Uni<Void> delete(String orgId, String did) {
@@ -129,7 +129,7 @@ public class ModbusVirtualDeviceService {
 
     /**
      * 公开只读取出一个虚拟设备实例：按派生的实例 DeviceType（{@code instance.type}）跨组织精确匹配
-     * {@code virtual-devices} 定义文档（调用方仅持类型、无组织上下文——真实接入/实例注册侧）。
+     * {@code devices} 定义文档（调用方仅持类型、无组织上下文——真实接入/实例注册侧）。
      * 把落库的 {@code definition}（DeviceInstanceCodec 编码 JSON）解析回 xiot-spec 模型再编码返回，
      * 未命中或存量定义损坏 → 明确报错。
      */
@@ -184,6 +184,8 @@ public class ModbusVirtualDeviceService {
         DeviceType base = parseDeviceType(cfg.slave == null || cfg.slave.type == null ? null : cfg.slave.type.type);
         String vendor = mapping.did.toLowerCase(Locale.ROOT);
         String model = mapping.configId.toLowerCase(Locale.ROOT);
+        // 点表主键落库是 ObjectId，URN 里一律用其十六进制串
+        String configId = cfg.id == null ? "" : cfg.id.toHexString();
 
         // 复用配置里的 ns/name/value 重建实例类型头部（避免 base 已是 8 段带 org/model 时重复追加）。
         String headValue = String.format("%08x", ((long) base.value()) & 0x7FFFFFFFL);
@@ -192,34 +194,38 @@ public class ModbusVirtualDeviceService {
 
         DeviceInstance device = new DeviceInstance(DeviceType.parse(deviceType));
         if (cfg.slave != null && cfg.slave.description != null && !cfg.slave.description.isBlank()) {
-            device.description(Map.of(Spec.DESCRIPTION_EN_US, cfg.slave.description));
+            device.description().put(Spec.DESCRIPTION_EN_US, cfg.slave.description);
+            device.description().put(Spec.DESCRIPTION_ZH_CN, cfg.slave.description);
         }
 
         String ns = base.ns();
-        Service svc = new Service(1, ServiceType.parse(subUrn(ns, "service", "modbus", cfg.id + ":svc", vendor, model)));
+        Service svc = new Service(1, ServiceType.parse(subUrn(ns, "service", "modbus", configId + ":svc", vendor, model)));
+        svc.description().put(Spec.DESCRIPTION_EN_US, "Modbus");
+        svc.description().put(Spec.DESCRIPTION_ZH_CN, "Modbus");
+
         List<Property<Object>> props = new ArrayList<>();
         List<Action> actions = new ArrayList<>();
-        // 排序与 iid 均依赖 ModbusCommand.index（1 起自然数）：按 index 升序生成，数组序不再影响输出
+        // 排序与 action iid 均取 ModbusCommand.index（1 起自然数）：按 index 升序生成，数组序不影响输出
         List<ModbusCommand> commands = new ArrayList<>(cfg.commands == null ? List.of() : cfg.commands);
-        commands.sort(Comparator.comparingInt(cmd -> cmd == null || cmd.index == null ? Integer.MAX_VALUE : cmd.index));
+        commands.sort(Comparator.comparingInt(cmd -> cmd.index));
         for (int i = 0; i < commands.size(); i++) {
             ModbusCommand cmd = commands.get(i);
-            if (cmd == null) {
-                continue;
-            }
             boolean read = READ_FCS.contains(cmd.fc);
-            String actionUrn = subUrn(ns, "action", "a" + i, cfg.id + ":action:" + i, vendor, model);
-            // action iid = command.index（1 起自然数）；存量文档未回填 index 时兜底用排序位置
-            int iid = cmd.index == null ? i + 1 : cmd.index;
-            Action action = new Action(iid, ActionType.parse(actionUrn));
+            String actionUrn = subUrn(ns, "action", "a" + i, configId + ":action:" + i, vendor, model);
+            // action iid = command.index；index 由写入侧校验保证（必填 / ≥1 / 行内唯一），此处不再兜底
+            Action action = new Action(cmd.index, ActionType.parse(actionUrn));
             if (cmd.name != null && !cmd.name.isBlank()) {
-                action.description(Map.of(Spec.DESCRIPTION_EN_US, cmd.name));
+                action.description().put(Spec.DESCRIPTION_EN_US, cmd.name);
+                action.description().put(Spec.DESCRIPTION_ZH_CN, cmd.name);
             }
             if (read) {
                 int piid = props.size() + 1;
-                String propUrn = subUrn(ns, "property", "v" + (props.size()), cfg.id + ":prop:" + (props.size()), vendor, model);
-                Property<Object> prop = new Property<>(
-                        piid, PropertyType.parse(propUrn), new Access(false, true, false), dataFormat(cmd));
+                String propUrn = subUrn(ns, "property", "p" + (props.size()), configId + ":prop:" + (props.size()), vendor, model);
+
+                Property<Object> prop = new Property<>(piid, PropertyType.parse(propUrn), new Access(false, true, false), dataFormat(cmd));
+                prop.description().put(Spec.DESCRIPTION_EN_US, prop.type().name());
+                prop.description().put(Spec.DESCRIPTION_ZH_CN, prop.type().name());
+
                 if (cmd.unit != null && !cmd.unit.isBlank()) {
                     prop.unit(cmd.unit);
                 }
@@ -233,7 +239,7 @@ public class ModbusVirtualDeviceService {
         device.services().put(1, svc);
 
         ModbusVirtualDevice v = new ModbusVirtualDevice();
-        v.did = UUID.randomUUID().toString();
+        v.did = "m" + UUID.randomUUID().toString().replace("-", "");
         // 虚拟设备归属当前操作组织（跨组织公开点表可被本组织虚拟化）
         v.orgId = orgId;
         v.mapping = mapping;

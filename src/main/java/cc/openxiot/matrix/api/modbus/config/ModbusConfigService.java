@@ -5,23 +5,16 @@ import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusDeviceType;
-import com.mongodb.client.model.Filters;
-import io.quarkus.mongodb.reactive.ReactiveMongoClient;
-import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.jboss.logging.Logger;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 @ApplicationScoped
 public class ModbusConfigService {
@@ -47,26 +40,20 @@ public class ModbusConfigService {
     private static final long UINT32_MAX = 0xFFFFFFFFL;
 
     @Inject
-    Logger logger;
-
-    @Inject
     ModbusConfigRepository repo;
-
-    @Inject
-    ReactiveMongoClient mongo;
 
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
+    /**
+     * 启动只做建索引（{@code orgId} 唯一口径）。历史结构迁移已随存量数据一并清除：各环境均为全新库，
+     * 旧 points[] / 扁平 slave / 字符串 type / 缺 index / 缺 lifecycle / 字符串主键的文档不再存在，
+     * 无需启动期兜底改写。
+     */
     void init(@Observes StartupEvent event) {
         if (!indexEnabled) {
             return;
         }
-        migrateLegacyPoints();
-        migrateFlatSlave();
-        migrateLegacySlaveType();
-        migrateCommandIndex();
-        migrateLifecycle();
         repo.ensureIndexes().await().indefinitely();
     }
 
@@ -75,7 +62,8 @@ public class ModbusConfigService {
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        cfg.id = UUID.randomUUID().toString();
+        // id 不在此生成：主键由 Panache/Mongo 在落库时生成（见 ModbusConfig extends ReactivePanacheMongoEntity），
+        // insert 后回写到 cfg.id，随返回体（ModbusJson 输出十六进制串）交给前端。
         // 新建一律从「开发」态开始；生命周期只经后续发布流转，禁止在创建请求里直接指定。
         cfg.lifecycle = LIFECYCLE_DEVELOPMENT;
         return repo.insert(cfg).replaceWith(cfg);
@@ -490,287 +478,6 @@ public class ModbusConfigService {
             case "int16", "uint16" -> 1;
             case "int32", "uint32", "float32" -> 2;
             default -> null;
-        };
-    }
-
-    // ===== 存量迁移：旧版 points[]（点位中心）→ commands[]（功能码中心） =====
-
-    /** 幂等迁移旧文档：把还带 points[] 且没有 commands[] 的配置转为新结构（读动作）。 */
-    void migrateLegacyPoints() {
-        if (mongo == null) {
-            return;
-        }
-        try {
-            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
-                    .getCollection("device-configs", Document.class);
-            List<Document> docs = col
-                    .find(Filters.and(Filters.exists("points", true), Filters.exists("commands", false)))
-                    .collect().asList().await().indefinitely();
-            if (docs.isEmpty()) {
-                return;
-            }
-            int done = 0;
-            for (Document d : docs) {
-                try {
-                    Object raw = d.get("points");
-                    if (!(raw instanceof List)) {
-                        continue;
-                    }
-                    List<Document> commands = new ArrayList<>();
-                    for (Object o : (List<?>) raw) {
-                        if (o instanceof Document p) {
-                            Document cmd = legacyPointToCommand(p);
-                            if (cmd != null) {
-                                commands.add(cmd);
-                            }
-                        }
-                    }
-                    d.put("commands", commands);
-                    d.remove("points");
-                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
-                    done++;
-                } catch (Exception ex) {
-                    logger.warnf("skip legacy modbus config migration for _id=%s: %s", d.get("_id"), ex.getMessage());
-                }
-            }
-            if (done > 0) {
-                logger.infof("migrated %d legacy modbus device config(s): points[] -> commands[]", done);
-            }
-        } catch (Exception ex) {
-            logger.warnf("modbus legacy migration skipped: %s", ex.getMessage());
-        }
-    }
-
-    /**
-     * 幂等迁移 configs 集合中仍是扁平形态的旧配置（顶层 manufacturer/model/slaveId/type/description，
-     * 无 slave 子文档）→ 包装为 {@code slave} 子对象，字段缺失/为 null 一律不写入。
-     */
-    void migrateFlatSlave() {
-        if (mongo == null) {
-            return;
-        }
-        try {
-            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
-                    .getCollection("configs", Document.class);
-            List<Document> docs = col
-                    .find(Filters.and(Filters.exists("slave", false), Filters.exists("manufacturer", true)))
-                    .collect().asList().await().indefinitely();
-            if (docs.isEmpty()) {
-                return;
-            }
-            int done = 0;
-            for (Document d : docs) {
-                try {
-                    Document slave = new Document();
-                    if (d.getString("manufacturer") != null) {
-                        slave.put("manufacturer", d.getString("manufacturer"));
-                    }
-                    if (d.getString("model") != null) {
-                        slave.put("model", d.getString("model"));
-                    }
-                    if (d.get("slaveId") != null) {
-                        slave.put("slaveId", d.get("slaveId"));
-                    }
-                    if (d.getString("type") != null) {
-                        slave.put("type", d.getString("type"));
-                    }
-                    if (d.getString("description") != null) {
-                        slave.put("description", d.getString("description"));
-                    }
-                    d.put("slave", slave);
-                    d.remove("manufacturer");
-                    d.remove("model");
-                    d.remove("slaveId");
-                    d.remove("type");
-                    d.remove("description");
-                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
-                    done++;
-                } catch (Exception ex) {
-                    logger.warnf("skip flat-to-slave migration for _id=%s: %s", d.get("_id"), ex.getMessage());
-                }
-            }
-            if (done > 0) {
-                logger.infof("migrated %d modbus device config(s): flat fields -> slave", done);
-            }
-        } catch (Exception ex) {
-            logger.warnf("modbus flat-slave migration skipped: %s", ex.getMessage());
-        }
-    }
-
-    /**
-     * 幂等迁移 {@code slave.type} 仍是字符串的旧文档 → 包装为 {@link ModbusDeviceType} 子对象
-     * （{@code {type: <URN>}}，specDescription / typeDescription 暂缺由前端回退解析）。
-     * 覆盖两类存量：扁平时代的顶层 {@code type}（经 {@link #migrateFlatSlave()} 收进 slave 后是字符串）、
-     * 以及嵌套 slave 但 type 还是字符串的中间版本文档。已是对象则跳过。
-     */
-    void migrateLegacySlaveType() {
-        if (mongo == null) {
-            return;
-        }
-        try {
-            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
-                    .getCollection("configs", Document.class);
-            List<Document> docs = col.find(Filters.exists("slave", true)).collect().asList().await().indefinitely();
-            if (docs.isEmpty()) {
-                return;
-            }
-            int done = 0;
-            for (Document d : docs) {
-                try {
-                    Object slaveRaw = d.get("slave");
-                    if (!(slaveRaw instanceof Document slave)) {
-                        continue;
-                    }
-                    Object typeRaw = slave.get("type");
-                    if (!(typeRaw instanceof String)) {
-                        continue; // 已包装为对象或缺失，跳过（幂等）
-                    }
-                    slave.put("type", new Document("type", typeRaw));
-                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
-                    done++;
-                } catch (Exception ex) {
-                    logger.warnf("skip slave-type wrapping for _id=%s: %s", d.get("_id"), ex.getMessage());
-                }
-            }
-            if (done > 0) {
-                logger.infof("migrated %d modbus device config(s): slave.type string -> object", done);
-            }
-        } catch (Exception ex) {
-            logger.warnf("modbus slave-type migration skipped: %s", ex.getMessage());
-        }
-    }
-
-    /**
-     * 幂等回填 {@code configs} 集合里 {@code commands[].index}（1 起自然数）。
-     * 旧文档没有 index，须在读取前补齐，否则虚拟设备生成时 action iid 无法对应；
-     * 匹配到任一命令缺 index 的文档，就整段按数组位置重排为 1..N。
-     */
-    void migrateCommandIndex() {
-        if (mongo == null) {
-            return;
-        }
-        try {
-            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
-                    .getCollection("configs", Document.class);
-            List<Document> docs = col
-                    .find(Filters.and(
-                            Filters.exists("commands", true),
-                            Filters.elemMatch("commands", Filters.exists("index", false))))
-                    .collect().asList().await().indefinitely();
-            if (docs.isEmpty()) {
-                return;
-            }
-            int done = 0;
-            for (Document d : docs) {
-                try {
-                    Object raw = d.get("commands");
-                    if (!(raw instanceof List<?> list)) {
-                        continue;
-                    }
-                    for (int j = 0; j < list.size(); j++) {
-                        if (list.get(j) instanceof Document cmd) {
-                            cmd.put("index", j + 1);
-                        }
-                    }
-                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
-                    done++;
-                } catch (Exception ex) {
-                    logger.warnf("skip command-index backfill for _id=%s: %s", d.get("_id"), ex.getMessage());
-                }
-            }
-            if (done > 0) {
-                logger.infof("migrated %d modbus device config(s): commands[] index backfilled", done);
-            }
-        } catch (Exception ex) {
-            logger.warnf("modbus command-index migration skipped: %s", ex.getMessage());
-        }
-    }
-
-    /**
-     * 幂等回填 {@code configs} 集合里缺省 {@code lifecycle} 的文档 → {@code "development"}。
-     * 存量配置没有生命周期字段，补齐为开发态后即可正常编辑（缺省读侧已按 development 处理，这里让落库显式）。
-     */
-    void migrateLifecycle() {
-        if (mongo == null) {
-            return;
-        }
-        try {
-            ReactiveMongoCollection<Document> col = mongo.getDatabase("modbus")
-                    .getCollection("configs", Document.class);
-            List<Document> docs = col
-                    .find(Filters.exists("lifecycle", false))
-                    .collect().asList().await().indefinitely();
-            if (docs.isEmpty()) {
-                return;
-            }
-            int done = 0;
-            for (Document d : docs) {
-                try {
-                    d.put("lifecycle", LIFECYCLE_DEVELOPMENT);
-                    col.replaceOne(Filters.eq("_id", d.get("_id")), d).await().indefinitely();
-                    done++;
-                } catch (Exception ex) {
-                    logger.warnf("skip lifecycle backfill for _id=%s: %s", d.get("_id"), ex.getMessage());
-                }
-            }
-            if (done > 0) {
-                logger.infof("migrated %d modbus device config(s): lifecycle backfilled to development", done);
-            }
-        } catch (Exception ex) {
-            logger.warnf("modbus lifecycle migration skipped: %s", ex.getMessage());
-        }
-    }
-
-    /** 旧点位 → 读功能码命令；无法识别的区域按保持寄存器处理，尽量不丢数据。 */
-    private Document legacyPointToCommand(Document p) {
-        String area = p.getString("area");
-        String fc = switch (area == null ? "" : area) {
-            case "coil" -> "01";
-            case "discrete_input" -> "02";
-            case "input" -> "04";
-            default -> "03"; // holding / 未知
-        };
-        Integer start = p.getInteger("address");
-        if (start == null) {
-            Integer logical = p.getInteger("logicalAddress");
-            if (logical != null) {
-                start = logical - logicalBase(area);
-            }
-        }
-        if (start == null || start < 0) {
-            start = 0;
-        }
-        String dataType = p.getString("dataType");
-        Document cmd = new Document();
-        cmd.put("name", p.getString("name") == null ? "" : p.getString("name"));
-        cmd.put("fc", fc);
-        cmd.put("start", start);
-        if ("01".equals(fc) || "02".equals(fc)) {
-            cmd.put("quantity", 1);
-        } else {
-            if (dataType != null) {
-                cmd.put("dataType", dataType);
-            }
-            cmd.put("byteOrder", "ABCD");
-            Integer span = registerSpan(dataType);
-            cmd.put("quantity", span == null ? 1 : span);
-        }
-        if (p.getDouble("scale") != null) {
-            cmd.put("scale", p.getDouble("scale"));
-        }
-        if (p.getString("unit") != null) {
-            cmd.put("unit", p.getString("unit"));
-        }
-        return cmd;
-    }
-
-    /** 逻辑地址（1 基工程号）的区段起始，用于老文档换算：40001→保持、30001→输入、10001→离散、00001→线圈。 */
-    private int logicalBase(String area) {
-        return switch (area == null ? "" : area) {
-            case "coil" -> 1;
-            case "discrete_input" -> 10001;
-            case "input" -> 30001;
-            default -> 40001;
         };
     }
 }

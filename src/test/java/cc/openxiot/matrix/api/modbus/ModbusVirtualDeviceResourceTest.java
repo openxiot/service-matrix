@@ -40,9 +40,13 @@ import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
+import org.bson.types.ObjectId;
 
 @QuarkusTest
 class ModbusVirtualDeviceResourceTest {
+
+    /** 点表配置的落库主键（系统生成的 ObjectId）。 */
+    private static final ObjectId CID = new ObjectId("6512f3a4b5c6d7e8f9a0b1c2");
 
     @InjectMock
     ModbusConfigService configService;
@@ -59,7 +63,8 @@ class ModbusVirtualDeviceResourceTest {
     /** 一条带 type 的点表配置：1 条读(03/float32) + 1 条写(06)。 */
     private ModbusConfig sample() {
         ModbusConfig cfg = new ModbusConfig();
-        cfg.id = "c1";
+        // 点表主键由系统生成（ObjectId）；派生类型的 model 段取映射请求里的 configId（见各用例请求体）
+        cfg.id = CID;
         cfg.orgId = "org1";
         cfg.slave.manufacturer = "开利";
         cfg.slave.model = "19XRV";
@@ -357,7 +362,7 @@ class ModbusVirtualDeviceResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(true));
 
-        // 镜像 createOne：同 did 的矩阵 DeviceEntity 子设备 + virtual-devices 定义文档都删
+        // 镜像 createOne：同 did 的矩阵 DeviceEntity 子设备 + devices 定义文档都删
         verify(deviceService).deleteByDeviceIds(List.of("virt-1"));
         verify(repo).deleteByIdAndOrg("virt-1", "org1");
     }

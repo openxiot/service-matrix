@@ -29,9 +29,13 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
+import org.bson.types.ObjectId;
 
 @QuarkusTest
 class ModbusConfigResourceTest {
+
+    /** 落库主键（系统生成的 ObjectId）：JSON 里必须呈现为其十六进制串。 */
+    private static final ObjectId CID = new ObjectId("6512f3a4b5c6d7e8f9a0b1c2");
 
     @InjectMock
     ModbusConfigService service;
@@ -41,7 +45,7 @@ class ModbusConfigResourceTest {
 
     private ModbusConfig sample() {
         ModbusConfig cfg = new ModbusConfig();
-        cfg.id = "c1";
+        cfg.id = CID;
         cfg.orgId = "org1";
         cfg.slave.manufacturer = "开利";
         cfg.slave.model = "19XRV";
@@ -102,7 +106,8 @@ class ModbusConfigResourceTest {
                 .body("data.slave.type.type", equalTo("urn:xiot-spec:device:chiller:0000A005"))
                 .body("data.slave.type.typeDescription.zh-CN", equalTo("冷水机组"))
                 .body("data.lifecycle", equalTo("development"))
-                .body("data.id", equalTo("c1"));
+                // 主键落库是 ObjectId，对外（JSON）仍是十六进制字符串
+                .body("data.id", equalTo(CID.toHexString()));
 
         ArgumentCaptor<ModbusConfig> captor = ArgumentCaptor.forClass(ModbusConfig.class);
         verify(service).create(captor.capture());
