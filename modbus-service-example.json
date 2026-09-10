@@ -1,0 +1,29 @@
+{
+  "id": "xxxx",
+  "configId": "Modbus配置ID",
+  "parent": {
+    "did": "xxx",
+    "siid": 1,
+    "aiid": 1
+  },
+  "function": [
+    {
+      "name": "方法名称",
+      "request": [
+        {
+          "piid": 1,
+          "value": "请求帧: 16进制字符串"
+        }
+      ],
+      "response": [
+        {
+          "field": "字段名称",
+          "byte": 2,
+          "byteOrder": "ABCD",
+          "format": "uint16",
+          "scale": 0.1
+        }
+      ]
+    }
+  ]
+}

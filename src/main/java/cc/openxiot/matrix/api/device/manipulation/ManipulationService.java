@@ -1,6 +1,7 @@
-package cc.openxiot.matrix.api.device;
+package cc.openxiot.matrix.api.device.manipulation;
 
 import cc.openxiot.common.util.JwtUtil;
+import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
 import cn.geekcity.xiot.spec.codec.vertx.device.DeviceCodec;
 import cn.geekcity.xiot.spec.device.Device;
 import io.smallrye.mutiny.Uni;
@@ -49,9 +50,16 @@ public class ManipulationService {
                 .map(this::getJsonObject);
     }
 
-    public Uni<List<Device>> addDevices(String orgId, String body) {
+    /** 批量添加：把 DeviceAddRequest 数组编码为 manipulation 需要的 [{did,key}] 再转发 */
+    public Uni<List<Device>> addDevices(String orgId, List<DeviceAddRequest> req) {
         String authorization = JwtUtil.createOwnerIdToken(orgId, jwtSecret);
-        return client.addDevices(appId, authorization, body)
+        JsonArray devices = new JsonArray();
+        for (DeviceAddRequest device : req) {
+            devices.add(new JsonObject()
+                    .put("did", device.did)
+                    .put("key", device.key));
+        }
+        return client.addDevices(appId, authorization, devices.encode())
                 .map(this::getJsonArray)
                 .map(DeviceCodec::decode);
     }

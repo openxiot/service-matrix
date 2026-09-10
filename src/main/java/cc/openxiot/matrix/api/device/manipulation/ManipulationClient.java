@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.device;
+package cc.openxiot.matrix.api.device.manipulation;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.ws.rs.*;

@@ -3,6 +3,8 @@ package cc.openxiot.matrix.api.device;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
+import cc.openxiot.matrix.api.device.request.DeviceUpdateSpaceRequest;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -10,7 +12,6 @@ import cc.openxiot.matrix.db.device.DeviceEntityMapper;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -38,8 +39,9 @@ public class DeviceResource extends AbstractResource {
     @Inject
     SpaceService spaceService;
 
+    /** 设备操作入口：写设备/读影子/读写属性/执行方法都经它转发到 manipulation 服务 */
     @Inject
-    ManipulationService manipulationService;
+    DeviceManipulator deviceManipulator;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -72,7 +74,7 @@ public class DeviceResource extends AbstractResource {
     }
 
     private Uni<DeviceEntity> addDevice(String orgId, DeviceAddRequest req, SpaceEntity space) {
-        return manipulationService.addDevice(orgId, req)
+        return deviceManipulator.addDevice(orgId, req)
                 .map(device -> DeviceEntityMapper.from(device, space));
     }
 
@@ -85,7 +87,7 @@ public class DeviceResource extends AbstractResource {
             @PathParam("did") String did
     ) {
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(ignored -> manipulationService.removeDevice(orgId, did))
+                .chain(ignored -> deviceManipulator.removeDevice(orgId, did))
                 .chain(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -114,18 +116,23 @@ public class DeviceResource extends AbstractResource {
     public Uni<Response> addMany(
             @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
-            String body
+            List<DeviceAddRequest> req
     ) {
+        if (req == null) {
+            return Uni.createFrom().item(OxResponse.error("devices are required"));
+        }
+
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(space -> addDevices(orgId, body, space))
+                .chain(space -> addDevices(orgId, req, space))
                 .chain(entities -> deviceService.saveAll(entities))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    private Uni<List<DeviceEntity>> addDevices(String orgId, String body, SpaceEntity space) {
-        return manipulationService.addDevices(orgId, body)
+    /** 批量添加：req 为 DeviceAddRequest 数组，逐台向 manipulation 校验归属后落矩阵设备 */
+    private Uni<List<DeviceEntity>> addDevices(String orgId, List<DeviceAddRequest> req, SpaceEntity space) {
+        return deviceManipulator.addDevices(orgId, req)
                 .map(devices -> DeviceEntityMapper.from(devices, space));
     }
 
@@ -138,7 +145,7 @@ public class DeviceResource extends AbstractResource {
             @QueryParam("did") List<String> did
     ) {
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(ignored -> manipulationService.removeDevices(orgId, did))
+                .chain(ignored -> deviceManipulator.removeDevices(orgId, did))
                 .chain(ignore -> deviceService.deleteByDeviceIds(did))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -151,19 +158,14 @@ public class DeviceResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> updateSpace(
             @HeaderParam("X-Org-Id") String orgId,
-            String body
+            DeviceUpdateSpaceRequest req
     ) {
-        JsonObject obj;
-        try {
-            obj = new JsonObject(body);
-        } catch (Exception e) {
-            return Uni.createFrom().item(OxResponse.error("Invalid JSON body"));
+        if (req == null || req.spaceId == null || req.spaceId.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("spaceId is required"));
         }
 
-        String spaceId = obj.getString("spaceId");
-
-        return requireSpaceAdmin(spaceId, orgId)
-                .chain(ignored -> updateSpaceDevices(obj, spaceId))
+        return requireSpaceAdmin(req.spaceId, orgId)
+                .chain(ignored -> updateSpaceDevices(req))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -206,7 +208,7 @@ public class DeviceResource extends AbstractResource {
             @QueryParam("pid") List<String> pid
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.getProperties(orgId, pid))
+                .chain(ignored -> deviceManipulator.getProperties(orgId, pid))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -222,7 +224,7 @@ public class DeviceResource extends AbstractResource {
             String body
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.setProperties(orgId, body))
+                .chain(ignored -> deviceManipulator.setProperties(orgId, body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -238,7 +240,7 @@ public class DeviceResource extends AbstractResource {
             String body
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.invokeActions(orgId, body))
+                .chain(ignored -> deviceManipulator.invokeActions(orgId, body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -247,7 +249,7 @@ public class DeviceResource extends AbstractResource {
     // -- helper methods --
     private Uni<JsonArray> fetchShadows(String orgId, String spaceId, List<String> did) {
         if (did != null && !did.isEmpty()) {
-            return manipulationService.getShadows(orgId, did);
+            return deviceManipulator.getShadows(orgId, did);
         }
 
         return deviceService.getBySpaceId(spaceId)
@@ -257,17 +259,16 @@ public class DeviceResource extends AbstractResource {
                         return Uni.createFrom().item(new JsonArray());
                     }
 
-                    return manipulationService.getShadows(orgId, deviceIds);
+                    return deviceManipulator.getShadows(orgId, deviceIds);
                 });
     }
 
-    private Uni<Response> updateSpaceDevices(JsonObject obj, String spaceId) {
-        String rootSpaceId = obj.getString("rootSpaceId");
-        JsonArray dids = obj.getJsonArray("dids");
-        if (dids != null) {
+    /** 逐台改写设备归属；dids 缺省表示不迁移任何设备，直接成功 */
+    private Uni<Response> updateSpaceDevices(DeviceUpdateSpaceRequest req) {
+        if (req.dids != null) {
             List<Uni<Void>> updates = new ArrayList<>();
-            for (int i = 0; i < dids.size(); i++) {
-                updates.add(deviceService.updateSpace(dids.getString(i), spaceId, rootSpaceId));
+            for (String did : req.dids) {
+                updates.add(deviceService.updateSpace(did, req.spaceId, req.rootSpaceId));
             }
             return Uni.join().all(updates).andFailFast().replaceWith(OxResponse.ok());
         }

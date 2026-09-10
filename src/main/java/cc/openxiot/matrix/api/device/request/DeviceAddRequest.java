@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.device;
+package cc.openxiot.matrix.api.device.request;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;

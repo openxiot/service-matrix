@@ -1,6 +1,8 @@
 package cc.openxiot.matrix.api.device;
 
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
+import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -88,7 +90,7 @@ class DeviceResourceTest {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
         when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
-        when(manipulationService.addDevices(anyString(), anyString()))
+        when(manipulationService.addDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(List.of()));
         when(deviceService.saveAll(anyList()))
                 .thenReturn(Uni.createFrom().item(List.of()));
@@ -105,11 +107,23 @@ class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void addDevices_invalidBody_returnsError() {
+    void addDevices_malformedBody_returnsBadRequest() {
+        // body 由 List<DeviceAddRequest> 参数反序列化，不是数组时由框架直接 400（不再走 OxResponse）
         given()
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
                 .body("\"not-json\"")
+                .when().post("/matrix/v1/device/many/{spaceId}", "sid")
+                .then()
+                .statusCode(400);
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void addDevices_emptyBody_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -245,9 +259,22 @@ class DeviceResourceTest {
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateSpace_invalidBody_returnsError() {
+        // 标量 body 反序列化成不了 DeviceUpdateSpaceRequest，参数为 null，走 spaceId 必填校验
         given()
                 .contentType(ContentType.JSON)
                 .body("\"not-json\"")
+                .when().put("/matrix/v1/device/many/space")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void updateSpace_missingSpaceId_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .body("{\"rootSpaceId\":\"root-1\",\"dids\":[\"d1\"]}")
                 .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
