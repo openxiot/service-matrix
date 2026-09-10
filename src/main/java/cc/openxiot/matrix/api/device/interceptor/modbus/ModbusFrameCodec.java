@@ -273,7 +273,9 @@ public final class ModbusFrameCodec {
     /**
      * 把 16/32 位原始数值按字节序排成 Modbus 线上字节（大端为基准）。
      *
-     * <p>ABCD 大端 / DCBA 全反 / BADC 字内字节交换 / CDAB 字交换；两字节时后三者同为交换两字节。</p>
+     * <p>ABCD 大端 / DCBA 全反 / BADC 字内字节交换 / CDAB 字交换；两字节时后三者同为交换两字节。
+     * 四种排布都是自逆的，故编码与解码共用本方法；单字节原样返回。{@code ModbusService}（方案二）
+     * 解应答字段时同样复用。</p>
      */
     private static byte[] toBytes(long bits, int width, String byteOrder) {
         byte[] be = new byte[width];
@@ -293,8 +295,13 @@ public final class ModbusFrameCodec {
         return bits;
     }
 
-    private static byte[] reorder(byte[] be, String byteOrder) {
+    public static byte[] reorder(byte[] be, String byteOrder) {
         String order = byteOrder == null || byteOrder.isBlank() ? "ABCD" : byteOrder.toUpperCase(Locale.ROOT);
+
+        // 只有 16 位（2 字节）与 32 位（4 字节）有排布可言：单字节（int8/uint8）与其它宽度原样返回
+        if (be.length != 2 && be.length != 4) {
+            return be;
+        }
 
         if (be.length == 2) {
             return switch (order) {
@@ -322,8 +329,8 @@ public final class ModbusFrameCodec {
         return frame;
     }
 
-    /** 校验帧尾 CRC16。 */
-    private static boolean checkCrc(byte[] frame) {
+    /** 校验帧尾 CRC16。{@code ModbusService}（方案二）按字段切分应答数据区时复用。 */
+    public static boolean checkCrc(byte[] frame) {
         if (frame.length <= CRC_SIZE) {
             return false;
         }

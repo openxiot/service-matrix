@@ -1,19 +1,50 @@
 package cc.openxiot.matrix.db.modbus.service;
 
+import cc.openxiot.common.person.Person;
 import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntityBase;
+import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
-import org.bson.codecs.pojo.annotations.BsonId;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import java.util.List;
+
+/**
+ * Modbus 服务：把一条 Modbus 点表映射成一组可直接调用的「方法」。
+ *
+ * <p>与 {@code ModbusVirtualDevice}（MODBUS.md 的方案一：生成设备实例定义、走通用设备接口 + 拦截器翻译）
+ * 并存但不共用路径：本方案把「怎么调父设备、发什么帧、怎么解应答」在**创建时**一次性展开存进本文档，
+ * 调用时只读这一条记录即可组装出 {@code ActionOperation}，不需要再读点表、父设备、产品实例定义。</p>
+ *
+ * <p>独立集合 {@code services}（库 {@code modbus}，与点表 {@code configs}、方案一的 {@code devices} 分集合）。
+ * 主键 {@code _id} 由 Panache 生成 ObjectId，对外（URL / JSON / invoke 请求体）一律以十六进制字符串呈现；
+ * 持久化经 {@link ModbusServiceRepository}。</p>
+ */
 @MongoEntity(database = "modbus", collection = "services")
 @RegisterForReflection
-@Schema(description = "Modbus服务（将Modbus点表映射成服务）")
-public class ModbusService extends ReactivePanacheMongoEntityBase {
+@Schema(description = "Modbus 服务（将点表映射成可调用的方法集合）")
+public class ModbusService extends ReactivePanacheMongoEntity {
 
-    @BsonId
-    @Schema(description = "服务ID（服务端生成）", required = true)
-    public String id;
+    @Schema(description = "所属组织 ID", required = true)
+    public String orgId;
 
+    @Schema(description = "服务名称（展示用，如 1 号冷水机组）", required = true)
+    public String name;
 
+    @Schema(description = "定义格式版本号：function 内部结构后续若演进，按它区分口径", examples = {"1"}, required = true)
+    public Integer version;
+
+    @Schema(description = "源点表配置 ID（溯源用：本服务由哪条点表映射而来）")
+    public String configId;
+
+    @Schema(description = "父设备调用坐标（调哪个设备/服务/方法、请求帧填在哪个入参 piid）", required = true)
+    public ModbusServiceParent parent = new ModbusServiceParent();
+
+    @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写）", required = true)
+    public List<ModbusServiceFunction> functions;
+
+    @Schema(description = "创建者/创建时间")
+    public Person creator;
+
+    @Schema(description = "最后更新者/更新时间")
+    public Person updater;
 }

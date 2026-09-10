@@ -1,27 +1,52 @@
 {
   "id": "xxxx",
+  "name": "xxx",
+  "version": 1,
   "configId": "Modbus配置ID",
   "parent": {
     "did": "xxx",
     "siid": 1,
-    "aiid": 1
+    "aiid": 1,
+    "argument": 1
   },
-  "function": [
+  "functions": [
     {
+      "index": 1,
       "name": "方法名称",
-      "request": [
-        {
-          "piid": 1,
-          "value": "请求帧: 16进制字符串"
-        }
-      ],
+      "request": "请求帧: 16进制字符串",
       "response": [
         {
+          "index": 1,
           "field": "字段名称",
-          "byte": 2,
-          "byteOrder": "ABCD",
+          "bytes": 2,
           "format": "uint16",
-          "scale": 0.1
+          "byteOrder": "ABCD",
+          "scale": 0.1,
+          "unit": "℃"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "读开关状态",
+      "request": "请求帧: 16进制字符串",
+      "response": [
+        {
+          "index": 1,
+          "field": "开关状态",
+          "bytes": 1,
+          "format": "uint8",
+          "scale": 1,
+          "value-list": [
+            {
+              "value": 0,
+              "description": "ON"
+            },
+            {
+              "value": 1,
+              "description": "OFF"
+            }
+          ]
         }
       ]
     }
