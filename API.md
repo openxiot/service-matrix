@@ -552,9 +552,15 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
 | `createTime` | string | 创建时间 `yyyy-MM-ddTHH:mm:ss` |
 | `updateTime` | string | 更新时间 `yyyy-MM-ddTHH:mm:ss` |
 
-> **根空间 ID 不落字段**（原先那个 `rootId` 从未被写过值，已删）：它就是 `ancestors[0]`
+> **根空间 ID 不落字段**（原先那个 `rootId` 字段已删）：它就是 `ancestors[0]`
 > （根空间自己没有祖先，即自身）。**设备归属用的就是它**：给 manipulation 传的 `ownerId`、
 > 以及响应里 `device.space.rootId` 都取这个值 —— 详见 [5.2](#52-deviceentity) 的 `space`。
+>
+> 删掉 `rootId` 的理由不是「没人写」—— 恰恰相反：它由**客户端**在创建子空间时自己填
+> （服务端从不计算、也不写这个字段），而它恰好与 `ancestors[0]` 一致。问题是这个一致性
+> 只能靠每个调用方自觉维持：服务端建的空间、或换一个客户端建，归属就会是空的。
+> 现在统一由服务端从 `ancestors[0]` 现算。旧客户端仍传 `rootId` 不报错
+> （Quarkus 缺省 `fail-on-unknown-properties=false`，未知字段被忽略），只是不再被采信。
 
 ### 5.2 DeviceEntity
 
