@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.modbus.service;
 
+import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
@@ -49,23 +51,42 @@ public final class ModbusResponseParser {
     /**
      * 解一帧应答（按字段定义切分数据区并取值）。
      *
+     * <p>失败一律抛 {@link ModbusInvokeException}，**在抛出的地方带上分类** —— 只有这里知道
+     * 是 CRC 不符还是从站异常码、异常码是几号（见 {@link ModbusFailureType}）。
+     * message 文本保持原样：它是排查时唯一能看到的东西。</p>
+     *
      * @param fields   该方法的应答字段定义（顺序由各自的 index 决定）
      * @param frameHex 父设备回传的应答帧（16 进制字符串，大小写与空白不敏感）
-     * @throws IllegalArgumentException 帧非法、CRC 不符、从站返回异常码，或字段声明与帧长对不上
+     * @throws ModbusInvokeException 帧非法、CRC 不符、从站返回异常码，或字段声明与帧长对不上
      */
     public static JsonObject parse(List<ModbusServiceField> fields, String frameHex) {
+        try {
+            return parseFrame(fields, frameHex);
+        } catch (ModbusInvokeException e) {
+            throw e;
+        } catch (IllegalArgumentException e) {
+            // ModbusFrameCodec 的帧原语（十六进制、长度、结构）抛的是无分类的 IllegalArgumentException，
+            // 而它同时被 request 侧复用，不该由它来决定「执行失败」的分类 —— 在这里补上。
+            throw ModbusInvokeException.of(ModbusFailureType.INVALID_FRAME, e.getMessage(), e);
+        }
+    }
+
+    private static JsonObject parseFrame(List<ModbusServiceField> fields, String frameHex) {
         byte[] frame = ModbusFrameCodec.parseHex(frameHex);
         if (frame.length < MIN_FRAME_SIZE) {
-            throw new IllegalArgumentException("invalid modbus response: " + frameHex);
+            throw ModbusInvokeException.of(ModbusFailureType.INVALID_FRAME,
+                    "invalid modbus response: " + frameHex);
         }
 
         int fc = frame[1] & 0xFF;
         if ((fc & ERROR_MASK) != 0) {
-            throw new IllegalArgumentException("modbus exception response: code=" + (frame[2] & 0xFF)
-                    + ", frame=" + frameHex);
+            int code = frame[2] & 0xFF;
+            throw ModbusInvokeException.remote(ModbusFailureType.SLAVE_EXCEPTION, code,
+                    "modbus exception response: code=" + code + ", frame=" + frameHex);
         }
         if (!ModbusFrameCodec.checkCrc(frame)) {
-            throw new IllegalArgumentException("modbus response crc mismatch: " + frameHex);
+            throw ModbusInvokeException.of(ModbusFailureType.CRC_MISMATCH,
+                    "modbus response crc mismatch: " + frameHex);
         }
 
         List<ModbusServiceField> ordered = sorted(fields);
@@ -76,11 +97,13 @@ public final class ModbusResponseParser {
 
         int byteCount = frame[2] & 0xFF;
         if (byteCount != expected) {
-            throw new IllegalArgumentException("modbus response length mismatch: byteCount=" + byteCount
-                    + ", expected=" + expected + ", frame=" + frameHex);
+            throw ModbusInvokeException.of(ModbusFailureType.FRAME_MISMATCH,
+                    "modbus response length mismatch: byteCount=" + byteCount
+                            + ", expected=" + expected + ", frame=" + frameHex);
         }
         if (HEADER_SIZE + byteCount > frame.length - CRC_SIZE) {
-            throw new IllegalArgumentException("invalid modbus response: " + frameHex);
+            throw ModbusInvokeException.of(ModbusFailureType.INVALID_FRAME,
+                    "invalid modbus response: " + frameHex);
         }
 
         boolean bitRegion = fc == FC_READ_COILS || fc == FC_READ_DISCRETE_INPUTS;
@@ -106,8 +129,9 @@ public final class ModbusResponseParser {
         for (ModbusServiceFieldBit bit : field.bitList) {
             if (bit == null || bit.offset == null || bit.field == null || bit.offset < 0
                     || bit.offset / 8 >= data.length) {
-                throw new IllegalArgumentException("invalid modbus field bit: "
-                        + (bit == null ? null : bit.offset) + ", field=" + field.field);
+                throw ModbusInvokeException.of(ModbusFailureType.FIELD_DEFINITION_ERROR,
+                        "invalid modbus field bit: "
+                                + (bit == null ? null : bit.offset) + ", field=" + field.field);
             }
             values.put(bit.field, (data[bit.offset / 8] >> (bit.offset % 8)) & 1);
         }
@@ -120,7 +144,8 @@ public final class ModbusResponseParser {
             case "string" -> text(data);
             case "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32" ->
                     number(format, bits(data, field, bitRegion));
-            default -> throw new IllegalArgumentException("unsupported modbus field format: " + field.format);
+            default -> throw ModbusInvokeException.of(ModbusFailureType.FIELD_DEFINITION_ERROR,
+                    "unsupported modbus field format: " + field.format);
         };
 
         String description = descriptionOf(field, raw);

@@ -94,7 +94,6 @@ class ModbusServiceCodecTest {
         assertEquals(1, service.version.intValue());
         assertEquals("65f0c0ffee0123456789abcd", service.configId);
         assertNull(service.id);      // id 不由请求体决定
-        assertNull(service.orgId);   // org 取 X-Org-Id
 
         assertEquals("did-1", service.device.did);
         assertEquals(1, service.device.siid.intValue());
@@ -149,19 +148,16 @@ class ModbusServiceCodecTest {
         // 请求体里没有的字段不该凭空出现
         assertEquals("1 号冷水机组", once.getString("name"));
         assertNull(once.getString("id"));
-        assertNull(once.getString("orgId"));
     }
 
     @Test
     void encodeWritesHexIdAndValueListKey() {
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
         service.id = new ObjectId("65f0c0ffee0123456789abcd");
-        service.orgId = "org-1";
 
         JsonObject o = ModbusServiceCodec.encode(service);
         // 主键对外一律十六进制字符串（URL 路径参数 / invoke 请求体同口径）
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
-        assertEquals("org-1", o.getString("orgId"));
 
         // 实体里叫 valueList，出去必须是示例文件里的 value-list
         JsonObject state = o.getJsonArray("functions").getJsonObject(1)
@@ -206,7 +202,6 @@ class ModbusServiceCodecTest {
     void encodeBriefKeepsOnlyListFields() {
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
         service.id = new ObjectId("65f0c0ffee0123456789abcd");
-        service.orgId = "org-1";
         service.device.space = space("space-1", "root-1");
 
         JsonObject o = ModbusServiceCodec.encodeBrief(service);

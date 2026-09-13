@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
@@ -173,5 +175,49 @@ class ModbusResponseParserTest {
         assertThrows(IllegalArgumentException.class,
                 () -> ModbusResponseParser.parse(
                         List.of(field(1, "温度", 4, "uint32", "ABCD")), "0103020064B9AF"));
+    }
+
+    /**
+     * 每一类失败都带上**分类**与远端原始码（见 {@link ModbusFailureType}）。
+     *
+     * <p>分类必须在这里定：只有解析器知道是 CRC 不符还是从站异常码、异常码是几号。
+     * 记录端只做透传，前端按分类聚合 —— 事后从 message 文本里反推分类等于把协议语义
+     * 压成了字符串匹配。</p>
+     */
+    @Test
+    void classifiesEveryFailureType() {
+        List<ModbusServiceField> fields = List.of(field(1, "温度", 2, "uint16", "ABCD"));
+
+        // 从站异常应答（03 的异常应答是 83）：分类 + 码号都要落下来
+        ModbusInvokeException slaveException = assertThrows(ModbusInvokeException.class,
+                () -> ModbusResponseParser.parse(fields, "018302C0F1"));
+        assertEquals(ModbusFailureType.SLAVE_EXCEPTION, slaveException.type());
+        assertEquals(2, slaveException.remoteCode());
+
+        // CRC 不符：设备回了，但报文不可信 —— 与「设备没回」是两回事，处置方向也不同
+        assertEquals(ModbusFailureType.CRC_MISMATCH, typeOf(fields, "0103020064B9AE"));
+
+        // 帧本身不成形：太短、非十六进制（后者由 ModbusFrameCodec 抛无分类的 IAE，在本类里补分类）
+        assertEquals(ModbusFailureType.INVALID_FRAME, typeOf(fields, "0103"));
+        assertEquals(ModbusFailureType.INVALID_FRAME, typeOf(fields, "zzzz"));
+
+        // 数据字节数与点表声明对不上：点表配错，或回帧的从站不是目标从站
+        assertEquals(ModbusFailureType.FRAME_MISMATCH,
+                typeOf(List.of(field(1, "温度", 4, "uint32", "ABCD")), "0103020064B9AF"));
+
+        // 字段定义本身有问题：不支持的 format
+        assertEquals(ModbusFailureType.FIELD_DEFINITION_ERROR,
+                typeOf(List.of(field(1, "温度", 2, "uint128", "ABCD")), "0103020064B9AF"));
+
+        // 字段定义本身有问题：bit 偏移越界
+        ModbusServiceField bits = field(1, "开关状态", 1, "uint8", null);
+        bits.bitList = List.of(bit(8, "越界位"));
+        assertEquals(ModbusFailureType.FIELD_DEFINITION_ERROR, typeOf(List.of(bits), "01010105918B"));
+    }
+
+    /** 没有远端码的分类断言：只关心分类，不关心码。 */
+    private static ModbusFailureType typeOf(List<ModbusServiceField> fields, String frame) {
+        return assertThrows(ModbusInvokeException.class,
+                () -> ModbusResponseParser.parse(fields, frame)).type();
     }
 }

@@ -25,6 +25,6 @@ public class SpaceOn {
 
     public SpaceOn(SpaceEntity entity) {
         spaceId = entity.id.toString();
-        rootId = entity.rootId;
+        rootId = entity.rootSpaceId();
     }
 }

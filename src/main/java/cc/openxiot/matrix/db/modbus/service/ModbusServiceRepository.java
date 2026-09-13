@@ -41,12 +41,11 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
 
     /**
      * 启动时确保 device.did / device.space.spaceId 索引存在（幂等；失败仅告警，不阻断启动）。
-     * {@code orgId} 也一并建：该字段现在只记录创建时的组织（不参与鉴权与查询），索引留着供运维按组织翻数据。
+     * （原 {@code orgId} 索引已随字段一起删掉：服务不再记组织。）
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("orgId"))
-                .chain(ignored -> collection().createIndex(Indexes.ascending("device.did")))
+                .createIndex(Indexes.ascending("device.did"))
                 .chain(ignored -> collection().createIndex(Indexes.ascending("device.space.spaceId")))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
@@ -71,6 +70,17 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
             return Uni.createFrom().nullItem();
         }
         return collection().find(Filters.eq("_id", oid)).collect().first();
+    }
+
+    /**
+     * 全部服务（完整定义）。
+     *
+     * <p>只给轮询任务的全量对账用：任务表的口径来自**每一条**定义的每一个方法，
+     * 少读一条就会把它的任务当成「多余」删掉。服务数不多（一个空间十几条），
+     * 一次全量拉回来比按状态位增量扫简单得多，而且对账本来就是幂等的重算。</p>
+     */
+    public Uni<List<ModbusService>> listAll() {
+        return collection().find().collect().asList();
     }
 
     /**
@@ -111,6 +121,24 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
         return collection()
                 .deleteOne(Filters.eq("_id", oid))
                 .map(DeleteResult::getDeletedCount);
+    }
+
+    /**
+     * 按依赖设备只列出服务的 id（十六进制）：删除设备时的级联清理要先收下它们
+     * —— 服务行删掉之后按 did 就再也查不出来，而影子与历史的清理需要这些 id。
+     * 投影只带 {@code _id}，functions / response 不上网络。
+     */
+    public Uni<List<String>> findIdsByDeviceDids(List<String> dids) {
+        if (dids == null || dids.isEmpty()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return collection()
+                .find(Filters.in("device.did", dids), new FindOptions().projection(Projections.include("_id")))
+                .collect().asList()
+                .map(services -> services.stream()
+                        .filter(service -> service != null && service.id != null)
+                        .map(service -> service.id.toHexString())
+                        .toList());
     }
 
     /**

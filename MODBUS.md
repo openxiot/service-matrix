@@ -24,15 +24,16 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 ## 三、数据模型（落库 `modbus`/`services`，Panache 生成 ObjectId，对外十六进制字符串）
 
 ```
-ModbusService        orgId / name / version / configId / device / functions[] / creator / updater
+ModbusService        name / version / configId / device / functions[] / creator / updater
 DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
 ModbusServiceFunction index / name / request / interval / response[]
 ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[]
 ```
 
-* `orgId` = 创建时的组织（取 `X-Org-Id`，可空）：**只作记录**，不参与鉴权（接口按空间判，见第四节）
-  也不参与查询；索引留着供运维按组织翻数据。
+* 服务本身**不记组织**（原来的 `orgId` 字段已删）：跨组织隔离由点表（`ModbusConfig.orgId`）负责，
+  服务这一层按空间判权（见第四节）。设备归属用的是**设备所在根空间**，见第五节与
+  `ManipulationService`。
 * `device.argument` = 依赖设备的方法**入参的 piid**，请求帧填在这里。DTU 承载数据的动作只有一个入参，
   故提到 device 级、对该服务的所有方法共用（不同型号 piid 不同：s710ym 是 1/2/2、dtu.json 是 1/1/1，
   由前端按型号写入，后端不去产品定义推算）。
@@ -44,7 +45,7 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   解出字段值；缺省表示没配周期。只挂在读方法上 —— 写方法填了会被校验拒绝。
 * `function.polling` = **自动轮询开关**：`true` 按 `interval` 周期跑，`false` 保留周期但暂停，
   缺省 = 按 `interval` 判定（有周期即启用，兼容加这个字段之前的定义）。同样只对读方法有意义。
-  **执行侧的调度器尚未落地**，这两个字段目前都只是定义（见变更记录）。
+  **执行侧的调度器尚未落地**（设计已定，见 `Modbus-Service-Poller.md`），这两个字段目前都只是定义。
 * `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
 
 ## 四、接口
@@ -58,6 +59,7 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 | PUT | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
 | DELETE | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 删除 |
 | POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法，body `{"service": "<id>", "function": <index>}` |
+| GET | `/matrix/v1/modbus/poll/{spaceId}` | 空间成员 | 该空间下服务的**轮询任务**与运行时状态（另起一段路径，见 `Modbus-Service-Poller.md` 第八节） |
 
 **权限一律按空间判，与 `DeviceResource` 同口径**：路径上的 `spaceId` 是当前项目空间（前端统一传
 当前项目根空间，与设备接口一样），增删改要该空间的**管理员**、查询与 `invoke` 要**成员**；判定是
@@ -76,9 +78,13 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ## 五、invoke 的调用链与返回
 
-`ModbusServiceService.invoke`：按 org + id **读一次** `ModbusService` 文档 → 取该 index 的 function →
+`ModbusServiceService.invoke`：按 id **读一次** `ModbusService` 文档 → 取该 index 的 function →
 组装依赖设备的 `ActionOperation`（did/siid/aiid 取 `device`，in 填 `{argument: request}`）→
 交 `ManipulationService.invokeActions`（DTU 的“发送”把帧透传到 RS485）→ 把应答帧按 `response[]` 解成字段值。
+
+* 往下传的**归属**是 `ownerId` = **设备所在根空间 id**（资源层用路径上 `spaceId` 现推：
+  `SpaceEntity.rootSpaceId()`），不是 `X-Org-Id`：manipulation 的归属记录是 `(did, appId, ownerId)`，
+  `ownerId` 对不上就报 "device not owned"。详见 `ManipulationService` 的类注释。
 
 * 应答帧按 `[slave][fc][byteCount][data...][crc16]` 校验（长度 / 异常码 `fc|0x80` / CRC16，复用
   `ModbusFrameCodec` 的 CRC 与字节序原语），数据区按 `response[].index` 升序、以 `bytes` **依次累加偏移**切分，
@@ -100,6 +106,11 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
   写方法（`response` 为空）的应答是请求回显、没有读值，`data` 为空对象。
   父设备报错 / 帧非法 / CRC 不符 / 异常码一律 `OxResponse.error(message)`，不做部分成功。
+
+* **`invoke` 有副作用：顺带落历史**。成功按落库规则写 `service-histories` 并更新 `service-shadows`，
+  失败写 `service-failures`（见 `Modbus-History.md`）。**手动调用一次 = 记一次**，
+  与轮询器走的是同一个入口 —— 所以「只想看一眼当前值」的调用也会在曲线上留一个点。
+  记录写失败既不改写成功响应、也不改写失败响应：值已经拿到了，历史只是副作用。
 
 ## 六、空间图里的服务
 
@@ -131,11 +142,10 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 * `name`：服务名称（展示用）必填。
 * `version`：必填（定义格式口径，当前只认 `1`；后端在 service 里的缺省填充因此形同虚设，前端要带上）。
-* `orgId`：**不校验**（只作记录，见第三节）。
 * `device`：did 非空、siid/aiid/argument ≥ 1。
 * `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填且是合法完整的 16 进制
   （CRC 正确性留给运行期应答校验）。
-* `interval`：可缺省（缺省 = 没配周期）；给了就必须是 `3 ≤ interval ≤ 3600` 的整数秒，
+* `interval`：可缺省（缺省 = 没配周期）；给了就必须是 `5 ≤ interval ≤ 3600` 的整数秒，
   且该方法是**读方法**（请求帧 fc ∈ `01/02/03/04`）—— 写方法填了报错。
 * `polling`：可缺省；缺省 / `false` 不校验（没开轮询时 `interval` 只是一份没生效的配置）；
   **`true` 必须同时给 `interval`** —— 开了轮询却没有周期，服务端无从知道多久调一次，报错。
@@ -150,6 +160,94 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-13
 
+* **历史明细保留策略：`service-histories` 挂 TTL 索引，保留 90 天**
+  （`Modbus-History-TODO.md` 第四步；设计见 `Modbus-History.md` 第六节）。
+  `modbus.history.retention-days` 缺省 90（**不设 env 也生效**，部署起来就开始删 90 天前的明细），
+  `<= 0` = 关（并把已有的 TTL 索引删掉）。启动时对一遍：没有就建、秒数变了就 drop 再建。
+  判定集中在纯函数 `ModbusHistoryRetention.decide`；仓储失败留告警 ——
+  保留没生效意味着历史永远不会被删，不能静默。故障记录与当前值**不设**（理由见该文档）。
+  测试：`ModbusHistoryRetentionTest`（8 例，四种动作 + 天数换算）+
+  `ModbusServiceHistoryRepositoryTest`（7 例，喂 `listIndexes` 的真实返回形态钉住「认哪条是 TTL 索引」——
+  认错会静默失效或每次启动白重建一遍；其中一例直接用 staging 冒烟时原样吐回的那条索引文档）。
+  纯单测 320 例，合计 369 例。
+  **注意 `modbus.index.enabled=false` 的测试进程不跑这段**（测试配置里关着建索引），
+  所以保留策略的实跑只能在本机 dev 或部署上看日志。
+* **部署前提纠正：staging / prod 是 Azure DocumentDB**（原 Cosmos DB for MongoDB vCore，
+  `Microsoft.DocumentDB/mongoClusters`，引擎是建在 PostgreSQL 上的开源 DocumentDB），
+  不是 RU 版 Mongo API：**按集群规格计费、不按操作计 RU**，**分片由服务托管**
+  （应用侧不能也不该指定分区键，第四步那条「建集合时定分区键」随之结论化）。
+  查询与写入**恒带 `serviceId`** 的口径保留（索引打头 + 将来迁移成本）。
+  TTL 在 DocumentDB 上是否真的会删文档**已冒烟实证可用**（staging，serverVersion 8.0.0：
+  临时集合挂 60 秒 TTL、`at` 是 2 分钟前的文档在 **t+30s 被服务端删掉**），批删任务那套兜底不做。
+  同一趟还确认了 `modbus.service-histories` 尚不存在，所以 90 天保留不会删掉任何现有数据。
+* **`interval` 下限 3 → 5 秒**：`ModbusServiceValidator.MIN_INTERVAL_SECONDS`、
+  `ModbusServiceValidatorTest`（含新增的「4 秒被拒」一例）、第七节文案、
+  前端 `device.service.editor.ts` 的常量与 `ModbusService.ts` 的 JSDoc，六处同步。
+  （本节下方的历史叙述保留当时的 3 秒，不回改。）
+* **补充说明：`invoke` 会顺带落历史**（第五节）：成功写 `service-histories` 并更新
+  `service-shadows`，失败写 `service-failures` —— 手动调用一次 = 记一次，
+  与轮询器同一个入口。记录写失败既不改写成功响应、也不改写失败响应。
+* **轮询器落地**（`Modbus-History-TODO.md` 第三步全部；设计见 `Modbus-Service-Poller.md`）：
+  定义里的 `interval` 从「一份没有执行者的配置」变成真有人按时去调。**同一个 jar 双部署**
+  （api N 副本 + poller 1 副本），靠 `modbus.poll.enabled` 区分，**缺省关** ——
+  一次发布让多个副本一起采集 = 同一条 RS485 上出现重复帧。
+  * **新集合 `modbus.polls`**（`db/modbus/poll`）：`serviceId / functionIndex / did / interval /
+    nextRunAt / leaseOwner / leaseUntil / lastRunAt / lastStatus / lastError / failCount`；
+    索引 `(serviceId, functionIndex)` 唯一 + `nextRunAt`。**纯派生数据**，随时可全量重建。
+  * **入表口径与原定义分开判**（`ModbusPollPlan`）：读方法（复查 `ModbusFrameCodec.isRead`）+
+    有 `interval` + `polling != false`。第三条是**故意与校验器重复**的 ——
+    让服务端定时往寄存器里写值是危险动作，库里可能已有历史数据或被直接改过，
+    最后一道闸必须在**执行侧**。
+  * **对账**（`ModbusPollReconciler`）三种时机：写入路径（create / update / delete，
+    与 `purgeHistory` 同口径的副作用，失败只记日志）、启动、周期兜底。
+    **写入路径买不到「立即生效」**：定义在某个 api 副本上改，poller 是另一个进程，
+    要到下一次周期对账才知道 —— **改动生效延迟 ≤ `modbus.poll.reconcile-seconds`（缺省 5 分钟）**。
+  * **调度循环**（`ModbusPollScheduler` + `ModbusPollWheel`）：内存时间轮，JDK
+    `ScheduledExecutorService` 单守护线程（不用 `vertx.setPeriodic`：它的回调在 event loop 上，
+    而调度步要读库，`await()` 会被 Quarkus 拒掉）。三条细节：**按 `did` 串行**（同一条总线不能并发，
+    设备忙的任务留在轮里等）、**在飞 = 不在轮里**（重入保护因此是结构性的，不需要标记判断）、
+    **认领一次原子写**（`claim` = 租约 + `lastRunAt` + `nextRunAt`，每次采集 2 次写而不是 4 次；
+    **不做提前释放** —— 被中断的那一帧可能已在总线上，立刻放开会让别的副本重发）。
+  * **`ModbusHistoryService` 加了一对「基准由调用方给」的入口**（4 参 `record` / `recordFailure`，
+    返回新基准；3 参入口变成「读库取基准 → 委托 4 参」）。内存基准（`ModbusPollBaselines`）
+    **只在 poller 单副本时成立**，**故障态不吃**（回退读库），冷启动不预热。
+  * **观测**：`lastRunAt` / `lastStatus`（只有 `OK` / `FAILED`，**跳过不是状态**）/ `lastError` /
+    `failCount` 落库，查询接口 `GET /matrix/v1/modbus/poll/{spaceId}`（空间成员）连内存指标一起给；
+    心跳**不做成逐次写库**，只在内存里记、由接口读出去。
+  * **影子对账**（`ModbusShadowPlan`）：定义里删掉的 `functionIndex` 是孤儿、必须主动删
+    （否则当前值接口一直显示一个不存在的点位）；`response` 里删掉的字段键写路径顺手剪掉即可
+    （`record` 整体替换 `fields`，最坏拖到保活周期就自愈）。
+  * 测试：新增 66 个纯单测（`ModbusPollScheduleTest` / `ModbusPollPlanTest` / `ModbusPollWheelTest` /
+    `ModbusPollBaselinesTest` / `ModbusShadowPlanTest` + 两个既有测试文件的扩充），另加
+    `ModbusPollResourceTest`（`@QuarkusTest`，查询接口 + 鉴权 + 空运行时状态，5 例）。
+    **`@QuarkusTest` 本机是可以跑的**：只要连库的东西都 `@InjectMock` 掉（`DeviceResourceTest` /
+    `ModbusConfigResourceTest` / `ModbusServiceResourceTest` / `ModbusPollResourceTest` 四个共 49 例全绿）；
+    跑不了的只有**真的要连 Mongo** 的那些（`SpaceResourceTest.getGraph_succeeds`）。
+    纯单测 305 例，合计 354 例。
+  * **仍未做**：ACA 侧 `maxReplicas=1` 由 ops 保证（代码只提供开关与那条启动日志），
+    并发上限 20 与 DTU 实际承载是否匹配需要一次实测 —— 两件都记在
+    `Modbus-Service-Poller.md` 第九节。
+* **设备归属改为「设备所在的根空间」**（修正设计错误：原先给 manipulation 传的是调用者所在的
+  `X-Org-Id`，而 manipulation 是按 `Ownership(did, appId, ownerId)` 三元组查归属的，
+  `ownerId` 是**设备归属的隔离键**、不是「谁在调」）：
+  * `ManipulationService` 的 10 个方法参数 `orgId` → `ownerId`，类注释写明它等于**设备所在根空间 id**；
+    调用点（`DeviceResource` 9 处、`ModbusServiceResource.invoke`）改传 `space.rootSpaceId()` ——
+    `requireSpaceAdmin` / `requireSpaceMember` 本来就返回 `Uni<SpaceEntity>`，**一次库都不用多查**。
+  * `SpaceEntity` **加 `rootSpaceId()`**（祖先链第一个；根空间即自身），**删死字段 `rootId`**
+    （全仓没有任何赋值点，库里恒为 null）：`SpaceOn(SpaceEntity)` 改用它，设备的 `space.rootId`
+    从此有真值。`service-manipulation` 一行未改（它只解 claim、无空间概念）。
+  * **跨根空间移动设备被拒绝**（`DeviceService.updateSpace` → `checkSameRoot`）：归属记录挂在老根空间上，
+    搬过去只会天天报 "device not owned"。要跨根空间就先删掉再添加。
+    `DeviceUpdateSpaceRequest.rootSpaceId` **删掉**（根由服务端从目标空间现算，客户端传的只是它自己的认知），
+    前端 `MoveDeviceRequest` 同步。
+  * **删 `ModbusService.orgId`**（只被 encode 给前端、无任何业务逻辑读它）连同它的索引与校验豁免说明；
+    前端 `ModbusService` / `ModbusServiceCodec` 同步。**`ModbusConfig.orgId` 不动** —— 那是点表跨组织
+    隔离的键，用途完全不同。
+  * 前端同步删 `SpaceEntity.rootId`（内含两处赋值：新建项目、添加子空间）。
+  * **存量设备不迁移**：改完之后 staging 上已注册设备都会报 "device not owned"，
+    要用**原来的 did + key** 重新注册一次（key 是注册时调用方给的，不会自动生成）；
+    老的 org 口径归属记录成为新接口既看不到也删不掉的孤儿，只能手工清库。
+  * 验证：`DeviceServiceTest` 补「未落点直接落位 / 同根可移 / 跨根被拒 / 已在目标根空间不查库」四例。
 * **新增 `ModbusServiceFunction.polling`：自动轮询开关**（需求：周期只表达了「多久跑一次」，
   还需要一个「现在跑不跑」的开关 —— 现场停一台设备的采集不该把配好的周期删掉）：
   * `true` / `false` / 缺省三态：`true` = 按 `interval` 跑；`false` = 保留周期、暂停（随时可再开）；
@@ -175,9 +273,10 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
     上限 3600 秒（再长就该由人手动 invoke，而不是挂个几乎不跑的定时器）。调整范围改
     `ModbusServiceValidator.MIN/MAX_INTERVAL_SECONDS`，同时要同步前端
     `device.service.editor.ts` 那份同口径常量（输入框的 nzMin/nzMax）。
-  * **执行侧的调度器尚未落地**：这个字段目前只是定义。落库后怎么跑是另一轮的事 —— 谁调度、
-    多副本怎么去重、同一设备多个周期要不要合并成一帧读（fc 03 一帧可读 125 个寄存器，
-    但周期挂在 function 上就没法跨周期合并）。
+  * **执行侧的调度器尚未落地**：这个字段目前只是定义。落库后怎么跑已经定下来了（同代码双部署、
+    按 `did` 串行、任务表 + 租约、内存基准 ⇒ 单副本），见 `Modbus-Service-Poller.md`。
+    其中「同一设备多个周期合并成一帧读」明确**不做**：`request` 是前端编好的整帧，
+    后端手里没有寄存器地址与数量，当前数据模型下合并不了（那份文档第二节写死了这条）。
   * 示例 `modbus-service-example.json` 第一个方法补 `"interval": 5`；`ModbusServiceValidatorTest`
     补读方法通过 / 写方法被拒 / 上下限越界三例，`ModbusServiceCodecTest` 的示例夹具补 `interval`。
 * **01/02 读位改为逐位命名：点表 `ModbusCommand.bitNames` → 应答字段 `bit-list[]`**（需求：01/02
@@ -240,7 +339,9 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
     新的 `listBySpaceId(spaceId)`；`getById`（裸取特例）删除 —— 现在「按 id 查」就是常态。
     仓储删 `findByIdAndOrg` / `deleteByIdAndOrg` / `listByOrg`，新增 `listBySpaceId`（`device.space.spaceId`）。
   * `invoke` 仍把 `X-Org-Id` 往下传给 manipulation（调用归属），但取服务不按 org 约束。
+    **（口径已改：归属应传设备所在的根空间 id，见 2026-09-13 首条）**
   * `ModbusServiceValidator` 去掉 `orgId is required`；`orgId` 字段保留，只记录创建时的组织。
+    **（该字段已删，见 2026-09-13 首条）**
   * **破坏性变更**：路径全变，前后端必须一起发布（已确认 webapp-matrix 之外的客户端都没引用这批接口）。
   * 测试：`ModbusServiceResourceTest` 由「删除权限」专项重写为空间口径（增删改要管理员、查询 / invoke 要成员、
     空间不存在、服务不存在），`ModbusServiceValidatorTest` 的 orgId 用例改为「不校验」。

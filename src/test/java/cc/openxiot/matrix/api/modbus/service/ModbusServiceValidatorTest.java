@@ -39,11 +39,6 @@ class ModbusServiceValidatorTest {
         ModbusService noVersion = service();
         noVersion.version = null;
         assertEquals("version is required", ModbusServiceValidator.validate(noVersion));
-
-        // orgId 不参与校验：它只记录创建时的组织，不参与鉴权（按空间判）与查询
-        ModbusService noOrg = service();
-        noOrg.orgId = null;
-        assertNull(ModbusServiceValidator.validate(noOrg));
     }
 
     @Test
@@ -115,7 +110,7 @@ class ModbusServiceValidatorTest {
     void acceptsIntervalBounds() {
         // 上下限本身是合法的（越界才拒）
         ModbusService fastest = service();
-        fastest.functions.get(0).interval = 3;
+        fastest.functions.get(0).interval = 5;
         assertNull(ModbusServiceValidator.validate(fastest));
 
         ModbusService slowest = service();
@@ -135,14 +130,20 @@ class ModbusServiceValidatorTest {
 
     @Test
     void rejectsIntervalOutOfRange() {
+        // 4 秒是贴近新下限的那个负例：改下限时最容易漏的就是「边界内侧一格」
+        ModbusService belowMin = service();
+        belowMin.functions.get(0).interval = 4;
+        assertEquals("invalid functions[0].interval: 4 (interval must be between 5 and 3600 seconds)",
+                ModbusServiceValidator.validate(belowMin));
+
         ModbusService tooFrequent = service();
         tooFrequent.functions.get(0).interval = 2;
-        assertEquals("invalid functions[0].interval: 2 (interval must be between 3 and 3600 seconds)",
+        assertEquals("invalid functions[0].interval: 2 (interval must be between 5 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooFrequent));
 
         ModbusService tooRare = service();
         tooRare.functions.get(0).interval = 3601;
-        assertEquals("invalid functions[0].interval: 3601 (interval must be between 3 and 3600 seconds)",
+        assertEquals("invalid functions[0].interval: 3601 (interval must be between 5 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooRare));
     }
 
@@ -318,7 +319,6 @@ class ModbusServiceValidatorTest {
     /** 一份各处都合法的定义：各用例只改自己关心的那一处。 */
     private static ModbusService service() {
         ModbusService service = new ModbusService();
-        service.orgId = "org-1";
         service.name = "1 号冷水机组";
         service.version = 1;
 

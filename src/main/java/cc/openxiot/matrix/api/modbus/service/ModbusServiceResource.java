@@ -125,8 +125,7 @@ public class ModbusServiceResource extends AbstractResource {
         Person who = currentUser();
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(ignored -> {
-                    // orgId 只是「创建时的组织」的记录（可空）：鉴权按空间判，不再要求 X-Org-Id
-                    body.orgId = orgId;
+                    // 鉴权按空间判，X-Org-Id 可以不传；服务本身也不再记 org（归属是设备的根空间，见 ManipulationService）
                     body.creator = who;
                     body.updater = who;
                     return service.create(body);
@@ -177,6 +176,10 @@ public class ModbusServiceResource extends AbstractResource {
     /**
      * 调用一个方法：body {@code {"service": "<服务 id>", "function": <方法序号>}}。
      * 返回该方法的「字段 → 值」（写方法为空对象）。
+     *
+     * <p>传给 manipulation 的归属用**根空间 id**（不是请求头里的 orgId）：设备归属是按根空间记的，
+     * 见 {@link cc.openxiot.matrix.api.device.manipulation.ManipulationService}。这里的 spaceId 可以
+     * 是根下的任意一级子空间，取根即可。</p>
      */
     @POST
     @Path("/invoke/{spaceId}")
@@ -193,7 +196,7 @@ public class ModbusServiceResource extends AbstractResource {
         logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}",
                 spaceId, req.service, req.function);
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> service.invoke(orgId, req.service, req.function))
+                .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.function))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

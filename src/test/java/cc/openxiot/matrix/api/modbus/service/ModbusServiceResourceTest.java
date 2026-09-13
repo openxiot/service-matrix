@@ -66,7 +66,6 @@ class ModbusServiceResourceTest {
     private ModbusService sample() {
         ModbusService svc = new ModbusService();
         svc.id = new ObjectId(SID);
-        svc.orgId = ORG;
         svc.name = "1 号冷水机组";
         svc.device = new DeviceOn();
         svc.device.did = DID;
@@ -123,10 +122,10 @@ class ModbusServiceResourceTest {
                 .body("success", equalTo(true))
                 .body("data.name", equalTo("1 号冷水机组"));
 
-        // 创建时把 X-Org-Id 记进 orgId（只是「创建时的组织」的记录，鉴权按空间判）
+        // 服务本身不再记组织：创建请求体里没有的字段不该被塞进去（X-Org-Id 只用于空间鉴权）
         ArgumentCaptor<ModbusService> captor = ArgumentCaptor.forClass(ModbusService.class);
         verify(service).create(captor.capture());
-        assertEquals(ORG, captor.getValue().orgId);
+        assertEquals("1 号冷水机组", captor.getValue().name);
     }
 
     @Test
@@ -228,7 +227,8 @@ class ModbusServiceResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void invoke_spaceMember_succeeds() {
         allowSpaceMember();
-        when(service.invoke(eq(ORG), eq(SID), eq(1)))
+        // 归属传的是根空间 id：SPACE_ID 是根空间，根就是它自己
+        when(service.invoke(eq(SPACE_ID), eq(SID), eq(1)))
                 .thenReturn(Uni.createFrom().item(new JsonObject().put("进水温度", 61.5)));
 
         given().header("X-Org-Id", ORG).contentType("application/json")

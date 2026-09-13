@@ -11,8 +11,8 @@ import java.util.List;
  * {@link ModbusService} 与 JSON 的互转。
  *
  * <p>{@link #encode} 用于返回给前端：主键输出为十六进制字符串，子结构逐个委派给各自的 Codec。
- * {@link #decode} 把请求体转成实体：{@code id} / {@code orgId} / {@code creator} / {@code updater}
- * 不由请求体决定（id 由 Panache 生成、org 取 {@code X-Org-Id}、人员取当前登录用户），故不在这里解。</p>
+ * {@link #decode} 把请求体转成实体：{@code id} / {@code creator} / {@code updater}
+ * 不由请求体决定（id 由 Panache 生成、人员取当前登录用户），故不在这里解。</p>
  *
  * <p>{@link #encodeBrief} 是「只够列个清单」的精简视图，给空间图这类一次要带很多实体的地方用：
  * 整份定义（functions / response）动辄几十 KB，清单里用不上。</p>
@@ -33,9 +33,6 @@ public final class ModbusServiceCodec {
         if (service.id != null) {
             // 落库主键是 ObjectId，对外一律十六进制字符串（URL 路径参数 / invoke 请求体同口径）
             o.put("id", service.id.toHexString());
-        }
-        if (service.orgId != null) {
-            o.put("orgId", service.orgId);
         }
         if (service.name != null) {
             o.put("name", service.name);

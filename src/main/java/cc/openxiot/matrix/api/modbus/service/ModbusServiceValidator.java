@@ -24,12 +24,12 @@ public final class ModbusServiceValidator {
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
 
     /**
-     * 自动调用周期（秒）的上下限：下限 3 秒（RS485 是共享总线，周期太密会把总线吃满），
+     * 自动调用周期（秒）的上下限：下限 5 秒（RS485 是共享总线，周期太密会把总线吃满），
      * 上限 3600 秒（再长就该由人手动 invoke，而不是挂个几乎不跑的定时器）。
      *
      * <p>前端 device.service.editor.ts 里有一份同口径的常量（输入框的 nzMin/nzMax），改动要同步。</p>
      */
-    private static final int MIN_INTERVAL_SECONDS = 3;
+    private static final int MIN_INTERVAL_SECONDS = 5;
     private static final int MAX_INTERVAL_SECONDS = 3600;
 
     private ModbusServiceValidator() {
@@ -37,8 +37,6 @@ public final class ModbusServiceValidator {
 
     /**
      * 整份定义：name / version / device / functions 逐层校验。
-     *
-     * <p>{@code orgId} 不在校验之列：它只记录创建时的组织，不参与鉴权（按空间判）与查询。</p>
      */
     public static String validate(ModbusService service) {
         if (service == null) {

@@ -23,9 +23,6 @@ import java.util.List;
 @Schema(description = "Modbus 服务（将点表映射成可调用的方法集合）")
 public class ModbusService extends ReactivePanacheMongoEntity {
 
-    @Schema(description = "所属组织 ID", required = true)
-    public String orgId;
-
     @Schema(description = "服务名称（展示用，如 1 号冷水机组）", required = true)
     public String name;
 
