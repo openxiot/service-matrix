@@ -279,6 +279,11 @@ Base Path：`/matrix/v1/device`
 | `key` | 是 | 设备访问密钥（AccessKey），用于向 manipulation 校验设备归属 |
 
 > 额外字段会被忽略；前端「扫码添加设备」传入的即为此 key:value 结构。
+>
+> **归属按根空间记**：manipulation 侧的归属记录是 `(did, appId, ownerId)`，其中 `ownerId` 取
+> **`spaceId` 所在空间的根空间** —— 注册到哪一级子空间都行，同一个根空间下的子空间共享归属。
+> 设备要出现在两个根空间下，就注册两次（各自的 key）。跨根空间移动设备不被允许，见
+> [4.6](#46-移动设备到其他空间-put-manyspace)。
 
 - **请求示例**：
 
@@ -364,9 +369,12 @@ curl -X DELETE 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002?did=a
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `spaceId` | 是 | 目标空间 ID |
-| `rootSpaceId` | 是 | 目标根空间 ID |
+| `spaceId` | 是 | 目标空间 ID（其中的根空间由服务端推导，**不用传**） |
 | `dids` | 是 | 需要移动的设备 ID 列表 |
+
+> **不能跨根空间移动**：设备的归属记录挂在根空间上（见 [4.1](#41-添加设备-post-one)、
+> [5.1](#51-spaceentity) 末关于根空间的说明），跨根空间搬只会让设备在新项目下报 "device not owned"。
+> 目标空间的根 ≠ 设备当前空间的根时该接口报错，需先删除再添加。
 
 - **请求示例**：
 
@@ -375,7 +383,7 @@ curl -X PUT 'https://site.openxiot.cn/matrix/v1/device/many/space' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
-  -d '{"spaceId":"66f2...0003","rootSpaceId":"66f2...0001","dids":["abc","def"]}'
+  -d '{"spaceId":"66f2...0003","dids":["abc","def"]}'
 ```
 
 - **响应**：`{"success": true}`。
@@ -535,15 +543,18 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
 | `type` | string | 空间类型：`site` / `building` / `zone` / `floor` / `room` / `field` / `workshop` / `parking` / `other` |
 | `typeAlias` | string | 类型别名（可选） |
 | `parentId` | string | 父空间 ID（根空间为 `null`） |
-| `rootId` | string | 根空间 ID |
 | `level` | int | 层级深度（根空间为 0） |
-| `ancestors` | string[] | 祖先 ID 列表（不含自身） |
+| `ancestors` | string[] | 祖先 ID 列表（不含自身，**从根往下排**） |
 | `sortOrder` | int | 排序序号 |
 | `location` | object | 坐标：`{type: "Point", longitude, latitude, coordinates: [lng, lat]}` |
 | `organizationId` | string | 所属组织 ID（服务端设置） |
 | `attributes` | object | 扩展属性 |
 | `createTime` | string | 创建时间 `yyyy-MM-ddTHH:mm:ss` |
 | `updateTime` | string | 更新时间 `yyyy-MM-ddTHH:mm:ss` |
+
+> **根空间 ID 不落字段**（原先那个 `rootId` 从未被写过值，已删）：它就是 `ancestors[0]`
+> （根空间自己没有祖先，即自身）。**设备归属用的就是它**：给 manipulation 传的 `ownerId`、
+> 以及响应里 `device.space.rootId` 都取这个值 —— 详见 [5.2](#52-deviceentity) 的 `space`。
 
 ### 5.2 DeviceEntity
 

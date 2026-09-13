@@ -72,15 +72,16 @@ public class DeviceResource extends AbstractResource {
         }
 
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(space -> addDevice(orgId, req, space))
+                .chain(space -> addDevice(req, space))
                 .chain(entity -> deviceService.save(entity))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
-    private Uni<DeviceEntity> addDevice(String orgId, DeviceAddRequest req, SpaceEntity space) {
-        return manipulationService.addDevice(orgId, req)
+    /** 归属按**根空间**记（不是「谁在调」，见 {@link ManipulationService}）：设备注册在哪一级子空间都行，ownerId 都取根。 */
+    private Uni<DeviceEntity> addDevice(DeviceAddRequest req, SpaceEntity space) {
+        return manipulationService.addDevice(space.rootSpaceId(), req)
                 .map(device -> DeviceEntityMapper.from(device, space));
     }
 
@@ -93,7 +94,7 @@ public class DeviceResource extends AbstractResource {
             @PathParam("did") String did
     ) {
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(ignored -> manipulationService.removeDevice(orgId, did))
+                .chain(space -> manipulationService.removeDevice(space.rootSpaceId(), did))
                 // 级联清理该设备下的 Modbus 服务（按 device.did 匹配，不限组织）：
                 // 服务先删、设备行后删，任一步失败整链失败还能重试，不会留下删不掉的服务
                 .chain(ignore -> modbusServiceService.deleteByDeviceDids(List.of(did)))
@@ -132,7 +133,7 @@ public class DeviceResource extends AbstractResource {
         }
 
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(space -> addDevices(orgId, req, space))
+                .chain(space -> addDevices(req, space))
                 .chain(entities -> deviceService.saveAll(entities))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -140,8 +141,8 @@ public class DeviceResource extends AbstractResource {
     }
 
     /** 批量添加：req 为 DeviceAddRequest 数组，逐台向 manipulation 校验归属后落矩阵设备 */
-    private Uni<List<DeviceEntity>> addDevices(String orgId, List<DeviceAddRequest> req, SpaceEntity space) {
-        return manipulationService.addDevices(orgId, req)
+    private Uni<List<DeviceEntity>> addDevices(List<DeviceAddRequest> req, SpaceEntity space) {
+        return manipulationService.addDevices(space.rootSpaceId(), req)
                 .map(devices -> DeviceEntityMapper.from(devices, space));
     }
 
@@ -154,7 +155,7 @@ public class DeviceResource extends AbstractResource {
             @QueryParam("did") List<String> did
     ) {
         return requireSpaceAdmin(spaceId, orgId)
-                .chain(ignored -> manipulationService.removeDevices(orgId, did))
+                .chain(space -> manipulationService.removeDevices(space.rootSpaceId(), did))
                 // 级联清理这批设备下的 Modbus 服务（一次删完，不限组织）
                 .chain(ignore -> modbusServiceService.deleteByDeviceDids(did))
                 .chain(ignore -> deviceService.deleteByDeviceIds(did))
@@ -176,7 +177,7 @@ public class DeviceResource extends AbstractResource {
         }
 
         return requireSpaceAdmin(req.spaceId, orgId)
-                .chain(ignored -> updateSpaceDevices(req))
+                .chain(space -> updateSpaceDevices(req, space.rootSpaceId()))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -204,7 +205,7 @@ public class DeviceResource extends AbstractResource {
             @QueryParam("did") List<String> did
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> fetchShadows(orgId, spaceId, did))
+                .chain(space -> fetchShadows(space, did))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -219,7 +220,7 @@ public class DeviceResource extends AbstractResource {
             @QueryParam("pid") List<String> pid
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.getProperties(orgId, pid))
+                .chain(space -> manipulationService.getProperties(space.rootSpaceId(), pid))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -235,7 +236,7 @@ public class DeviceResource extends AbstractResource {
             String body
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.setProperties(orgId, body))
+                .chain(space -> manipulationService.setProperties(space.rootSpaceId(), body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -251,35 +252,43 @@ public class DeviceResource extends AbstractResource {
             String body
     ) {
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> manipulationService.invokeActions(orgId, body))
+                .chain(space -> manipulationService.invokeActions(space.rootSpaceId(), body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
 
     // -- helper methods --
-    private Uni<JsonArray> fetchShadows(String orgId, String spaceId, List<String> did) {
+
+    /** 取了 did 就直接查；否则按空间取该空间下的设备再查。归属一律用**根空间 id**。 */
+    private Uni<JsonArray> fetchShadows(SpaceEntity space, List<String> did) {
+        String ownerId = space.rootSpaceId();
         if (did != null && !did.isEmpty()) {
-            return manipulationService.getShadows(orgId, did);
+            return manipulationService.getShadows(ownerId, did);
         }
 
-        return deviceService.getBySpaceId(spaceId)
+        return deviceService.getBySpaceId(space.id.toString())
                 .chain(devices -> {
                     List<String> deviceIds = devices.stream().map(d -> d.did).toList();
                     if (deviceIds.isEmpty()) {
                         return Uni.createFrom().item(new JsonArray());
                     }
 
-                    return manipulationService.getShadows(orgId, deviceIds);
+                    return manipulationService.getShadows(ownerId, deviceIds);
                 });
     }
 
-    /** 逐台改写设备归属；dids 缺省表示不迁移任何设备，直接成功 */
-    private Uni<Response> updateSpaceDevices(DeviceUpdateSpaceRequest req) {
+    /**
+     * 逐台改写设备落点；dids 缺省表示不迁移任何设备，直接成功。
+     *
+     * <p>根空间由服务端从目标空间算（请求体里不再要 {@code rootSpaceId}）：客户端传的根是它自己的认知，
+     * 一旦和目标空间对不上，写进设备的就是个错的根。</p>
+     */
+    private Uni<Response> updateSpaceDevices(DeviceUpdateSpaceRequest req, String rootSpaceId) {
         if (req.dids != null) {
             List<Uni<Void>> updates = new ArrayList<>();
             for (String did : req.dids) {
-                updates.add(deviceService.updateSpace(did, req.spaceId, req.rootSpaceId));
+                updates.add(deviceService.updateSpace(did, req.spaceId, rootSpaceId));
             }
             return Uni.join().all(updates).andFailFast().replaceWith(OxResponse.ok());
         }

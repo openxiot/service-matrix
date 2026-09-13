@@ -18,6 +18,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import io.vertx.core.json.JsonArray;
@@ -47,8 +48,10 @@ class DeviceResourceTest {
     @InjectMock
     ModbusServiceService modbusServiceService;
 
+    /** id 必须给：归属（manipulation 的 ownerId）由 {@link SpaceEntity#rootSpaceId()} 算，没 id 就算不出来。 */
     private static SpaceEntity spaceWithOrg(String orgId) {
         SpaceEntity s = new SpaceEntity();
+        s.id = new ObjectId();
         s.accesses = List.of(new SpaceAccess(orgId, SpaceAccessType.ORGANIZATION, SpaceAccessRole.ADMIN));
         return s;
     }
@@ -139,7 +142,6 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addOne_succeeds() {
         SpaceEntity space = spaceWithOrg("org-1");
-        space.id = new org.bson.types.ObjectId();
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
         when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
@@ -271,7 +273,7 @@ class DeviceResourceTest {
         given()
                 .contentType(ContentType.JSON)
                 .header("X-Org-Id", "org-1")
-                .body("{\"spaceId\":\"new-space\",\"rootSpaceId\":\"root-1\",\"dids\":[\"d1\",\"d2\"]}")
+                .body("{\"spaceId\":\"new-space\",\"dids\":[\"d1\",\"d2\"]}")
                 .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
@@ -308,7 +310,7 @@ class DeviceResourceTest {
     void updateSpace_missingSpaceId_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .body("{\"rootSpaceId\":\"root-1\",\"dids\":[\"d1\"]}")
+                .body("{\"dids\":[\"d1\"]}")
                 .when().put("/matrix/v1/device/many/space")
                 .then()
                 .statusCode(200)
