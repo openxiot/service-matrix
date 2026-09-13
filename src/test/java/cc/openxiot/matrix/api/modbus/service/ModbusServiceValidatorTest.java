@@ -102,6 +102,38 @@ class ModbusServiceValidatorTest {
         assertEquals("functions[0].request is required", ModbusServiceValidator.validate(blank));
     }
 
+    // ===== interval =====
+
+    @Test
+    void acceptsIntervalOnReadFunctions() {
+        ModbusService polled = service();
+        polled.functions.get(0).interval = 5;
+        assertNull(ModbusServiceValidator.validate(polled));
+    }
+
+    @Test
+    void rejectsIntervalOnWriteFunctions() {
+        // 写方法的应答只是请求回显，周期调用等于让服务端周期性往寄存器里写值
+        ModbusService written = service();
+        written.functions.get(0).request = "010600010064D9E1";   // fc 06 写单寄存器
+        written.functions.get(0).interval = 5;
+        assertEquals("invalid functions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
+                ModbusServiceValidator.validate(written));
+    }
+
+    @Test
+    void rejectsIntervalOutOfRange() {
+        ModbusService tooFrequent = service();
+        tooFrequent.functions.get(0).interval = 0;
+        assertEquals("invalid functions[0].interval: 0 (interval must be between 1 and 86400 seconds)",
+                ModbusServiceValidator.validate(tooFrequent));
+
+        ModbusService tooRare = service();
+        tooRare.functions.get(0).interval = 86401;
+        assertEquals("invalid functions[0].interval: 86401 (interval must be between 1 and 86400 seconds)",
+                ModbusServiceValidator.validate(tooRare));
+    }
+
     // ===== response =====
 
     @Test

@@ -23,6 +23,13 @@ public final class ModbusServiceValidator {
     private static final Set<String> FORMATS = Set.of("int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "string");
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
 
+    /**
+     * 自动调用周期（秒）的上下限：下限是技术底线（RS485 是共享总线，周期太密会把总线吃满），
+     * 上限防止把用户明显的手误（比如把分钟填成秒）放过去。
+     */
+    private static final int MIN_INTERVAL_SECONDS = 1;
+    private static final int MAX_INTERVAL_SECONDS = 86400;
+
     private ModbusServiceValidator() {
     }
 
@@ -96,6 +103,10 @@ public final class ModbusServiceValidator {
             if (requestErr != null) {
                 return requestErr;
             }
+            String intervalErr = validateInterval(function, base);
+            if (intervalErr != null) {
+                return intervalErr;
+            }
             String responseErr = validateFields(function.response, base);
             if (responseErr != null) {
                 return responseErr;
@@ -115,6 +126,30 @@ public final class ModbusServiceValidator {
             }
         } catch (IllegalArgumentException e) {
             return "invalid " + base + ".request: " + request;
+        }
+        return null;
+    }
+
+    /**
+     * 自动调用周期（{@link ModbusServiceFunction#interval}，秒）：缺省 = 不自动调用。
+     *
+     * <p><b>只允许读方法</b>（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端
+     * 周期性地往寄存器里写值，是危险动作，不能由定时器发起。</p>
+     */
+    private static String validateInterval(ModbusServiceFunction function, String base) {
+        Integer interval = function.interval;
+        if (interval == null) {
+            return null;
+        }
+        // 功能码取请求帧的第二个字节（请求帧在上面已校验过，这里必能解析出来）
+        String fc = ModbusFrameCodec.toHex(new byte[]{ModbusFrameCodec.parseHex(function.request)[1]});
+        if (!ModbusFrameCodec.isRead(fc)) {
+            return "invalid " + base + ".interval: " + interval
+                    + " (only read functions (fc 01/02/03/04) can be polled)";
+        }
+        if (interval < MIN_INTERVAL_SECONDS || interval > MAX_INTERVAL_SECONDS) {
+            return "invalid " + base + ".interval: " + interval
+                    + " (interval must be between " + MIN_INTERVAL_SECONDS + " and " + MAX_INTERVAL_SECONDS + " seconds)";
         }
         return null;
     }

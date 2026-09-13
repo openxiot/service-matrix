@@ -27,7 +27,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 ModbusService        orgId / name / version / configId / device / functions[] / creator / updater
 DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
-ModbusServiceFunction index / name / request / response[]
+ModbusServiceFunction index / name / request / interval / response[]
 ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[]
 ```
 
@@ -40,6 +40,9 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   用的是同一个类）。空间图要按空间反查服务（`ModbusServiceRepository.findBriefBySpaceId`，见第六节），
   落库时带上就不必再到设备表里绕一圈。它不参与校验：缺省的服务只是不出现在按空间的查询里。
 * `function.request` = 完整的 Modbus RTU 帧（含 CRC16），**由前端生成**，后端原样交给父设备透传。
+* `function.interval` = 服务端**自动调用**本方法的周期（秒）：到点自动 invoke 一次，再按 `response[]`
+  解出字段值；缺省表示不自动调用、只由人手动 invoke。只挂在读方法上 —— 写方法填了会被校验拒绝。
+  **执行侧的调度器尚未落地**，这个字段目前只是定义（见变更记录）。
 * `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
 
 ## 四、接口
@@ -130,6 +133,8 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 * `device`：did 非空、siid/aiid/argument ≥ 1。
 * `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填且是合法完整的 16 进制
   （CRC 正确性留给运行期应答校验）。
+* `interval`：可缺省（缺省 = 不自动调用）；给了就必须是 `1 ≤ interval ≤ 86400` 的整数秒，
+  且该方法是**读方法**（请求帧 fc ∈ `01/02/03/04`）—— 写方法填了报错。
 * `response`：index 必填 / ≥1 / 组内唯一；field 必填；bytes ≥ 1；format ∈
   `int8/uint8/int16/uint16/int32/uint32/float32/string`，且非 string 时 bytes 必须等于该格式的宽度；
   bytes > 1 时 byteOrder 必填且 ∈ `ABCD/DCBA/BADC/CDAB`；value-list 内 value/description 必填且 value 不重复。
@@ -141,6 +146,19 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-13
 
+* **新增 `ModbusServiceFunction.interval`：服务端自动调用周期（秒）**（需求：方法不再只靠人手动
+  invoke，服务端按各自的周期自动执行；周期是 per-function 的，同一服务里各方法可以不同）：
+  * **只挂在读方法上**（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端周期性地往
+    寄存器里写值，是危险动作。功能码取请求帧第二个字节判定（`ModbusFrameCodec.isRead`），
+    写方法填了直接拒。
+  * 缺省 / `null` = 不自动调用（只手动 invoke）。**不用 0 表达**：0 既像「不轮询」又像「尽可能快」。
+  * 取值范围 `1 ≤ interval ≤ 86400` 秒：下限是技术底线（RS485 是共享总线，周期太密会把总线吃满），
+    上限挡明显手误（把分钟填成秒）。现场要更保守就改 `ModbusServiceValidator.MIN_INTERVAL_SECONDS`。
+  * **执行侧的调度器尚未落地**：这个字段目前只是定义。落库后怎么跑是另一轮的事 —— 谁调度、
+    多副本怎么去重、同一设备多个周期要不要合并成一帧读（fc 03 一帧可读 125 个寄存器，
+    但周期挂在 function 上就没法跨周期合并）。
+  * 示例 `modbus-service-example.json` 第一个方法补 `"interval": 5`；`ModbusServiceValidatorTest`
+    补读方法通过 / 写方法被拒 / 上下限越界三例，`ModbusServiceCodecTest` 的示例夹具补 `interval`。
 * **01/02 读位改为逐位命名：点表 `ModbusCommand.bitNames` → 应答字段 `bit-list[]`**（需求：01/02
   读多个线圈时只有一个字段名，「字段名称」表达不了「第 N 位是什么」；位是位区里的子结构，本就
   不该按字节切成多个字段）：

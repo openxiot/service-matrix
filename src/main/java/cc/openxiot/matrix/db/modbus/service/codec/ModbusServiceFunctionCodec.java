@@ -29,6 +29,9 @@ public final class ModbusServiceFunctionCodec {
         if (function.request != null) {
             o.put("request", function.request);
         }
+        if (function.interval != null) {
+            o.put("interval", function.interval);
+        }
         o.put("response", ModbusServiceFieldCodec.encode(function.response));
         return o;
     }
@@ -51,6 +54,7 @@ public final class ModbusServiceFunctionCodec {
         function.index = o.getInteger("index");
         function.name = o.getString("name");
         function.request = o.getString("request");
+        function.interval = o.getInteger("interval");
         function.response = ModbusServiceFieldCodec.decode(o.getJsonArray("response"));
         return function;
     }
