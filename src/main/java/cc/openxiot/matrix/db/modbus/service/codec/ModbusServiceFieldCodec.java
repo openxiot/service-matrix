@@ -10,7 +10,8 @@ import java.util.List;
 /**
  * {@link ModbusServiceField}（应答字段解析规则）与 JSON 的互转。
  *
- * <p>带连字符的 {@code value-list} 在实体里叫 {@code valueList}，编解码按示例文件的口径写回原名。</p>
+ * <p>带连字符的 {@code value-list} / {@code bit-list} 在实体里叫 {@code valueList} / {@code bitList}，
+ * 编解码按示例文件的口径写回原名。</p>
  */
 public final class ModbusServiceFieldCodec {
 
@@ -46,6 +47,9 @@ public final class ModbusServiceFieldCodec {
         if (field.valueList != null) {
             o.put("value-list", ModbusServiceFieldValueCodec.encode(field.valueList));
         }
+        if (field.bitList != null) {
+            o.put("bit-list", ModbusServiceFieldBitCodec.encode(field.bitList));
+        }
         return o;
     }
 
@@ -72,6 +76,7 @@ public final class ModbusServiceFieldCodec {
         field.scale = o.getDouble("scale");
         field.unit = o.getString("unit");
         field.valueList = ModbusServiceFieldValueCodec.decode(o.getJsonArray("value-list"));
+        field.bitList = ModbusServiceFieldBitCodec.decode(o.getJsonArray("bit-list"));
         return field;
     }
 

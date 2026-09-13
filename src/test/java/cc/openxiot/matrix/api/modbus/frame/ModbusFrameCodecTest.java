@@ -37,6 +37,21 @@ class ModbusFrameCodecTest {
         assertEquals("010100050001EDCB", ModbusFrameCodec.encodeRequest(1, command("01", 5, 1, null, null)));
     }
 
+    /** 数量是「值的个数」：帧里要读的寄存器数 = 数量 × 类型跨度。 */
+    @Test
+    void encodeReadRegistersUsesValueCountTimesSpan() {
+        // 3 个 uint16 值（跨度 1）= 3 个寄存器
+        assertEquals("0103000A000325C9", ModbusFrameCodec.encodeRequest(1, command("03", 10, 3, "uint16", "ABCD")));
+        // 2 个 float32 值（跨度 2）= 4 个寄存器
+        assertEquals("010400000004F1C9", ModbusFrameCodec.encodeRequest(1, command("04", 0, 2, "float32", "ABCD")));
+    }
+
+    /** string 的数量本身就是寄存器长度，恒为一个值。 */
+    @Test
+    void encodeReadStringUsesQuantityAsLength() {
+        assertEquals("010400000004F1C9", ModbusFrameCodec.encodeRequest(1, command("04", 0, 4, "string", "ABCD")));
+    }
+
     @Test
     void encodeReadUsesSlaveIdAndDefaultsToOne() {
         assertEquals("020300000001", ModbusFrameCodec.encodeRequest(2, command("03", 0, 1, "uint16", null)).substring(0, 12));

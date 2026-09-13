@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,13 @@ class ModbusResponseParserTest {
         ModbusServiceFieldValue entry = new ModbusServiceFieldValue();
         entry.value = value;
         entry.description = description;
+        return entry;
+    }
+
+    private static ModbusServiceFieldBit bit(int offset, String name) {
+        ModbusServiceFieldBit entry = new ModbusServiceFieldBit();
+        entry.offset = offset;
+        entry.field = name;
         return entry;
     }
 
@@ -104,6 +112,44 @@ class ModbusResponseParserTest {
     void decodeStringTrimsTrailingPadding() {
         assertEquals("AB", ModbusResponseParser.parse(
                 List.of(field(1, "型号", 4, "string", null)), "010404414200004FAC").getString("型号"));
+    }
+
+    @Test
+    void decodeBitListExpandsEachNamedBit() {
+        // 01 读位：数据区 05 = 第 0、2 位为 1；位清单把其中两位各自出一个 0/1 值（字段自身仍是整段掩码）
+        ModbusServiceField bits = field(1, "开关状态", 1, "uint8", null);
+        bits.bitList = List.of(bit(0, "进水阀"), bit(1, "出水阀"), bit(2, "报警"));
+
+        JsonObject values = ModbusResponseParser.parse(List.of(bits), "01010105918B");
+
+        assertEquals(5, values.getInteger("开关状态"));
+        assertEquals(1, values.getInteger("进水阀"));
+        assertEquals(0, values.getInteger("出水阀"));
+        assertEquals(1, values.getInteger("报警"));
+    }
+
+    @Test
+    void decodeBitRegionIsLittleEndianAcrossBytes() {
+        // 01 读 9 个位：byteCount=2，数据 03 01 → 第 0、1 位在首字节、第 8 位在次字节低位；掩码按位数组读 = 0x0103
+        ModbusServiceField bits = field(1, "开关状态", 2, "uint16", "ABCD");
+        bits.bitList = List.of(bit(0, "第1位"), bit(8, "第9位"), bit(9, "第10位"));
+
+        JsonObject values = ModbusResponseParser.parse(List.of(bits), "010102030178CC");
+
+        assertEquals(0x0103, values.getInteger("开关状态"));
+        assertEquals(1, values.getInteger("第1位"));
+        assertEquals(1, values.getInteger("第9位"));
+        assertEquals(0, values.getInteger("第10位"));
+    }
+
+    @Test
+    void decodeBitListRejectsOffsetBeyondField() {
+        ModbusServiceField bits = field(1, "开关状态", 1, "uint8", null);
+        bits.bitList = List.of(bit(8, "越界位"));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> ModbusResponseParser.parse(List.of(bits), "01010105918B"));
+        assertTrue(exception.getMessage().contains("invalid modbus field bit"));
     }
 
     @Test

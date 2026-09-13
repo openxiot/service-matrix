@@ -57,6 +57,20 @@ class ModbusServiceCodecTest {
                       ]
                     }
                   ]
+                },
+                {
+                  "index": 3,
+                  "name": "读8个线圈",
+                  "request": "0101000000083DCC",
+                  "response": [
+                    {
+                      "index": 1, "field": "线圈状态", "bytes": 1, "format": "uint8", "scale": 1.0,
+                      "bit-list": [
+                        { "offset": 0, "field": "进水阀" },
+                        { "offset": 3, "field": "报警" }
+                      ]
+                    }
+                  ]
                 }
               ]
             }
@@ -85,7 +99,7 @@ class ModbusServiceCodecTest {
         assertEquals(1, service.device.aiid.intValue());
         assertEquals(1, service.device.argument.intValue());
 
-        assertEquals(2, service.functions.size());
+        assertEquals(3, service.functions.size());
         ModbusServiceFunction first = service.functions.get(0);
         assertEquals(1, first.index.intValue());
         assertEquals("读进水温度", first.name);
@@ -110,6 +124,16 @@ class ModbusServiceCodecTest {
         assertEquals("ON", state.valueList.get(0).description);
         assertEquals(1L, state.valueList.get(1).value.longValue());
         assertEquals("OFF", state.valueList.get(1).description);
+        assertNull(state.bitList);
+
+        // 01 读位：位清单落在字段上（字段自身出整段位掩码）
+        ModbusServiceField coils = service.functions.get(2).response.get(0);
+        assertEquals("线圈状态", coils.field);
+        assertEquals(2, coils.bitList.size());
+        assertEquals(0, coils.bitList.get(0).offset.intValue());
+        assertEquals("进水阀", coils.bitList.get(0).field);
+        assertEquals(3, coils.bitList.get(1).offset.intValue());
+        assertEquals("报警", coils.bitList.get(1).field);
     }
 
     @Test
@@ -142,6 +166,14 @@ class ModbusServiceCodecTest {
         assertEquals(2, valueList.size());
         assertEquals("ON", valueList.getJsonObject(0).getString("description"));
         assertEquals(0L, valueList.getJsonObject(0).getLong("value").longValue());
+
+        // 实体里叫 bitList，出去必须是示例文件里的 bit-list
+        JsonObject coils = o.getJsonArray("functions").getJsonObject(2)
+                .getJsonArray("response").getJsonObject(0);
+        JsonArray bitList = coils.getJsonArray("bit-list");
+        assertEquals(2, bitList.size());
+        assertEquals(0, bitList.getJsonObject(0).getInteger("offset").intValue());
+        assertEquals("进水阀", bitList.getJsonObject(0).getString("field"));
     }
 
     @Test

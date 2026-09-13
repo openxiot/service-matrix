@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.service;
 
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
@@ -174,6 +175,51 @@ class ModbusServiceValidatorTest {
                 ModbusServiceValidator.validate(duplicated));
     }
 
+    /** 同一应答内所有出值名必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖。 */
+    @Test
+    void rejectsDuplicatedFieldNames() {
+        ModbusService duplicated = service();
+        ModbusServiceField second = function(1).response.get(0); // 序号不同、名字相同的第二个字段
+        second.index = 2;
+        duplicated.functions.get(0).response.add(second);
+        assertEquals("invalid functions[0].response[1].field: 进水温度 (duplicated)",
+                ModbusServiceValidator.validate(duplicated));
+    }
+
+    @Test
+    void rejectsBitListOffsetBeyondField() {
+        ModbusService beyond = service();
+        ModbusServiceField field = beyond.functions.get(0).response.get(0);
+        field.bitList = new ArrayList<>(List.of(bit(16, "第17位"))); // bytes 2 → 只有 0..15
+        assertEquals("invalid functions[0].response[0].bit-list[0].offset: 16 (field covers 16 bits)",
+                ModbusServiceValidator.validate(beyond));
+    }
+
+    @Test
+    void rejectsDuplicatedBitAndFieldNames() {
+        ModbusService duplicatedOffset = service();
+        ModbusServiceField field = duplicatedOffset.functions.get(0).response.get(0);
+        field.bitList = new ArrayList<>(List.of(bit(0, "第1位"), bit(0, "第2位")));
+        assertEquals("invalid functions[0].response[0].bit-list[1].offset: 0 (duplicated)",
+                ModbusServiceValidator.validate(duplicatedOffset));
+
+        // 位名与所在字段重名同样会互相覆盖
+        ModbusService shadowed = service();
+        ModbusServiceField owner = shadowed.functions.get(0).response.get(0);
+        owner.bitList = new ArrayList<>(List.of(bit(0, "进水温度")));
+        assertEquals("invalid functions[0].response[0].bit-list[0].field: 进水温度 (duplicated)",
+                ModbusServiceValidator.validate(shadowed));
+    }
+
+    @Test
+    void acceptsBitListWithinField() {
+        ModbusService bits = service();
+        ModbusServiceField field = bits.functions.get(0).response.get(0);
+        field.bitList = new ArrayList<>(List.of(bit(0, "进水阀"), bit(15, "报警")));
+
+        assertNull(ModbusServiceValidator.validate(bits));
+    }
+
     // ===== 夹具 =====
 
     /** 一份各处都合法的定义：各用例只改自己关心的那一处。 */
@@ -214,6 +260,13 @@ class ModbusServiceValidatorTest {
         ModbusServiceFieldValue entry = new ModbusServiceFieldValue();
         entry.value = value;
         entry.description = description;
+        return entry;
+    }
+
+    private static ModbusServiceFieldBit bit(int offset, String field) {
+        ModbusServiceFieldBit entry = new ModbusServiceFieldBit();
+        entry.offset = offset;
+        entry.field = field;
         return entry;
     }
 }

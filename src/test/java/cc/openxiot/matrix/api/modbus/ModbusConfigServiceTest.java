@@ -67,6 +67,24 @@ class ModbusConfigServiceTest {
         return c;
     }
 
+    /** 合法的读线圈动作（01 读位，逐位命名见 bitNames）。 */
+    private ModbusCommand readCoil() {
+        ModbusCommand c = new ModbusCommand();
+        c.name = "读开关状态";
+        c.index = 1;
+        c.fc = "01";
+        c.start = 0;
+        c.quantity = 8;
+        return c;
+    }
+
+    private static ModbusCommand.BitName bit(int offset, String name) {
+        ModbusCommand.BitName b = new ModbusCommand.BitName();
+        b.offset = offset;
+        b.name = name;
+        return b;
+    }
+
     /** 桩：模拟仓储落库时由 Panache 生成主键（服务层不再自造 id）。 */
     private void insertOk() {
         when(repo.insert(any(ModbusConfig.class))).thenAnswer(inv -> {
@@ -256,15 +274,141 @@ class ModbusConfigServiceTest {
         assertEquals("commands[0].start is required", ex.getMessage());
     }
 
+    /** 数量是「值的个数」：uint16 读 3 个值 = 3 个寄存器，合法。 */
     @Test
-    void createWithQuantityMismatchTypeFails() {
+    void createWithMultipleUint16ValuesSucceeds() {
         ModbusCommand c = readHolding();
         c.dataType = "uint16";
-        c.quantity = 2; // uint16 只需 1 个寄存器
+        c.quantity = 3;
+        c.fieldNames = List.of("第一个温度值", "第二个温度值", "第三个温度值");
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** 数量 × 类型跨度 = 实际要读的寄存器数，超过 125 个即非法。 */
+    @Test
+    void createWithTooManyRegistersFails() {
+        ModbusCommand c = readHolding();
+        c.quantity = 63; // float32 → 126 个寄存器
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].quantity: 2 (dataType uint16 needs 1)", ex.getMessage());
+        assertEquals("invalid commands[0].quantity: 63 (dataType float32 reads 126 registers)", ex.getMessage());
+    }
+
+    @Test
+    void createWithFieldNameCountMismatchFails() {
+        ModbusCommand c = readHolding();
+        c.dataType = "uint16";
+        c.quantity = 3;
+        c.fieldNames = List.of("第一个温度值", "第二个温度值"); // 3 个值应有 3 个名称
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].fieldNames: 2 (fc 03 needs 3)", ex.getMessage());
+    }
+
+    @Test
+    void createWithBlankFieldNameFails() {
+        ModbusCommand c = readHolding();
+        c.fieldNames = List.of("进水温度", " ");
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].fieldNames[1]: blank", ex.getMessage());
+    }
+
+    /** string 整段算一个值：无论数量多少，应答只有一个字段。 */
+    @Test
+    void createWithStringReadNeedsOneFieldName() {
+        ModbusCommand c = readHolding();
+        c.dataType = "string";
+        c.quantity = 5;
+        c.fieldNames = List.of("设备型号", "备用");
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].fieldNames: 2 (fc 03 needs 1)", ex.getMessage());
+    }
+
+    @Test
+    void createWithFieldNamesOnWriteFails() {
+        ModbusCommand c = new ModbusCommand();
+        c.name = "开机";
+        c.index = 1;
+        c.fc = "05";
+        c.start = 0;
+        c.coilState = "on";
+        c.fieldNames = List.of("开关状态");
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("commands[0].fieldNames is not allowed: fc 05 has no response fields", ex.getMessage());
+    }
+
+    /** 01/02 读位：逐位命名走 bitNames（offset 0 基），可以只命名其中几位。 */
+    @Test
+    void createWithBitNamesSucceeds() {
+        ModbusCommand c = readCoil();
+        c.bitNames = List.of(bit(0, "进水阀"), bit(3, "报警"));
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** 位偏移必须落在读回的位区间内。 */
+    @Test
+    void createWithBitNameOffsetOutOfRangeFails() {
+        ModbusCommand c = readCoil();
+        c.bitNames = List.of(bit(8, "越界位")); // 数量 8 → 有效偏移 0..7
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].bitNames[0].offset: 8 (quantity 8)", ex.getMessage());
+    }
+
+    @Test
+    void createWithDuplicatedBitNameOffsetFails() {
+        ModbusCommand c = readCoil();
+        c.bitNames = List.of(bit(0, "进水阀"), bit(0, "出水阀"));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].bitNames[1].offset: 0 (duplicated)", ex.getMessage());
+    }
+
+    @Test
+    void createWithBlankBitNameFails() {
+        ModbusCommand c = readCoil();
+        c.bitNames = List.of(bit(0, " "));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("commands[0].bitNames[0].name is required", ex.getMessage());
+    }
+
+    /** 01/02 的应答字段只有一个（整段位掩码），字段名不再由点表给（生成时按功能名称兜底）。 */
+    @Test
+    void createWithFieldNamesOnBitReadFails() {
+        ModbusCommand c = readCoil();
+        c.fieldNames = List.of("开关状态");
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("commands[0].fieldNames is not allowed: fc 01 names each bit via bitNames", ex.getMessage());
+    }
+
+    @Test
+    void createWithBitNamesOnRegisterReadFails() {
+        ModbusCommand c = readHolding();
+        c.bitNames = List.of(bit(0, "进水阀"));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("commands[0].bitNames is not allowed: fc 03 has no bit response", ex.getMessage());
     }
 
     @Test

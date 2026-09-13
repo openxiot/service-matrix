@@ -13,6 +13,9 @@ import java.util.List;
  *
  * <p>一个方法的应答数据区按 {@link #index} 升序、以 {@link #bytes} 依次累加偏移切分，
  * 故各字段的 bytes 之和必须等于应答帧的 byteCount（跳过 slave/fc/byteCount 头与 CRC 尾之后的数据区）。</p>
+ *
+ * <p>01/02 读位的应答是**按位打包**的字节区，整段只能是一个字段（{@link #bitList} 让其中的若干位
+ * 各自再作为一个 0/1 取值输出，字段自身的值仍是整段位掩码）。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -47,4 +50,10 @@ public class ModbusServiceField {
     @BsonProperty("value-list")
     @JsonProperty("value-list")
     public List<ModbusServiceFieldValue> valueList;
+
+    @Schema(description = "位清单（01/02 位区）：把本字段覆盖的位区里的若干位各自作为一个 0/1 取值输出，"
+            + "取值的 key 即各位的 field；本字段自身的值仍是整段位掩码")
+    @BsonProperty("bit-list")
+    @JsonProperty("bit-list")
+    public List<ModbusServiceFieldBit> bitList;
 }

@@ -28,7 +28,7 @@ ModbusService        orgId / name / version / configId / device / functions[] / 
 DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
 ModbusServiceFunction index / name / request / response[]
-ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[]
+ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[]
 ```
 
 * `orgId` = 创建时的组织（取 `X-Org-Id`，可空）：**只作记录**，不参与鉴权（接口按空间判，见第四节）
@@ -80,11 +80,18 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   各字段 bytes 之和必须等于 byteCount。
 * 取值：原始值命中 `value-list` → 输出其 `description`（不再应用 scale）；否则输出 scale 后的数值；
   `unit` 只做展示、不参与取值（调用方从服务定义里查）。
+* **01/02 的数据区是按位打包的位数组**，不按字节序拼装：第 i 位 = 第 i/8 个字节的第 i%8 位
+  （LSB-first，第 0 位即请求的起始地址那个线圈），故 9–16 个位读回来的掩码是字节小端拼装
+  （`03 01` → `0x0103`，第 0、1、8 位为 1）。`bit-list[]` 在该字段的掩码之外，把其中的若干位
+  各自再作为一个 0/1 取值输出（key 即该位的 `field`）—— 位区只能整段占一个字段（字节数是
+  `ceil(位数/8)`，且各字段 bytes 之和必须等于 byteCount），逐位取值靠位清单展开。
 * 返回 `OxResponse.ok(data)`，`data` = **字段 → 值**：
 
   ```json
-  { "success": true, "data": { "进水温度": 61.5, "开关状态": "ON" } }
+  { "success": true, "data": { "进水温度": 61.5, "开关状态": "ON", "线圈状态": 5, "进水阀": 1 } }
   ```
+
+  同一个应答里的出值名必须唯一：字段值与各位值进的是同一个结果对象，重名会互相覆盖（见第七节）。
 
   写方法（`response` 为空）的应答是请求回显、没有读值，`data` 为空对象。
   父设备报错 / 帧非法 / CRC 不符 / 异常码一律 `OxResponse.error(message)`，不做部分成功。
@@ -126,8 +133,53 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 * `response`：index 必填 / ≥1 / 组内唯一；field 必填；bytes ≥ 1；format ∈
   `int8/uint8/int16/uint16/int32/uint32/float32/string`，且非 string 时 bytes 必须等于该格式的宽度；
   bytes > 1 时 byteOrder 必填且 ∈ `ABCD/DCBA/BADC/CDAB`；value-list 内 value/description 必填且 value 不重复。
+* **同一应答内的出值名唯一**：各字段的 `field` 与各位清单的 `bit-list[].field` 不能重复 ——
+  解析结果是一个 `字段 → 值` 的对象，重名即互相覆盖。
+* `bit-list`（01/02 位区的逐位取值）：offset 必填且 `0 ≤ offset < bytes × 8`、组内不重复，field 必填。
 
 ## 八、变更记录
+
+### 2026-09-13
+
+* **01/02 读位改为逐位命名：点表 `ModbusCommand.bitNames` → 应答字段 `bit-list[]`**（需求：01/02
+  读多个线圈时只有一个字段名，「字段名称」表达不了「第 N 位是什么」；位是位区里的子结构，本就
+  不该按字节切成多个字段）：
+  * `bitNames`（01/02 专用）= 逐位命名，元素 `{offset, name}`；`offset` 是 **0 基位偏移**（从起始
+    地址起，与 0F 的 `Coil.offset` 同口径），可只命名其中几位。`fieldNames` 收敛为 **03/04 专用**
+    （01/02 填了报错：`fc 01 names each bit via bitNames`），因其应答字段只有一个、整段位掩码的名字
+    由生成方按功能名称兜底。
+  * `ModbusServiceField.bitList`（对外 JSON `bit-list`）= 位区字段里的具名位，元素 `{offset, field}`；
+    生成服务时由 `bitNames` 直接落过来。解析器在字段值（整段位掩码）之外，把每位再作为一个 0/1
+    取值补进结果，key 即该位的 `field`。
+  * 位区取值口径修正为 **LSB-first**（第 i 位 = 第 i/8 字节的第 i%8 位，第 0 位即起始地址）：
+    ≤ 8 位（单字节）结果不变，9–16 位原先按字节序大端拼装的掩码（`03 01` → `0x0103` 而非
+    `0x0301`）从此与位序号一致。
+  * 校验：点表侧 `bitNames` 的 offset 必须落在 `[0, quantity)`、不重复、名称非空；服务侧 `bit-list`
+    的 offset 必须 `< bytes × 8`、组内不重复、名称非空，且与同应答内其它出值名不重复（新增了
+    **字段名唯一性**校验：出值名重名会在解析结果里互相覆盖）。
+  * 示例 `modbus-service-example.json` 增加 `读8个开关量`（01 读 8 位 + `bit-list`）。
+  * 测试：`ModbusConfigServiceTest` 补 `bitNames` 合法 / 越界 / 重复 offset / 空名 / 01 误填
+    `fieldNames` / 03 误填 `bitNames` 六例；`ModbusResponseParserTest` 补位清单展开、跨字节位序、
+    越界抛错三例；`ModbusServiceValidatorTest` 补重名与位清单四例；`ModbusServiceCodecTest` /
+    `ModbusConfigCodecTest` 补 `bit-list` / `bitNames` 的编解码往返。
+  * 前端 webapp-matrix 同步（命令对话框 01/02 的「数量」下改出「位名称」逐位命名）。
+* **读操作的数量改为「值的个数」，并新增应答字段名称 `ModbusCommand.fieldNames`**（需求：示例里的
+  `读多个温度值`（三个各 2 字节的 uint16 字段）在旧口径下表达不出来 —— 03/04 的数量被锁死为类型跨度，
+  一次只能读一个参数、出一个应答字段）：
+  * `quantity`（03/04）= **值的个数**，每个值占「数据格式」的寄存器跨度（int16/uint16→1、
+    int32/uint32/float32→2）；`string` 的数量仍是字符串长度（寄存器数）、整段算一个值。
+    请求帧里的数量 = 数量 × 跨度（`ModbusFrameCodec.readQuantity`，03/04 非 string），01/02 仍是位数。
+    校验随之改为「数量 × 跨度 ≤ 125」（原先的「数量必须等于类型跨度」删除）。
+  * `fieldNames` = 应答字段名称，个数即应答字段数（01/02 恒 1 个；03/04 非 string 为数量个、string 为 1 个）。
+    生成服务时逐个填进 `ModbusServiceFunction.response[].field`；整体缺省允许（存量点表），
+    一旦给出就必须个数一致且逐项非空（名称会直接成为 invoke 返回值的 key）；写操作没有应答字段，填了报错。
+  * `ModbusCommandCodec` 只多一个 `fieldNames` 键（空列表不输出）。
+  * 测试：`ModbusConfigServiceTest` 的「数量必须等于类型跨度」用例改为「数量 × 跨度超限」与
+    `fieldNames` 个数 / 空名 / 写操作误填四例，并补 uint16 读 3 个值的通过用例；
+    `ModbusFrameCodecTest` 补「数量 × 跨度」「string 数量即长度」两例。
+  * 前端 webapp-matrix 同步（点表命令对话框的「数量」+「字段名称」）。
+* 说明：`ModbusFrameCodec.decodeResponse`（旧的点位式读值，按类型取数据区首个值）**不在 invoke 链路上**
+  （invoke 走 `ModbusResponseParser`），多值读只解第一个值，仅为存量单测保留。
 
 ### 2026-09-10
 

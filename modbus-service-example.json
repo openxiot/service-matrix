@@ -31,7 +31,7 @@
       ]
     },
     {
-      "index": 1,
+      "index": 2,
       "name": "读开关状态",
       "request": "请求帧: 16进制字符串",
       "response": [
@@ -51,6 +51,61 @@
               "description": "OFF"
             }
           ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "读8个开关量",
+      "request": "请求帧: 16进制字符串",
+      "response": [
+        {
+          "index": 1,
+          "field": "线圈状态",
+          "bytes": 1,
+          "format": "uint8",
+          "scale": 1,
+          "bit-list": [
+            {
+              "offset": 0,
+              "field": "进水阀"
+            },
+            {
+              "offset": 3,
+              "field": "报警"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "读多个温度值",
+      "request": "请求帧: 16进制字符串",
+      "response": [
+        {
+          "index": 1,
+          "field": "第一个温度值",
+          "bytes": 2,
+          "format": "uint16",
+          "scale": 0.1,
+          "unit": "摄氏度"
+        },
+        {
+          "index": 2,
+          "field": "第二个温度值",
+          "bytes": 2,
+          "format": "uint16",
+          "scale": 0.1,
+          "unit": "摄氏度"
+        },
+        {
+          "index": 3,
+          "field": "第三个温度值",
+          "bytes": 2,
+          "format": "uint16",
+          "scale": 0.1,
+          "unit": "摄氏度"
         }
       ]
     }

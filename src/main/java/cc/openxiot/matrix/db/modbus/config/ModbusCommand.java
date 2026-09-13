@@ -9,8 +9,8 @@ import java.util.List;
  * Modbus 设备点表中的一个“功能码动作”。
  *
  * <p>旧版以“点位”为中心（area/address/rw 一列一个点），现改为以功能码为中心：
- * 一行 = 一次读操作（读一个参数，{@code quantity} = 该参数占用的寄存器/位个数），
- * 或一次写操作（05 单线圈、06 单寄存器、0F 多线圈、10 多寄存器）。
+ * 一行 = 一次读操作（01/02 读一个位区，逐位具名见 {@link #bitNames}；03/04 读 {@code quantity}
+ * 个值，逐个具名见 {@link #fieldNames}），或一次写操作（05 单线圈、06 单寄存器、0F 多线圈、10 多寄存器）。
  *
  * <p>读写方向与“寄存器区”均由功能码决定（01/05/0F=线圈、02=离散输入、03/06/10=保持寄存器、04=输入寄存器），
  * 因此不再存 area/rw。逻辑地址不落库，由前端按 {@code fc}+{@code start} 实时换算。
@@ -37,8 +37,22 @@ public class ModbusCommand {
 
     // ===== 读操作 01/02/03/04 =====
 
-    @Schema(description = "数量：该参数占用的寄存器/位个数（int16/uint16→1，int32/uint32/float32→2，string→自定；01/02 位→通常 1）", examples = {"1", "2"})
+    @Schema(description = "数量：03/04 为**值的个数**（每个值占数据格式的寄存器跨度 int16/uint16→1、int32/uint32/float32→2；"
+            + "string 时即字符串长度、整段算一个值，故恒为 1 个字段）；01/02 为位/线圈个数。"
+            + "请求帧里的数量 = 03/04 非 string 时 数量×跨度、其余即本值",
+            examples = {"1", "3"})
     public Integer quantity;
+
+    @Schema(description = "应答字段名称（03/04 读寄存器；个数即应答字段数：非 string 为 quantity 个、string 为 1 个）。"
+            + "生成服务时逐个填进 method.response[].field，缺省或某项为空时由生成方按功能名称兜底；"
+            + "01/02 读位请用 bitNames，写操作无应答字段，不填",
+            examples = {"[\"第一个温度值\",\"第二个温度值\"]"})
+    public List<String> fieldNames;
+
+    @Schema(description = "位名称（01/02 读位）：给读回的位区里的若干位各自命名，生成服务时逐位填进应答字段的位清单"
+            + "（bit-list），取值 0/1；缺省表示只按整段位掩码出字段。offset 为位偏移（0 基，从起始地址起，与 0F 的 Coil.offset 同口径）",
+            examples = {"[{\"offset\":0,\"name\":\"进水阀\"},{\"offset\":1,\"name\":\"出水阀\"}]"})
+    public List<BitName> bitNames;
 
     @Schema(description = "数据格式（03/04）：int16/uint16/int32/uint32/float32/string；01/02 固定为 位/布尔，无需填写", examples = {"float32"})
     public String dataType;
@@ -65,6 +79,17 @@ public class ModbusCommand {
 
     @Schema(description = "寄存器明细（10 写多寄存器）：逐寄存器填 地址/数据类型/字节序/原始数值；地址须连续，行数即写入寄存器个数")
     public List<Register> registers;
+
+    /** 01/02 读位的单个位名称。 */
+    @RegisterForReflection
+    @Schema(description = "单个位名称")
+    public static class BitName {
+        @Schema(description = "位偏移（从起始地址起，0 基，< 位/线圈个数）", examples = {"0"})
+        public Integer offset;
+
+        @Schema(description = "位名称（生成服务时作为应答字段名，如 进水阀）", examples = {"进水阀"})
+        public String name;
+    }
 
     /** 0F 写多线圈的单个线圈选择。 */
     @RegisterForReflection

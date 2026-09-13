@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.service;
 
 import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import io.vertx.core.json.JsonObject;
 
@@ -25,6 +26,10 @@ import java.util.List;
  * <p>取值：原始值命中 {@code value-list} 时输出其 description（不再应用 scale）；否则输出
  * scale 后的数值（scale 缺省或为 1 时不缩放）。{@code unit} 只做展示、不参与取值，
  * 调用方可从服务定义里查。</p>
+ *
+ * <p>01/02 的数据区是**按位打包**的位数组，不按字节序拼装：第 i 位 = 第 i/8 个字节的第 i%8 位
+ * （LSB-first，第 0 位即起始地址那个线圈）。字段的 {@code bit-list} 在字段值之外，把其中的若干位
+ * 各自再作为一个 0/1 取值输出（key 即该位的 field）；未声明位清单时只出整段位掩码。</p>
  */
 public final class ModbusResponseParser {
 
@@ -34,6 +39,9 @@ public final class ModbusResponseParser {
     private static final int MIN_FRAME_SIZE = 5;
     private static final int CRC_SIZE = 2;
     private static final int ERROR_MASK = 0x80;
+    /** 读位功能码：01 读线圈、02 读离散输入（应答数据区按位打包） */
+    private static final int FC_READ_COILS = 0x01;
+    private static final int FC_READ_DISCRETE_INPUTS = 0x02;
 
     private ModbusResponseParser() {
     }
@@ -75,22 +83,43 @@ public final class ModbusResponseParser {
             throw new IllegalArgumentException("invalid modbus response: " + frameHex);
         }
 
+        boolean bitRegion = fc == FC_READ_COILS || fc == FC_READ_DISCRETE_INPUTS;
         JsonObject values = new JsonObject();
         int offset = HEADER_SIZE;
         for (ModbusServiceField field : ordered) {
             byte[] data = Arrays.copyOfRange(frame, offset, offset + field.bytes);
-            values.put(field.field, decodeValue(field, data));
+            values.put(field.field, decodeValue(field, data, bitRegion));
+            putBits(values, field, data);
             offset += field.bytes;
         }
         return values;
     }
 
+    /**
+     * 位清单：把字段覆盖的位区里的若干位各自作为一个 0/1 取值补进结果（key 即该位的 field）。
+     * 取位与功能码无关、只按该字段自己的数据字节 LSB-first 算：第 offset 位 = 第 offset/8 字节的第 offset%8 位。
+     */
+    private static void putBits(JsonObject values, ModbusServiceField field, byte[] data) {
+        if (field.bitList == null) {
+            return;
+        }
+        for (ModbusServiceFieldBit bit : field.bitList) {
+            if (bit == null || bit.offset == null || bit.field == null || bit.offset < 0
+                    || bit.offset / 8 >= data.length) {
+                throw new IllegalArgumentException("invalid modbus field bit: "
+                        + (bit == null ? null : bit.offset) + ", field=" + field.field);
+            }
+            values.put(bit.field, (data[bit.offset / 8] >> (bit.offset % 8)) & 1);
+        }
+    }
+
     /** 按字段定义解出该段的最终取值（原始值 → value-list / scale）。 */
-    private static Object decodeValue(ModbusServiceField field, byte[] data) {
+    private static Object decodeValue(ModbusServiceField field, byte[] data, boolean bitRegion) {
         String format = field.format == null ? "" : field.format.trim().toLowerCase();
         Object raw = switch (format) {
             case "string" -> text(data);
-            case "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32" -> number(format, bits(data, field));
+            case "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32" ->
+                    number(format, bits(data, field, bitRegion));
             default -> throw new IllegalArgumentException("unsupported modbus field format: " + field.format);
         };
 
@@ -105,8 +134,20 @@ public final class ModbusResponseParser {
         return raw;
     }
 
-    /** 数据区原始字节 → 按字节序排布后的位模式（单字节无需排布）。 */
-    private static long bits(byte[] data, ModbusServiceField field) {
+    /**
+     * 数据区原始字节 → 位模式。
+     *
+     * <p>位区（01/02）按位数组读：字节低位在前（第 i 位 = 第 i/8 字节的第 i%8 位），故按小端拼装，
+     * 掩码里的第 i 位就是第 i 个线圈；其余字段按声明的字节序拼装（单字节无需排布，多字节缺省 ABCD = 大端）。</p>
+     */
+    private static long bits(byte[] data, ModbusServiceField field, boolean bitRegion) {
+        if (bitRegion) {
+            long little = 0;
+            for (int i = data.length - 1; i >= 0; i--) {
+                little = (little << 8) | (data[i] & 0xFF);
+            }
+            return little;
+        }
         byte[] ordered = data.length == 1 ? data : ModbusFrameCodec.reorder(data, field.byteOrder);
         long bits = 0;
         for (byte b : ordered) {

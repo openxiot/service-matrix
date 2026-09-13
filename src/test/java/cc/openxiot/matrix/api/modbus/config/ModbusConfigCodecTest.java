@@ -49,6 +49,18 @@ class ModbusConfigCodecTest {
         assertEquals(0.1, read.getDouble("scale").doubleValue());
         assertEquals("℃", read.getString("unit"));
 
+        // 01 读位：逐位命名走 bitNames（与 0F 的 coils 同形），不出 fieldNames
+        JsonObject bitRead = o.getJsonArray("commands").getJsonObject(2);
+        assertEquals("01", bitRead.getString("fc"));
+        assertEquals(8, bitRead.getInteger("quantity").intValue());
+        assertNull(bitRead.getJsonArray("fieldNames"));
+        JsonArray bitNames = bitRead.getJsonArray("bitNames");
+        assertEquals(2, bitNames.size());
+        assertEquals(0, bitNames.getJsonObject(0).getInteger("offset").intValue());
+        assertEquals("进水阀", bitNames.getJsonObject(0).getString("name"));
+        assertEquals(3, bitNames.getJsonObject(1).getInteger("offset").intValue());
+        assertEquals("报警", bitNames.getJsonObject(1).getString("name"));
+
         JsonObject write = o.getJsonArray("commands").getJsonObject(1);
         assertEquals("0F", write.getString("fc"));
         assertEquals(1, write.getJsonArray("coils").size());
@@ -135,7 +147,21 @@ class ModbusConfigCodecTest {
         register.value = 100L;
         write.registers = List.of(register);
 
-        config.commands = List.of(read, write);
+        ModbusCommand bitRead = new ModbusCommand();
+        bitRead.name = "读开关状态";
+        bitRead.fc = "01";
+        bitRead.index = 3;
+        bitRead.start = 0;
+        bitRead.quantity = 8;
+        ModbusCommand.BitName first = new ModbusCommand.BitName();
+        first.offset = 0;
+        first.name = "进水阀";
+        ModbusCommand.BitName alarm = new ModbusCommand.BitName();
+        alarm.offset = 3;
+        alarm.name = "报警";
+        bitRead.bitNames = List.of(first, alarm);
+
+        config.commands = List.of(read, write, bitRead);
 
         Person creator = new Person();
         creator.id = "u-1";

@@ -124,6 +124,8 @@ public final class ModbusServiceValidator {
             return null;
         }
         Set<Integer> seenIndex = new HashSet<>();
+        // 同一应答内所有出值名（各字段名 + 各位名）必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖
+        Set<String> seenField = new HashSet<>();
         for (int j = 0; j < fields.size(); j++) {
             ModbusServiceField field = fields.get(j);
             String ibase = base + ".response[" + j + "]";
@@ -141,6 +143,9 @@ public final class ModbusServiceValidator {
             }
             if (field.field == null || field.field.isBlank()) {
                 return ibase + ".field is required";
+            }
+            if (!seenField.add(field.field)) {
+                return "invalid " + ibase + ".field: " + field.field + " (duplicated)";
             }
             if (field.bytes == null || field.bytes < 1) {
                 return ibase + ".bytes is required";
@@ -167,6 +172,42 @@ public final class ModbusServiceValidator {
             String valueListErr = validateValueList(field, ibase);
             if (valueListErr != null) {
                 return valueListErr;
+            }
+            String bitListErr = validateBitList(field, ibase, seenField);
+            if (bitListErr != null) {
+                return bitListErr;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 校验位清单（{@link ModbusServiceField#bitList}，01/02 位区）：偏移必须落在该字段覆盖的位区间内
+     * （{@code 0 <= offset < bytes * 8}）、不重复，名称非空且在整份应答内唯一（出值名会进同一个结果对象）。
+     */
+    private static String validateBitList(ModbusServiceField field, String ibase, Set<String> seenField) {
+        if (field.bitList == null || field.bitList.isEmpty()) {
+            return null;
+        }
+        Set<Integer> seenOffset = new HashSet<>();
+        for (int k = 0; k < field.bitList.size(); k++) {
+            var bit = field.bitList.get(k);
+            String bbase = ibase + ".bit-list[" + k + "]";
+            if (bit == null || bit.offset == null) {
+                return bbase + ".offset is required";
+            }
+            if (bit.offset < 0 || bit.offset >= field.bytes * 8) {
+                return "invalid " + bbase + ".offset: " + bit.offset
+                        + " (field covers " + field.bytes * 8 + " bits)";
+            }
+            if (!seenOffset.add(bit.offset)) {
+                return "invalid " + bbase + ".offset: " + bit.offset + " (duplicated)";
+            }
+            if (bit.field == null || bit.field.isBlank()) {
+                return bbase + ".field is required";
+            }
+            if (!seenField.add(bit.field)) {
+                return "invalid " + bbase + ".field: " + bit.field + " (duplicated)";
             }
         }
         return null;

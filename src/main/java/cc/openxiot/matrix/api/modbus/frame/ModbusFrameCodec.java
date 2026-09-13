@@ -76,12 +76,27 @@ public final class ModbusFrameCodec {
 
     private static byte[] readBody(int slave, String fc, ModbusCommand command) {
         int start = require(command.start, "start");
-        int quantity = command.quantity == null ? 1 : command.quantity;
+        int quantity = readQuantity(fc, command);
         return new byte[]{
                 (byte) slave, (byte) Integer.parseInt(fc, 16),
                 hi(start), lo(start),
                 hi(quantity), lo(quantity)
         };
+    }
+
+    /**
+     * 读请求帧里的数量：01/02 即位数；03/04 的数量是**值的个数**（点表注释见 {@code ModbusCommand#quantity}），
+     * 帧里要读的寄存器数 = 数量 × 类型跨度（string 的数量本身就是长度，恒为一个值）。
+     */
+    public static int readQuantity(String fc, ModbusCommand command) {
+        int quantity = command.quantity == null ? 1 : command.quantity;
+        if (!"03".equals(fc) && !"04".equals(fc)) {
+            return quantity;
+        }
+        if (command.dataType == null || "string".equalsIgnoreCase(command.dataType)) {
+            return quantity;
+        }
+        return quantity * (byteWidth(command.dataType) / 2);
     }
 
     private static byte[] writeSingleCoilBody(int slave, ModbusCommand command) {
@@ -180,6 +195,10 @@ public final class ModbusFrameCodec {
 
     /**
      * 把应答帧解回读值（写命令的应答是回显请求帧，没有读值，返回 null）。
+     *
+     * <p>只解数据区的**首个值**：数量改为「值的个数」后一次读可能有多个值，多值读的调用链
+     * 走 {@code ModbusResponseParser}（按服务定义的 response[] 逐个字段解），本方法只服务于
+     * 旧的点位式口径与存量单测。</p>
      *
      * @param frameHex DTU 回传的应答帧（16 进制字符串，大小写与空白不敏感）
      * @throws IllegalArgumentException 帧非法、CRC 不符或从站返回异常码

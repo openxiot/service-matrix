@@ -20,6 +20,10 @@ public class ModbusConfigService {
 
     /** 功能码词表（十六进制大写字符串）。 */
     private static final Set<String> FCS = Set.of("01", "02", "03", "04", "05", "06", "0F", "10");
+    /** 读功能码：只有读操作有应答字段（{@link ModbusCommand#fieldNames}）。 */
+    private static final Set<String> READ_FCS = Set.of("01", "02", "03", "04");
+    /** 读位功能码（01/02）：数据区按位打包，逐位命名走 {@link ModbusCommand#bitNames}。 */
+    private static final Set<String> READ_BIT_FCS = Set.of("01", "02");
     private static final Set<String> REGISTER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "float32", "string");
     private static final Set<String> WRITE_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "float32");
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
@@ -316,13 +320,29 @@ public class ModbusConfigService {
             if (err != null) {
                 return err;
             }
+            if (!READ_FCS.contains(c.fc) && c.fieldNames != null && !c.fieldNames.isEmpty()) {
+                return base + ".fieldNames is not allowed: fc " + c.fc + " has no response fields";
+            }
+            if (!READ_BIT_FCS.contains(c.fc) && c.bitNames != null && !c.bitNames.isEmpty()) {
+                return base + ".bitNames is not allowed: fc " + c.fc + " has no bit response";
+            }
         }
         return null;
     }
 
     private String validateByFc(ModbusCommand c, String base) {
         return switch (c.fc) {
-            case "01", "02" -> validateQuantity(c, base, MAX_READ_BITS);
+            case "01", "02" -> {
+                String err = validateQuantity(c, base, MAX_READ_BITS);
+                if (err != null) {
+                    yield err;
+                }
+                // 读位的应答数据区按位打包：字段恒为一个（整段位掩码），逐位命名走 bitNames
+                if (c.fieldNames != null && !c.fieldNames.isEmpty()) {
+                    yield base + ".fieldNames is not allowed: fc " + c.fc + " names each bit via bitNames";
+                }
+                yield validateBitNames(c, base, c.quantity);
+            }
             case "03", "04" -> {
                 String err = validateQuantity(c, base, MAX_READ_REGISTERS);
                 if (err != null) {
@@ -340,11 +360,15 @@ public class ModbusConfigService {
                 if (!BYTE_ORDERS.contains(c.byteOrder)) {
                     yield "invalid " + base + ".byteOrder: " + c.byteOrder;
                 }
+                // 数量 = 值的个数：读的寄存器数 = 数量 × 类型跨度（string 的数量本身就是长度）
                 Integer span = registerSpan(c.dataType);
-                if (span != null && !span.equals(c.quantity)) {
-                    yield "invalid " + base + ".quantity: " + c.quantity + " (dataType " + c.dataType + " needs " + span + ")";
+                boolean single = span == null;
+                int registers = single ? c.quantity : c.quantity * span;
+                if (registers > MAX_READ_REGISTERS) {
+                    yield "invalid " + base + ".quantity: " + c.quantity
+                            + " (dataType " + c.dataType + " reads " + registers + " registers)";
                 }
-                yield null;
+                yield validateFieldNames(c, base, single ? 1 : c.quantity);
             }
             case "05" -> {
                 if (c.coilState == null || c.coilState.isBlank()) {
@@ -368,6 +392,60 @@ public class ModbusConfigService {
             case "10" -> validateRegisters(c, base);
             default -> null;
         };
+    }
+
+    /**
+     * 校验应答字段名称（{@link ModbusCommand#fieldNames}，03/04 读寄存器）：允许整体缺省（存量点表；
+     * 生成服务时按功能名称兜底），但一旦给出就必须与应答字段个数一致、逐项非空 ——
+     * 名称会直接成为 invoke 返回值的 key。
+     *
+     * @param expected 该功能码的应答字段个数（string 恒为 1，其余为数量）
+     */
+    private String validateFieldNames(ModbusCommand c, String base, int expected) {
+        List<String> names = c.fieldNames;
+        if (names == null || names.isEmpty()) {
+            return null;
+        }
+        if (names.size() != expected) {
+            return "invalid " + base + ".fieldNames: " + names.size()
+                    + " (fc " + c.fc + " needs " + expected + ")";
+        }
+        for (int i = 0; i < names.size(); i++) {
+            if (names.get(i) == null || names.get(i).isBlank()) {
+                return "invalid " + base + ".fieldNames[" + i + "]: blank";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 校验位名称（{@link ModbusCommand#bitNames}，01/02 读位）：允许整体缺省（不逐位命名，只按整段位掩码出
+     * 一个字段），一旦给出则每条都要有 offset 与非空名称，且同一位不能命名两次 —— 名称会直接成为
+     * invoke 返回值的 key，重复会互相覆盖。offset 是 0 基位偏移（从起始地址起，与 0F 的 Coil.offset 同口径）。
+     */
+    private String validateBitNames(ModbusCommand c, String base, int quantity) {
+        List<ModbusCommand.BitName> bits = c.bitNames;
+        if (bits == null || bits.isEmpty()) {
+            return null;
+        }
+        Set<Integer> seen = new HashSet<>();
+        for (int i = 0; i < bits.size(); i++) {
+            ModbusCommand.BitName bit = bits.get(i);
+            String bbase = base + ".bitNames[" + i + "]";
+            if (bit == null || bit.offset == null) {
+                return bbase + ".offset is required";
+            }
+            if (bit.offset < 0 || bit.offset >= quantity) {
+                return "invalid " + bbase + ".offset: " + bit.offset + " (quantity " + quantity + ")";
+            }
+            if (bit.name == null || bit.name.isBlank()) {
+                return bbase + ".name is required";
+            }
+            if (!seen.add(bit.offset)) {
+                return "invalid " + bbase + ".offset: " + bit.offset + " (duplicated)";
+            }
+        }
+        return null;
     }
 
     private String validateQuantity(ModbusCommand c, String base, int max) {
