@@ -390,16 +390,6 @@ class SpaceServiceTest {
     }
 
     @Test
-    void getByParentId_delegates() {
-        when(spaceRepository.findByParentId("pid"))
-                .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));
-
-        List<SpaceEntity> result = service.getByParentId("pid").await().indefinitely();
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
     void getRootsByAccess_delegates() {
         when(spaceRepository.findRootsByAccess("org-1", SpaceAccessType.ORGANIZATION))
                 .thenReturn(Uni.createFrom().item(List.of(new SpaceEntity())));

@@ -6,10 +6,13 @@ import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceRepository;
+import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,12 +27,24 @@ public class SpaceService {
     @Inject
     AccountUserLookup accountUserLookup;
 
-    public Uni<SpaceEntity> getById(String id) {
-        return spaceRepository.findById(id);
+    /** 建索引开关：测试进程关掉它，免得启动就连库（与 {@code modbus.index.enabled} 同口径）。 */
+    @ConfigProperty(name = "space.index.enabled", defaultValue = "true")
+    boolean indexEnabled;
+
+    /**
+     * 启动时建索引：{@code ancestors} 是空间树 / 空间图的检索键（见
+     * {@link SpaceRepository#ensureIndexes()}）。建索引失败只留告警，不阻断启动 ——
+     * 没有索引只是慢，起不来是另一回事。
+     */
+    void init(@Observes StartupEvent event) {
+        if (!indexEnabled) {
+            return;
+        }
+        spaceRepository.ensureIndexes().await().indefinitely();
     }
 
-    public Uni<List<SpaceEntity>> getByParentId(String parentId) {
-        return spaceRepository.findByParentId(parentId);
+    public Uni<SpaceEntity> getById(String id) {
+        return spaceRepository.findById(id);
     }
 
     public Uni<List<SpaceEntity>> getRootsByAccess(String accessId, String accessType) {

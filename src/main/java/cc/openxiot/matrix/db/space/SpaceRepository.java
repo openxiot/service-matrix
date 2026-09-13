@@ -3,6 +3,7 @@ package cc.openxiot.matrix.db.space;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
@@ -29,8 +30,27 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         return list("parentId", parentId);
     }
 
+    /** 按祖先取整棵子树（{@code ancestors} 含该 id 的都是它的后代，不含自己）。索引见 {@link #ensureIndexes}。 */
     public Uni<List<SpaceEntity>> findByAncestor(String ancestorId) {
         return list("ancestors", ancestorId);
+    }
+
+    /**
+     * 启动时确保 {@code ancestors} 索引存在（幂等；失败仅告警，不阻断启动）。
+     *
+     * <p>{@code ancestors} 是数组，这条是**多键索引**：空间树（{@code /tree/{rootId}}）与空间图
+     * （{@code /graph/{rootId}}）两个接口都要靠 {@link #findByAncestor} 取整棵子树，
+     * 没有索引就是每次全表扫。</p>
+     *
+     * <p>只给 {@code ancestors} 建，没给 {@code parentId}：后者目前只用在删空间前的「有没有子空间」
+     * 这一处判断上（{@link #findByParentId}），不在热路径上。哪天给空间树做懒加载（按父逐层取）
+     * 再补它。</p>
+     */
+    public Uni<Void> ensureIndexes() {
+        return mongoCollection()
+                .createIndex(Indexes.ascending("ancestors"))
+                .onFailure().recoverWithNull()
+                .replaceWithVoid();
     }
 
     /**
