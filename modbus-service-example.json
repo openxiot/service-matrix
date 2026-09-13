@@ -19,6 +19,7 @@
       "name": "方法名称",
       "request": "请求帧: 16进制字符串",
       "interval": 5,
+      "polling": true,
       "response": [
         {
           "index": 1,

@@ -41,8 +41,10 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   落库时带上就不必再到设备表里绕一圈。它不参与校验：缺省的服务只是不出现在按空间的查询里。
 * `function.request` = 完整的 Modbus RTU 帧（含 CRC16），**由前端生成**，后端原样交给父设备透传。
 * `function.interval` = 服务端**自动调用**本方法的周期（秒）：到点自动 invoke 一次，再按 `response[]`
-  解出字段值；缺省表示不自动调用、只由人手动 invoke。只挂在读方法上 —— 写方法填了会被校验拒绝。
-  **执行侧的调度器尚未落地**，这个字段目前只是定义（见变更记录）。
+  解出字段值；缺省表示没配周期。只挂在读方法上 —— 写方法填了会被校验拒绝。
+* `function.polling` = **自动轮询开关**：`true` 按 `interval` 周期跑，`false` 保留周期但暂停，
+  缺省 = 按 `interval` 判定（有周期即启用，兼容加这个字段之前的定义）。同样只对读方法有意义。
+  **执行侧的调度器尚未落地**，这两个字段目前都只是定义（见变更记录）。
 * `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
 
 ## 四、接口
@@ -133,8 +135,10 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 * `device`：did 非空、siid/aiid/argument ≥ 1。
 * `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填且是合法完整的 16 进制
   （CRC 正确性留给运行期应答校验）。
-* `interval`：可缺省（缺省 = 不自动调用）；给了就必须是 `1 ≤ interval ≤ 86400` 的整数秒，
+* `interval`：可缺省（缺省 = 没配周期）；给了就必须是 `3 ≤ interval ≤ 3600` 的整数秒，
   且该方法是**读方法**（请求帧 fc ∈ `01/02/03/04`）—— 写方法填了报错。
+* `polling`：可缺省；缺省 / `false` 不校验（没开轮询时 `interval` 只是一份没生效的配置）；
+  **`true` 必须同时给 `interval`** —— 开了轮询却没有周期，服务端无从知道多久调一次，报错。
 * `response`：index 必填 / ≥1 / 组内唯一；field 必填；bytes ≥ 1；format ∈
   `int8/uint8/int16/uint16/int32/uint32/float32/string`，且非 string 时 bytes 必须等于该格式的宽度；
   bytes > 1 时 byteOrder 必填且 ∈ `ABCD/DCBA/BADC/CDAB`；value-list 内 value/description 必填且 value 不重复。
@@ -146,14 +150,31 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-13
 
+* **新增 `ModbusServiceFunction.polling`：自动轮询开关**（需求：周期只表达了「多久跑一次」，
+  还需要一个「现在跑不跑」的开关 —— 现场停一台设备的采集不该把配好的周期删掉）：
+  * `true` / `false` / 缺省三态：`true` = 按 `interval` 跑；`false` = 保留周期、暂停（随时可再开）；
+    **缺省 = 按 `interval` 判定**（设了周期即启用）—— 与加这个字段之前的定义保持兼容，
+    老数据不会因为字段一上线就集体停掉。
+  * 校验只有一条：**`true` 必须同时给 `interval`**（开了轮询却没有周期是自相矛盾的）。
+    写方法上的限制沿用 `interval` 那条规则（`polling: true` + 无周期在写方法上先被这条拦下）。
+  * `false` 不带周期的写法不落库：那种情况与「没配轮询」等价，前端也不会发。
+  * 取值范围 `3 ≤ interval ≤ 3600` 秒：下限 3 秒（RS485 是共享总线，周期太密会把总线吃满），
+    上限 3600 秒（再长就该由人手动 invoke，而不是挂个几乎不跑的定时器）。调整范围改
+    `ModbusServiceValidator.MIN/MAX_INTERVAL_SECONDS`，同时要同步前端
+    `device.service.editor.ts` 那份同口径常量（输入框的 nzMin/nzMax）。
+  * 示例 `modbus-service-example.json` 第一个方法补 `"interval": 5, "polling": true`；
+    `ModbusServiceValidatorTest` 补开关三态通过 / `true` 无周期被拒 / 写方法上被拒三例，
+    `ModbusServiceCodecTest` 的示例夹具补 `polling`（收发都要带上）。
 * **新增 `ModbusServiceFunction.interval`：服务端自动调用周期（秒）**（需求：方法不再只靠人手动
   invoke，服务端按各自的周期自动执行；周期是 per-function 的，同一服务里各方法可以不同）：
   * **只挂在读方法上**（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端周期性地往
     寄存器里写值，是危险动作。功能码取请求帧第二个字节判定（`ModbusFrameCodec.isRead`），
     写方法填了直接拒。
   * 缺省 / `null` = 不自动调用（只手动 invoke）。**不用 0 表达**：0 既像「不轮询」又像「尽可能快」。
-  * 取值范围 `1 ≤ interval ≤ 86400` 秒：下限是技术底线（RS485 是共享总线，周期太密会把总线吃满），
-    上限挡明显手误（把分钟填成秒）。现场要更保守就改 `ModbusServiceValidator.MIN_INTERVAL_SECONDS`。
+  * 取值范围 `3 ≤ interval ≤ 3600` 秒：下限 3 秒（RS485 是共享总线，周期太密会把总线吃满），
+    上限 3600 秒（再长就该由人手动 invoke，而不是挂个几乎不跑的定时器）。调整范围改
+    `ModbusServiceValidator.MIN/MAX_INTERVAL_SECONDS`，同时要同步前端
+    `device.service.editor.ts` 那份同口径常量（输入框的 nzMin/nzMax）。
   * **执行侧的调度器尚未落地**：这个字段目前只是定义。落库后怎么跑是另一轮的事 —— 谁调度、
     多副本怎么去重、同一设备多个周期要不要合并成一帧读（fc 03 一帧可读 125 个寄存器，
     但周期挂在 function 上就没法跨周期合并）。

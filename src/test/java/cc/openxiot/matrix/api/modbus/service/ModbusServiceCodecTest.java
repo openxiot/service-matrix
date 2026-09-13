@@ -38,6 +38,7 @@ class ModbusServiceCodecTest {
                   "name": "读进水温度",
                   "request": "010300000001840A",
                   "interval": 5,
+                  "polling": true,
                   "response": [
                     {
                       "index": 1, "field": "进水温度", "bytes": 2, "format": "uint16",
@@ -106,6 +107,7 @@ class ModbusServiceCodecTest {
         assertEquals("读进水温度", first.name);
         assertEquals("010300000001840A", first.request);
         assertEquals(5, first.interval.intValue());   // 服务端自动调用周期（秒）
+        assertEquals(Boolean.TRUE, first.polling);    // 自动轮询开关
         assertEquals(1, first.response.size());
 
         ModbusServiceField field = first.response.get(0);

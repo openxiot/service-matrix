@@ -24,11 +24,13 @@ public final class ModbusServiceValidator {
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
 
     /**
-     * 自动调用周期（秒）的上下限：下限是技术底线（RS485 是共享总线，周期太密会把总线吃满），
-     * 上限防止把用户明显的手误（比如把分钟填成秒）放过去。
+     * 自动调用周期（秒）的上下限：下限 3 秒（RS485 是共享总线，周期太密会把总线吃满），
+     * 上限 3600 秒（再长就该由人手动 invoke，而不是挂个几乎不跑的定时器）。
+     *
+     * <p>前端 device.service.editor.ts 里有一份同口径的常量（输入框的 nzMin/nzMax），改动要同步。</p>
      */
-    private static final int MIN_INTERVAL_SECONDS = 1;
-    private static final int MAX_INTERVAL_SECONDS = 86400;
+    private static final int MIN_INTERVAL_SECONDS = 3;
+    private static final int MAX_INTERVAL_SECONDS = 3600;
 
     private ModbusServiceValidator() {
     }
@@ -103,6 +105,10 @@ public final class ModbusServiceValidator {
             if (requestErr != null) {
                 return requestErr;
             }
+            String pollingErr = validatePolling(function, base);
+            if (pollingErr != null) {
+                return pollingErr;
+            }
             String intervalErr = validateInterval(function, base);
             if (intervalErr != null) {
                 return intervalErr;
@@ -131,7 +137,26 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 自动调用周期（{@link ModbusServiceFunction#interval}，秒）：缺省 = 不自动调用。
+     * 自动轮询开关（{@link ModbusServiceFunction#polling}）：缺省 / false 都不必校验 ——
+     * 没开轮询时 {@code interval} 只是一份没生效的配置（false 的用法就是「留着周期、先不跑」）。
+     *
+     * <p>只有 {@code true} 有话说：开了轮询却没有周期，服务端无从知道多久调一次，
+     * 这种定义是自相矛盾的，直接拒。</p>
+     */
+    private static String validatePolling(ModbusServiceFunction function, String base) {
+        if (!Boolean.TRUE.equals(function.polling)) {
+            return null;
+        }
+        if (function.interval == null) {
+            return "invalid " + base + ".polling: " + function.polling + " (polling requires an interval)";
+        }
+        // 周期本身的取值范围与「只允许读方法」交给 validateInterval
+        return null;
+    }
+
+    /**
+     * 自动调用周期（{@link ModbusServiceFunction#interval}，秒）：缺省 = 没配周期。
+     * 配了周期不等于会跑 —— 跑不跑看 {@link ModbusServiceFunction#polling}（缺省 = 有周期即跑）。
      *
      * <p><b>只允许读方法</b>（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端
      * 周期性地往寄存器里写值，是危险动作，不能由定时器发起。</p>

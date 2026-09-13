@@ -112,6 +112,18 @@ class ModbusServiceValidatorTest {
     }
 
     @Test
+    void acceptsIntervalBounds() {
+        // 上下限本身是合法的（越界才拒）
+        ModbusService fastest = service();
+        fastest.functions.get(0).interval = 3;
+        assertNull(ModbusServiceValidator.validate(fastest));
+
+        ModbusService slowest = service();
+        slowest.functions.get(0).interval = 3600;
+        assertNull(ModbusServiceValidator.validate(slowest));
+    }
+
+    @Test
     void rejectsIntervalOnWriteFunctions() {
         // 写方法的应答只是请求回显，周期调用等于让服务端周期性往寄存器里写值
         ModbusService written = service();
@@ -124,14 +136,63 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsIntervalOutOfRange() {
         ModbusService tooFrequent = service();
-        tooFrequent.functions.get(0).interval = 0;
-        assertEquals("invalid functions[0].interval: 0 (interval must be between 1 and 86400 seconds)",
+        tooFrequent.functions.get(0).interval = 2;
+        assertEquals("invalid functions[0].interval: 2 (interval must be between 3 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooFrequent));
 
         ModbusService tooRare = service();
-        tooRare.functions.get(0).interval = 86401;
-        assertEquals("invalid functions[0].interval: 86401 (interval must be between 1 and 86400 seconds)",
+        tooRare.functions.get(0).interval = 3601;
+        assertEquals("invalid functions[0].interval: 3601 (interval must be between 3 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooRare));
+    }
+
+    // ===== polling =====
+
+    @Test
+    void acceptsPollingOnReadFunctions() {
+        // 显式开轮询：有周期，读方法
+        ModbusService polling = service();
+        polling.functions.get(0).interval = 5;
+        polling.functions.get(0).polling = true;
+        assertNull(ModbusServiceValidator.validate(polling));
+
+        // 显式关轮询：周期留着不跑（暂停），一样合法
+        ModbusService paused = service();
+        paused.functions.get(0).interval = 5;
+        paused.functions.get(0).polling = false;
+        assertNull(ModbusServiceValidator.validate(paused));
+
+        // 缺省 = 按 interval 判定：老数据（只有周期、没这个字段）照旧算「启用」
+        ModbusService legacy = service();
+        legacy.functions.get(0).interval = 5;
+        assertNull(ModbusServiceValidator.validate(legacy));
+    }
+
+    @Test
+    void rejectsPollingWithoutInterval() {
+        // 开了轮询却没有周期：服务端无从知道多久调一次，自相矛盾
+        ModbusService noInterval = service();
+        noInterval.functions.get(0).polling = true;
+        assertEquals("invalid functions[0].polling: true (polling requires an interval)",
+                ModbusServiceValidator.validate(noInterval));
+    }
+
+    @Test
+    void rejectsPollingOnWriteFunctions() {
+        // 写方法开轮询：先被「必须有周期」拦下（周期本身在写方法上也过不了 validateInterval）
+        ModbusService written = service();
+        written.functions.get(0).request = "010600010064D9E1";   // fc 06 写单寄存器
+        written.functions.get(0).polling = true;
+        assertEquals("invalid functions[0].polling: true (polling requires an interval)",
+                ModbusServiceValidator.validate(written));
+
+        // 写方法上带周期又开轮询：由周期那条规则拒（写方法不能周期调用）
+        ModbusService writtenPolled = service();
+        writtenPolled.functions.get(0).request = "010600010064D9E1";
+        writtenPolled.functions.get(0).interval = 5;
+        writtenPolled.functions.get(0).polling = true;
+        assertEquals("invalid functions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
+                ModbusServiceValidator.validate(writtenPolled));
     }
 
     // ===== response =====
