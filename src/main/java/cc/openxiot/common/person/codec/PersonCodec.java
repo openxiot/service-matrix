@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.codec;
+package cc.openxiot.common.person.codec;
 
 import cc.openxiot.common.person.Person;
 import io.vertx.core.json.JsonObject;

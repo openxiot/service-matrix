@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.service.codec;
 
-import cc.openxiot.matrix.db.codec.PersonCodec;
+import cc.openxiot.common.person.codec.PersonCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
