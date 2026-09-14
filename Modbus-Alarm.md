@@ -10,18 +10,18 @@
 | 1 | 配置模型（`ModbusServiceFieldAlarm` + 两处 `alarm` + Codec） | **已落地**（见第二、三节） |
 | 2 | 判定口径 `ModbusAlarmPolicy`（纯函数） | **已落地**（见第四、五节） |
 | 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
-| 0 | Azure DocumentDB 上验「唯一部分索引」 | **待做，且门控第 5 步**（见第七节） |
-| 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节；唯一部分索引按第七节刻意未建） |
+| 0 | Azure DocumentDB 上验「唯一部分索引」 | **已落地：成立**（2026-09-14 staging 冒烟，见第七节） |
+| 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
 | 6 | 定义变更对账 / 删除级联 | **已落地**（见第五节「定义变更对账与删除级联」） |
 | 7 | 查询接口 `ModbusAlarmResource` | **已落地**（见第九节） |
 | 8 | 前端：编辑器逐字段配置 + `/main/alarm` 列表页 | **已落地**（见第十三节变更记录；代码在 `webapp-matrix`） |
 
 没落地的部分不是「以后再说」，是**设计已定、按顺序落**；写在这里是为了让判定口径与落库口径
-分开评审 —— 前者零 IO、可独立验证，后者压在第七节那个冒烟结论上。
+分开评审 —— 前者零 IO、可独立验证，后者压在第七节那个冒烟结论上（**已出结论：成立**）。
 
-**仍待做的两件**：第 0 步的「唯一部分索引」冒烟（门控第七节，需 staging 连接串），
-以及端到端验收（造一条越限告警、验「再 invoke 一次仍只有一条」，同样需连接串）。
+**仍待做的只有一件**：端到端验收（造一条越限告警、验「再 invoke 一次仍只有一条」这条核心断言
+不被唯一部分索引 + 重复键吞掉一起破掉）—— 见 `Modbus-Alarm-TODO.md` 第七步。
 
 ## 一、要解决的问题与口径
 
@@ -225,32 +225,57 @@ poller（1 副本）与 API 副本（N 个）可能同时判定同一 `(service,
 **关闭用 `updateMany` 按整个 key**（不是定位到某条 `_id`）—— 这消除了「幽灵告警永远关不掉」
 这个失效模式，也让热路径只需要「存在性」而不需要身份。
 
-> **第 0 步（待做，门控这一节）**：部署是 Postgres 底的 Azure DocumentDB，**部分索引支持未实证**。
-> 仓库已有先例（本文件的姊妹篇 `Modbus-History.md` 第六节：TTL「既没列为不支持、也没写明支持，
-> 所以结论是只能实测」，然后真的冒烟并记账）。冒烟步骤：在 staging 临时集合建该索引 →
-> 插两条同 `openKey` 的应第二条报 11000 → **插两条都没有 `openKey` 的应都成功**
-> （这一步才证明「部分」；普通唯一索引会把第二条 null 当重复拒掉）→ drop → 结果记进本文件。
->
-> **在这个结论出来之前，`ensureIndexes()` 里刻意没有建这个索引**（只建第八节那 2、3 两号）。
-> 两条理由，方向相反但都指向「先别建」：
-> * **建了但被静默吞掉**：`ensureIndexes()` 的失败处理是 `recoverWithNull`（不阻断启动，
->   与其它仓储同口径）。服务端若不支持部分索引而抛错，那一行会被吞掉 —— 于是「以为有护栏、
->   其实没有」，**比明说没有更糟**（读到 `listIndexes` 也证明不了语义，只能靠行为冒烟）。
-> * **建错了更危险**：万一服务端忽略 `partialFilterExpression` 当成普通唯一索引，
->   所有**已恢复**的行 `openKey` 都是缺失（等同 null），同一出值的第二条已恢复告警会被拒 ——
->   **告警开始丢**。这是把「多一条重复」换成「少一条真告警」，两害相权，后者重得多。
->
-> 目前没有这个索引也**不产生脏数据**：告警还没有任何写入者（评估尚未接进采集链路，第四步才接）。
-> 第二步落地的只是「文档 + 仓储 + Codec」，`insertOpen` 在重复键上是**吞掉并返回 `false`**
-> 而不是失败 —— 那一支的判定（`isDuplicateKey`）已有单测钉住，等索引到位即生效。
->
-> **回退档**（冒烟失败时用，**不静默降级**）：
-> * **F1**：普通唯一复合索引 `{serviceId, functionIndex, field, recoveredAt}` —— 不用任何冷门特性。
->   开着的行 `recoveredAt` 都是 null，唯一索引把 null 当一个值，所以第二条开行会撞；
->   关闭的行时间戳各异可以共存。唯一失效模式是「同一毫秒的两次关闭」，而那会让**关闭**失败 —— 自愈。
-> * **F2**：不建唯一索引，改用 `updateOne({openKey}, {$setOnInsert: …}, upsert: true)` 读
->   `getUpsertedId()` 判断是否新建。只缩小窗口、**不关闭**竞态（MongoDB 明确说 upsert 无唯一索引时
->   仍可能重复），只能与 `updateMany` 兜底一起用，并且必须把这条竞态**写进文档**。
+### 第 0 步的冒烟台账：**已做完，唯一部分索引成立**（2026-09-14，staging）
+
+建之前不能确定：部署是 Postgres 底的 Azure DocumentDB，**部分索引支持未实证**。仓库已有先例
+（本文件的姊妹篇 `Modbus-History.md` 第六节：TTL「既没列为不支持、也没写明支持，所以结论是只能
+实测」，然后真的冒烟并记账）。
+
+**为什么不能只看 `listIndexes` 就收工** —— 两条方向相反但都指向「先别建」的理由：
+
+* **建了但被静默吞掉**：`ensureIndexes()` 的失败处理是 `recoverWithNull`（不阻断启动，与其它仓储
+  同口径）。服务端若不支持部分索引而抛错，那一行会被吞掉 —— 于是「以为有护栏、其实没有」，
+  **比明说没有更糟**（读到索引文档也证明不了语义，只能靠行为冒烟）。
+* **建错了更危险**：万一服务端忽略 `partialFilterExpression` 当成普通唯一索引，所有**已恢复**的
+  行 `openKey` 都是缺失（等同 null），同一出值的第二条已恢复告警会被拒 —— **告警开始丢**。
+  这是把「多一条重复」换成「少一条真告警」，两害相权，后者重得多。
+
+**实测**（staging 临时集合 `modbus/alarm-smoke`，建索引后跑四条行为探针，跑完 `drop`；
+`modbus` 库前后集合清单一致、没有任何真实集合被碰）：
+
+| # | 探针 | 结果 |
+|---|---|---|
+| 0 | `createIndex` 会不会抛错 | **没抛错**，也没被 `recoverWithNull` 吞掉 |
+| 1 | 插两条**同** `openKey` | 第二条 `11000 Duplicate key violation on the requested collection: Index 'openKey_unique_partial'`；连插两次都挡住，该 key 行数 1 |
+| 2 | 插两条**都没有** `openKey` | **两条都成功**（无 `openKey` 的行数 2）—— 这一条才证明「部分」真的部分，普通唯一索引会把第二条的 null 当重复拒掉 |
+| 3 | 不同 `openKey` 之间 | 不互挡（`k2` 在 `k1` 开着时照样插入） |
+| 4 | `$unset` 关闭后再开同 key | 成功，「一条关着的 + 一条新开的」共存 |
+
+实际落成的索引文档（`storageEngine.enableOrderedIndex` 是这套实现自己的扩展，不影响语义）：
+
+```json
+{"v":2,"key":{"openKey":1},"name":"openKey_unique_partial",
+ "partialFilterExpression":{"openKey":{"$exists":true}},"unique":true,
+ "storageEngine":{"enableOrderedIndex":true}}
+```
+
+**结论：1 号索引已补进 `ensureIndexes()`，回退档 F1 / F2 不需要启用**（留在下面备查，日后换存储
+时是同一条判定路径）。
+
+**顺带捞到的一条纪律（第 4 条探针的副产品）**：显式写 `openKey: null` 的行**也算「存在」**
+（`$exists` 对 null 成立），索引键是 null，于是**第二条这样的行会被拒**。所以关闭只能写成
+`$unset`（`ModbusServiceAlarmRepository.closeUpdate`），**绝不能用 `$set openKey: null` 代替** ——
+那会让「关闭」从第二条起失败，而失败的样子是静默的（关闭的调用方只记日志）。这条已写进
+`closeUpdate` 的注释，因为那正是日后有人想「简化」它的地方。
+
+**回退档**（本次没用上，留档；**不静默降级**）：
+
+* **F1**：普通唯一复合索引 `{serviceId, functionIndex, field, recoveredAt}` —— 不用任何冷门特性。
+  开着的行 `recoveredAt` 都是 null，唯一索引把 null 当一个值，所以第二条开行会撞；
+  关闭的行时间戳各异可以共存。唯一失效模式是「同一毫秒的两次关闭」，而那会让**关闭**失败 —— 自愈。
+* **F2**：不建唯一索引，改用 `updateOne({openKey}, {$setOnInsert: …}, upsert: true)` 读
+  `getUpsertedId()` 判断是否新建。只缩小窗口、**不关闭**竞态（MongoDB 明确说 upsert 无唯一索引时
+  仍可能重复），只能与 `updateMany` 兜底一起用，并且必须把这条竞态**写进文档**。
 
 **另两个小竞态都无害**：两个评估者同时关闭同一 key —— `updateMany` + `$unset` 幂等，第二个匹配 0 条；
 用户处理与告警关闭同时发生 —— 两者是互不相交字段的 `$set`，用 `updateOne`（**绝不 `replaceOne`**），
@@ -288,10 +313,10 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 **索引**（`ensureIndexes()`：幂等、失败不阻断启动、沿用 `modbus.index.enabled`）：
 
-1. `{openKey: 1}` unique + `partialFilterExpression` —— **并发护栏，见第七节的取舍：代码里还没建**
-   （文档里仍列为第 1 号，冒烟一过就补一行）
-2. `{serviceId: 1, functionIndex: 1, openKey: 1}` —— 采集侧查未恢复（**已建**）
-3. `{serviceId: 1, functionIndex: 1, at: -1}` —— 列表查询（**已建**）
+1. `{openKey: 1}` unique + `partialFilterExpression` —— **并发护栏**，2026-09-14 在 staging 上
+   冒烟通过后已建（索引文档形态与四条探针见第七节）
+2. `{serviceId: 1, functionIndex: 1, openKey: 1}` —— 采集侧查未恢复
+3. `{serviceId: 1, functionIndex: 1, at: -1}` —— 列表查询
 
 **仓储**（`ModbusServiceAlarmRepository`）里没有一条「整文档替换」：行落下之后只有两种改动 ——
 关闭（`recoveredAt` / `closeType`、`$unset openKey`）与处理（`handled` / `handledBy`），
@@ -461,6 +486,15 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 ### 2026-09-14
 
+* **第 0 步落地：Azure DocumentDB 上「唯一部分索引」成立**（staging 冒烟，四条探针全过；
+  `ModbusServiceAlarmRepository.ensureIndexes()` 补上 1 号索引）。台账进第七节。两条值得单说：
+  * **必须靠行为冒烟，不能只看索引文档**：`ensureIndexes()` 的失败处理是 `recoverWithNull`，
+    不支持时那一行会被静默吞掉 —— 「以为有护栏、其实没有」比明说没有更糟。
+  * **捞到一条新纪律**：显式 `openKey: null` 的行**也算存在**（`$exists` 对 null 成立），
+    第二条这样的行会被唯一索引拒掉。所以关闭只能写 `$unset`，**绝不能改成 `$set openKey: null`**
+    —— 而失败的样子是静默的（关闭的调用方只记日志）。已写进 `closeUpdate` 的注释，
+    因为那正是日后有人想「简化」它的地方。
+  * 回退档 F1 / F2 本次没用上，留在第七节备查。
 * **前端落地：编辑器逐字段配置 + `/main/alarm` 列表页**（`webapp-matrix`，0.9.2 → 0.9.6，
   提交 `7973e80` `5602cea` `813f65e` `66809e3` `6d7307f`）。几处值得记下的口径：
   * **先把词统一了再动功能**：界面与词典里既有的词是「报警」（菜单、面包屑、看板图注），

@@ -2,19 +2,27 @@
 
 设计见 `Modbus-Alarm.md`。图例：`[x]` 已完成，`[ ]` 待办。**最险的先列。**
 
-## 第 0 步：Azure DocumentDB 上验「唯一部分索引」（**门控第三步那个第一个写入者，先做**）
+## 第 0 步：Azure DocumentDB 上验「唯一部分索引」（**已完成：成立**）
 
-- [ ] 在 staging 临时集合 `modbus/alarm-smoke` 建 `{openKey: 1}` unique +
-      `partialFilterExpression: {openKey: {$exists: true}}`。
-- [ ] 插两条**同 `openKey`** 的文档 ⇒ 第二条必须报 11000（重复键）。
-- [ ] 插两条**都没有 `openKey`** 的文档 ⇒ **两条都必须成功**。
+2026-09-14 在 staging 上跑完，台账（四条探针、索引文档形态、捞到的那条纪律）记进
+`Modbus-Alarm.md` 第七节。用的是 mongosh + staging 连接串。
+
+- [x] 在 staging 临时集合 `modbus/alarm-smoke` 建 `{openKey: 1}` unique +
+      `partialFilterExpression: {openKey: {$exists: true}}`。落成
+      `{"v":2,"key":{"openKey":1},"name":"openKey_unique_partial",
+      "partialFilterExpression":{"openKey":{"$exists":true}},"unique":true,
+      "storageEngine":{"enableOrderedIndex":true}}`，**没抛错、也没被静默吞掉**。
+- [x] 插两条**同 `openKey`** 的文档 ⇒ 第二条报 `11000 Duplicate key violation`（连插两次都挡住，行数 1）。
+- [x] 插两条**都没有 `openKey`** 的文档 ⇒ **两条都成功**。
       这一步才证明「部分」；普通唯一索引会把第二条的 null 当重复拒掉。
-- [ ] drop 临时集合，把结果（索引文档形态、时间点、结论、最终生效的是哪一档）记进 `Modbus-Alarm.md` 第七节。
-- [ ] 失败则走 F1（普通唯一复合索引 `{serviceId, functionIndex, field, recoveredAt}`）
-      或 F2（`updateOne` upsert + `updateMany` 兜底，并把竞态写进文档）—— **不静默降级**。
+- [x] 另插两条**显式 `openKey: null`** 的 ⇒ 第二条也被拒。
+      **这是一条新纪律**：关闭只能 `$unset`，不能 `$set openKey: null`（已写进 `closeUpdate` 注释）。
+- [x] drop 临时集合（`modbus` 库前后集合清单一致，没碰任何真实集合），结果记进 `Modbus-Alarm.md` 第七节。
+- [x] 结论成立 ⇒ **1 号索引已补进 `ensureIndexes()`**（回退档 F1 / F2 未启用，留档备查）。
 
-> **本机跑不了这一步**：仓库的 `application*.properties` 里没有 mongo 连接串、环境变量里也没有，
-> 27017 端口不可达。需要 staging 连接串。
+> 失败的判定路径没有走过，但留着：真不成立时走 F1（普通唯一复合索引
+> `{serviceId, functionIndex, field, recoveredAt}`）或 F2（`updateOne` upsert + `updateMany` 兜底，
+> 并把竞态写进文档）—— **不静默降级**。
 
 ## 第一步：配置模型与校验（已完成）
 
@@ -47,9 +55,8 @@
 - [x] 单测：`ModbusAlarmCodecTest`（9 例：`null 不出键`、`openKey` 不出现、epoch 毫秒、
       `=` 的取值表状态、汇总排序与归桶）+ `ModbusServiceAlarmRepositoryTest`（8 例：三种异常形状、
       非 11000 照常外传、cause 链包装、自引用终止、超长链有界）。
-- [ ] **唯一部分索引仍待第 0 步的冒烟结论**（`ensureIndexes()` 里刻意只建了 2、3 两号）。
-      两条理由写在 `Modbus-Alarm.md` 第七节：建了被静默吞掉 = 以为有护栏，建错 = 告警开始丢。
-      目前告警还没有写入者，缺索引不产生脏数据。
+- [x] 唯一部分索引第 0 步冒烟通过后已补进 `ensureIndexes()`（现在 1、2、3 三个都建）。
+      「先不建」的两条理由与实测台账见 `Modbus-Alarm.md` 第七节。
 - [x] 全量 449 例中 448 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
 
 ## 第三步：评估接线进采集链路（已完成）

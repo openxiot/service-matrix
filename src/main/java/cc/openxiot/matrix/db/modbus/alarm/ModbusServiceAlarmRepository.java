@@ -5,6 +5,7 @@ import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.WriteConcernException;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.Sorts;
@@ -49,28 +50,49 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
     /**
      * 启动时确保索引存在（幂等；失败仅告警，不阻断启动，与其它仓储同口径）。
      *
-     * <p>建两个：</p>
+     * <p>建三个：</p>
      * <ol>
+     *   <li>{@code {openKey: 1}} <b>unique + partial</b> —— 并发护栏（见 {@link #insertOpen}）。
+     *       已实证可用，见下面的冒烟台账。</li>
      *   <li>{@code (serviceId, functionIndex, openKey)} —— 采集侧每轮查「这个出值开着吗」
      *       （见 {@link #listOpenFields}），一个方法配 3 个字段也只查一次。</li>
      *   <li>{@code (serviceId, functionIndex, at)} —— 列表查询，前两段等值 + {@code at} 倒序。</li>
      * </ol>
      *
-     * <p><b>还差一个：{@code {openKey: 1}} unique + {@code partialFilterExpression: {openKey: {$exists: true}}}
-     * —— 并发护栏，这里故意没建。</b>部署是 Postgres 底的 Azure DocumentDB，**部分索引支持未实证**；
-     * 如果它不支持，{@code createIndex} 会抛错，然后被这行 {@code recoverWithNull} 静默吞掉 ——
-     * 于是「以为有护栏、其实没有」，比明说没有更糟。而**建错了更危险**：万一服务端忽略了
-     * {@code partialFilterExpression} 而当成普通唯一索引，所有已恢复的行 {@code openKey} 都是
-     * 缺失（等同 null），同一出值的**第二条已恢复告警会被拒**——告警就开始丢。</p>
+     * <h4>1 号索引的冒烟台账（2026-09-14，staging）</h4>
      *
-     * <p>所以顺序是：先在 staging 冒烟（插两条同 {@code openKey} 的应第二条报 11000、
-     * 插两条都没有 {@code openKey} 的应**都成功**），结论定下来再在这里补一行（或改走回退档）。
-     * 步骤与回退档见 {@code Modbus-Alarm.md} 第七节、{@code Modbus-Alarm-TODO.md} 第 0 步。
-     * <b>在此之前告警还没有任何写入者</b>（评估尚未接进采集链路），所以缺这个索引不会产生脏数据。</p>
+     * <p>建之前不能确定：部署是 Postgres 底的 Azure DocumentDB，<b>部分索引支持未实证</b>。
+     * 不支持的话 {@code createIndex} 抛错、被这行 {@code recoverWithNull} 静默吞掉 ——
+     * 「以为有护栏、其实没有」，比明说没有更糟；而**建错了更危险**：万一服务端忽略
+     * {@code partialFilterExpression} 而当成普通唯一索引，已恢复的行 {@code openKey} 是缺失
+     * （等同 null），同一出值的第二条已恢复告警会被拒，**告警就开始丢**。</p>
+     *
+     * <p>在 staging 临时集合 {@code modbus/alarm-smoke} 上实测（跑完 drop），四条都过：</p>
+     * <ul>
+     *   <li>建索引<b>没抛错、也没被静默吞掉</b>，落成
+     *       {@code {"v":2,"key":{"openKey":1},"name":"openKey_unique_partial",
+     *       "partialFilterExpression":{"openKey":{"$exists":true}},"unique":true,
+     *       "storageEngine":{"enableOrderedIndex":true}}}；</li>
+     *   <li>插两条同 {@code openKey} 的，第二条报 11000 {@code Duplicate key violation}</li>
+     *   <li>插两条都没有 {@code openKey} 的，<b>两条都成功</b> —— 这一条才证明「部分」真的部分，
+     *       普通唯一索引会把第二条的 null 当重复拒掉；</li>
+     *   <li>{@code $unset} 关掉一条之后，同一 {@code openKey} 能再开一条。</li>
+     * </ul>
+     *
+     * <p><b>顺带捞到的一条纪律</b>：显式写 {@code openKey: null} 的文档**也算存在**（{@code $exists}
+     * 对 null 成立），于是**第二条这样的行会被拒**。所以关闭只能写成 {@code $unset}（见
+     * {@link #closeUpdate}），<b>绝不能用 {@code $set openKey: null} 代替</b> —— 那会让「关闭」
+     * 在第二条上失败，而失败的样子是静默的（关闭调用方只记日志）。</p>
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "functionIndex", "openKey"))
+                .createIndex(
+                        Indexes.ascending("openKey"),
+                        new IndexOptions()
+                                .name("openKey_unique_partial")
+                                .unique(true)
+                                .partialFilterExpression(Filters.exists("openKey")))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "functionIndex", "openKey")))
                 .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "functionIndex", "at")))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
@@ -192,7 +214,11 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
      * 关闭的写语句：{@code $set recoveredAt / closeType} + <b>{@code $unset openKey}</b>。
      *
      * <p>那个 {@code $unset} 就是「关闭」本身：{@code openKey} 是状态，只写 {@code recoveredAt}
-     * 而不拿掉它，这条会永远被算作「还开着」（采集侧的判断、列表的筛选、汇总的 {@code open} 计数全都看它）。</p>
+     * 而不拿掉它，这条会永远被算作「还开着」（采集侧的判断、列表的筛选、汇总的 {@code open} 计数全都看它）。
+     * <b>也不能换成 {@code $set openKey: null}</b> —— 那条唯一部分索引的条件是
+     * {@code {openKey: {$exists: true}}}，而 {@code $exists} 对显式 null 是成立的，于是第二条
+     * 「关着的」行会被当重复拒掉（staging 上实测过，见 {@link #ensureIndexes} 的冒烟台账）。
+     * 失败的样子还是静默的：关闭的调用方只记日志。</p>
      */
     static Bson closeUpdate(Date at, String closeType) {
         return Updates.combine(
