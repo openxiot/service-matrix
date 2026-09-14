@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.service.validator;
 
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
@@ -314,6 +315,158 @@ class ModbusServiceValidatorTest {
         assertNull(ModbusServiceValidator.validate(bits));
     }
 
+    // ===== 告警配置 =====
+
+    @Test
+    void acceptsAlarms() {
+        // 数值字段：超过 80 报「温度过高」
+        assertNull(validateFieldAlarm(alarm(">", 80.0, null), field("进水温度", "uint16", 2)));
+        // 取值表字段：等于「ON」报「水泵异常」（比的是描述字符串，不是原始值）
+        ModbusServiceField named = field("水泵状态", "uint16", 2);
+        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
+        assertNull(validateFieldAlarm(alarm("=", null, "ON"), named));
+        // 数值字段用「等于」比数
+        assertNull(validateFieldAlarm(alarm("=", 1.0, null), field("进水温度", "uint16", 2)));
+    }
+
+    @Test
+    void acceptsBitAlarm() {
+        // 位只有 0/1，只能用「等于」比 0 或 1：进水阀 = 1 告警
+        ModbusServiceField bits = field("进水阀位", "uint8", 1);
+        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
+        bits.bitList.get(0).alarm = alarm("=", 1.0, null);
+
+        ModbusService service = service();
+        service.functions.get(0).response = new ArrayList<>(List.of(bits));
+        assertNull(ModbusServiceValidator.validate(service));
+    }
+
+    @Test
+    void ignoresDisabledAlarm() {
+        // enabled != true：半配置合法，与 polling 同一条规矩 —— 留着配置、先不报
+        ModbusServiceFieldAlarm disabled = alarm("??", null, null);
+        disabled.enabled = false;
+        disabled.text = null;
+        disabled.level = null;
+        assertNull(validateFieldAlarm(disabled, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm absent = alarm("??", null, null);
+        absent.enabled = null;
+        assertNull(validateFieldAlarm(absent, field("进水温度", "uint16", 2)));
+    }
+
+    @Test
+    void rejectsBadAlarmScalars() {
+        String base = "functions[0].response[0].alarm";
+
+        ModbusServiceFieldAlarm badCompare = alarm("!=", 80.0, null);
+        assertEquals("invalid " + base + ".compare: != (must be one of > >= < <= =)",
+                validateFieldAlarm(badCompare, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm noCompare = alarm(null, 80.0, null);
+        assertEquals("invalid " + base + ".compare: null (must be one of > >= < <= =)",
+                validateFieldAlarm(noCompare, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm badLevel = alarm(">", 80.0, null);
+        badLevel.level = "FATAL";
+        assertEquals("invalid " + base + ".level: FATAL (must be one of INFO WARN CRITICAL)",
+                validateFieldAlarm(badLevel, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm blankText = alarm(">", 80.0, null);
+        blankText.text = "  ";
+        assertEquals(base + ".text is required",
+                validateFieldAlarm(blankText, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm longText = alarm(">", 80.0, null);
+        longText.text = "超".repeat(65);
+        assertEquals("invalid " + base + ".text: too long (64 characters max)",
+                validateFieldAlarm(longText, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm noThreshold = alarm(">", null, null);
+        assertEquals(base + ".threshold is required (compare >)",
+                validateFieldAlarm(noThreshold, field("进水温度", "uint16", 2)));
+
+        ModbusServiceFieldAlarm nan = alarm(">", Double.NaN, null);
+        assertEquals("invalid " + base + ".threshold: NaN",
+                validateFieldAlarm(nan, field("进水温度", "uint16", 2)));
+    }
+
+    @Test
+    void rejectsAlarmOnWriteFunction() {
+        // 写方法的应答是请求回显，没有「读到的值」可言 —— 与 interval 同一条规则
+        ModbusService service = service();
+        ModbusServiceFunction write = service.functions.get(0);
+        write.request = "0105000000010A0A";
+        write.response.get(0).alarm = alarm(">", 80.0, null);
+
+        assertEquals("invalid functions[0].response[0].alarm: only read functions (fc 01/02/03/04) can have alarms",
+                ModbusServiceValidator.validate(service));
+    }
+
+    @Test
+    void rejectsAlarmOnStringField() {
+        // string 字段出的是任意文本，没有可比的量
+        ModbusServiceFieldAlarm a = alarm(">", 80.0, null);
+        assertEquals("invalid functions[0].response[0].alarm: a string field has no comparable value",
+                validateFieldAlarm(a, field("设备型号", "string", 4)));
+    }
+
+    @Test
+    void rejectsNumericCompareOnValueListField() {
+        // 带 value-list 的字段出的是描述字符串：配 > 会随原始值是否命中取值表而时灵时不灵
+        ModbusServiceField named = field("水泵状态", "uint16", 2);
+        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
+
+        assertEquals("invalid functions[0].response[0].alarm.compare: > (a value-list field yields names, use =)",
+                validateFieldAlarm(alarm(">", 80.0, null), named));
+    }
+
+    @Test
+    void rejectsBadEqualsOnValueListField() {
+        String base = "functions[0].response[0].alarm";
+        ModbusServiceField named = field("水泵状态", "uint16", 2);
+        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
+
+        assertEquals(base + ".state is required (compare = on a value-list field)",
+                validateFieldAlarm(alarm("=", null, null), named));
+
+        // 不在取值表里的描述：判定时永远比不中，是静默失效，直接拒
+        assertEquals("invalid " + base + ".state: RUNAWAY (not in this field's value-list)",
+                validateFieldAlarm(alarm("=", null, "RUNAWAY"), named));
+
+        // 取值表字段比数也不对：那种字段的值有时是字符串
+        assertEquals("invalid " + base + ".threshold: not allowed on a value-list field (use state)",
+                validateFieldAlarm(alarm("=", 1.0, "ON"), named));
+    }
+
+    @Test
+    void rejectsBothThresholdAndState() {
+        assertEquals("invalid functions[0].response[0].alarm.state: only allowed on a value-list field (use threshold)",
+                validateFieldAlarm(alarm("=", 1.0, "ON"), field("进水温度", "uint16", 2)));
+        assertEquals("invalid functions[0].response[0].alarm.state: only allowed when compare is =",
+                validateFieldAlarm(alarm(">", 80.0, "ON"), field("进水温度", "uint16", 2)));
+        assertEquals("functions[0].response[0].alarm.threshold is required (compare =)",
+                validateFieldAlarm(alarm("=", null, null), field("进水温度", "uint16", 2)));
+    }
+
+    @Test
+    void rejectsBadBitAlarm() {
+        String base = "functions[0].response[0].bit-list[0].alarm";
+        ModbusServiceField bits = field("进水阀位", "uint8", 1);
+        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
+
+        // 位只有 0/1：数值比较与 0.5 都是定义错误
+        bits.bitList.get(0).alarm = alarm(">", 1.0, null);
+        ModbusService service = service();
+        service.functions.get(0).response = new ArrayList<>(List.of(bits));
+        assertEquals("invalid " + base + ".compare: > (a bit is 0 or 1, use =)",
+                ModbusServiceValidator.validate(service));
+
+        bits.bitList.get(0).alarm = alarm("=", 0.5, null);
+        assertEquals("invalid " + base + ".threshold: 0.5 (a bit is 0 or 1, use =)",
+                ModbusServiceValidator.validate(service));
+    }
+
     // ===== 夹具 =====
 
     /** 一份各处都合法的定义：各用例只改自己关心的那一处。 */
@@ -361,5 +514,37 @@ class ModbusServiceValidatorTest {
         entry.offset = offset;
         entry.field = field;
         return entry;
+    }
+
+    /** 一份「启用之后应当自洽」的告警：各用例只改自己关心的那一处。 */
+    private static ModbusServiceFieldAlarm alarm(String compare, Double threshold, String state) {
+        ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+        alarm.enabled = true;
+        alarm.compare = compare;
+        alarm.threshold = threshold;
+        alarm.state = state;
+        alarm.level = "WARN";
+        alarm.text = "温度过高";
+        return alarm;
+    }
+
+    private static ModbusServiceField field(String name, String format, Integer bytes) {
+        ModbusServiceField field = new ModbusServiceField();
+        field.index = 1;
+        field.field = name;
+        field.bytes = bytes;
+        field.format = format;
+        if (bytes != null && bytes > 1) {
+            field.byteOrder = "ABCD";
+        }
+        return field;
+    }
+
+    /** 把这份告警挂到服务唯一那个方法的唯一那个字段上，返回校验结果。 */
+    private static String validateFieldAlarm(ModbusServiceFieldAlarm alarm, ModbusServiceField field) {
+        ModbusService service = service();
+        field.alarm = alarm;
+        service.functions.get(0).response = new ArrayList<>(List.of(field));
+        return ModbusServiceValidator.validate(service);
     }
 }

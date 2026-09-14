@@ -26,6 +26,9 @@ public final class ModbusServiceFieldBitCodec {
         if (bit.field != null) {
             o.put("field", bit.field);
         }
+        if (bit.alarm != null) {
+            o.put("alarm", ModbusServiceFieldAlarmCodec.encode(bit.alarm));
+        }
         return o;
     }
 
@@ -46,6 +49,7 @@ public final class ModbusServiceFieldBitCodec {
         ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
         bit.offset = o.getInteger("offset");
         bit.field = o.getString("field");
+        bit.alarm = ModbusServiceFieldAlarmCodec.decode(o.getJsonObject("alarm"));
         return bit;
     }
 

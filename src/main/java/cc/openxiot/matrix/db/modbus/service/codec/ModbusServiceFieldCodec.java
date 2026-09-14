@@ -50,6 +50,9 @@ public final class ModbusServiceFieldCodec {
         if (field.bitList != null) {
             o.put("bit-list", ModbusServiceFieldBitCodec.encode(field.bitList));
         }
+        if (field.alarm != null) {
+            o.put("alarm", ModbusServiceFieldAlarmCodec.encode(field.alarm));
+        }
         return o;
     }
 
@@ -77,6 +80,7 @@ public final class ModbusServiceFieldCodec {
         field.unit = o.getString("unit");
         field.valueList = ModbusServiceFieldValueCodec.decode(o.getJsonArray("value-list"));
         field.bitList = ModbusServiceFieldBitCodec.decode(o.getJsonArray("bit-list"));
+        field.alarm = ModbusServiceFieldAlarmCodec.decode(o.getJsonObject("alarm"));
         return field;
     }
 

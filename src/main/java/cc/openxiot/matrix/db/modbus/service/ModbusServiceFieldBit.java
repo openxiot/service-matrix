@@ -23,4 +23,8 @@ public class ModbusServiceFieldBit {
 
     @Schema(description = "该位的取值名：invoke 返回值里这个位的 key（值为 0/1）", examples = {"进水阀"}, required = true)
     public String field;
+
+    @Schema(description = "本位的阈值告警配置：值恒为 0/1，故只能用「等于」比 0 或 1，"
+            + "如「进水阀 = 1 告警」；配在位上而不是父字段上，因为位是独立的结果键")
+    public ModbusServiceFieldAlarm alarm;
 }

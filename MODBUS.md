@@ -28,7 +28,9 @@ ModbusService        name / version / configId / device / functions[] / creator 
 DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
 ModbusServiceFunction index / name / request / interval / response[]
-ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[]
+ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[] / alarm
+ModbusServiceFieldBit offset / field / alarm              ← 位区里的具名位（01/02），位是独立的结果键
+ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 ```
 
 * 服务本身**不记组织**（原来的 `orgId` 字段已删）：跨组织隔离由点表（`ModbusConfig.orgId`）负责，
@@ -47,6 +49,19 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   缺省 = 按 `interval` 判定（有周期即启用，兼容加这个字段之前的定义）。同样只对读方法有意义。
   **执行侧的调度器尚未落地**（设计已定，见 `Modbus-Service-Poller.md`），这两个字段目前都只是定义。
 * `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
+* `response[].alarm` = 该出值的**阈值告警配置**（`ModbusServiceFieldAlarm`）：`enabled` 为 `true`
+  且值越限时产生一条告警（判定与状态见 `Modbus-Alarm.md`）。**只能配在读方法（fc 01/02/03/04）上**
+  —— 写方法的应答是请求回显，没有「读到的值」可言。
+* **`alarm` 挂两处**：字段（`response[].alarm`）与位（`response[].bit-list[].alarm`）。
+  位的值是**独立的结果键**（parser 把每个具名位单独放进结果对象，值为 0/1），
+  只挂字段上的话「进水阀 = 1 告警」这类配置根本够不着 —— 父字段那份是整个位掩码，不是一回事。
+* `compare` 用**符号**（`>` `>=` `<` `<=` `=`）而不是 `GT/GTE` 这类枚举：语言中立、与需求原话一致、
+  日志与响应里回显无歧义；「超过 / 达到 / 低于」那些**词**是页面自己的文案（进词典），符号本身不翻译。
+* `=` 的比较目标按字段形态二选一：带 `value-list` 的字段出的是**描述字符串**，用 `state` 逐字比；
+  数值字段与位字段用 `threshold`（位只能比 0 或 1）。两者互斥，校验器按 `compare` 与字段形态判定。
+  用 `Double threshold` + `String state` 而不是一个 `String` 在运行期解析：后者是把协议语义压成
+  字符串匹配（`ModbusServiceFailure` 的注释已明确反对这种做法），而且它落在**每次采集的热路径**上，
+  `""→0`、`"1e3"`、前后空格全是坑。
 
 ## 四、接口
 
@@ -155,10 +170,43 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 * **同一应答内的出值名唯一**：各字段的 `field` 与各位清单的 `bit-list[].field` 不能重复 ——
   解析结果是一个 `字段 → 值` 的对象，重名即互相覆盖。
 * `bit-list`（01/02 位区的逐位取值）：offset 必填且 `0 ≤ offset < bytes × 8`、组内不重复，field 必填。
+* `alarm`（阈值告警）：**只在 `enabled == true` 时校验** —— 半配置合法，与 `polling` 同一条规矩
+  （`false` 的用法就是「把配置留着、先不报」），所以下面的规则读作「启用之后必须自洽」：
+  * 只能配在**读方法**上（与 `interval` 共用同一个 `isReadFunction` 判断，不各写一份）。
+  * `compare` ∈ `> >= < <= =`；`level` ∈ `INFO/WARN/CRITICAL`；`text` 去首尾空白后非空且 ≤ 64 字。
+  * **能比什么由字段的取值形态决定**，不留给运行期碰运气：`format` 为 `string` 的字段一律不收
+    （出的是任意文本，没有可比的量）；带 `value-list` 的字段只能用 `=` 比 `state`
+    —— 给它配 `>` 会让比较随原始值是否命中取值表而**时灵时不灵**，正是要避免的静默失效。
+  * `=`：带 `value-list` ⇒ `state` 必填且**逐字命中**某个 `description`，`threshold` 必须不给；
+    是位 ⇒ `threshold` ∈ `{0, 1}`；否则 `threshold` 必填且有限（NaN / Infinity 拒）。
+  * 数值比较（`> >= < <=`）：`threshold` 必填且有限，`state` 必须不给，位上不许配。
+  * `OPERATORS` / `LEVELS` 两张白名单**只有一份**（`ModbusAlarmPolicy`），校验器与判定器共用 ——
+    两边各写一份迟早漂移。
 
 ## 八、变更记录
 
 ### 2026-09-14
+
+* **Modbus 阈值告警（第一步：配置模型与校验）**。在此之前只知道「采到没采到」
+  （`ModbusServiceFailure`：帧错 / 设备无应答 / CRC 不过），**采到了但值不对看不见** ——
+  温度已经 12℃ 了，曲线画出来了，没人盯着就不会有人发现。本次补上「读方法的出值可配阈值」这一层：
+  `ModbusServiceFieldAlarm`（新）、`ModbusServiceField.alarm` 与 `ModbusServiceFieldBit.alarm`（新）、
+  `ModbusServiceFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
+  `ModbusServiceValidator.validateAlarm`；`validateInterval` 里那段取功能码的代码同时抽成了
+  共用的 `isReadFunction`。**告警行本身、采集链路上的接线、查询接口与前端在后续提交** ——
+  这一步零 IO、可独立落地，没配告警的服务在采集热路径上一分钱都不多花
+  （`ModbusAlarmPolicy.hasEnabledAlarm` 是纯内存判断，与 `ModbusHistoryPolicy`「绝大多数采集
+  一个数据库操作都没有」同一条纪律）。几处值得记下的口径：
+  * **告警挂在位上而不是父字段上**：parser 把每个具名位单独放进结果对象，位是独立的结果键。
+  * **判定比的是解析后的值**（`scale` / `unit` 已生效），不是原始寄存器值 —— 用户的阈值是工程单位，
+    曲线画的也是解析值，将来在图上画阈值线才对得齐。这条有测试专门钉住。
+  * **判定是三态（`HIT` / `MISS` / `SKIP`），不是两态**：判不了（值缺失 / `NaN` / 类型对不上）
+    必须区别于「没越限」，否则一次截断或畸形的应答会把一条开着的告警**关掉** —— 那是凭空恢复。
+  * **不做防抖**（不回差、不持续时长）是明确的选择，代价写在 `Modbus-Alarm.md` 里。
+  测试：`ModbusAlarmPolicyTest`（14 例）+ `ModbusServiceValidatorTest` 补 9 例 +
+  `ModbusServiceCodecTest` 把告警收进示例体（encode∘decode 稳定性 + 「没配就不出键」）。
+  全量 432 例中 431 绿；唯一红色的 `SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，
+  本机没有库所以读超时，与本次改动无关。
 
 * **整理：把「类型定义」与「接口层」分开 —— `typedef/modbus/{failure,frame}`、`api/modbus/service/{parser,validator}`**。
   纯搬家，行为不动（纯单测 378 例，搬前搬后同数同绿）。两地混层的理由：

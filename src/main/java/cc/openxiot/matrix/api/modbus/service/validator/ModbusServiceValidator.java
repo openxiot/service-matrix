@@ -1,9 +1,12 @@
 package cc.openxiot.matrix.api.modbus.service.validator;
 
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 
@@ -32,6 +35,13 @@ public final class ModbusServiceValidator {
      */
     private static final int MIN_INTERVAL_SECONDS = 5;
     private static final int MAX_INTERVAL_SECONDS = 3600;
+
+    /**
+     * 告警文本的长度上限（去首尾空白后算）：它是一条告警在人眼前的名字，不是备注栏。
+     *
+     * <p>前端 device.service.editor.html 里有一份同口径的常量（输入框的 maxlength），改动要同步。</p>
+     */
+    private static final int MAX_ALARM_TEXT_LENGTH = 64;
 
     private ModbusServiceValidator() {
     }
@@ -112,7 +122,7 @@ public final class ModbusServiceValidator {
             if (intervalErr != null) {
                 return intervalErr;
             }
-            String responseErr = validateFields(function.response, base);
+            String responseErr = validateFields(function.response, base, isReadFunction(function));
             if (responseErr != null) {
                 return responseErr;
             }
@@ -165,9 +175,7 @@ public final class ModbusServiceValidator {
         if (interval == null) {
             return null;
         }
-        // 功能码取请求帧的第二个字节（请求帧在上面已校验过，这里必能解析出来）
-        String fc = ModbusFrameCodec.toHex(new byte[]{ModbusFrameCodec.parseHex(function.request)[1]});
-        if (!ModbusFrameCodec.isRead(fc)) {
+        if (!isReadFunction(function)) {
             return "invalid " + base + ".interval: " + interval
                     + " (only read functions (fc 01/02/03/04) can be polled)";
         }
@@ -178,7 +186,19 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    private static String validateFields(List<ModbusServiceField> fields, String base) {
+    /**
+     * 是不是读方法（fc 01/02/03/04）。周期与告警共用这一处判断 —— 两条规则都只允许配在读方法上
+     * （读方法才有「读到的值」），各自抄一遍迟早会漂移。
+     *
+     * <p>功能码取请求帧的第二个字节：调用前 {@code request} 必须已经过 {@link #validateRequest}，
+     * 否则这里会抛 {@link IllegalArgumentException}。</p>
+     */
+    private static boolean isReadFunction(ModbusServiceFunction function) {
+        String fc = ModbusFrameCodec.toHex(new byte[]{ModbusFrameCodec.parseHex(function.request)[1]});
+        return ModbusFrameCodec.isRead(fc);
+    }
+
+    private static String validateFields(List<ModbusServiceField> fields, String base, boolean readFunction) {
         if (fields == null) {
             return null;
         }
@@ -232,7 +252,12 @@ public final class ModbusServiceValidator {
             if (valueListErr != null) {
                 return valueListErr;
             }
-            String bitListErr = validateBitList(field, ibase, seenField);
+            // 字段自身的告警放在取值表之后：它要拿 value-list 的 description 去核对 state
+            String alarmErr = validateAlarm(field.alarm, field, false, ibase + ".alarm", readFunction);
+            if (alarmErr != null) {
+                return alarmErr;
+            }
+            String bitListErr = validateBitList(field, ibase, seenField, readFunction);
             if (bitListErr != null) {
                 return bitListErr;
             }
@@ -243,8 +268,12 @@ public final class ModbusServiceValidator {
     /**
      * 校验位清单（{@link ModbusServiceField#bitList}，01/02 位区）：偏移必须落在该字段覆盖的位区间内
      * （{@code 0 <= offset < bytes * 8}）、不重复，名称非空且在整份应答内唯一（出值名会进同一个结果对象）。
+     *
+     * <p>位是**独立的结果键**（parser 把每个命名位单独放进结果对象），所以告警配在位上而不是父字段上：
+     * 父字段那份是整个位掩码，与「进水阀开没开」不是一回事。</p>
      */
-    private static String validateBitList(ModbusServiceField field, String ibase, Set<String> seenField) {
+    private static String validateBitList(ModbusServiceField field, String ibase, Set<String> seenField,
+                                          boolean readFunction) {
         if (field.bitList == null || field.bitList.isEmpty()) {
             return null;
         }
@@ -268,8 +297,115 @@ public final class ModbusServiceValidator {
             if (!seenField.add(bit.field)) {
                 return "invalid " + bbase + ".field: " + bit.field + " (duplicated)";
             }
+            String alarmErr = validateAlarm(bit.alarm, field, true, bbase + ".alarm", readFunction);
+            if (alarmErr != null) {
+                return alarmErr;
+            }
         }
         return null;
+    }
+
+    /**
+     * 阈值告警（{@link ModbusServiceFieldAlarm}）。
+     *
+     * <p><b>只在 {@code enabled == true} 时校验</b> —— 半配置合法，与 {@link #validatePolling}
+     * 同一条规矩：false 的用法就是「把配置留着、先不报」。所以下面的规则读作「启用之后必须自洽」。
+     * 判定口径（{@link ModbusAlarmPolicy}）共用 {@code OPERATORS} / {@code LEVELS} 两张白名单，
+     * 不各写一份。</p>
+     *
+     * <p>「能比什么」由字段的取值形态决定，而不是留给运行期碰运气：{@code string} 字段没有可比的量，
+     * 一律不收；带 {@code value-list} 的字段出的是描述字符串，只能用 {@code =} 比 {@code state}
+     * —— 给它配 {@code >} 会让比较随原始值是否命中取值表而时灵时不灵，正是要避免的静默失效。</p>
+     *
+     * @param field 配置所在字段：位（{@code isBit}）借它的 format / value-list 判断可比性
+     * @param isBit 校验的是 {@code bit-list} 里某个位的配置（值恒为 0/1，只能比 0 或 1）
+     * @param abase 出错文案里的位置，如 {@code functions[0].response[1].bit-list[2].alarm}
+     */
+    private static String validateAlarm(ModbusServiceFieldAlarm alarm,
+                                        ModbusServiceField field,
+                                        boolean isBit,
+                                        String abase,
+                                        boolean readFunction) {
+        if (!ModbusAlarmPolicy.isEnabled(alarm)) {
+            return null;
+        }
+        if (!readFunction) {
+            return "invalid " + abase + ": only read functions (fc 01/02/03/04) can have alarms";
+        }
+        if (alarm.compare == null || !ModbusAlarmPolicy.OPERATORS.contains(alarm.compare)) {
+            // 白名单里逐字列出，不用 OPERATORS 拼串：Set.of 的迭代顺序不保证，文案会随机
+            return "invalid " + abase + ".compare: " + alarm.compare + " (must be one of > >= < <= =)";
+        }
+        if (alarm.level == null || !ModbusAlarmPolicy.LEVELS.contains(alarm.level)) {
+            return "invalid " + abase + ".level: " + alarm.level + " (must be one of INFO WARN CRITICAL)";
+        }
+        if (alarm.text == null || alarm.text.isBlank()) {
+            return abase + ".text is required";
+        }
+        if (alarm.text.trim().length() > MAX_ALARM_TEXT_LENGTH) {
+            return "invalid " + abase + ".text: too long (" + MAX_ALARM_TEXT_LENGTH + " characters max)";
+        }
+        if (field.format != null && "string".equals(field.format.trim().toLowerCase(Locale.ROOT))) {
+            return "invalid " + abase + ": a string field has no comparable value";
+        }
+
+        boolean named = field.valueList != null && !field.valueList.isEmpty();
+        if ("=".equals(alarm.compare)) {
+            if (named) {
+                if (alarm.threshold != null) {
+                    return "invalid " + abase + ".threshold: not allowed on a value-list field (use state)";
+                }
+                if (alarm.state == null || alarm.state.isBlank()) {
+                    return abase + ".state is required (compare = on a value-list field)";
+                }
+                if (!hasDescription(field, alarm.state)) {
+                    return "invalid " + abase + ".state: " + alarm.state + " (not in this field's value-list)";
+                }
+                return null;
+            }
+            if (alarm.state != null) {
+                return "invalid " + abase + ".state: only allowed on a value-list field (use threshold)";
+            }
+            if (alarm.threshold == null) {
+                return abase + ".threshold is required (compare =)";
+            }
+            if (!Double.isFinite(alarm.threshold)) {
+                return "invalid " + abase + ".threshold: " + alarm.threshold;
+            }
+            if (isBit && alarm.threshold != 0 && alarm.threshold != 1) {
+                return "invalid " + abase + ".threshold: " + alarm.threshold + " (a bit is 0 or 1, use =)";
+            }
+            return null;
+        }
+
+        // > >= < <=：只对数值有意义
+        if (isBit) {
+            return "invalid " + abase + ".compare: " + alarm.compare + " (a bit is 0 or 1, use =)";
+        }
+        if (named) {
+            return "invalid " + abase + ".compare: " + alarm.compare
+                    + " (a value-list field yields names, use =)";
+        }
+        if (alarm.state != null) {
+            return "invalid " + abase + ".state: only allowed when compare is =";
+        }
+        if (alarm.threshold == null) {
+            return abase + ".threshold is required (compare " + alarm.compare + ")";
+        }
+        if (!Double.isFinite(alarm.threshold)) {
+            return "invalid " + abase + ".threshold: " + alarm.threshold;
+        }
+        return null;
+    }
+
+    /** {@code state} 是否逐字命中取值表里的某个 description —— 判定时就按这个字符串相等去比。 */
+    private static boolean hasDescription(ModbusServiceField field, String state) {
+        for (ModbusServiceFieldValue entry : field.valueList) {
+            if (entry != null && state.equals(entry.description)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String validateValueList(ModbusServiceField field, String ibase) {
