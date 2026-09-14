@@ -29,6 +29,13 @@
       「恢复落全字段」五条约定）、`ModbusResponseParserTest.classifiesEveryFailureType`
       （每一类失败的分类与异常码）、`ModbusServiceServiceTest`（调用路径的分类 +
       「记录失败不改写原错误」）。共 52 个。
+- [x] **补漏（2026-09-14）：`value` 声明成 `Object`，缺一条按运行时类型分发的 codec，历史一条都写不进去**
+      （`db/mongo/ObjectPropertyCodecProvider`，见 `MODBUS.md` 2026-09-14 变更记录）。
+      这一条提醒了两件事：**上面第 22 行那条「记录写失败不影响 invoke 的成功响应」是故意的，
+      但也正因为它，写入全挂了一周都没人发现** —— 现网 `modbus.service-histories` 集合压根不存在；
+      另外「纯单测全绿」证明不了落库链路，编解码这一格只有真跑一遍（或像
+      `ObjectPropertyCodecProviderTest` 那样在内存里搭一张同形的注册表）才看得见。
+      `ObjectPropertyCodecProviderTest`（7 例，不连库）就是补的这张网。
 
 ## 第二步：读取接口（已完成）
 

@@ -130,6 +130,12 @@ ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message /
   命中了 `value-list` 时的 `description` 字符串、`bit-list` 展开出来的 `0/1`。
   比对时数值一律按 `doubleValue()` 比（`Integer 5` / `Long 5` / `Double 5.0` 视为同一个值），
   非数值精确比较 —— 这条在 `ModbusHistoryPolicy` 里，有单测覆盖。
+  落到实体上它只能是 `public Object value`，于是**必须有**一条按运行时类型分发的 codec
+  （`db/mongo/ObjectPropertyCodecProvider`，Quarkus 自动装到 POJO codec 上）——
+  驱动的自动 POJO codec 是**按声明类型**取 codec 的，`Object` 这一格没人认领，
+  缺了它编码第一步就报 `Can't find a codec for CodecCacheKey{clazz=class java.lang.Object}`。
+  也正因为读回来的类是**BSON 类型**决定的（`int32 → Integer`、`int64 → Long`、`double → Double`），
+  比对才必须按 `doubleValue()` 来，别去写「类型也要相等」的判断。
 * `recordedAt` 是**最后一次成功落库的时间**（值变化或保活打点都算），它是保活周期的判定依据。
   失败不动它：它和 `fields` 一起表示「最后已知值，以及它有多旧」。
 * `lastError` 为 null 表示最后一次调用成功；`errorAt` 是当前这条故障**首次**出现的时刻，

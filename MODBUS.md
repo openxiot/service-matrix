@@ -185,6 +185,37 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
   `ModbusPollPlanTest` 里的 `assertNull(task.id)` 随之改成 `assertNotNull`。纯单测合计 371 例。
   部署后 poller 重启即自愈：启动对账按库行的 `_id` 重建内存任务，而它那行 `nextRunAt` 是过去的时刻，
   于是**立刻补采一次**（「错过不补」的口径：只补一次），之后按周期走。
+* **修：采集结果落不了库 —— 声明成 `Object` 的字段没有 codec**。上面那条修好之后轮询真的采到了
+  （日志里每 ~30s 一条 `ManipulationService invokeActions`、往返 20ms），但每次都倒在写历史这一步：
+  `record modbus history failed, service: …, function: 1, error: An exception occurred when encoding using
+  the AutomaticPojoCodec. … Failed to encode 'ModbusServiceHistory'. Encoding 'value' errored with:
+  Can't find a codec for CodecCacheKey{clazz=class java.lang.Object, types=null}.`
+  —— 注意 `modbus.service-histories` 在 staging 上**这个集合根本不存在**：
+  历史写入从来没成功过一次（不只是这次），手动 invoke 与轮询两条入口报的是同一个错。
+  成因与轮询器无关：驱动的 `AutomaticPojoCodec` 是**按字段的声明类型**取 codec 的
+  （`LazyPropertyModelCodec` → `PropertyCodecRegistry`），`public Object value` 走到兜底那格时
+  拿 `Object.class` 去问注册表，没人认领这个类，编码第一步就炸。
+  修法是补上「声明类型 = `Object`」这一格的兜底：新增 `db/mongo/ObjectPropertyCodecProvider`
+  —— 驱动自己的扩展点，Quarkus 的 `MongoClients.configureCodecRegistry` 会把容器里所有
+  `PropertyCodecProvider` 注册到那个 `automatic(true)` 的 `PojoCodecProvider` 上、
+  且驱动把它们排在自带的 Collection / Map / Enum / Fallback **之前**，所以不需要任何额外配置。
+  编码按**运行时类**取 codec、解码按 **BSON 类型**取（`BsonTypeClassMap`），与驱动自己的
+  `DocumentCodec` / `MapCodec` / `IterableCodec` 同一口径；只认声明成 `Object` 的字段，
+  其余类型一律交还驱动（声明成 `Number` / 接口 / 泛型变量的字段该报错就报错，不在这里被吞掉）。
+  **边界**：`Map<String, Object>`（影子的 `fields`、空间的 `attributes`）本来就不会被卡住 ——
+  驱动的 `MapPropertyCodecProvider` 对「值类型是 `Object` 的 Map」另有一条兜底（退回去用裸 `Map` 的 codec）；
+  本 provider 因为排在 Map 之前会把那张 Map 的值槽接过来，口径与它原来那条一致，
+  所以「map 的值能落库」不是本类的功劳（`Modbus-History.md` 第三节记了这一条）。
+  测试：新增 `ObjectPropertyCodecProviderTest`（7 例，**纯单测不连库**：注册表按
+  `MongoClients.configureCodecRegistry` 原样搭 + `BsonDocumentWriter`/`BsonDocumentReader` 走一遍编解码；
+  含一条「摘掉 provider 时同一个写就失败」的失败形态钉子）。**已反向验证** —— 把 provider 的
+  `get()` 改成恒返回 `null` 重跑：四个 `value` 用例（标量、字符串 / 布尔 / 空、嵌套数组与内嵌文档、
+  数值类型）报出与现网一字不差的错，两个地图用例仍绿（与上面那条边界一致），
+  所以那四例确实钉住了这次修的东西。纯单测合计 378 例。
+  装配另有一条本机实证：`@QuarkusTest` 开 `io.quarkus.arc.processor` 的 DEBUG 能看到
+  `Unremovable - programmatic lookup: … ObjectPropertyCodecProvider` ——
+  那条 `Instance<PropertyCodecProvider>` 查找正是 `MongoClients` 取它的方式，也是它没被 ArC 删掉的原因，
+  所以这个作用域注解（`@Singleton`）不是可有可无的。
 
 ### 2026-09-13
 
