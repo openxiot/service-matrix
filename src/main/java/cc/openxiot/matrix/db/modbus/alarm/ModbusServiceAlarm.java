@@ -48,6 +48,15 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
      */
     public static final String CLOSE_DEFINITION = "DEFINITION";
 
+    /**
+     * {@link #closeType}：当前生效的是**同一个出值的另一条规则**（升级或降级），故关闭。
+     *
+     * <p>一个出值可以配一组分级规则（如「超过 26 提示 / 超过 28 警告 / 超过 30 严重」），
+     * 但一次采样只留最严重的那条。值从 31℃ 降到 27℃ 时严重那条关闭 ——
+     * 此时的真实原因**不是**值恢复正常（27℃ 仍然越限），记成 {@link #CLOSE_VALUE} 是谎话。</p>
+     */
+    public static final String CLOSE_SUPERSEDED = "SUPERSEDED";
+
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
@@ -89,8 +98,8 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
     @Schema(description = "恢复时刻（UTC）；**null = 仍在越限** —— 这就是状态本身，不另存一份告警态")
     public Date recoveredAt;
 
-    @Schema(description = "关闭方式：VALUE 值回到正常 / DEFINITION 新定义已不再配这个告警",
-            examples = {"VALUE"})
+    @Schema(description = "关闭方式：VALUE 值回到正常 / DEFINITION 新定义已不再配这个告警 /"
+            + " SUPERSEDED 同一个出值的另一条规则接手了", examples = {"VALUE"})
     public String closeType;
 
     // ===== 处理 =====
@@ -112,6 +121,12 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
     @Schema(description = "未恢复时才有：serviceId#functionIndex#field。唯一部分索引建在它上面（并发护栏），"
             + "**绝不下发给前端**", hidden = true)
     public String openKey;
+
+    @Schema(description = "触发这条的是哪条规则（配置里的 ModbusServiceFieldAlarm.id）。"
+            + "「这条开着的行是不是还该开着」要靠它与当前胜者比对 —— "
+            + "**内部标识，绝不下发给前端**：行上的定义快照已经够前端说清「触发条件」，"
+            + "与 openKey 同一条规矩", hidden = true)
+    public String ruleId;
 
     /**
      * 该出值的开行标识。未恢复的行带它、已恢复的行把它 {@code $unset} 掉 ——

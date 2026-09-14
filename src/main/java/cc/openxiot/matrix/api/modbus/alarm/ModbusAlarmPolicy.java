@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -27,6 +28,12 @@ import java.util.TreeSet;
  * {@link Verdict#SKIP} <b>判不了</b>（值缺失 / NaN / 类型对不上）。SKIP 必须区别于 MISS：
  * 一次截断或畸形的应答不能把一条开着的告警关掉，那是「凭空恢复」。</p>
  *
+ * <p><b>一个出值可以配一组规则，但一次采样只留最严重的一条</b>：温度「低于 20 告警 / 超过 26 提示 /
+ * 超过 28 警告 / 超过 30 严重」这种分级配置里，越限到 31℃ 时四条规则里两条同时命中 ——
+ * 却只产生一条告警（{@link #rank} 最高的那条），其余开着的行按 {@code SUPERSEDED} 关掉。
+ * 于是不变式是「一个出值同时最多一条开着」，它恰好就是告警表那条唯一部分索引强制的东西
+ * （{@code openKey} 因此仍然只是 {@code serviceId#functionIndex#field}，不带规则标识）。</p>
+ *
  * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, functionIndex, field)} 上有未恢复的告警
  * 就是「开着」。判定只需要这一张集合，它由告警表自己查出来
  * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceShadow、也不用 poller 的内存基准）。</p>
@@ -39,11 +46,18 @@ public final class ModbusAlarmPolicy {
      */
     public static final Set<String> OPERATORS = Set.of(">", ">=", "<", "<=", "=");
 
+    /**
+     * 级别次序，<b>由轻到重</b>。<b>只此一处</b>：白名单（{@link #LEVELS}）与「谁更严重」
+     * （{@link #rank}）都从它来，不会漂移成一个拒收另一个。
+     */
+    public static final List<String> LEVEL_ORDER = List.of("INFO", "WARN", "CRITICAL");
+
     /** 告警级别白名单。前端 device.service.editor 里有一份同口径的常量（下拉选项），改动要同步。 */
-    public static final Set<String> LEVELS = Set.of("INFO", "WARN", "CRITICAL");
+    public static final Set<String> LEVELS = Set.copyOf(LEVEL_ORDER);
 
     /** 什么都没发生（绝大多数采集走这条）：调用方应当**一次数据库操作都不做**。 */
-    private static final Decision NOTHING = new Decision(List.of(), List.of(), List.of(), List.of());
+    private static final Decision NOTHING =
+            new Decision(List.of(), List.of(), List.of(), List.of(), List.of());
 
     private ModbusAlarmPolicy() {
     }
@@ -68,6 +82,9 @@ public final class ModbusAlarmPolicy {
      * <p>带着 {@code alarm} 与 {@code sample} 交给调用方记日志 —— 判定器是纯函数，不碰日志；
      * 而这三个字段加上服务与方法坐标，正好够把「为什么这条告警不工作」说清楚。
      * {@code sample} 为 null 表示**这一帧里根本没有这个出值**（截断的应答）。</p>
+     *
+     * <p>现在一个出值可以有多条规则，所以 {@code alarm} 是**哪一条**规则判不了也一并带着：
+     * 日志的去重键要细到规则，否则同一出值第二条坏规则永远不会被报出来。</p>
      */
     public record Skip(String field, ModbusServiceFieldAlarm alarm, Object sample) {
     }
@@ -75,14 +92,16 @@ public final class ModbusAlarmPolicy {
     /**
      * 一次采集的判定结果。
      *
-     * @param opens            该新开的告警（值越限、且当前没有未恢复的告警）
-     * @param valueCloses      该关的告警（值回到正常）：{@code closeType = VALUE}
-     * @param definitionCloses 该关的告警（本次采样里有这个出值、但新定义已不再给它配告警）：
+     * @param opens            该新开的告警
+     * @param valueCloses      该关的告警（值回到不命中任何规则）：{@code closeType = VALUE}
+     * @param supersededCloses 该关的告警（命中了，但生效的是这个出值的**另一条**规则 —— 升级或降级）：
+     *                         {@code closeType = SUPERSEDED}。降级时值并没有回到正常，记 VALUE 是谎话
+     * @param definitionCloses 该关的告警（本次采样里有这个出值、但新定义已不再给它配启用的规则）：
      *                         {@code closeType = DEFINITION}。否则那条告警再也判定不到、会永远挂着
-     * @param skips            判不了的出值，**只用来记日志**（见 {@link Skip}）
+     * @param skips            判不了的规则，**只用来记日志**（见 {@link Skip}）
      */
-    public record Decision(List<Open> opens, List<String> valueCloses, List<String> definitionCloses,
-                           List<Skip> skips) {
+    public record Decision(List<Open> opens, List<String> valueCloses, List<String> supersededCloses,
+                           List<String> definitionCloses, List<Skip> skips) {
 
         /**
          * 有没有要**写库**的事；false 时调用方应当一次写操作都不做（稳态走这条）。
@@ -91,8 +110,21 @@ public final class ModbusAlarmPolicy {
          * 都「有事要做」，把稳态零写这条纪律弄丢。</p>
          */
         public boolean isEmpty() {
-            return opens.isEmpty() && valueCloses.isEmpty() && definitionCloses.isEmpty();
+            return opens.isEmpty() && valueCloses.isEmpty()
+                    && supersededCloses.isEmpty() && definitionCloses.isEmpty();
         }
+    }
+
+    /**
+     * 级别的高低：数字越大越严重。不认识的级别（老数据、或后端将来加了新级别）一律最低 ——
+     * 它仍然能开出告警来，只是选不赢任何认识的那条。
+     */
+    public static int rank(String level) {
+        if (level == null) {
+            return -1;   // List.of(...).indexOf(null) 会 NPE，而 null 只是「不认识」的又一种
+        }
+        int index = LEVEL_ORDER.indexOf(level);
+        return index < 0 ? -1 : index;
     }
 
     /**
@@ -109,12 +141,12 @@ public final class ModbusAlarmPolicy {
             if (field == null) {
                 continue;
             }
-            if (isEnabled(field.alarm)) {
+            if (hasEnabled(field.alarms)) {
                 return true;
             }
             if (field.bitList != null) {
                 for (ModbusServiceFieldBit bit : field.bitList) {
-                    if (bit != null && isEnabled(bit.alarm)) {
+                    if (bit != null && hasEnabled(bit.alarms)) {
                         return true;
                     }
                 }
@@ -126,6 +158,38 @@ public final class ModbusAlarmPolicy {
     /** 配置是否生效：{@code enabled} 缺省与 false 一个意思（配置留着、不告警）。 */
     public static boolean isEnabled(ModbusServiceFieldAlarm alarm) {
         return alarm != null && Boolean.TRUE.equals(alarm.enabled);
+    }
+
+    /** 一组规则里有没有启用的。 */
+    private static boolean hasEnabled(List<ModbusServiceFieldAlarm> alarms) {
+        if (alarms == null) {
+            return false;
+        }
+        for (ModbusServiceFieldAlarm alarm : alarms) {
+            if (isEnabled(alarm)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 该出值**启用的**规则，<b>按声明顺序</b>。
+     *
+     * <p>顺序是有语义的：级别相同的两条规则同时命中时，靠后的那条赢（见 {@link #decide}）。
+     * 停用的规则直接丢掉 —— 它不参与判定，配置却仍然留在定义里（与 {@code polling} 同一条规矩）。</p>
+     */
+    static List<ModbusServiceFieldAlarm> enabledRules(List<ModbusServiceFieldAlarm> alarms) {
+        if (alarms == null || alarms.isEmpty()) {
+            return List.of();
+        }
+        List<ModbusServiceFieldAlarm> rules = new ArrayList<>(alarms.size());
+        for (ModbusServiceFieldAlarm alarm : alarms) {
+            if (isEnabled(alarm)) {
+                rules.add(alarm);
+            }
+        }
+        return rules;
     }
 
     /**
@@ -194,21 +258,23 @@ public final class ModbusAlarmPolicy {
     /**
      * 判定一次采集。
      *
-     * @param function   本次调用的方法定义（用它的 response 里的告警配置，**新定义**）
-     * @param values     本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
-     * @param openFields 该方法当前**有未恢复告警**的出值名集合（由告警表按 openKey 查出）
+     * @param function        本次调用的方法定义（用它的 response 里的告警配置，**新定义**）
+     * @param values          本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
+     * @param openRuleByField 该方法当前**有未恢复告警**的出值 → 那条开着的行上的 {@code ruleId}。
+     *                        无开着的不在表里；值可以是 {@code null}（行上的 {@code ruleId} 缺失，
+     *                        只可能出现在更早的数据里）—— 故调用方要用允许 null 值的 {@code Map}
      */
     public static Decision decide(ModbusServiceFunction function,
                                   Map<String, Object> values,
-                                  Set<String> openFields) {
+                                  Map<String, String> openRuleByField) {
         if (function == null || function.response == null || function.response.isEmpty()) {
             return NOTHING;
         }
         Map<String, Object> vals = values == null ? Map.of() : values;
-        Set<String> open = openFields == null ? Set.of() : openFields;
+        Map<String, String> open = openRuleByField == null ? Map.of() : openRuleByField;
 
         Acc acc = new Acc();
-        // 新定义里配了告警、且本次采样里确实有这个出值：这些键归「值判定」管，
+        // 新定义里配了启用的规则、且本次采样里确实有这个出值：这些键归「值判定」管，
         // 不能因为「本次没开/没关」而被下面的 DEFINITION 逻辑误关掉
         Set<String> covered = new HashSet<>();
 
@@ -216,22 +282,22 @@ public final class ModbusAlarmPolicy {
             if (field == null) {
                 continue;
             }
-            covered.addAll(judge(field.field, field.alarm, field.unit, vals, open, acc));
+            covered.addAll(judge(field.field, field.alarms, field.unit, vals, open, acc));
             if (field.bitList != null) {
                 for (ModbusServiceFieldBit bit : field.bitList) {
                     if (bit != null) {
                         // 位没有自己的单位：父字段那个是「整个寄存器」的工程单位，
                         // 贴到 0/1 的位上只会让列表里出现「1 ℃」这种话。位一律不带单位。
-                        covered.addAll(judge(bit.field, bit.alarm, null, vals, open, acc));
+                        covered.addAll(judge(bit.field, bit.alarms, null, vals, open, acc));
                     }
                 }
             }
         }
 
-        // 采样里有、但新定义已不再给它配告警、却还开着的那条：定义不再覆盖它了，关掉。
+        // 采样里有、但新定义已不再给它配启用的规则、却还开着的那条：定义不再覆盖它了，关掉。
         // 采样里**没有**的键不动 —— 分不清是「定义删了它」还是「这一帧截断了」，宁可留着也不能凭空恢复。
         Set<String> definitionCloses = new TreeSet<>();
-        for (String field : open) {
+        for (String field : open.keySet()) {
             if (vals.containsKey(field) && !covered.contains(field)) {
                 definitionCloses.add(field);
             }
@@ -241,57 +307,104 @@ public final class ModbusAlarmPolicy {
             return NOTHING;
         }
         return new Decision(List.copyOf(acc.opens), List.copyOf(acc.valueCloses),
-                List.copyOf(definitionCloses), List.copyOf(acc.skips));
+                List.copyOf(acc.supersededCloses), List.copyOf(definitionCloses),
+                List.copyOf(acc.skips));
     }
 
     /**
-     * 判定单个出值，把结果记进累积器。
+     * 判定单个出值的**一组规则**，把结果记进累积器。
+     *
+     * <p><b>选举</b>：命中多条时只留一条 —— 级别最高的；级别相同则取**声明顺序里靠后的**那条。
+     * 「靠后」是个说不出什么道理、但必须确定的裁决，选它是因为它由用户掌控（想换就把另一条往下挪）。
+     * 这不构成「同级去重」的理由：{@code 低于 20 严重} 与 {@code 超过 30 严重} 这类低侧/高侧配置
+     * 永远不可能同时命中，拒掉它是错的。</p>
+     *
+     * <p><b>命中优先于判不了</b>：同一出值的规则之间可能一条 HIT、另一条 SKIP（定义与值形态对不上，
+     * 校验器挡新数据、老数据可能出现）。有胜者就按胜者走，判不了的那些只进日志。</p>
+     *
+     * <p><b>胜者与开着的行是同一条规则时什么都不做</b>：这是稳态零写的落点，也是「改阈值不会把
+     * 开着的告警关掉重开」的原因 —— 规则身份是配置里的 {@code id}，改阈值不动它。</p>
      *
      * @param unit 快照进告警行的单位（位传 null，见调用处）
-     * @return 这个出值是否归「值判定」管（配了告警、且本次采样里有它）—— 是的话返回它的名字，供
-     *         DEFINITION 那条逻辑排除
+     * @return 这个出值是否归「值判定」管（有启用的规则、且本次采样里有它）—— 是的话返回它的名字，
+     *         供 DEFINITION 那条逻辑排除
      */
     private static Set<String> judge(String field,
-                                     ModbusServiceFieldAlarm alarm,
+                                     List<ModbusServiceFieldAlarm> alarms,
                                      String unit,
                                      Map<String, Object> vals,
-                                     Set<String> open,
+                                     Map<String, String> open,
                                      Acc acc) {
-        if (field == null || !isEnabled(alarm)) {
+        if (field == null) {
+            return Set.of();
+        }
+        List<ModbusServiceFieldAlarm> rules = enabledRules(alarms);
+        if (rules.isEmpty()) {
             return Set.of();
         }
         if (!vals.containsKey(field)) {
             // 配了告警、这一帧里却没有这个出值：判不了，记下来让调用方说一声（不能当成「没越限」，
             // 那会把一条开着的告警凭空关掉）。不看 `open`：没开着也一样要报，否则定义配错了没人知道。
-            acc.skips.add(new Skip(field, alarm, null));
+            for (ModbusServiceFieldAlarm rule : rules) {
+                acc.skips.add(new Skip(field, rule, null));
+            }
             return Set.of();
         }
         Object value = vals.get(field);
-        Verdict verdict = hit(value, alarm);
-        if (verdict == Verdict.HIT) {
-            // 开着就什么都不做 —— 稳态零写，这是「一次越限一条」的落点
-            if (!open.contains(field)) {
-                acc.opens.add(new Open(field, alarm, value, unit));
+
+        ModbusServiceFieldAlarm winner = null;
+        boolean missed = false;
+        List<ModbusServiceFieldAlarm> skipped = new ArrayList<>(rules.size());
+        for (ModbusServiceFieldAlarm rule : rules) {
+            Verdict verdict = hit(value, rule);
+            if (verdict == Verdict.HIT) {
+                // `>=` 而不是 `>`：同级时**后**出现的那条接手
+                if (winner == null || rank(rule.level) >= rank(winner.level)) {
+                    winner = rule;
+                }
+            } else if (verdict == Verdict.MISS) {
+                missed = true;
+            } else {
+                skipped.add(rule);
             }
-        } else if (verdict == Verdict.MISS) {
-            if (open.contains(field)) {
+        }
+        // 判不了的照旧记日志：有别的规则命中，不代表这一条就判得了（它仍然是坏的）
+        for (ModbusServiceFieldAlarm rule : skipped) {
+            acc.skips.add(new Skip(field, rule, value));
+        }
+
+        boolean hasOpen = open.containsKey(field);
+        if (winner != null) {
+            if (!hasOpen) {
+                acc.opens.add(new Open(field, winner, value, unit));
+            } else if (!Objects.equals(open.get(field), winner.id)) {
+                // 开着的行是**另一条规则**开的：先关（SUPERSEDED）再开胜者。升级与降级都走这条 ——
+                // 降级时值并没有回到正常，记 VALUE 是谎话（见 ModbusAlarmPolicy 的 Decision 文档）
+                acc.supersededCloses.add(field);
+                acc.opens.add(new Open(field, winner, value, unit));
+            }
+            // 同一条规则：什么都不做
+        } else if (missed) {
+            if (hasOpen) {
                 acc.valueCloses.add(field);
             }
-        } else {
-            acc.skips.add(new Skip(field, alarm, value));
         }
+        // 剩下的情形就是「一条都没命中，且至少有一条判不了」（全 SKIP）：
+        // 什么都不做 —— 一次截断/畸形的应答不能把开着的告警凭空关掉
         return Set.of(field);
     }
 
-    /** 判定过程中的三张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
+    /** 判定过程中的四张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
     private static final class Acc {
 
         private final List<Open> opens = new ArrayList<>();
         private final List<String> valueCloses = new ArrayList<>();
+        private final List<String> supersededCloses = new ArrayList<>();
         private final List<Skip> skips = new ArrayList<>();
 
         private boolean isEmpty() {
-            return opens.isEmpty() && valueCloses.isEmpty() && skips.isEmpty();
+            return opens.isEmpty() && valueCloses.isEmpty()
+                    && supersededCloses.isEmpty() && skips.isEmpty();
         }
     }
 }

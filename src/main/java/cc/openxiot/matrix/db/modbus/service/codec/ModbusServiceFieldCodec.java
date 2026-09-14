@@ -50,8 +50,10 @@ public final class ModbusServiceFieldCodec {
         if (field.bitList != null) {
             o.put("bit-list", ModbusServiceFieldBitCodec.encode(field.bitList));
         }
-        if (field.alarm != null) {
-            o.put("alarm", ModbusServiceFieldAlarmCodec.encode(field.alarm));
+        // 空数组与「元素全是空壳」都不出键：库里不会留下 `alarms: []` 这种噪音，
+        // 与 decode 把空数组读成 null 是同一件事的两面
+        if (field.alarms != null && !field.alarms.isEmpty()) {
+            o.put("alarms", ModbusServiceFieldAlarmCodec.encode(field.alarms));
         }
         return o;
     }
@@ -80,7 +82,7 @@ public final class ModbusServiceFieldCodec {
         field.unit = o.getString("unit");
         field.valueList = ModbusServiceFieldValueCodec.decode(o.getJsonArray("value-list"));
         field.bitList = ModbusServiceFieldBitCodec.decode(o.getJsonArray("bit-list"));
-        field.alarm = ModbusServiceFieldAlarmCodec.decode(o.getJsonObject("alarm"));
+        field.alarms = ModbusServiceFieldAlarmCodec.decode(o.getJsonArray("alarms"));
         return field;
     }
 

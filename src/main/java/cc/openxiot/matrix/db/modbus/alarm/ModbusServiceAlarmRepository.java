@@ -24,7 +24,9 @@ import org.bson.types.ObjectId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * {@link ModbusServiceAlarm} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-alarms}）。
@@ -55,7 +57,7 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
      *   <li>{@code {openKey: 1}} <b>unique + partial</b> —— 并发护栏（见 {@link #insertOpen}）。
      *       已实证可用，见下面的冒烟台账。</li>
      *   <li>{@code (serviceId, functionIndex, openKey)} —— 采集侧每轮查「这个出值开着吗」
-     *       （见 {@link #listOpenFields}），一个方法配 3 个字段也只查一次。</li>
+     *       （见 {@link #mapOpenRuleByField}），一个方法配 3 个字段也只查一次。</li>
      *   <li>{@code (serviceId, functionIndex, at)} —— 列表查询，前两段等值 + {@code at} 倒序。</li>
      * </ol>
      *
@@ -119,36 +121,40 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
     }
 
     /**
-     * 这个方法当前**有哪些出值开着告警**（未恢复）。
+     * 这个方法当前**有哪些出值开着告警**（未恢复）：出值名 → 那条开行上的 {@code ruleId}。
      *
-     * <p>只投影 {@code field}：判定要的是「开着的行就是状态」这张集合，不需要行的其余部分。
+     * <p>只投影 {@code field} 与 {@code ruleId}：判定要的是「开着的行就是状态」这张表，不需要行的其余部分。
      * 一次查回整个方法的所有开行，所以一个方法配 3 个字段也只查一次。</p>
+     *
+     * <p><b>值是允许 null 的</b>（{@code ruleId} 缺失只可能出现在更早的数据里），所以这里手工装进
+     * {@code HashMap} 而不用 {@code Collectors.toMap}（那个连 null 值都不收）——
+     * 判定侧 {@code open.containsKey(field)} 只用键，值与当前胜者的 {@code id} 比对时 null 自然不相等。</p>
      */
-    public Uni<List<String>> listOpenFields(String serviceId, Integer functionIndex) {
+    public Uni<Map<String, String>> mapOpenRuleByField(String serviceId, Integer functionIndex) {
         return collection()
                 .find(Filters.and(
                                 Filters.eq("serviceId", serviceId),
                                 Filters.eq("functionIndex", functionIndex),
                                 Filters.exists("openKey")),
-                        new FindOptions().projection(Projections.include("field")))
+                        new FindOptions().projection(Projections.include("field", "ruleId")))
                 .collect().asList()
                 .map(rows -> {
-                    List<String> fields = new ArrayList<>(rows.size());
+                    Map<String, String> open = new HashMap<>(rows.size());
                     for (ModbusServiceAlarm row : rows) {
                         if (row.field != null) {
-                            fields.add(row.field);
+                            open.put(row.field, row.ruleId);
                         }
                     }
-                    return fields;
+                    return open;
                 });
     }
 
     /**
      * 某个服务下**所有方法**当前开着的告警行（未恢复），只投影对账要用的坐标。
      *
-     * <p>定义变更对账用（{@code ModbusAlarmReconciler}）：它要按「新定义里还有没有这个出值键」
-     * 逐行判，所以得拿到 {@code functionIndex} 与 {@code field} 两样 ——
-     * 与 {@link #listOpenFields}（采集热路径，只关心一个方法、只要出值名）的用途不同。</p>
+     * <p>定义变更对账用（{@code ModbusAlarmReconciler}）：它要按「新定义里还有没有这条规则」
+     * 逐行判，所以得拿到 {@code functionIndex} / {@code field} / {@code ruleId} 三样 ——
+     * 与 {@link #mapOpenRuleByField}（采集热路径，只关心一个方法、只要出值名与规则标识）的用途不同。</p>
      */
     public Uni<List<ModbusServiceAlarm>> listOpenByServiceId(String serviceId) {
         if (serviceId == null) {
@@ -156,7 +162,8 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
         }
         return collection()
                 .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.exists("openKey")),
-                        new FindOptions().projection(Projections.include("serviceId", "functionIndex", "field")))
+                        new FindOptions().projection(
+                                Projections.include("serviceId", "functionIndex", "field", "ruleId")))
                 .collect().asList();
     }
 
@@ -170,7 +177,8 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
     public Uni<List<ModbusServiceAlarm>> listAllOpen() {
         return collection()
                 .find(Filters.exists("openKey"),
-                        new FindOptions().projection(Projections.include("serviceId", "functionIndex", "field")))
+                        new FindOptions().projection(
+                                Projections.include("serviceId", "functionIndex", "field", "ruleId")))
                 .collect().asList();
     }
 

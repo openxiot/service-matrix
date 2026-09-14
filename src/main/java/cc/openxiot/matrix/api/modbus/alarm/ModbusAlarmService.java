@@ -17,7 +17,6 @@ import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,7 +62,7 @@ public class ModbusAlarmService {
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
-    /** 已经报过的「判不了」键（{@code serviceId#functionIndex#field}），进程内去重。 */
+    /** 已经报过的「判不了」键（{@code serviceId#functionIndex#field#ruleId}），进程内去重。 */
     private final Set<String> reportedSkips = ConcurrentHashMap.newKeySet();
 
     void init(@Observes StartupEvent event) {
@@ -92,10 +91,10 @@ public class ModbusAlarmService {
                 : new LinkedHashMap<>(values.getMap());
         Date now = new Date();
 
-        // 一个方法配了 3 个字段也只查这一次：拿到的是「这个方法当前哪些出值开着」这张集合，
-        // 它**就是**状态本身（见 Modbus-Alarm.md 第三节）
-        return alarmRepo.listOpenFields(serviceId, function.index)
-                .chain(open -> apply(serviceId, function, sample, new HashSet<>(open), now));
+        // 一个方法配了 3 个字段也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的」
+        // 这张表，它**就是**状态本身（见 Modbus-Alarm.md 第三节）
+        return alarmRepo.mapOpenRuleByField(serviceId, function.index)
+                .chain(open -> apply(serviceId, function, sample, open, now));
     }
 
     /**
@@ -136,9 +135,21 @@ public class ModbusAlarmService {
                         }));
     }
 
-    /** 判定 → 执行。三件事（开 / 按值关 / 按定义关）互不依赖，并发发出去。 */
+    /**
+     * 判定 → 执行。
+     *
+     * <p><b>先关、后插，顺序是语义的一部分</b>：同一个出值可以既关又开 —— 命中了同一出值的**另一条**
+     * 规则时，那条开着的行按 {@code SUPERSEDED} 关掉、胜者再开一条。而 {@code Uni.combine().all()}
+     * 是**并发**的（不是按列表顺序依次执行），把两类动作一起发出去，插入会抢在关闭之前撞上
+     * {@code {openKey}} 那条唯一部分索引，被{@link ModbusServiceAlarmRepository#insertOpen}
+     * 当成「别的副本先开了」**静默吞掉**（它本来就该吞 11000，从结果上看不出区别）——
+     * 于是这个出值一条开着的都没有。下一轮采样会自愈（没有开行 ⇒ 重新开那个胜者），
+     * 但那个窗口里告警是消失的，而轮询一停就永久丢。所以这里是两段：关闭先并发做完，再并发插。</p>
+     *
+     * <p>其它动作之间确实互不依赖（开落在不同出值上，三类关闭按出值互斥），并发是对的。</p>
+     */
     private Uni<Void> apply(String serviceId, ModbusServiceFunction function, Map<String, Object> sample,
-                            Set<String> open, Date now) {
+                            Map<String, String> open, Date now) {
         ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(function, sample, open);
         reportSkips(serviceId, function, decision.skips());
         if (decision.isEmpty()) {
@@ -146,20 +157,40 @@ public class ModbusAlarmService {
             return Uni.createFrom().voidItem();
         }
 
-        List<Uni<Void>> ops = new ArrayList<>();
-        for (ModbusAlarmPolicy.Open hit : decision.opens()) {
-            ops.add(alarmRepo.insertOpen(rowOf(serviceId, function.index, hit, now)).replaceWithVoid());
-        }
+        List<Uni<Void>> closes = new ArrayList<>();
         if (!decision.valueCloses().isEmpty()) {
-            ops.add(alarmRepo.closeByKeys(serviceId, function.index, decision.valueCloses(),
+            closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.valueCloses(),
                     ModbusServiceAlarm.CLOSE_VALUE, now).replaceWithVoid());
         }
+        if (!decision.supersededCloses().isEmpty()) {
+            closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.supersededCloses(),
+                    ModbusServiceAlarm.CLOSE_SUPERSEDED, now).replaceWithVoid());
+        }
         if (!decision.definitionCloses().isEmpty()) {
-            ops.add(alarmRepo.closeByKeys(serviceId, function.index, decision.definitionCloses(),
+            closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.definitionCloses(),
                     ModbusServiceAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
         }
+
+        List<Uni<Void>> opens = new ArrayList<>();
+        for (ModbusAlarmPolicy.Open hit : decision.opens()) {
+            opens.add(alarmRepo.insertOpen(rowOf(serviceId, function.index, hit, now)).replaceWithVoid());
+        }
+
         // 一次评估里的所有动作共用同一个时刻：行的 at 与 recoveredAt 对得上，不至于出现
         // 「关了又开、开的时间还早于关的时间」这种读起来荒谬的历史
+        return all(closes).chain(() -> all(opens));
+    }
+
+    /**
+     * 并发跑一批写操作；空批次是个空操作。
+     *
+     * <p>空批次必须在这里挡掉：{@code Uni.combine().all().unis(空列表)} 不是「什么都不做」。
+     * 从前不需要这一手 —— 那时一次评估里至少有开或有关，而现在「只关不开」「只开不关」都是常态。</p>
+     */
+    private static Uni<Void> all(List<Uni<Void>> ops) {
+        if (ops.isEmpty()) {
+            return Uni.createFrom().voidItem();
+        }
         return Uni.combine().all().unis(ops).discardItems();
     }
 
@@ -171,8 +202,10 @@ public class ModbusAlarmService {
      */
     private void reportSkips(String serviceId, ModbusServiceFunction function, List<ModbusAlarmPolicy.Skip> skips) {
         for (ModbusAlarmPolicy.Skip skip : skips) {
-            // 去重键就是开行标识：同一个出值只报一次，字段改了名算新的
-            String key = ModbusServiceAlarm.openKeyOf(serviceId, function.index, skip.field());
+            // 去重键细到**规则**：一个出值可以配一组规则，只报「这个出值判不了」的话，
+            // 同一个出值里的第二条坏规则永远不会被报出来（字段改了名算新的，理由同前）
+            String key = ModbusServiceAlarm.openKeyOf(serviceId, function.index, skip.field())
+                    + "#" + skip.alarm().id;
             if (!firstTime(reportedSkips, key, MAX_REPORTED_SKIPS)) {
                 continue;
             }
@@ -214,6 +247,8 @@ public class ModbusAlarmService {
         row.handled = false;
         row.sample = hit.sample();
         row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, functionIndex, hit.field());
+        // 哪条规则开的（不下发）：下一轮据此判断「胜者还是不是它」，也供定义变更对账判这条还该不该开着
+        row.ruleId = hit.alarm().id;
         return row;
     }
 }

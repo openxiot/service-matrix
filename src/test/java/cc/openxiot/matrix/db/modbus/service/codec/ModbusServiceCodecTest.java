@@ -4,6 +4,7 @@ import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.vertx.core.json.JsonArray;
@@ -11,6 +12,7 @@ import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,7 +44,10 @@ class ModbusServiceCodecTest {
                     {
                       "index": 1, "field": "进水温度", "bytes": 2, "format": "uint16",
                       "byteOrder": "ABCD", "scale": 0.1, "unit": "℃",
-                      "alarm": { "enabled": true, "compare": ">", "threshold": 80, "level": "WARN", "text": "温度过高" }
+                      "alarms": [
+                        { "id": "a1", "enabled": true, "compare": ">", "threshold": 80, "level": "WARN", "text": "温度过高" },
+                        { "id": "a2", "enabled": true, "compare": ">", "threshold": 90, "level": "CRITICAL", "text": "温度严重过高" }
+                      ]
                     }
                   ]
                 },
@@ -69,7 +74,9 @@ class ModbusServiceCodecTest {
                       "index": 1, "field": "线圈状态", "bytes": 1, "format": "uint8", "scale": 1.0,
                       "bit-list": [
                         { "offset": 0, "field": "进水阀",
-                          "alarm": { "enabled": true, "compare": "=", "threshold": 1, "level": "CRITICAL", "text": "进水阀未关闭" } },
+                          "alarms": [
+                            { "id": "b1", "enabled": true, "compare": "=", "threshold": 1, "level": "CRITICAL", "text": "进水阀未关闭" }
+                          ] },
                         { "offset": 3, "field": "报警" }
                       ]
                     }
@@ -120,13 +127,20 @@ class ModbusServiceCodecTest {
         assertEquals("℃", field.unit);
         assertNull(field.valueList);
 
-        // 字段自身的阈值告警：阈值 80 是工程单位（scale 已生效后的值）
-        assertTrue(field.alarm.enabled);
-        assertEquals(">", field.alarm.compare);
-        assertEquals(80.0, field.alarm.threshold.doubleValue());
-        assertNull(field.alarm.state);
-        assertEquals("WARN", field.alarm.level);
-        assertEquals("温度过高", field.alarm.text);
+        // 字段自身的阈值告警：一个出值一组规则，阈值 80 是工程单位（scale 已生效后的值），
+        // 数组原序进来就该原序出去（顺序参与同级并列裁决）
+        assertEquals(2, field.alarms.size());
+        assertEquals("a1", field.alarms.get(0).id);
+        assertTrue(field.alarms.get(0).enabled);
+        assertEquals(">", field.alarms.get(0).compare);
+        assertEquals(80.0, field.alarms.get(0).threshold.doubleValue());
+        assertNull(field.alarms.get(0).state);
+        assertEquals("WARN", field.alarms.get(0).level);
+        assertEquals("温度过高", field.alarms.get(0).text);
+        assertEquals("a2", field.alarms.get(1).id);
+        assertEquals(90.0, field.alarms.get(1).threshold.doubleValue());
+        assertEquals("CRITICAL", field.alarms.get(1).level);
+        assertEquals("温度严重过高", field.alarms.get(1).text);
 
         ModbusServiceField state = service.functions.get(1).response.get(0);
         assertEquals("开关状态", state.field);
@@ -137,7 +151,7 @@ class ModbusServiceCodecTest {
         assertEquals(1L, state.valueList.get(1).value.longValue());
         assertEquals("OFF", state.valueList.get(1).description);
         assertNull(state.bitList);
-        assertNull(state.alarm);      // 没配告警的字段不该带一个空对象
+        assertNull(state.alarms);      // 没配告警的字段不该带一个空数组（更不该带一个空对象）
 
         // 01 读位：位清单落在字段上（字段自身出整段位掩码）
         ModbusServiceField coils = service.functions.get(2).response.get(0);
@@ -149,11 +163,13 @@ class ModbusServiceCodecTest {
         assertEquals("报警", coils.bitList.get(1).field);
 
         // 位是独立的结果键（parser 把每个命名位单独放进结果对象），所以告警也配在位上
-        assertEquals("=", coils.bitList.get(0).alarm.compare);
-        assertEquals(1.0, coils.bitList.get(0).alarm.threshold.doubleValue());
-        assertEquals("CRITICAL", coils.bitList.get(0).alarm.level);
-        assertEquals("进水阀未关闭", coils.bitList.get(0).alarm.text);
-        assertNull(coils.bitList.get(1).alarm);
+        assertEquals(1, coils.bitList.get(0).alarms.size());
+        assertEquals("b1", coils.bitList.get(0).alarms.get(0).id);
+        assertEquals("=", coils.bitList.get(0).alarms.get(0).compare);
+        assertEquals(1.0, coils.bitList.get(0).alarms.get(0).threshold.doubleValue());
+        assertEquals("CRITICAL", coils.bitList.get(0).alarms.get(0).level);
+        assertEquals("进水阀未关闭", coils.bitList.get(0).alarms.get(0).text);
+        assertNull(coils.bitList.get(1).alarms);
     }
 
     @Test
@@ -198,8 +214,11 @@ class ModbusServiceCodecTest {
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
         JsonObject o = ModbusServiceCodec.encode(service);
 
-        JsonObject alarm = o.getJsonArray("functions").getJsonObject(0)
-                .getJsonArray("response").getJsonObject(0).getJsonObject("alarm");
+        JsonArray alarms = o.getJsonArray("functions").getJsonObject(0)
+                .getJsonArray("response").getJsonObject(0).getJsonArray("alarms");
+        assertEquals(2, alarms.size());
+        JsonObject alarm = alarms.getJsonObject(0);
+        assertEquals("a1", alarm.getString("id"));   // 规则身份必须原样落库：它是开行的 ruleId 的比对依据
         assertEquals(">", alarm.getString("compare"));
         assertEquals(80.0, alarm.getDouble("threshold").doubleValue());
         assertEquals("WARN", alarm.getString("level"));
@@ -208,13 +227,37 @@ class ModbusServiceCodecTest {
 
         JsonObject bitAlarm = o.getJsonArray("functions").getJsonObject(2)
                 .getJsonArray("response").getJsonObject(0)
-                .getJsonArray("bit-list").getJsonObject(0).getJsonObject("alarm");
+                .getJsonArray("bit-list").getJsonObject(0).getJsonArray("alarms").getJsonObject(0);
+        assertEquals("b1", bitAlarm.getString("id"));
         assertEquals("=", bitAlarm.getString("compare"));
 
-        // 没配告警的字段：不该凭空生成一个空对象 —— 否则「没配」与「配了个空」就分不清了
+        // 没配告警的字段：不该凭空生成一个空数组（也不该是空对象）—— 否则「没配」与「配了个空」就分不清了
         JsonObject unconfigured = o.getJsonArray("functions").getJsonObject(1)
                 .getJsonArray("response").getJsonObject(0);
-        assertFalse(unconfigured.containsKey("alarm"));
+        assertFalse(unconfigured.containsKey("alarms"));
+    }
+
+    @Test
+    void emptyOrBogusAlarmArraysDoNotSurviveDecoding() {
+        // 空数组、以及「元素全是空对象」的数组，都读作「没配」（null）——
+        // 于是那一句「非空才出键」把 [] 原样消掉，库里不会留下这个键，也不会留下一串空壳规则
+        ModbusServiceField field = new ModbusServiceField();
+        field.field = "进水温度";
+        field.alarms = ModbusServiceFieldAlarmCodec.decode(new JsonArray());
+        assertNull(field.alarms);
+
+        JsonArray shells = new JsonArray().add(new JsonObject()).add(new JsonObject());
+        assertNull(ModbusServiceFieldAlarmCodec.decode(shells));
+
+        ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
+        bit.offset = 0;
+        bit.field = "进水阀";
+        bit.alarms = ModbusServiceFieldAlarmCodec.decode(shells);
+        assertNull(bit.alarms);
+
+        // 反过来：空壳规则（null 元素）编进数组时也不该落地
+        assertTrue(ModbusServiceFieldAlarmCodec.encode(
+                Arrays.asList((ModbusServiceFieldAlarm) null, null)).isEmpty());
     }
 
     @Test
@@ -293,8 +336,12 @@ class ModbusServiceCodecTest {
         assertNull(ModbusServiceFieldCodec.decode((JsonObject) null));
         assertNull(ModbusServiceFieldCodec.decode((JsonArray) null));
         assertTrue(ModbusServiceFieldAlarmCodec.encode((ModbusServiceFieldAlarm) null).isEmpty());
-        assertNull(ModbusServiceFieldAlarmCodec.decode(null));
-        // 空对象读作「没配」（而不是一个字段全空的实例），这样 encode 才会把键省掉
+        assertTrue(ModbusServiceFieldAlarmCodec.encode((List<ModbusServiceFieldAlarm>) null).isEmpty());
+        // 两个重载都要显式转型（decode(null) 本身是有歧义的）
+        assertNull(ModbusServiceFieldAlarmCodec.decode((JsonObject) null));
+        assertNull(ModbusServiceFieldAlarmCodec.decode((JsonArray) null));
+        // 空对象 / 空数组都读作「没配」（而不是一个字段全空的实例 / 一个空列表），这样 encode 才会把键省掉
         assertNull(ModbusServiceFieldAlarmCodec.decode(new JsonObject()));
+        assertNull(ModbusServiceFieldAlarmCodec.decode(new JsonArray()));
     }
 }

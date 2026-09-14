@@ -28,9 +28,9 @@ ModbusService        name / version / configId / device / functions[] / creator 
 DeviceOn             did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn              spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
 ModbusServiceFunction index / name / request / interval / response[]
-ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[] / alarm
-ModbusServiceFieldBit offset / field / alarm              ← 位区里的具名位（01/02），位是独立的结果键
-ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
+ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[] / alarms[]
+ModbusServiceFieldBit offset / field / alarms[]           ← 位区里的具名位（01/02），位是独立的结果键
+ModbusServiceFieldAlarm id / enabled / compare / threshold / state / level / text
 ```
 
 * 服务本身**不记组织**（原来的 `orgId` 字段已删）：跨组织隔离由点表（`ModbusConfig.orgId`）负责，
@@ -49,12 +49,18 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
   缺省 = 按 `interval` 判定（有周期即启用，兼容加这个字段之前的定义）。同样只对读方法有意义。
   **执行侧的调度器尚未落地**（设计已定，见 `Modbus-Service-Poller.md`），这两个字段目前都只是定义。
 * `response[]` = 应答解析规则；`version` 标记 functions 内部格式的口径，后续演进时递增。
-* `response[].alarm` = 该出值的**阈值告警配置**（`ModbusServiceFieldAlarm`）：`enabled` 为 `true`
-  且值越限时产生一条告警（判定与状态见 `Modbus-Alarm.md`）。**只能配在读方法（fc 01/02/03/04）上**
-  —— 写方法的应答是请求回显，没有「读到的值」可言。
-* **`alarm` 挂两处**：字段（`response[].alarm`）与位（`response[].bit-list[].alarm`）。
-  位的值是**独立的结果键**（parser 把每个具名位单独放进结果对象，值为 0/1），
-  只挂字段上的话「进水阀 = 1 告警」这类配置根本够不着 —— 父字段那份是整个位掩码，不是一回事。
+* `response[].alarms[]` = 该出值的**一组阈值告警规则**（`ModbusServiceFieldAlarm`）：
+  `enabled` 为 `true` 且值越限时按级别**选出一条**开出告警（同一出值同时最多一条开着；
+  选举、关闭原因与状态见 `Modbus-Alarm.md`）。**只能配在读方法（fc 01/02/03/04）上**
+  —— 写方法的应答是请求回显，没有「读到的值」可言。上限 **8 条/出值**。
+* **`alarms` 挂两处**：字段（`response[].alarms`）与位（`response[].bit-list[].alarms`），
+  **各是一组、各自算**（含条数上限与 `id` 唯一性）。位的值是**独立的结果键**
+  （parser 把每个具名位单独放进结果对象，值为 0/1），只挂字段上的话「进水阀 = 1 告警」
+  这类配置根本够不着 —— 父字段那份是整个位掩码，不是一回事。
+* `id` = 这条规则的**身份**（前端生成、随配置落库、后端只校验：非空、≤64、同一出值内唯一）。
+  它存在是为了让「这条开着的告警是哪条规则开的」可比对 —— 库里的告警行存着 `ruleId`。
+  **不能用数组下标当身份**：删掉第 0 条会让第 1 条正开着的告警静默改嫁到新第 0 条。
+  `id` 只是后端内部标识，**不下发**（与告警行的 `openKey` 同口径）。
 * `compare` 用**符号**（`>` `>=` `<` `<=` `=`）而不是 `GT/GTE` 这类枚举：语言中立、与需求原话一致、
   日志与响应里回显无歧义；「超过 / 达到 / 低于」那些**词**是页面自己的文案（进词典），符号本身不翻译。
 * `=` 的比较目标按字段形态二选一：带 `value-list` 的字段出的是**描述字符串**，用 `state` 逐字比；
@@ -179,8 +185,12 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 * **同一应答内的出值名唯一**：各字段的 `field` 与各位清单的 `bit-list[].field` 不能重复 ——
   解析结果是一个 `字段 → 值` 的对象，重名即互相覆盖。
 * `bit-list`（01/02 位区的逐位取值）：offset 必填且 `0 ≤ offset < bytes × 8`、组内不重复，field 必填。
-* `alarm`（阈值告警）：**只在 `enabled == true` 时校验** —— 半配置合法，与 `polling` 同一条规矩
-  （`false` 的用法就是「把配置留着、先不报」），所以下面的规则读作「启用之后必须自洽」：
+* `alarms`（阈值告警，一个出值一组）：**只在 `enabled == true` 时校验** —— 半配置合法，
+  与 `polling` 同一条规矩（`false` 的用法就是「把配置留着、先不报」），所以下面的规则读作
+  「启用之后必须自洽」：
+  * 一组最多 **8 条**（`alarms` 与 `bit-list[].alarms` 各自算）—— 防呆，不是安全边界。
+  * 启用规则的 `id` **非空、去空白后 ≤ 64 字、同一出值内唯一**；停用的规则既不查 `id`、
+    也不占用组内的唯一名额。`id` 只在 `enabled` 时校验，理由与本节开头同。
   * 只能配在**读方法**上（与 `interval` 共用同一个 `isReadFunction` 判断，不各写一份）。
   * `compare` ∈ `> >= < <= =`；`level` ∈ `INFO/WARN/CRITICAL`；`text` 去首尾空白后非空且 ≤ 64 字。
   * **能比什么由字段的取值形态决定**，不留给运行期碰运气：`format` 为 `string` 的字段一律不收
@@ -195,6 +205,12 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 ## 八、变更记录
 
 ### 2026-09-14
+
+* **阈值告警模型返工：一个出值一组规则**（`alarm` → `alarms[]`、规则加 `id`）。`ModbusServiceField.alarm`
+  与 `ModbusServiceFieldBit.alarm` 各改成 `List<ModbusServiceFieldAlarm>`，两处 Codec 与非空数组的
+  「不出键」口径成对改掉；校验器改为「逐条 + 组内共性」（条数上限 8、`id` 非空/≤64/组内唯一，
+  见第七节）；判定侧只留级别最高的一条开着（`Modbus-Alarm.md` 第四、五节）。零成本窗口期的
+  最后一刻：集合一行没落过、也没有任何存量服务的配置里带过 `alarm` 这个键。
 
 * **Modbus 阈值告警（第五步：查询服务与接口）**。`api/modbus/alarm/ModbusAlarmQueryService`（新）+
   `ModbusAlarmResource`（新，`/matrix/v1/modbus/alarm`：`GET /many/{spaceId}`、

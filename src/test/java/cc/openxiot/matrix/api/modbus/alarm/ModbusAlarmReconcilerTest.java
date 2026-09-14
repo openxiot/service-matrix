@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -44,6 +45,9 @@ class ModbusAlarmReconcilerTest {
 
     private static final String SID = "65f0c0ffee0123456789abcd";
     private static final String OTHER_SID = "65f0c0ffee0123456789abce";
+
+    /** 夹具里那条规则的身份：定义里的规则与行上的 {@code ruleId} 都用它，即「还是这条规则」。 */
+    private static final String RULE_ID = "r1";
 
     @Mock
     ModbusServiceRepository serviceRepo;
@@ -260,6 +264,8 @@ class ModbusAlarmReconcilerTest {
         row.serviceId = serviceId;
         row.functionIndex = functionIndex;
         row.field = field;
+        // 开它的就是夹具定义里那条规则（id 同 RULE_ID）：判据是规则级，没有它这条行会被判成「不认识」
+        row.ruleId = RULE_ID;
         row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, functionIndex, field);
         return row;
     }
@@ -293,12 +299,13 @@ class ModbusAlarmReconcilerTest {
         field.field = name;
         if (alarmEnabled) {
             ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+            alarm.id = RULE_ID;
             alarm.enabled = true;
             alarm.compare = ">";
             alarm.threshold = 80.0;
             alarm.level = "WARN";
             alarm.text = "温度过高";
-            field.alarm = alarm;
+            field.alarms = new ArrayList<>(List.of(alarm));
         }
         return field;
     }

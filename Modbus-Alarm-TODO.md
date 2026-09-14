@@ -26,6 +26,9 @@
 
 ## 第一步：配置模型与校验（已完成）
 
+> 这一步的「一个出值一条规则」已被**第 4.5 步**改成「一个出值**一组**规则」；
+> 下面的记录保持当时的样子，现行口径看第 4.5 步与 `Modbus-Alarm.md`。
+
 - [x] `ModbusServiceFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
 - [x] 挂在**两处**：`ModbusServiceField.alarm` 与 `ModbusServiceFieldBit.alarm`
       —— 位是独立的结果键（parser 逐位 `values.put(bit.field, …)`），只挂字段够不着「位 = 1 告警」。
@@ -187,11 +190,46 @@
       译文不提这件事就还是假话；这是本次唯一一处重写既有译文的键。
 - [x] `AGENTS.md`（前端）的 i18n 一节补上「告警的 `text` 是用户自己敲进去的一句话，翻译它就是在改用户的输入」。
 
+## 第 4.5 步：一个出值一组规则（已完成）
+
+做完第四步、第五步之后插入的一步：把「一个出值只能配一条规则」改成**一组**（分级配置）。
+集合一行没落过、也没有存量配置带过 `alarm` 键，所以这是零成本窗口期的最后一刻。
+完整口径见 `Modbus-Alarm.md` 第十三节第一条，这里只列交付物。
+
+- [x] `ModbusServiceFieldAlarm` 加 `id`（前端生成、后端校验：非空 / ≤64 / 同出值内唯一；
+      **只在 `enabled == true` 时校验**，照抄「半配置合法」）。**条数上限 8 条/出值**。
+- [x] `alarm` → `alarms` 两处（字段与位），两个父 Codec 跟着改；空数组 / 「元素全是空对象」
+      都读作**没配**，库里不留 `alarms: []` 也不留空壳规则。
+- [x] `ModbusAlarmPolicy`：`LEVEL_ORDER` / `rank` / 选举（只留级别最高的一条；同级取声明顺序
+      靠后的；命中优先于判不了）；`SKIP` 日志去重键细到 `ruleId`。
+- [x] `ModbusServiceAlarm` 加 `ruleId`（**不下发**）与 `CLOSE_SUPERSEDED`；
+      **`openKey` 与那三个索引一个字没改** —— 「一个出值同时最多一条开着」由唯一部分索引强制。
+- [x] `ModbusAlarmService.apply` 改**两段写序（先关后插）**，并用 `InOrder` 钉住：
+      `Uni.combine().all()` 是并发的，顺序只能由两段 `chain` 保证 —— 反了会撞唯一索引、
+      被 `insertOpen` 静默吞掉，那个出值就一条开着的都没有。
+- [x] `ModbusAlarmPlan` 判据细到规则：「该出值上还有没有一条 `id` 等于行上 `ruleId`、
+      且启用着的规则」；**行上没有 `ruleId` 的一律不动**（关掉是不可逆的那个动作，
+      采集侧的胜者比对会按 `SUPERSEDED` 接手它）。
+- [x] 单测：Policy 16 → 26、Service 19 → 22、Plan 15 → 17、Reconciler 14（夹具跟模型改）、
+      Validator 告警段 10 → 15、Codec 数组往返。
+- [x] 文档：`Modbus-Alarm.md` 第一~六、八~十一、十三节 + `MODBUS.md` 第三、七、八节。
+
 ## 第七步：端到端验收（需连接串）
 
-- [ ] 造一个配了告警的服务 → 手动 `invoke` 一次越限值 → `/alarm/many/{spaceId}` 应有一条未处理、未恢复。
-- [ ] **再 invoke 一次同样的越限值 → 仍然只有一条**（本特性最核心的断言）。
-- [ ] invoke 一个正常值 → 该条 `recoveredAt` 有值、`handled` 仍为 `false`。
+改为**分级场景**（这是本次返工最核心的那条断言：升一级之后仍然只有一条开着）。
+
+- [ ] 造一个配了**一组**规则的服务（如 温度：`>26` 提示 / `>28` 警告 / `>30` 严重）→
+      手动 `invoke` 一个最低级的越限值 → `/alarm/many/{spaceId}` 应有**一条**未处理、未恢复，
+      级别是那一级的。
+- [ ] **再 invoke 一次同样的值 → 仍然只有一条**（稳态零写）。
+- [ ] **升到最高一级 → 仍然只有一条开着**（最核心的断言），
+      并多出一条**已恢复**的行、`closeType = SUPERSEDED`，且它的 `handled` 仍为 `false`
+      （被取代**仍然算未处理**，这是有意为之）。
+- [ ] **降一级 → 再次被取代**：`closeType` 是 `SUPERSEDED` 而**不是** `VALUE`
+      （值仍然越限，记成「值恢复」是谎话）。
+- [ ] invoke 一个正常值 → 那条开着的关闭、`closeType = VALUE`，`handled` 仍为 `false`。
 - [ ] 调 `handle` → `handled=true`、`handledBy` 是当前账号。
-- [ ] 再越限一次 → 出现**第二条**。
-- [ ] 把该字段的告警关掉（或删掉该字段）保存 → 若此时有开着的告警，它应被 `DEFINITION` 关闭。
+- [ ] 再越限一次 → 出现**第二条**开着的（与前面若干条已恢复的共存）。
+- [ ] 删掉该出值**其中一条**规则的保存 → 若它有一条开着的行，应被 `DEFINITION` 关闭
+      （**判据细到规则**：同出值别的规则还在，也要关掉它）。
+- [ ] 整个字段的告警全停用保存 → 开着的行按 `DEFINITION` 关闭（不是 `SUPERSEDED`）。

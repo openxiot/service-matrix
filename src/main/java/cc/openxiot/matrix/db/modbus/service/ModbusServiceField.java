@@ -57,7 +57,7 @@ public class ModbusServiceField {
     @JsonProperty("bit-list")
     public List<ModbusServiceFieldBit> bitList;
 
-    @Schema(description = "本字段的阈值告警配置：enabled 为 true 且值越限时产生一条告警。"
-            + "只对读方法（fc 01/02/03/04）有效；位区的各个位另有自己的 alarm（见 bit-list）")
-    public ModbusServiceFieldAlarm alarm;
+    @Schema(description = "本字段的一组阈值告警规则：值越限时产生一条告警，一次采样只留最严重的那条。"
+            + "只对读方法（fc 01/02/03/04）有效；位区的各个位另有自己的一组（见 bit-list）")
+    public List<ModbusServiceFieldAlarm> alarms;
 }

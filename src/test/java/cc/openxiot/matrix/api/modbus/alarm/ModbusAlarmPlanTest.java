@@ -23,11 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>纯函数，不需要数据库。单独测它的理由：这条对账是**唯一**会去关告警行的地方，
  * 判宽了会把仍然配着告警的开行误关（用户看到一条越限告警凭空「已恢复」），
  * 判窄了那条告警会永远挂着 —— 两种都不报错。</p>
+ *
+ * <p>判据是**规则级**的（该出值上还有没有一条启用着、且 {@code id} 等于行上 {@code ruleId} 的规则）：
+ * 停在出值级会让「删掉那条规则、同出值别的规则还在」的开行永远留着 —— 没有任何规则能再改变它。</p>
  */
 class ModbusAlarmPlanTest {
 
     private static final String SID = "65f0c0ffee0123456789abcd";
     private static final String OTHER_SID = "65f0c0ffee0123456789abce";
+
+    /** 夹具里那条规则的身份：定义里的规则与行上的 {@code ruleId} 都用它，即「还是这条规则」。 */
+    private static final String RULE_ID = "r1";
 
     // ===== 还配着告警的：一个都不动 =====
 
@@ -60,7 +66,26 @@ class ModbusAlarmPlanTest {
     @Test
     void missingAlarmCloses() {
         assertEquals(List.of("进水温度"),
-                fields(plan(service(function(field("进水温度", null))), open(1, "进水温度"))));
+                fields(plan(service(function(field("进水温度"))), open(1, "进水温度"))));
+    }
+
+    @Test
+    void deletedRuleClosesEvenWhenASiblingRuleRemains() {
+        // 同一出值上**还有别的启用规则**，但这条开行不是它们开的（ruleId 对不上）：
+        // 新定义里已经没有能判定它的规则了，关掉。判据停在出值级就会漏掉这一条 ——
+        // 而那条行会一直挂着，因为没有任何规则能再改变它的状态
+        ModbusServiceField field = field("进水温度", alarm("r2", true));
+        assertEquals(List.of("进水温度"), fields(plan(service(function(field)), open(1, "进水温度"))));
+    }
+
+    @Test
+    void rowWithoutARuleIdIsLeftAlone() {
+        // 说不上是哪条规则开的（只可能来自更早的数据）：判据无从比对，而关掉才是不可逆的那个动作。
+        // 采集侧的胜者比对会把它按 SUPERSEDED 接手 —— 那才是能说清原因的那条路径
+        ModbusServiceAlarm row = row(SID, 1, "进水温度");
+        row.ruleId = null;
+        assertTrue(ModbusAlarmPlan.plan(
+                List.of(service(function(field("进水温度", alarm(true))))), List.of(row)).isEmpty());
     }
 
     @Test
@@ -135,8 +160,8 @@ class ModbusAlarmPlanTest {
         // 关闭是按整个开行标识 updateMany 的 —— 同一个方法上的多个出值合成一条语句，不是一条一个
         // （一条一个会让一轮对账的写语句数量放大成出值数倍）
         ModbusService service = service(
-                function(1, field("进水温度", alarm(true)), field("回水温度", null), field("压力", null)),
-                function(2, field("出水温度", null)));
+                function(1, field("进水温度", alarm(true)), field("回水温度"), field("压力")),
+                function(2, field("出水温度")));
         List<Close> closes = ModbusAlarmPlan.plan(List.of(service), List.of(
                 row(SID, 1, "回水温度"), row(SID, 1, "进水温度"), row(SID, 1, "压力"),
                 row(SID, 2, "出水温度")));
@@ -153,8 +178,8 @@ class ModbusAlarmPlanTest {
     @Test
     void orderIsDeterministic() {
         // 顺序稳定只是为了让日志与测试可读；真正要紧的是「同一批输入得到同一批输出」
-        ModbusService one = service(SID, function(2, field("b", null)));
-        ModbusService two = service(OTHER_SID, function(1, field("a", null)));
+        ModbusService one = service(SID, function(2, field("b")));
+        ModbusService two = service(OTHER_SID, function(1, field("a")));
         List<ModbusServiceAlarm> rows = List.of(
                 row(OTHER_SID, 1, "a"), row(SID, 2, "b"), row(SID, 3, "c"));
 
@@ -166,7 +191,7 @@ class ModbusAlarmPlanTest {
     @Test
     void nullFunctionIndexSortsFirst() {
         // 坐标不全的行（没有方法序号）排在最前
-        ModbusService service = service(function(1, field("a", null)));
+        ModbusService service = service(function(1, field("a")));
         List<Close> closes = ModbusAlarmPlan.plan(List.of(service),
                 List.of(row(SID, 1, "a"), row(SID, null, "b")));
 
@@ -194,6 +219,7 @@ class ModbusAlarmPlanTest {
         row.serviceId = serviceId;
         row.functionIndex = functionIndex;
         row.field = field;
+        row.ruleId = RULE_ID;
         row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, functionIndex, field);
         return row;
     }
@@ -221,18 +247,18 @@ class ModbusAlarmPlanTest {
         return function;
     }
 
-    private static ModbusServiceField field(String name, ModbusServiceFieldAlarm alarm) {
+    private static ModbusServiceField field(String name, ModbusServiceFieldAlarm... alarms) {
         ModbusServiceField field = new ModbusServiceField();
         field.field = name;
-        field.alarm = alarm;
+        field.alarms = new ArrayList<>(List.of(alarms));
         return field;
     }
 
-    private static ModbusServiceField bits(String name, String bitName, ModbusServiceFieldAlarm alarm) {
+    private static ModbusServiceField bits(String name, String bitName, ModbusServiceFieldAlarm... alarms) {
         ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
         bit.offset = 0;
         bit.field = bitName;
-        bit.alarm = alarm;
+        bit.alarms = new ArrayList<>(List.of(alarms));
 
         ModbusServiceField field = new ModbusServiceField();
         field.field = name;
@@ -240,8 +266,14 @@ class ModbusAlarmPlanTest {
         return field;
     }
 
+    /** 一条规则：id 就是 {@link #RULE_ID}，与夹具 {@link #row} 上那个对得上（= 「还是这条规则」）。 */
     private static ModbusServiceFieldAlarm alarm(boolean enabled) {
+        return alarm(RULE_ID, enabled);
+    }
+
+    private static ModbusServiceFieldAlarm alarm(String id, boolean enabled) {
         ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+        alarm.id = id;
         alarm.enabled = enabled;
         alarm.compare = ">";
         alarm.threshold = 80.0;

@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
 
@@ -35,15 +36,24 @@ import java.util.TreeSet;
  * <p>两者都与「定义刚被改过」同阶，所以挂在对账上而不是挂在采集热路径上 —— 后者要为此
  * 每次都查库，那是拿**每次采样**的代价去兜**一次编辑**的残局。</p>
  *
- * <h2>判据只有一条：新定义里还有没有配着启用告警的这个出值键</h2>
+ * <h2>判据只有一条：新定义里还有没有「这条开行所依据的那条规则」</h2>
  *
- * <p>「出值键」= {@code response[].field}，或 {@code response[].bitList[].field}（位是独立的结果键）。
- * 字段改名、方法序号变了、字段被删、告警被关掉 —— 都表现为「旧键在新定义里找不到」，一视同仁。</p>
+ * <p>即：该出值（{@code response[].field}，或 {@code response[].bitList[].field} —— 位是独立的结果键）
+ * 上，还有没有一条**启用着的、{@code id} 等于这行 {@code ruleId}** 的规则。字段改名、方法序号变了、
+ * 字段被删、那条规则被删、规则被停用 —— 都表现为「这条规则在新定义里找不到」，一视同仁。</p>
+ *
+ * <p><b>为什么细到规则、而不是停在出值</b>：一个出值能配一组规则，判定时只留最严重的一条开着。
+ * 停在出值的话，用户删掉「超过 30 严重」这条规则后，那条按它开出来的行会被判成「还覆盖着」
+ * 而永远留着 —— 新定义里已经没有能判定它的规则了。</p>
  *
  * <p><b>不认识的服务一律不动</b>：{@code services} 里没有某个 {@code serviceId}，
  * 只说明**这一次对账没拿到它的定义**，不是「它的告警已经陈旧」的证据。这个保守口径让两条调用路径
  * （写入路径只传那一个服务、启动路径传全部）行为一致，也免掉了「传入的服务不全 ⇒ 误关一片」这个
  * 静默而严重的走法。真正该消失的行归**级联删除**（{@code ModbusHistoryService.purge}）。</p>
+ *
+ * <p><b>行上没有 {@code ruleId} 的也不动</b>：判据是拿它去比对的，没有它就说不出「这条规则还在不在」。
+ * 这种行只可能来自更早的数据，而采集侧的胜者比对会把它按 {@code SUPERSEDED} 接手 ——
+ * 那才是能说清原因的那条路径。关掉才是不可逆的那个动作，宁可留着。</p>
  */
 public final class ModbusAlarmPlan {
 
@@ -60,13 +70,16 @@ public final class ModbusAlarmPlan {
     }
 
     /**
-     * 新定义里**配着启用告警**的全部出值键：{@code functionIndex → {出值名}}。
+     * 新定义里**配着启用告警**的全部规则：{@code functionIndex → {出值名 → 该出值上启用的规则标识}}。
      *
      * <p>写方法（{@code response} 为空）进来是空集 —— 告警只许配在读方法上，写方法的应答是请求回显、
      * 没有读值，所以它上面任何开行都是残留。</p>
+     *
+     * <p>启用着却没有 {@code id} 的规则（校验器挡着新数据，只可能是老数据）收不进来：
+     * 它开出来的行 {@code ruleId} 也是 null，同样落进「行上没有 ruleId ⇒ 不动」那条。</p>
      */
-    static Map<Integer, Set<String>> configuredFields(ModbusService service) {
-        Map<Integer, Set<String>> byIndex = new HashMap<>();
+    static Map<Integer, Map<String, Set<String>>> configuredRules(ModbusService service) {
+        Map<Integer, Map<String, Set<String>>> byIndex = new HashMap<>();
         if (service == null || service.functions == null) {
             return byIndex;
         }
@@ -74,22 +87,20 @@ public final class ModbusAlarmPlan {
             if (function == null || function.index == null) {
                 continue;
             }
-            Set<String> keys = new HashSet<>();
+            Map<String, Set<String>> keys = new HashMap<>();
             if (function.response != null) {
                 for (ModbusServiceField field : function.response) {
                     if (field == null) {
                         continue;
                     }
                     // 位与字段进的是同一个结果对象，所以两种键平级收进来（与 parser 同口径）
-                    if (field.field != null && ModbusAlarmPolicy.isEnabled(field.alarm)) {
-                        keys.add(field.field);
-                    }
+                    addRuleIds(keys, field.field, field.alarms);
                     if (field.bitList == null) {
                         continue;
                     }
                     for (ModbusServiceFieldBit bit : field.bitList) {
-                        if (bit != null && bit.field != null && ModbusAlarmPolicy.isEnabled(bit.alarm)) {
-                            keys.add(bit.field);
+                        if (bit != null) {
+                            addRuleIds(keys, bit.field, bit.alarms);
                         }
                     }
                 }
@@ -97,6 +108,19 @@ public final class ModbusAlarmPlan {
             byIndex.put(function.index, keys);
         }
         return byIndex;
+    }
+
+    /** 把一个出值上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
+    private static void addRuleIds(Map<String, Set<String>> keys, String field,
+                                   List<ModbusServiceFieldAlarm> alarms) {
+        if (field == null || alarms == null) {
+            return;
+        }
+        for (ModbusServiceFieldAlarm alarm : alarms) {
+            if (ModbusAlarmPolicy.isEnabled(alarm) && alarm.id != null) {
+                keys.computeIfAbsent(field, ignored -> new HashSet<>()).add(alarm.id);
+            }
+        }
     }
 
     /**
@@ -112,27 +136,29 @@ public final class ModbusAlarmPlan {
             return closes;
         }
 
-        Map<String, Map<Integer, Set<String>>> covered = new HashMap<>();
+        Map<String, Map<Integer, Map<String, Set<String>>>> covered = new HashMap<>();
         for (ModbusService service : services) {
             if (service == null || service.id == null) {
                 continue;
             }
-            covered.put(service.id.toHexString(), configuredFields(service));
+            covered.put(service.id.toHexString(), configuredRules(service));
         }
 
         // (serviceId, functionIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
         Map<Key, Set<String>> stale = new LinkedHashMap<>();
         for (ModbusServiceAlarm row : open) {
-            if (row == null || row.serviceId == null || row.field == null || row.field.isBlank()) {
-                continue;   // 坐标不全的行没有「定义是否还覆盖它」可言，不在这里动
+            if (row == null || row.serviceId == null || row.field == null || row.field.isBlank()
+                    || row.ruleId == null) {
+                continue;   // 坐标不全、或说不上是哪条规则开的：见类注释，不在这里动
             }
-            Map<Integer, Set<String>> byIndex = covered.get(row.serviceId);
+            Map<Integer, Map<String, Set<String>>> byIndex = covered.get(row.serviceId);
             if (byIndex == null) {
                 continue;   // 不认识的服务：见类注释，保守不动
             }
-            Set<String> keys = row.functionIndex == null ? null : byIndex.get(row.functionIndex);
-            if (keys != null && keys.contains(row.field)) {
-                continue;   // 新定义里还配着这个出值的告警，留着 —— 它归值判定管
+            Map<String, Set<String>> rules = row.functionIndex == null ? null : byIndex.get(row.functionIndex);
+            Set<String> ids = rules == null ? null : rules.get(row.field);
+            if (ids != null && ids.contains(row.ruleId)) {
+                continue;   // 新定义里还有这条规则且启用着，留着 —— 它归值判定管
             }
             stale.computeIfAbsent(new Key(row.serviceId, row.functionIndex), key -> new TreeSet<>())
                     .add(row.field);

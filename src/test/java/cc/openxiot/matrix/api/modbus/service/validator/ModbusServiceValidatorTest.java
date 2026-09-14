@@ -10,6 +10,7 @@ import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -330,11 +331,67 @@ class ModbusServiceValidatorTest {
     }
 
     @Test
+    void acceptsARuleGroupOnOneField() {
+        // 一个出值一组规则：阈值各异、甚至方向相反（低侧与高侧永远不可能同时命中）都合法
+        ModbusServiceFieldAlarm low = alarm("r1", "<", 20.0, null);
+        low.level = "WARN";
+        ModbusServiceFieldAlarm high = alarm("r2", ">", 26.0, null);
+        high.level = "INFO";
+        ModbusServiceFieldAlarm worst = alarm("r3", ">", 30.0, null);
+        worst.level = "CRITICAL";
+        assertNull(validateFieldAlarms(List.of(low, high, worst), field("进水温度", "uint16", 2)));
+
+        // 停用的规则不查 id（半配置合法），也不占用组内的 id 名额
+        ModbusServiceFieldAlarm disabled = alarm(null, ">", 40.0, null);
+        disabled.enabled = false;
+        assertNull(validateFieldAlarms(List.of(low, disabled), field("进水温度", "uint16", 2)));
+    }
+
+    @Test
+    void rejectsBadAlarmIds() {
+        String base = "functions[0].response[0].alarms";
+        ModbusServiceField temperature = field("进水温度", "uint16", 2);
+
+        // id 是「这条开着的告警是哪条规则开的」的唯一依据：启用了就必须有
+        assertEquals(base + "[0].id is required",
+                validateFieldAlarms(List.of(alarm(null, ">", 80.0, null)), temperature));
+        assertEquals(base + "[0].id is required",
+                validateFieldAlarms(List.of(alarm("  ", ">", 80.0, null)), temperature));
+
+        ModbusServiceFieldAlarm longId = alarm("x".repeat(65), ">", 80.0, null);
+        assertEquals("invalid " + base + "[0].id: too long (64 characters max)",
+                validateFieldAlarms(List.of(longId), temperature));
+
+        // 同一出值内重复：两条规则会争同一个 ruleId，开行的归属就说不清了
+        assertEquals("invalid " + base + "[1].id: r1 (duplicated)",
+                validateFieldAlarms(List.of(alarm("r1", ">", 80.0, null), alarm("r1", ">", 90.0, null)),
+                        temperature));
+    }
+
+    @Test
+    void rejectsTooManyRulesOnOneField() {
+        // 防呆不是安全边界（多几条只是多几次纯内存比较），是给「界面上误加了一堆规则」一个上限
+        String base = "functions[0].response[0].alarms";
+        ModbusServiceField temperature = field("进水温度", "uint16", 2);
+
+        List<ModbusServiceFieldAlarm> eight = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            eight.add(alarm("r" + i, ">", 80.0 + i, null));
+        }
+        assertNull(validateFieldAlarms(eight, temperature));
+
+        List<ModbusServiceFieldAlarm> nine = new ArrayList<>(eight);
+        nine.add(alarm("r8", ">", 90.0, null));
+        assertEquals("invalid " + base + ": too many rules (8 max)",
+                validateFieldAlarms(nine, temperature));
+    }
+
+    @Test
     void acceptsBitAlarm() {
         // 位只有 0/1，只能用「等于」比 0 或 1：进水阀 = 1 告警
         ModbusServiceField bits = field("进水阀位", "uint8", 1);
         bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
-        bits.bitList.get(0).alarm = alarm("=", 1.0, null);
+        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("=", 1.0, null)));
 
         ModbusService service = service();
         service.functions.get(0).response = new ArrayList<>(List.of(bits));
@@ -357,7 +414,7 @@ class ModbusServiceValidatorTest {
 
     @Test
     void rejectsBadAlarmScalars() {
-        String base = "functions[0].response[0].alarm";
+        String base = "functions[0].response[0].alarms[0]";
 
         ModbusServiceFieldAlarm badCompare = alarm("!=", 80.0, null);
         assertEquals("invalid " + base + ".compare: != (must be one of > >= < <= =)",
@@ -392,14 +449,22 @@ class ModbusServiceValidatorTest {
     }
 
     @Test
+    void rejectsNullRuleInAGroup() {
+        // 数组里的空元素：要么是前端拼错了，要么是手工改库改出来的，收下来判定时会 NPE
+        assertEquals("functions[0].response[0].alarms[1] is null",
+                validateFieldAlarms(Arrays.asList(alarm(">", 80.0, null), null),
+                        field("进水温度", "uint16", 2)));
+    }
+
+    @Test
     void rejectsAlarmOnWriteFunction() {
         // 写方法的应答是请求回显，没有「读到的值」可言 —— 与 interval 同一条规则
         ModbusService service = service();
         ModbusServiceFunction write = service.functions.get(0);
         write.request = "0105000000010A0A";
-        write.response.get(0).alarm = alarm(">", 80.0, null);
+        write.response.get(0).alarms = new ArrayList<>(List.of(alarm(">", 80.0, null)));
 
-        assertEquals("invalid functions[0].response[0].alarm: only read functions (fc 01/02/03/04) can have alarms",
+        assertEquals("invalid functions[0].response[0].alarms[0]: only read functions (fc 01/02/03/04) can have alarms",
                 ModbusServiceValidator.validate(service));
     }
 
@@ -407,7 +472,7 @@ class ModbusServiceValidatorTest {
     void rejectsAlarmOnStringField() {
         // string 字段出的是任意文本，没有可比的量
         ModbusServiceFieldAlarm a = alarm(">", 80.0, null);
-        assertEquals("invalid functions[0].response[0].alarm: a string field has no comparable value",
+        assertEquals("invalid functions[0].response[0].alarms[0]: a string field has no comparable value",
                 validateFieldAlarm(a, field("设备型号", "string", 4)));
     }
 
@@ -417,13 +482,13 @@ class ModbusServiceValidatorTest {
         ModbusServiceField named = field("水泵状态", "uint16", 2);
         named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
 
-        assertEquals("invalid functions[0].response[0].alarm.compare: > (a value-list field yields names, use =)",
+        assertEquals("invalid functions[0].response[0].alarms[0].compare: > (a value-list field yields names, use =)",
                 validateFieldAlarm(alarm(">", 80.0, null), named));
     }
 
     @Test
     void rejectsBadEqualsOnValueListField() {
-        String base = "functions[0].response[0].alarm";
+        String base = "functions[0].response[0].alarms[0]";
         ModbusServiceField named = field("水泵状态", "uint16", 2);
         named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
 
@@ -441,29 +506,48 @@ class ModbusServiceValidatorTest {
 
     @Test
     void rejectsBothThresholdAndState() {
-        assertEquals("invalid functions[0].response[0].alarm.state: only allowed on a value-list field (use threshold)",
+        assertEquals("invalid functions[0].response[0].alarms[0].state: only allowed on a value-list field (use threshold)",
                 validateFieldAlarm(alarm("=", 1.0, "ON"), field("进水温度", "uint16", 2)));
-        assertEquals("invalid functions[0].response[0].alarm.state: only allowed when compare is =",
+        assertEquals("invalid functions[0].response[0].alarms[0].state: only allowed when compare is =",
                 validateFieldAlarm(alarm(">", 80.0, "ON"), field("进水温度", "uint16", 2)));
-        assertEquals("functions[0].response[0].alarm.threshold is required (compare =)",
+        assertEquals("functions[0].response[0].alarms[0].threshold is required (compare =)",
                 validateFieldAlarm(alarm("=", null, null), field("进水温度", "uint16", 2)));
     }
 
     @Test
     void rejectsBadBitAlarm() {
-        String base = "functions[0].response[0].bit-list[0].alarm";
+        String base = "functions[0].response[0].bit-list[0].alarms[0]";
         ModbusServiceField bits = field("进水阀位", "uint8", 1);
         bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
 
         // 位只有 0/1：数值比较与 0.5 都是定义错误
-        bits.bitList.get(0).alarm = alarm(">", 1.0, null);
+        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm(">", 1.0, null)));
         ModbusService service = service();
         service.functions.get(0).response = new ArrayList<>(List.of(bits));
         assertEquals("invalid " + base + ".compare: > (a bit is 0 or 1, use =)",
                 ModbusServiceValidator.validate(service));
 
-        bits.bitList.get(0).alarm = alarm("=", 0.5, null);
+        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("=", 0.5, null)));
         assertEquals("invalid " + base + ".threshold: 0.5 (a bit is 0 or 1, use =)",
+                ModbusServiceValidator.validate(service));
+    }
+
+    @Test
+    void bitRuleGroupHasItsOwnIdSpace() {
+        // id 的唯一性只在「同一位」内要求：位与父字段各是一组、各开各的行，同名不冲突
+        String base = "functions[0].response[0].bit-list[0].alarms";
+        ModbusServiceField bits = field("进水阀位", "uint8", 1);
+        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
+        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("r1", "=", 1.0, null)));
+
+        ModbusService service = service();
+        service.functions.get(0).response = new ArrayList<>(List.of(bits));
+        assertNull(ModbusServiceValidator.validate(service));
+
+        // 位组内自己重复，照拒
+        bits.bitList.get(0).alarms = new ArrayList<>(
+                List.of(alarm("r1", "=", 1.0, null), alarm("r1", "=", 0.0, null)));
+        assertEquals("invalid " + base + "[1].id: r1 (duplicated)",
                 ModbusServiceValidator.validate(service));
     }
 
@@ -516,9 +600,15 @@ class ModbusServiceValidatorTest {
         return entry;
     }
 
-    /** 一份「启用之后应当自洽」的告警：各用例只改自己关心的那一处。 */
+    /** 一份「启用之后应当自洽」的规则：各用例只改自己关心的那一处。{@code id} 默认 {@code r1}。 */
     private static ModbusServiceFieldAlarm alarm(String compare, Double threshold, String state) {
+        return alarm("r1", compare, threshold, state);
+    }
+
+    /** 同上，但规则身份自己给（{@code null} 用来测「启用了却没有 id」）。 */
+    private static ModbusServiceFieldAlarm alarm(String id, String compare, Double threshold, String state) {
         ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+        alarm.id = id;
         alarm.enabled = true;
         alarm.compare = compare;
         alarm.threshold = threshold;
@@ -540,10 +630,15 @@ class ModbusServiceValidatorTest {
         return field;
     }
 
-    /** 把这份告警挂到服务唯一那个方法的唯一那个字段上，返回校验结果。 */
+    /** 把这条规则挂到服务唯一那个方法的唯一那个字段上，返回校验结果。 */
     private static String validateFieldAlarm(ModbusServiceFieldAlarm alarm, ModbusServiceField field) {
+        return validateFieldAlarms(new ArrayList<>(List.of(alarm)), field);
+    }
+
+    /** 同上，但一次挂一组规则。 */
+    private static String validateFieldAlarms(List<ModbusServiceFieldAlarm> alarms, ModbusServiceField field) {
         ModbusService service = service();
-        field.alarm = alarm;
+        field.alarms = new ArrayList<>(alarms);
         service.functions.get(0).response = new ArrayList<>(List.of(field));
         return ModbusServiceValidator.validate(service);
     }

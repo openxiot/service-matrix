@@ -15,12 +15,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jboss.logging.Logger;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -45,8 +50,10 @@ import static org.mockito.Mockito.when;
  *   <li>没配告警的方法**一次数据库操作都不做** —— 与历史「绝大多数采集一个数据库操作都没有」同一条纪律。</li>
  *   <li>值仍越限、而告警已开着时**一个写操作都没有** —— 「一次越限一条」就落在这里。</li>
  *   <li>开出来的行带着**触发那一刻的定义快照**（含单位；位不带单位）。</li>
- *   <li>关闭带 {@code VALUE} / {@code DEFINITION} 两种 closeType —— UI 靠它解释一条没有恢复样本的关闭。</li>
- *   <li>判不了的出值要说一声（**每条只说一次**），否则「配了却不工作」还是没人知道。</li>
+ *   <li>关闭带 {@code VALUE} / {@code DEFINITION} / {@code SUPERSEDED} 三种 closeType ——
+ *       UI 靠它解释一条没有恢复样本的关闭。</li>
+ *   <li>判不了的出值要说一声（**每条规则只说一次**），否则「配了却不工作」还是没人知道。</li>
+ *   <li>同一个出值被另一条规则接手时**先关后插** —— 顺序错了不报错，只是那个出值一条开着的都没有。</li>
  *   <li>失败照常外传 —— 记日志、咽下去是调用方（{@code ModbusServiceService}）的决定，这里不替它做主。</li>
  *   <li>用户点「处理」写的是回执（{@code handled} / {@code handledBy}），返回**读回来的那一条**；
  *       CAS 改动为 0 时**再读一次**以分辨「别人先处理了」（算成功）与「行不在了」（not found）。</li>
@@ -76,7 +83,7 @@ class ModbusAlarmServiceTest {
     @Test
     void withoutConfigurationNothingIsTouchedAtAll() {
         // 第一道闸门是纯内存判断：没配告警的方法连「有哪些开着」都不查
-        assertNull(service.evaluate(modbusService(), function(field("进水温度", null)),
+        assertNull(service.evaluate(modbusService(), function(field("进水温度")),
                 sample("进水温度", 99.0)).await().indefinitely());
         assertNull(service.evaluate(modbusService(), function(field("进水温度", disabled())),
                 sample("进水温度", 99.0)).await().indefinitely());
@@ -85,15 +92,16 @@ class ModbusAlarmServiceTest {
 
     @Test
     void steadyStateWritesNothing() {
-        // 值仍越限、而告警已经开着：读一次「哪些开着」，然后一个写操作都没有 ——
+        // 值仍越限、而告警已经开着、而且**还是那条规则**：读一次「哪些开着」，然后一个写操作都没有 ——
         // 「一次越限一条」这条口径的落点，破了就是每天上千条重复告警
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX))
-                .thenReturn(Uni.createFrom().item(List.of("进水温度")));
+        ModbusServiceFieldAlarm rule = alarm(">", 80.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
 
-        service.evaluate(modbusService(), function(field("进水温度", alarm(">", 80.0))),
+        service.evaluate(modbusService(), function(field("进水温度", rule)),
                 sample("进水温度", 99.0)).await().indefinitely();
 
-        verify(alarmRepo).listOpenFields(SERVICE_ID, FUNCTION_INDEX);
+        verify(alarmRepo).mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX);
         verify(alarmRepo, never()).insertOpen(any());
         verify(alarmRepo, never()).closeByKeys(anyString(), any(), any(), anyString(), any());
     }
@@ -102,10 +110,11 @@ class ModbusAlarmServiceTest {
 
     @Test
     void opensWithTheDefinitionSnapshot() {
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(List.of()));
+        ModbusServiceFieldAlarm rule = alarm(">", 80.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
-        ModbusServiceField field = field("进水温度", alarm(">", 80.0));
+        ModbusServiceField field = field("进水温度", rule);
         field.unit = "℃";
         service.evaluate(modbusService(), function(field), sample("进水温度", 85.5)).await().indefinitely();
 
@@ -113,6 +122,8 @@ class ModbusAlarmServiceTest {
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.functionIndex.intValue());
         assertEquals("进水温度", row.field);
+        // 这条行是哪条规则开的（内部标识，不下发）：下一轮据此判「胜者还是不是它」
+        assertEquals(rule.id, row.ruleId);
         // 触发那一刻的定义快照：定义是活的、行是不可变的历史
         assertEquals(">", row.compare);
         assertEquals(80.0, row.threshold);
@@ -131,7 +142,7 @@ class ModbusAlarmServiceTest {
     @Test
     void aBitOpensWithoutAUnit() {
         // 位没有自己的单位：父字段那个（比如 ℃）贴到 0/1 的位上只会让列表里出现「1 ℃」
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(List.of()));
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
         ModbusServiceField bits = bits("进水阀位", "进水阀", alarm("=", 1.0));
@@ -148,12 +159,13 @@ class ModbusAlarmServiceTest {
 
     @Test
     void closesByValueWhenTheValueComesBack() {
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX))
-                .thenReturn(Uni.createFrom().item(List.of("进水温度")));
+        ModbusServiceFieldAlarm rule = alarm(">", 80.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
-        service.evaluate(modbusService(), function(field("进水温度", alarm(">", 80.0))),
+        service.evaluate(modbusService(), function(field("进水温度", rule)),
                 sample("进水温度", 20.0)).await().indefinitely();
 
         assertEquals(ModbusServiceAlarm.CLOSE_VALUE, closedType());
@@ -167,14 +179,15 @@ class ModbusAlarmServiceTest {
         // 不关的话这条再也判定不到、会永远挂在那里。
         // 注意这个方法的**另一个字段仍配着告警** —— 这正是这条路径能走到的形状（局部修改），
         // 而「最后一个告警也被关掉」那种整体回退走的是下面那条：闸门在这里就返回了
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX))
-                .thenReturn(Uni.createFrom().item(List.of("进水温度")));
+        ModbusServiceFieldAlarm rule = alarm(">", 80.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
         service.evaluate(modbusService(), function(
-                        field("进水温度", null),
-                        field("回水温度", alarm(">", 80.0))),
+                        field("进水温度"),
+                        field("回水温度", rule)),
                 sample("进水温度", 20.0).put("回水温度", 20.0)).await().indefinitely();
 
         assertEquals(ModbusServiceAlarm.CLOSE_DEFINITION, closedType());
@@ -191,7 +204,7 @@ class ModbusAlarmServiceTest {
         // 数量与「定义刚被改过」完全同阶（一次编辑最多留下几条），不该用**每次采样**的代价去兜。
         // 它归 ModbusAlarmReconciler 的定义变更对账扫掉（Modbus-Alarm.md 第五节末）。
         // 这条测试钉住的是「闸门在前、对账在后」这个分工，别让人以为是漏判。
-        service.evaluate(modbusService(), function(field("进水温度", null)),
+        service.evaluate(modbusService(), function(field("进水温度")),
                 sample("进水温度", 20.0)).await().indefinitely();
 
         verifyNoInteractions(alarmRepo);
@@ -199,19 +212,67 @@ class ModbusAlarmServiceTest {
 
     @Test
     void oneSampleCanOpenAndCloseAtOnce() {
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX))
-                .thenReturn(Uni.createFrom().item(List.of("回水温度")));
+        ModbusServiceFieldAlarm low = alarm("<", 5.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("回水温度", low)));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
         service.evaluate(modbusService(), function(
                         field("进水温度", alarm(">", 80.0)),
-                        field("回水温度", alarm("<", 5.0))),
+                        field("回水温度", low)),
                 sample("进水温度", 85.0).put("回水温度", 9.0)).await().indefinitely();
 
         assertEquals("进水温度", insertedRow().field);
         assertEquals(List.of("回水温度"), closedFields());
+    }
+
+    // ===== 取代：一个出值既关又开 =====
+
+    @Test
+    void theRowOpenedByAnotherRuleIsSupersededNotRecovered() {
+        // 同一出值的一组规则里换了一条生效：那条开着的要按 SUPERSEDED 关 ——
+        // 降级时值并没有回到正常，记成 VALUE 是谎话
+        ModbusServiceFieldAlarm warn = level(alarm(">", 26.0), "WARN");
+        ModbusServiceFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("进水温度", critical)));
+        when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
+        when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.evaluate(modbusService(), function(field("进水温度", warn, critical)),
+                sample("进水温度", 27.0)).await().indefinitely();
+
+        assertEquals(ModbusServiceAlarm.CLOSE_SUPERSEDED, closedType());
+        assertEquals(List.of("进水温度"), closedFields());
+        assertEquals(warn.id, insertedRow().ruleId);
+    }
+
+    @Test
+    void supersededRowIsClosedBeforeTheWinnerIsInserted() {
+        // **写序在这里是语义的一部分**：同一个出值既关又开时，插入若抢在关闭之前，会撞上
+        // {openKey} 那条唯一部分索引、被 insertOpen 当成「别的副本先开了」静默吞掉（它本来就该吞
+        // 11000）—— 于是这个出值一条开着的都没有。下一轮采样会自愈（没有开行 ⇒ 重新开那个胜者），
+        // 但那个窗口里告警是消失的，而轮询一停就永久丢。而 Uni.combine().all() 是**并发**的，
+        // 所以顺序只能由两段 chain 保证，不能靠 ops 列表的先后。
+        // 与 ModbusServiceServiceTest 里那条 InOrder 同一性质：顺序写错了不报错，只是悄悄丢告警。
+        ModbusServiceFieldAlarm warn = level(alarm(">", 26.0), "WARN");
+        ModbusServiceFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(open("进水温度", warn)));
+        when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
+        when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.evaluate(modbusService(), function(field("进水温度", warn, critical)),
+                sample("进水温度", 31.0)).await().indefinitely();
+
+        InOrder order = inOrder(alarmRepo);
+        order.verify(alarmRepo).closeByKeys(eq(SERVICE_ID), eq(FUNCTION_INDEX), eq(List.of("进水温度")),
+                eq(ModbusServiceAlarm.CLOSE_SUPERSEDED), any());
+        order.verify(alarmRepo).insertOpen(any());
     }
 
     // ===== 判不了：说一声，但只说一次 =====
@@ -220,8 +281,8 @@ class ModbusAlarmServiceTest {
     void notComparableIsWarnedOnceNotEveryCycle() {
         // 判不了意味着这条配置当前不工作 —— 而「配了却不工作、还没有声音」正是要消灭的失效模式。
         // 但它往往是持续状态（老数据 / 固件与点表不符）：5 秒一条会刷成一万七千行/天，
-        // 所以同一个出值只报一次
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(List.of()));
+        // 所以同一条规则只报一次
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         ModbusServiceFunction function = function(field("进水温度", alarm(">", 80.0)));
 
         // 定义比数、运行期给的是字符串（这一帧拿不出可比的值）
@@ -232,14 +293,28 @@ class ModbusAlarmServiceTest {
 
         verify(logger, times(1)).warnv(anyString(), capturedParams());
         // 判不了既不开也不关：读了一次「哪些开着」，写操作一次都没有
-        verify(alarmRepo, times(3)).listOpenFields(SERVICE_ID, FUNCTION_INDEX);
+        verify(alarmRepo, times(3)).mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX);
         verify(alarmRepo, never()).insertOpen(any());
         verify(alarmRepo, never()).closeByKeys(anyString(), any(), any(), anyString(), any());
     }
 
     @Test
+    void everyBrokenRuleIsWarnedOnItsOwn() {
+        // 一个出值可以配一组规则，所以「哪一条判不了」要分别报出来 ——
+        // 去重键细到规则，否则同一出值的第二条坏规则永远不会被报出来
+        ModbusServiceFieldAlarm first = alarm("??", 80.0);
+        ModbusServiceFieldAlarm second = alarm("??", 90.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
+
+        service.evaluate(modbusService(), function(field("进水温度", first, second)),
+                sample("进水温度", "ON")).await().indefinitely();
+
+        verify(logger, times(2)).warnv(anyString(), capturedParams());
+    }
+
+    @Test
     void warningNamesTheFieldAndWhatWasConfigured() {
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(List.of()));
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
 
         service.evaluate(modbusService(), function(field("进水温度", alarm(">", 80.0))),
                 sample("进水温度", "ON")).await().indefinitely();
@@ -270,7 +345,7 @@ class ModbusAlarmServiceTest {
 
     @Test
     void repositoryFailureIsPropagated() {
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX))
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo is down")));
 
         RuntimeException error = assertThrows(RuntimeException.class, () -> service
@@ -283,7 +358,7 @@ class ModbusAlarmServiceTest {
     @Test
     void writeFailureIsPropagated() {
         // 插入失败必须外传：调用方要记日志，而**下一次采集会重试**（那条边沿对库幂等）
-        when(alarmRepo.listOpenFields(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(List.of()));
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         when(alarmRepo.insertOpen(any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write concern error")));
 
@@ -446,18 +521,18 @@ class ModbusAlarmServiceTest {
         return function;
     }
 
-    private static ModbusServiceField field(String name, ModbusServiceFieldAlarm alarm) {
+    private static ModbusServiceField field(String name, ModbusServiceFieldAlarm... alarms) {
         ModbusServiceField field = new ModbusServiceField();
         field.field = name;
-        field.alarm = alarm;
+        field.alarms = new ArrayList<>(List.of(alarms));
         return field;
     }
 
-    private static ModbusServiceField bits(String name, String bitName, ModbusServiceFieldAlarm alarm) {
+    private static ModbusServiceField bits(String name, String bitName, ModbusServiceFieldAlarm... alarms) {
         ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
         bit.offset = 0;
         bit.field = bitName;
-        bit.alarm = alarm;
+        bit.alarms = new ArrayList<>(List.of(alarms));
 
         ModbusServiceField field = new ModbusServiceField();
         field.field = name;
@@ -465,13 +540,24 @@ class ModbusAlarmServiceTest {
         return field;
     }
 
+    /**
+     * 一条规则。<b>标识由内容生成</b>（与 {@code ModbusAlarmPolicyTest} 的夹具同口径）：
+     * 参数相同的两条规则算同一条 —— 「这条开着的行还是那条规则开的」因此不必到处手写 id。
+     */
     private static ModbusServiceFieldAlarm alarm(String compare, Double threshold) {
         ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+        alarm.id = compare + threshold;
         alarm.enabled = true;
         alarm.compare = compare;
         alarm.threshold = threshold;
         alarm.level = "WARN";
         alarm.text = "温度过高";
+        return alarm;
+    }
+
+    /** 改级别（选举看它）。 */
+    private static ModbusServiceFieldAlarm level(ModbusServiceFieldAlarm alarm, String level) {
+        alarm.level = level;
         return alarm;
     }
 
@@ -487,5 +573,14 @@ class ModbusAlarmServiceTest {
             values.put((String) pairs[i], pairs[i + 1]);
         }
         return values;
+    }
+
+    /** 开着的行：{@code 出值名, 那条规则} 成对给；不给就是「一条开着的都没有」。 */
+    private static Map<String, String> open(Object... pairs) {
+        Map<String, String> open = new LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) {
+            open.put((String) pairs[i], ((ModbusServiceFieldAlarm) pairs[i + 1]).id);
+        }
+        return open;
     }
 }

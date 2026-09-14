@@ -43,6 +43,22 @@ public final class ModbusServiceValidator {
      */
     private static final int MAX_ALARM_TEXT_LENGTH = 64;
 
+    /**
+     * 一个出值（或一个位）能配的告警规则条数上限。
+     *
+     * <p>它<b>不是安全边界</b> —— 多几条规则只是多几次纯内存比较。这是给「界面上误加了一堆规则」
+     * 一个明确的上限：分级的实际用法是低侧一条、高侧两三条，8 条已经宽裕。</p>
+     *
+     * <p>前端 device.service.editor.ts 里有一份同口径的常量（「添加规则」按钮的禁用点），改动要同步。</p>
+     */
+    private static final int MAX_ALARM_RULES = 8;
+
+    /**
+     * 规则标识的长度上限（见 {@link ModbusServiceFieldAlarm#id}）：前端生成的一小串随机码，
+     * 不是给人看的，给足余量即可。
+     */
+    private static final int MAX_ALARM_ID_LENGTH = 64;
+
     private ModbusServiceValidator() {
     }
 
@@ -253,7 +269,7 @@ public final class ModbusServiceValidator {
                 return valueListErr;
             }
             // 字段自身的告警放在取值表之后：它要拿 value-list 的 description 去核对 state
-            String alarmErr = validateAlarm(field.alarm, field, false, ibase + ".alarm", readFunction);
+            String alarmErr = validateAlarms(field.alarms, field, false, ibase + ".alarms", readFunction);
             if (alarmErr != null) {
                 return alarmErr;
             }
@@ -297,7 +313,7 @@ public final class ModbusServiceValidator {
             if (!seenField.add(bit.field)) {
                 return "invalid " + bbase + ".field: " + bit.field + " (duplicated)";
             }
-            String alarmErr = validateAlarm(bit.alarm, field, true, bbase + ".alarm", readFunction);
+            String alarmErr = validateAlarms(bit.alarms, field, true, bbase + ".alarms", readFunction);
             if (alarmErr != null) {
                 return alarmErr;
             }
@@ -306,7 +322,54 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 阈值告警（{@link ModbusServiceFieldAlarm}）。
+     * 一个出值（或一个位）的**一组**阈值告警规则（{@link ModbusServiceFieldAlarm}）：逐条校验，
+     * 外加两条只有「一组」才有意义的要求 —— 条数上限，以及启用规则的 {@code id} 非空、不超长、组内唯一。
+     *
+     * <p>{@code id} 是「这条开着的告警是哪条规则开的」的唯一依据（见 {@link ModbusServiceFieldAlarm#id}），
+     * 所以它必须存在且唯一。<b>只在 {@code enabled == true} 时查</b>，与下面 {@link #validateAlarm}
+     * 同一条规矩：停用的规则不参与判定，它的 {@code id} 不影响任何事 —— 半配置合法。</p>
+     *
+     * @param abase 出错文案里的位置，如 {@code functions[0].response[1].alarms}
+     */
+    private static String validateAlarms(List<ModbusServiceFieldAlarm> alarms,
+                                         ModbusServiceField field,
+                                         boolean isBit,
+                                         String abase,
+                                         boolean readFunction) {
+        if (alarms == null || alarms.isEmpty()) {
+            return null;
+        }
+        if (alarms.size() > MAX_ALARM_RULES) {
+            return "invalid " + abase + ": too many rules (" + MAX_ALARM_RULES + " max)";
+        }
+        Set<String> seenId = new HashSet<>();
+        for (int k = 0; k < alarms.size(); k++) {
+            ModbusServiceFieldAlarm alarm = alarms.get(k);
+            String rbase = abase + "[" + k + "]";
+            if (alarm == null) {
+                return rbase + " is null";
+            }
+            if (ModbusAlarmPolicy.isEnabled(alarm)) {
+                if (alarm.id == null || alarm.id.isBlank()) {
+                    return rbase + ".id is required";
+                }
+                if (alarm.id.trim().length() > MAX_ALARM_ID_LENGTH) {
+                    return "invalid " + rbase + ".id: too long (" + MAX_ALARM_ID_LENGTH + " characters max)";
+                }
+                if (!seenId.add(alarm.id)) {
+                    return "invalid " + rbase + ".id: " + alarm.id + " (duplicated)";
+                }
+            }
+            String err = validateAlarm(alarm, field, isBit, rbase, readFunction);
+            if (err != null) {
+                return err;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 一条阈值告警规则（{@link ModbusServiceFieldAlarm}）。
      *
      * <p><b>只在 {@code enabled == true} 时校验</b> —— 半配置合法，与 {@link #validatePolling}
      * 同一条规矩：false 的用法就是「把配置留着、先不报」。所以下面的规则读作「启用之后必须自洽」。
@@ -319,7 +382,7 @@ public final class ModbusServiceValidator {
      *
      * @param field 配置所在字段：位（{@code isBit}）借它的 format / value-list 判断可比性
      * @param isBit 校验的是 {@code bit-list} 里某个位的配置（值恒为 0/1，只能比 0 或 1）
-     * @param abase 出错文案里的位置，如 {@code functions[0].response[1].bit-list[2].alarm}
+     * @param abase 出错文案里的位置，如 {@code functions[0].response[1].bit-list[2].alarms[0]}
      */
     private static String validateAlarm(ModbusServiceFieldAlarm alarm,
                                         ModbusServiceField field,
