@@ -13,7 +13,7 @@
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **待做，且门控第 5 步**（见第七节） |
 | 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节；唯一部分索引按第七节刻意未建） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
-| 6 | 定义变更对账 / 删除级联 | 设计已定，待落地（第五节的闸门边界压在它上面） |
+| 6 | 定义变更对账 / 删除级联 | **已落地**（见第五节「定义变更对账与删除级联」） |
 | 7 | 查询接口 `ModbusAlarmResource` | 设计已定，待落地（见第九节） |
 | 8 | 前端：编辑器逐字段配置 + `/main/alarm` 列表页 | 设计已定，待落地 |
 
@@ -122,8 +122,7 @@ ModbusServiceFieldAlarm  enabled / compare / threshold / state / level / text
 都没有时直接返回 —— 于是「某个方法上**最后一个**告警也被关掉」的那一刻，那条未恢复的告警
 **在这里不会被关**。不为此松开闸门：那会让「绝大多数采集一个数据库操作都没有」这条纪律失效，
 而这个残局的数量与「定义刚被改过」完全同阶（一次编辑最多留下几条），不该用**每次采样**的代价去兜。
-它归**定义变更对账**（第 6 步，`ModbusPollReconciler`）扫掉 —— 那里本来就按定义变更做影子对账，
-加一条告警的拾遗是同一个时机、同一份输入。
+它归**定义变更对账**（`ModbusAlarmReconciler`，见下）扫掉。
 `ModbusAlarmServiceTest.switchingOffTheLastAlarmLeavesTheGateClosedOnPurpose` 钉住的是
 **「闸门在前、对账在后」这个分工**，别让人以为是漏判。
 
@@ -147,6 +146,55 @@ ModbusServiceFieldAlarm  enabled / compare / threshold / state / level / text
 只投影 `field`），一个方法配 3 个字段也只读一次。**没配告警的服务零库操作** ——
 第一层闸门 `hasEnabledAlarm` 是纯内存判断，与 `ModbusHistoryPolicy`「绝大多数采集一个数据库操作都没有」
 同一条纪律。
+
+### 定义变更对账与删除级联
+
+上面那条自愈路径有两处够不着，都由这里兜：
+
+| 残局 | 为什么自愈够不着 |
+|---|---|
+| 一个方法上**最后一个**告警也被关掉 | 第一层闸门 `hasEnabledAlarm` 直接返回，连「哪些开着」都不查 |
+| 改了定义后这个方法**再也不采**（方法被删、`polling` 关掉） | 这个方法根本不会再产生采样，`decide` 没机会跑 |
+
+判据是纯函数 `api/modbus/alarm/ModbusAlarmPlan.java`（`ModbusAlarmPlanTest` 15 例）：
+「按新定义，这个 `(方法序号, 出值名)` 还配着启用的告警吗」，判不到的按 `DEFINITION` 关掉。
+三样口径值得记：
+
+* **按新定义重新算一遍覆盖集，而不是拿新旧定义做差分**。差分要存旧定义，而写入路径手上只有
+  `merged`；重算只需要 `modbusService.functions` 一份输入，启动那趟也复用同一个函数。
+* **不认识的服务一律不动**。写入路径只传一个服务、只取那个服务的开行，所以这条在写入路径上
+  永远不会触发；它的价值是**拦住将来某个调用方传半份服务列表**时的误关（判宽了会把别的服务的
+  告警一次关一片）。代价见下面「不做的事」。
+* **一个方法一条语句**：关闭是按整个开行标识 `updateMany` 的，同一方法上的多个陈旧出值合成
+  一条 `closeByKeys`，不是一条语句一个出值。
+
+执行者是 `api/modbus/alarm/ModbusAlarmReconciler.java`，两个时机**同一个实现**：
+
+| 时机 | 挂在哪 | 读什么 |
+|---|---|---|
+| 定义变更 | `ModbusServiceService.update` 尾部，与轮询任务、影子并排（`reconcileDerived`） | 该服务的开行（带索引） |
+| 启动 | `ModbusAlarmReconciler.init(@Observes StartupEvent)` | 全部服务的定义 + 全部开行 |
+
+* **不进周期对账**：与影子同一条理由 —— 陈旧只可能来自定义变更，而定义变更必经写入路径；
+  剩下能绕过去的只有**直接改库**（运维脚本、迁移），启动那次兜住。
+* **不挂在调度器的 `StartupEvent` 上**（这是实现时对 TODO 第四步措辞的一处有意偏离）：轮询任务的
+  对账挂在 `ModbusPollScheduler` 的启动事件上，而那个事件只在 `modbus.poll.enabled=true` 时才起。
+  告警判定挂在**采集链路**上、手动 invoke 也会评 —— 关掉轮询开关不该让残留从此没人扫。
+* **只写库、不动内存**：所以没有 `ModbusPollReconciler` 那种「跨进程要等下一次周期」的延迟 ——
+  在哪个副本上改的定义，关就在哪个副本上落库。
+* 失败口径与轮询任务、影子同壳：写入路径那边只记日志、不让一次定义维护跟着失败；启动那次自己兜住。
+
+**删除走的是另一条路**：服务或依赖设备被删除时，`ModbusHistoryService.purge` 把影子、历史、故障
+**与告警**一起 `deleteByServiceIds` 真删，而不是按 `DEFINITION` 关掉。关掉的语义是「这条告警的原因
+是定义不再覆盖它」，那是一条给人看的历史，得留着；而服务整个没了的时候，那条告警再也没人能处理
+（页面按空间的子树查，查不到它）、也没人需要「当时为什么报」—— 它就是存储垃圾。
+真正该保留的「这个点位历史上报过什么」在历史与故障记录里另有其份。
+
+**对账不做的事（诚实记一笔）**：`ModbusAlarmPlan` 对不认识的服务一律不动，所以启动那趟
+**不会**清理「服务已被删除、级联删除又崩在中途」留下的开行。不为此松开那条保守口径 ——
+它的正面价值（拦住半份服务列表的误关）比这里兜住的局面严重得多。这与影子 / 历史 / 故障记录是
+**同一个失败模式**：级联失败只记日志、不重试，留下的是存储垃圾，且页面看不见。
+`ModbusAlarmReconcilerTest.startupSweepLeavesRowsOfAServiceThatNoLongerExistsAlone` 钉住这个分工。
 
 ## 六、校验
 
@@ -259,7 +307,9 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
   `WriteConcernException`，**不是** `MongoWriteException` 的子类。判漏的后果是静默的（两条开着的告警），
   所以它单独有单测（含 cause 链包装与自引用终止）。
 
-**级联删除**：`ModbusServiceService.purgeHistory(...)` 里加一句，删服务 / 设备时一并删告警。
+**级联删除**（**已落地**）：`ModbusHistoryService.purge(...)` 里的第四个 `Uni` ——
+`alarmRepo.deleteByServiceIds(serviceIds)`，与影子 / 历史 / 故障并列。为什么这里走**真删**而不是
+像定义变更那样按 `DEFINITION` 关掉，见第五节「定义变更对账与删除级联」末。
 
 ## 九、接口（待落地）
 
@@ -330,6 +380,18 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
   后 3 例钉住**写语句的形状**（这些错了不会报错、只会悄悄不对）：关闭就是 `$unset openKey`；
   关闭按整个开行标识 `$in` 一批出值、**不是**定位某条 `_id`；处理是 `{handled: {$ne: true}}` 上的
   CAS + 只 `$set` 两个字段（整文档替换会抹掉并行的关闭刚写的 `recoveredAt`）。
+* `ModbusAlarmPlanTest`（15 例，纯函数不连库）：还配着 ⇒ 不动（字段 / 位各自）；告警被关掉 ⇒ 关、
+  告警配置整个没了 ⇒ 关、字段被删 ⇒ 关、方法被整个删 ⇒ 关、**字段改名**（旧名那条）⇒ 关、
+  写方法上的开行 ⇒ 关、`functionIndex` 为 null 的行 ⇒ 关；**不认识的服务一条都不动**
+  （含服务列表为空）；坐标不全的行跳过；空 / null 输入 ⇒ 空；**一个方法一条 `Close` 且字段名有序**；
+  排序确定（服务 → 方法序号，`null` 在前）。
+  **它值得单独测**：这是**唯一**会去关告警行的地方，判宽了会把仍配着告警的开行误关
+  （用户看到一条越限告警凭空「已恢复」），判窄了那条告警永远挂着 —— 两种都不报错。
+* `ModbusAlarmReconcilerTest`（14 例，Mockito 不连库）：稳态零写；陈旧行按 `DEFINITION` 关且带上
+  服务 / 方法序号 / 关闭时刻；同一方法多个出值合成**一条**语句；写入路径只查本服务的开行
+  （`never()` 全表扫）；服务没有 `_id` ⇒ `verifyNoInteractions(alarmRepo)`；读失败与写失败都照常外传；
+  启动那趟能关掉「服务还在、定义被直接改库改了」的行、稳态零写、**失败不抛**（`recoverWithNull`，
+  且日志带上了底层原因）、关不掉也不抛；**服务已删除留下的行不动**（钉住「对账在后、级联在前」的分工）。
 
 ## 十二、配置项
 
@@ -344,6 +406,24 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 ### 2026-09-14
 
+* **第六步落地：定义变更对账与删除级联**（`api/modbus/alarm/ModbusAlarmPlan` +
+  `ModbusAlarmReconciler`、`ModbusServiceAlarmRepository` 两个只投影坐标的查询、
+  `ModbusServiceService` 的写入路径接线、`ModbusHistoryService.purge` 的第四个 `Uni`）。
+  几处值得记下的口径：
+  * **新建了一个 `ModbusAlarmReconciler`，没有把拾遗挂进 `ModbusPollReconciler`**
+    （这是对 `Modbus-Alarm-TODO.md` 第四步措辞的**有意偏离**）：轮询任务的对账挂在
+    `ModbusPollScheduler` 的启动事件上，而那个事件只在 `modbus.poll.enabled=true` 时才起；
+    告警判定挂在采集链路上、手动 invoke 也会评 —— 关掉轮询开关不该让残留从此没人扫。
+  * **判据按新定义重算覆盖集，不做新旧差分**：差分要存旧定义，而写入路径手上只有 `merged`；
+    重算只需要 `modbusService.functions` 一份输入，启动那趟复用同一个函数。
+  * **`plan` 对不认识的服务一律不动**：写入路径只传一个服务、只取那个服务的开行，这条在写入路径上
+    永远不触发；它的价值是拦住将来某个调用方传半份服务列表时的误关。**代价是把「服务已删除、
+    级联又崩在中途」留下的行排除在对账之外** —— 明说，不掩饰（第五节末）。
+  * **写入路径的三样派生数据对账统一成 `reconcileDerived(String what, Uni<Void>)`**：
+    轮询任务、影子、告警同壳（各自只记日志、不让一次定义维护跟着失败），日志里带上是哪一样。
+  * **告警对账只写库、不动内存**，所以没有轮询任务那种「跨进程要等下一次周期」的延迟。
+  * 单测：`ModbusAlarmPlanTest`（15）+ `ModbusAlarmReconcilerTest`（14）。全量 498 例中 497 绿；
+    唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第五步落地：评估接进采集链路**（`api/modbus/alarm/ModbusAlarmService` +
   `ModbusServiceService.execute` 里的那一处 `chain`）。几处值得记下的口径：
   * **两件并列的副作用，不是串在成功路径上**：`recordHistory(...).chain(ignored -> evaluateAlarms(...))`
@@ -356,7 +436,8 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
     这种读起来荒谬的历史。
   * **判不了的日志进程内去重**（上限 256，见第四节）：这是对「不静默」与「别刷屏」两个要求的
     折中，代价是**多副本下会各报一次** —— 与故障去重那条诚实的竞态记录同一个性质。
-  * **第一层闸门的边界**（第五节末）：方法上最后一个告警被关掉后，残留的开行归第 6 步的对账扫，
+  * **第一层闸门的边界**（第五节末）：方法上最后一个告警被关掉后，残留的开行归第六步的对账
+    （`ModbusAlarmReconciler`）扫，
     **不**为它松开闸门。
   * 单测：`ModbusAlarmServiceTest`（13）+ `ModbusAlarmPolicyTest` 扩到 16 +
     `ModbusServiceServiceTest` 补 2。全量 469 例中 468 绿；唯一红色的仍是 `SpaceResourceTest`

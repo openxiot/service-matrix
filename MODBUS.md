@@ -196,6 +196,24 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 
 ### 2026-09-14
 
+* **Modbus 阈值告警（第四步：定义变更对账与删除级联）**。`api/modbus/alarm/ModbusAlarmPlan`（新，
+  纯函数判据）+ `ModbusAlarmReconciler`（新，定义变更 / 启动两个时机）+ `ModbusServiceAlarmRepository`
+  两个只投影坐标的查询 + `ModbusServiceService` 写入路径接线 + `ModbusHistoryService.purge` 第四个 `Uni`。
+  几处值得记下的口径：
+  * **拾遗另起一个 `ModbusAlarmReconciler`，没有挂进 `ModbusPollReconciler`**：轮询任务的对账挂在
+    `ModbusPollScheduler` 的启动事件上，而那个事件只在 `modbus.poll.enabled=true` 时才起；
+    告警判定挂在**采集链路**上、手动 invoke 也会评 —— 关掉轮询开关不该让残留从此没人扫。
+  * **判据按新定义重算覆盖集，不做新旧差分**：差分要存旧定义，而写入路径手上只有 `merged`；
+    重算只需要 `modbusService.functions` 一份输入，启动那趟复用同一个函数。
+  * **对不认识的服务一律不动**（保守口径）：写入路径只传一个服务、只取那个服务的开行，这条在那里
+    永远不触发；价值是拦住「调用方传半份服务列表」时的误关。代价是启动那趟不清理「服务已删除、
+    级联又崩在中途」留下的行 —— 明说，不掩饰。
+  * **删除走真删，不走 `DEFINITION` 关闭**：服务整个没了时那条告警再也没人能处理、也没人需要
+    「当时为什么报」；关掉的语义是「定义不再覆盖它」，那是留给还在的服务的。
+  * **写入路径的三样派生数据对账统一成 `reconcileDerived(String what, Uni<Void>)`**：轮询任务、
+    影子、告警同壳（各自只记日志、不让一次定义维护跟着失败），日志里带上是哪一样。
+  * 单测：`ModbusAlarmPlanTest`（15）+ `ModbusAlarmReconcilerTest`（14）。全量 498 例中 497 绿
+    （唯一红色是 `SpaceResourceTest`，要连 Mongo 的环境性失败）。
 * **Modbus 阈值告警（第三步：评估接进采集链路）**。`api/modbus/alarm/ModbusAlarmService`（新）+
   `ModbusServiceService.execute` 里的那一处 `chain`：采集成功后先记历史、再评告警（第五节）。
   几处值得记下的口径：

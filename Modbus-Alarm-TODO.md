@@ -85,12 +85,33 @@
   **吞**的那一半（`insertOpen` 把 11000 变成 `false`）要连库才能触发，
   归第七步的端到端验收。
 
-## 第四步：定义变更对账与删除级联（待落地）
+## 第四步：定义变更对账与删除级联（已完成）
 
-- [ ] `decide` 里的 `DEFINITION` 关闭（**自愈主路径**，已在第一步实现并测过）。
-- [ ] `ModbusPollReconciler` 补一条拾遗：覆盖「改了定义后这个方法再也不采」的残留。
-- [ ] 删除级联：`ModbusServiceService.purgeHistory(...)` 里加一句删告警。
-- [ ] 启动扫一次残留。
+- [x] `decide` 里的 `DEFINITION` 关闭（**自愈主路径**，已在第一步实现并测过）。
+- [x] 拾遗：覆盖「改了定义后这个方法再也不采」的残留。
+- [x] 删除级联：`ModbusHistoryService.purge(...)` 里加第四个 `Uni` 删告警 ——
+      服务整个没了时走**真删**而不是按 `DEFINITION` 关掉（理由见 `Modbus-Alarm.md` 第五节末）。
+- [x] 启动扫一次残留。
+- [x] 单测：`ModbusAlarmPlanTest`（15，纯函数）+ `ModbusAlarmReconcilerTest`（14，Mockito 不连库）。
+- [x] 全量 498 例中 497 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
+- [x] `Modbus-Alarm.md` 第五 / 八 / 十一 / 十三节 + `MODBUS.md` 变更记录 + `Modbus-History.md` 的
+      `purge` 清单。
+
+**一处有意偏离上面的措辞，别以为是漏了：**
+
+* 拾遗做在**新建的 `ModbusAlarmReconciler`** 里，**没有**挂进 `ModbusPollReconciler`。
+  理由：轮询任务的对账挂在 `ModbusPollScheduler` 的启动事件上，而那个事件只在
+  `modbus.poll.enabled=true` 时才起；告警判定挂在**采集链路**上、手动 invoke 也会评 ——
+  关掉轮询开关不该让残留从此没人扫。两个时机（定义变更 / 启动）共用同一个实现，
+  判据是纯函数 `ModbusAlarmPlan`。
+
+**一处口径的代价，明说：**
+
+* `ModbusAlarmPlan` 对**不认识的服务**一律不动，所以启动那趟**不会**清理「服务已被删除、
+  级联删除又崩在中途」留下的开行。不为此松开那条保守口径（它的正面价值是拦住「调用方传半份
+  服务列表」时的误关 —— 那会把别的服务的告警一次关一片）。这与影子 / 历史 / 故障记录是同一个
+  失败模式：级联失败只记日志、不重试，留下的是存储垃圾，且页面按空间子树查、看不见它。
+  `ModbusAlarmReconcilerTest.startupSweepLeavesRowsOfAServiceThatNoLongerExistsAlone` 钉住这个分工。
 
 ## 第五步：查询服务与接口（待落地）
 

@@ -5,6 +5,7 @@ import cc.openxiot.matrix.api.modbus.service.parser.ModbusResponseParser;
 import cc.openxiot.matrix.api.modbus.service.validator.ModbusServiceValidator;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
@@ -66,6 +67,10 @@ public class ModbusServiceService {
     @Inject
     ModbusPollReconciler pollReconciler;
 
+    /** 告警的定义变更对账（写入路径挂这里，见 Modbus-Alarm.md 第五节末）。 */
+    @Inject
+    ModbusAlarmReconciler alarmReconciler;
+
     @Inject
     Logger logger;
 
@@ -92,7 +97,7 @@ public class ModbusServiceService {
         }
         // id 不在此生成：主键由 Panache/Mongo 在落库时生成（见 ModbusService extends ReactivePanacheMongoEntity）
         return repo.insert(service)
-                .chain(ignored -> reconcilePolls(pollReconciler.applyService(service)))
+                .chain(ignored -> reconcileDerived("poll tasks", pollReconciler.applyService(service)))
                 .replaceWith(service);
     }
 
@@ -121,10 +126,13 @@ public class ModbusServiceService {
                     if (patch.updater != null) {
                         merged.updater = patch.updater;
                     }
-                    // 定义变了要跟着改两样派生数据：轮询任务（interval / 方法增删）与影子（废弃字段 / 孤儿方法）
+                    // 定义变了要跟着改三样派生数据：轮询任务（interval / 方法增删）、
+                    // 影子（废弃字段 / 孤儿方法）、告警开行（再也判定不到的残留）。
+                    // 三样都是纯派生、都只写库、失败都只记日志 —— 顺序无关，串起来只是省一层嵌套
                     return repo.replace(merged)
-                            .chain(ignored -> reconcilePolls(pollReconciler.applyService(merged)))
-                            .chain(ignored -> reconcilePolls(pollReconciler.reconcileShadows(merged)))
+                            .chain(ignored -> reconcileDerived("poll tasks", pollReconciler.applyService(merged)))
+                            .chain(ignored -> reconcileDerived("shadows", pollReconciler.reconcileShadows(merged)))
+                            .chain(ignored -> reconcileDerived("alarms", alarmReconciler.reconcile(merged)))
                             .replaceWith(merged);
                 });
     }
@@ -184,7 +192,7 @@ public class ModbusServiceService {
                 .onItem().transformToUni(count -> count == null || count == 0L
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + id))
                         : purgeHistory(List.of(id))
-                                .chain(ignored -> reconcilePolls(pollReconciler.applyRemoval(List.of(id))))
+                                .chain(ignored -> reconcileDerived("poll tasks", pollReconciler.applyRemoval(List.of(id))))
                                 .replaceWith(count));
     }
 
@@ -202,7 +210,7 @@ public class ModbusServiceService {
         return repo.findIdsByDeviceDids(dids)
                 .chain(ids -> repo.deleteByDeviceDids(dids)
                         .chain(count -> purgeHistory(ids)
-                                .chain(ignored -> reconcilePolls(pollReconciler.applyRemoval(ids)))
+                                .chain(ignored -> reconcileDerived("poll tasks", pollReconciler.applyRemoval(ids)))
                                 .replaceWith(count)));
     }
 
@@ -422,20 +430,21 @@ public class ModbusServiceService {
     }
 
     /**
-     * 轮询任务表的对账，同样是**副作用**：失败只记日志。
+     * 三样**派生数据**（轮询任务表、影子、告警开行）的对账，都是**副作用**：失败只记日志。
      *
      * <p>与历史的处置不同在于「谁来兜底」：历史写失败只能靠下一次采集重试，
-     * 而任务表是纯派生数据 —— 下一次对账（写入路径 / 周期 / poller 启动）会把它整个修回来，
+     * 而这三样都是纯派生数据 —— 下一次对账（写入路径 / 周期 / poller 启动）会把它整个修回来，
      * 所以更没有必要让定义维护跟着失败。</p>
      *
-     * <p>也正因为它是写入路径触发的，<b>买到的是「表始终是对的」，不是「改动立即生效」</b>：
-     * 定义是在某个 api 副本上改的，poller 是另一个进程，它要等下一次周期对账（缺省 5 分钟）才知道
-     * （见 Modbus-Service-Poller.md 第三节）。</p>
+     * <p>但也别把它们当成同一件事：轮询任务表是**另一个进程**（poller）在用的，
+     * 写入路径对账在那里买到的是「表始终是对的」，不是「改动立即生效」（见
+     * Modbus-Service-Poller.md 第三节）；影子和告警开行的对账只写库、本进程就是终态。
+     * 所以日志里带上**是哪一条**：三条链各自出问题时，得从日志上分得出来。</p>
      */
-    private Uni<Void> reconcilePolls(Uni<Void> reconcile) {
+    private Uni<Void> reconcileDerived(String what, Uni<Void> reconcile) {
         return reconcile
                 .onFailure().invoke(e -> logger.warnv(
-                        "reconcile modbus polls failed, error: {0}", e.getMessage()))
+                        "reconcile modbus {0} failed, error: {1}", what, e.getMessage()))
                 .onFailure().recoverWithNull();
     }
 

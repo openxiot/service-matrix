@@ -122,6 +122,37 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
     }
 
     /**
+     * 某个服务下**所有方法**当前开着的告警行（未恢复），只投影对账要用的坐标。
+     *
+     * <p>定义变更对账用（{@code ModbusAlarmReconciler}）：它要按「新定义里还有没有这个出值键」
+     * 逐行判，所以得拿到 {@code functionIndex} 与 {@code field} 两样 ——
+     * 与 {@link #listOpenFields}（采集热路径，只关心一个方法、只要出值名）的用途不同。</p>
+     */
+    public Uni<List<ModbusServiceAlarm>> listOpenByServiceId(String serviceId) {
+        if (serviceId == null) {
+            return Uni.createFrom().item(List.of());
+        }
+        return collection()
+                .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.exists("openKey")),
+                        new FindOptions().projection(Projections.include("serviceId", "functionIndex", "field")))
+                .collect().asList();
+    }
+
+    /**
+     * 全部开着的告警行（跨服务），只投影对账要用的坐标：启动时扫一次残留用。
+     *
+     * <p>不加服务过滤是**故意的**：启动那次要兜的是「直接改库」（运维脚本、迁移），
+     * 那时不知道哪个服务被动过。开着的行本来就少（一次越限一条、恢复即关闭），
+     * 所以这一次全表读的规模由「当前有多少告警开着」决定，不是由库的大小决定。</p>
+     */
+    public Uni<List<ModbusServiceAlarm>> listAllOpen() {
+        return collection()
+                .find(Filters.exists("openKey"),
+                        new FindOptions().projection(Projections.include("serviceId", "functionIndex", "field")))
+                .collect().asList();
+    }
+
+    /**
      * 关闭一批出值的告警（值回到正常、或新定义已不再配它）。
      *
      * <p>条件是**整个开行标识**（{@code serviceId} + {@code functionIndex} + {@code field} +

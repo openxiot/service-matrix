@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
@@ -56,6 +57,10 @@ public class ModbusHistoryService {
 
     @Inject
     ModbusServiceFailureRepository failureRepo;
+
+    /** 只为级联删除而注入：告警行与历史同命 —— 服务没了，它再也没人能处理（见 {@link #purge}）。 */
+    @Inject
+    ModbusServiceAlarmRepository alarmRepo;
 
     @Inject
     Logger logger;
@@ -227,7 +232,12 @@ public class ModbusHistoryService {
     }
 
     /**
-     * 级联清理一批服务的影子、历史与失败记录（服务或依赖设备被删除时调用）。
+     * 级联清理一批服务的影子、历史、失败记录与**告警**（服务或依赖设备被删除时调用）。
+     *
+     * <p>告警为什么跟着删、而不是像定义变更那样按 {@code DEFINITION} **关掉**：关掉的语义是
+     * 「这条告警的原因是定义不再覆盖它」，那是一条给人看的历史，得留着；而服务整个没了的时候，
+     * 那条告警再也没人能处理（页面按空间的子树查，查不到它）、也没人需要「当时为什么报」——
+     * 它就是存储垃圾。真正该保留的「这个点位历史上报过什么」在历史与故障记录里另有其份。</p>
      *
      * <p>失败照常往上抛：服务已经删掉了，这里留下的是存储垃圾，该怎么处置由调用方定 ——
      * {@code ModbusServiceService} 的选择是只记日志，不让业务操作跟着失败。</p>
@@ -239,7 +249,8 @@ public class ModbusHistoryService {
         return Uni.combine().all()
                 .unis(shadowRepo.deleteByServiceIds(serviceIds),
                         historyRepo.deleteByServiceIds(serviceIds),
-                        failureRepo.deleteByServiceIds(serviceIds))
+                        failureRepo.deleteByServiceIds(serviceIds),
+                        alarmRepo.deleteByServiceIds(serviceIds))
                 .asTuple()
                 .replaceWithVoid();
     }

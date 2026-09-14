@@ -185,7 +185,7 @@ class ModbusAlarmServiceTest {
         //
         // 不为此松开闸门：那会让「绝大多数采集一个数据库操作都没有」这条纪律失效，而这个残局的
         // 数量与「定义刚被改过」完全同阶（一次编辑最多留下几条），不该用**每次采样**的代价去兜。
-        // 它归 ModbusPollReconciler 的定义变更对账扫掉（Modbus-Alarm.md 第三节、第六步）。
+        // 它归 ModbusAlarmReconciler 的定义变更对账扫掉（Modbus-Alarm.md 第五节末）。
         // 这条测试钉住的是「闸门在前、对账在后」这个分工，别让人以为是漏判。
         service.evaluate(modbusService(), function(field("进水温度", null)),
                 sample("进水温度", 20.0)).await().indefinitely();
