@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -10,6 +11,7 @@ import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.bson.types.ObjectId;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -94,6 +96,44 @@ public class ModbusAlarmService {
         // 它**就是**状态本身（见 Modbus-Alarm.md 第三节）
         return alarmRepo.listOpenFields(serviceId, function.index)
                 .chain(open -> apply(serviceId, function, sample, new HashSet<>(open), now));
+    }
+
+    /**
+     * 用户点「处理」：给这条告警写回执（处理人 + 处理时刻），返回**更新后**的那一条，
+     * 前端据此就地替换该行、不整页刷新。
+     *
+     * <p><b>写侧只有这一处用户动作</b>，与采集侧的评估共用同一个仓储 —— 两者动的是**互不相交的字段**
+     * （评估写 {@code recoveredAt} / {@code closeType} / {@code openKey}，这里写 {@code handled} /
+     * {@code handledBy}），所以能同时发生而互不覆盖。仓储那条 {@code updateOne} 的过滤条件带
+     * {@code {handled: {$ne: true}}}，于是重复点击只生效一次，而 {@code handledBy} 记的是
+     * **第一个**处理的人（后点的不会把前一个顶掉）。</p>
+     *
+     * <p><b>「已经处理过了」算成功，不算错</b>：用户要的结果是「这条被处理了」，而它已经成立 ——
+     * 报错会让页面为一件恰好如愿的事弹一条红字，而真正出问题（两个人同时点、或页面陈旧）的场景
+     * 反而看不出区别。所以 CAS 改动为 0 时再读一次，行在就照常返回它（并记一条日志说明是谁先处理了），
+     * 行不在了才报 not found。这与 {@code SpaceService} 里「删除 0 条按 not found 失败」不同：
+     * 那里 0 条只有一种解释，这里有两种，读那一次就是为了分辨它们。</p>
+     *
+     * @param who 处理人，取它的 {@code timestamp} 当处理时刻（与 {@code creator} / {@code updater} 同口径，
+     *            不另开字段）
+     */
+    public Uni<ModbusServiceAlarm> handle(ObjectId id, Person who) {
+        if (id == null) {
+            return Uni.createFrom().failure(new IllegalArgumentException("alarm id is required"));
+        }
+        if (who == null) {
+            return Uni.createFrom().failure(new IllegalArgumentException("handler is required"));
+        }
+        String hex = id.toHexString();
+        return alarmRepo.handle(id, who)
+                .chain(changed -> alarmRepo.findById(id)
+                        .onItem().ifNull().failWith(() ->
+                                new IllegalArgumentException("modbus alarm not found: " + hex))
+                        .invoke(ignored -> {
+                            if (changed == null || changed == 0L) {
+                                logger.infov("modbus alarm was already handled, id: {0}", hex);
+                            }
+                        }));
     }
 
     /** 判定 → 执行。三件事（开 / 按值关 / 按定义关）互不依赖，并发发出去。 */

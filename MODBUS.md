@@ -196,6 +196,26 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 
 ### 2026-09-14
 
+* **Modbus 阈值告警（第五步：查询服务与接口）**。`api/modbus/alarm/ModbusAlarmQueryService`（新）+
+  `ModbusAlarmResource`（新，`/matrix/v1/modbus/alarm`：`GET /many/{spaceId}`、
+  `POST /handle/{spaceId}/{id}`）+ `ModbusAlarmService.handle`（写回执）+ `subtreeServiceIds` 从
+  `ModbusHistoryResource` 下沉到 `ModbusServiceService`（与故障清单共用）。几处值得记下的口径：
+  * **路径另起一段**（不挂在 `/modbus/history` 或 `/modbus/service` 之下）：告警是第三件事 ——
+    既不是配置也不是时间序列，而是**判定出来的事件**，权限粒度（成员可处理、不要管理员）与保留口径
+    （永久保留、不挂 TTL）都不同。与历史接口当初另起一段同理。
+  * **`/handle` 写之前先判归属**：路径上的 `spaceId` 只证明「你是这个空间的成员」，不证明
+    「这条告警属于这个空间」。判法是「按 id 读出那行 → 它的 `serviceId` 在
+    `subtreeServiceIds(spaceId)` 里吗 → 才写」—— 与列表查询用**同一个**函数，所以
+    「列表里看得到的就能点」恰好成立，而不是两处各写一份、日后分叉。
+  * **非法 id 在进库之前先挡**（`ObjectId.isValid`）：Panache 的 `findById(String)` 在构造
+    `ObjectId` 时就抛普通 `RuntimeException`，落不到 `IllegalArgumentException` 的兜底里。
+  * **「已经处理过了」算成功，不算错**：CAS 改动为 0 时再读一次，行在就照常返回它并记一条日志
+    （重复点击 / 两人同时点）、行不在了才 not found。报错会为一件恰好如愿的事弹一条红字；
+    那一次读就是为了分辨这两种解释。`handledBy` 记的是**第一个**处理的人。
+  * **单服务那条路只是批量那条路的一个元素**（`alarms(...)` → `alarmsOfServices(List.of(id), …)`）：
+    排序与截断的口径只有一份。空间级仍是「逐服务一条带索引的查询 + `limit + 1` + 内存归并」。
+  * 单测：`ModbusAlarmQueryServiceTest`（7）+ `ModbusAlarmServiceTest` 补 6 例（`handle`）。
+    全量 511 例中 510 绿（唯一红色是 `SpaceResourceTest`，要连 Mongo 的环境性失败）。
 * **Modbus 阈值告警（第四步：定义变更对账与删除级联）**。`api/modbus/alarm/ModbusAlarmPlan`（新，
   纯函数判据）+ `ModbusAlarmReconciler`（新，定义变更 / 启动两个时机）+ `ModbusServiceAlarmRepository`
   两个只投影坐标的查询 + `ModbusServiceService` 写入路径接线 + `ModbusHistoryService.purge` 第四个 `Uni`。
@@ -227,7 +247,7 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
     就是被看见。去重只影响日志，不影响判定（`SKIP` 仍然不写库）。
   * **一次评估里的所有动作共用同一个时刻**：否则会写出「关了又开、开的时间还早于关的时间」。
   * **闸门有边界**：方法上**最后一个**告警被关掉时，闸门整个跳过这个方法，那条残留的开行
-    **不在这里关**，归定义变更对账（`ModbusPollReconciler`）扫。不为此松开闸门是因为残局的数量
+    **不在这里关**，归定义变更对账（`ModbusAlarmReconciler`，见上一条）扫。不为此松开闸门是因为残局的数量
     与「定义刚被改过」同阶，不该用**每次采样**的代价去兜。
   测试：`ModbusAlarmServiceTest`（13 例，Mockito 不连库）+ `ModbusAlarmPolicyTest` 扩到 16 +
   `ModbusServiceServiceTest` 补 2 例（`InOrder` 顺序、告警失败不改写响应）。

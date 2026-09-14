@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -24,6 +25,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +48,8 @@ import static org.mockito.Mockito.when;
  *   <li>关闭带 {@code VALUE} / {@code DEFINITION} 两种 closeType —— UI 靠它解释一条没有恢复样本的关闭。</li>
  *   <li>判不了的出值要说一声（**每条只说一次**），否则「配了却不工作」还是没人知道。</li>
  *   <li>失败照常外传 —— 记日志、咽下去是调用方（{@code ModbusServiceService}）的决定，这里不替它做主。</li>
+ *   <li>用户点「处理」写的是回执（{@code handled} / {@code handledBy}），返回**读回来的那一条**；
+ *       CAS 改动为 0 时**再读一次**以分辨「别人先处理了」（算成功）与「行不在了」（not found）。</li>
  * </ul>
  */
 class ModbusAlarmServiceTest {
@@ -289,6 +293,96 @@ class ModbusAlarmServiceTest {
                 .await().indefinitely());
     }
 
+    // ===== 处理：用户回执（写侧唯一的用户动作） =====
+
+    @Test
+    void handlingWritesTheReceiptAndReturnsTheUpdatedRow() {
+        ObjectId id = new ObjectId();
+        Person who = who();
+        ModbusServiceAlarm updated = alarmRow(id);
+        updated.handled = true;
+        updated.handledBy = who;
+        when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(1L));
+        when(alarmRepo.findById(id)).thenReturn(Uni.createFrom().item(updated));
+
+        ModbusServiceAlarm result = service.handle(id, who).await().indefinitely();
+
+        // 返回的是**读回来的那一条**而不是拿入参拼的：页面就地替换这一行，字段一个都不能少
+        assertSame(updated, result);
+        verifyNoInteractions(logger);
+    }
+
+    @Test
+    void handlingItTwiceIsStillASuccess() {
+        // CAS 改动 0 有两种解释，「已经有人处理过了」是其中**成功**的那一种：
+        // 用户要的结果（这条被处理了）已经成立，报错只会为一件恰好如愿的事弹一条红字
+        ObjectId id = new ObjectId();
+        Person who = who();
+        ModbusServiceAlarm handled = alarmRow(id);
+        handled.handled = true;
+        when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(0L));
+        when(alarmRepo.findById(id)).thenReturn(Uni.createFrom().item(handled));
+
+        ModbusServiceAlarm result = service.handle(id, who).await().indefinitely();
+
+        assertSame(handled, result);
+        // 但要说一声：不然「我点了怎么没反应」与「别人先处理了」在日志里也分不出来
+        verify(logger).infov(anyString(), any(Object.class));
+    }
+
+    @Test
+    void handlingAnAlarmThatIsGoneIsNotFound() {
+        // CAS 改动 0 的另一种解释：行不在了（保存时字段已删、或服务被级联删掉）。
+        // 读那一次就是为了把这两种分开 —— 「处理成功」与「这条已经没了」不是一件事
+        ObjectId id = new ObjectId();
+        Person who = who();
+        when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(0L));
+        when(alarmRepo.findById(id)).thenReturn(Uni.createFrom().nullItem());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.handle(id, who).await().indefinitely());
+
+        assertEquals("modbus alarm not found: " + id.toHexString(), error.getMessage());
+    }
+
+    @Test
+    void handleRejectsMissingArguments() {
+        assertEquals("alarm id is required", assertThrows(IllegalArgumentException.class,
+                () -> service.handle(null, who()).await().indefinitely()).getMessage());
+        assertEquals("handler is required", assertThrows(IllegalArgumentException.class,
+                () -> service.handle(new ObjectId(), null).await().indefinitely()).getMessage());
+        verifyNoInteractions(alarmRepo);
+    }
+
+    @Test
+    void handleFailureIsPropagated() {
+        ObjectId id = new ObjectId();
+        Person who = who();
+        when(alarmRepo.handle(id, who))
+                .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo is down")));
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> service.handle(id, who).await().indefinitely());
+
+        assertEquals("mongo is down", error.getMessage());
+    }
+
+    @Test
+    void handleReadFailureIsPropagated() {
+        // CAS 已经写进去了、读回执那一步库挂了：**外传，不能当成「已经处理过了」咽下去** ——
+        // 咽下去就得凭空拼一条返回给页面，而那正是「显示一行我并没有真的读到的数据」
+        ObjectId id = new ObjectId();
+        Person who = who();
+        when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(1L));
+        when(alarmRepo.findById(id))
+                .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo is down")));
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> service.handle(id, who).await().indefinitely());
+
+        assertEquals("mongo is down", error.getMessage());
+    }
+
     // ===== 夹具 =====
 
     private Object[] capturedParams() {
@@ -312,6 +406,28 @@ class ModbusAlarmServiceTest {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(alarmRepo).closeByKeys(anyString(), any(), any(), captor.capture(), any());
         return captor.getValue();
+    }
+
+    /** 一条已恢复的告警行 —— 处理动作与「开着 / 恢复」无关，所以夹具不带 openKey。 */
+    private static ModbusServiceAlarm alarmRow(ObjectId id) {
+        ModbusServiceAlarm row = new ModbusServiceAlarm();
+        row.id = id;
+        row.serviceId = SERVICE_ID;
+        row.functionIndex = FUNCTION_INDEX;
+        row.field = "进水温度";
+        row.level = "WARN";
+        row.text = "温度过高";
+        row.at = new Date();
+        row.handled = false;
+        return row;
+    }
+
+    private static Person who() {
+        Person who = new Person();
+        who.id = "u-1";
+        who.name = "张三";
+        who.timestamp = new Date();
+        return who;
     }
 
     private static ModbusService modbusService() {

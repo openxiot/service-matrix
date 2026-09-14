@@ -11,6 +11,7 @@ import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
+import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
@@ -70,6 +71,10 @@ public class ModbusServiceService {
     /** 告警的定义变更对账（写入路径挂这里，见 Modbus-Alarm.md 第五节末）。 */
     @Inject
     ModbusAlarmReconciler alarmReconciler;
+
+    /** 「空间 → 子树下的服务 id」（{@link #subtreeServiceIds}）：历史与告警资源共用。 */
+    @Inject
+    SpaceService spaceService;
 
     @Inject
     Logger logger;
@@ -176,6 +181,39 @@ public class ModbusServiceService {
             return Uni.createFrom().item(List.of());
         }
         return repo.findBriefBySpaceId(spaceId);
+    }
+
+    /**
+     * 空间（**含子空间**）下的服务 id —— 与 {@code SpaceResource.getGraph} 同一条路：
+     * 先取整棵子树，再逐空间取服务，最后拍平成一张 id 表。
+     *
+     * <p>「按空间查服务」这件事本就属于本类，所以从 {@code ModbusHistoryResource} 下沉到这里 ——
+     * 历史与告警两个资源都要它，各写一份迟早漂移（而漂移的表现是「一个页面查得到、另一个查不到」，
+     * 看起来像数据问题）。</p>
+     *
+     * <p>逐空间查而不是一条跨空间查询，是因为服务的「按空间查」索引在 {@code device.space.spaceId} 上
+     * （见 {@code ModbusServiceRepository.ensureIndexes}）；一个项目下的空间只有几个，
+     * 与空间图付的是同一笔账。</p>
+     *
+     * <p>只取 id，故走精简投影：{@code functions / response} 不上网络。</p>
+     */
+    public Uni<List<String>> subtreeServiceIds(String spaceId) {
+        if (spaceId == null || spaceId.isBlank()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return spaceService.getDescendants(spaceId)
+                .chain(spaces -> Uni.join()
+                        .all(spaces.stream()
+                                .map(space -> getBriefBySpaceId(space.id.toString()))
+                                .toList())
+                        .andFailFast())
+                .map(groups -> groups.stream()
+                        .flatMap(List::stream)
+                        .filter(service -> service != null && service.id != null)
+                        .map(service -> service.id.toHexString())
+                        // 去重是保险：万一同一个服务在子树里被数到两次，合并出来的行会重复占 limit
+                        .distinct()
+                        .toList());
     }
 
     /**

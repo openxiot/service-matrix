@@ -113,16 +113,32 @@
   失败模式：级联失败只记日志、不重试，留下的是存储垃圾，且页面按空间子树查、看不见它。
   `ModbusAlarmReconcilerTest.startupSweepLeavesRowsOfAServiceThatNoLongerExistsAlone` 钉住这个分工。
 
-## 第五步：查询服务与接口（待落地）
+## 第五步：查询服务与接口（已完成）
 
-- [ ] `ModbusAlarmQueryService`：`limit+1` / `at` 倒序 / `truncated`；空间级照搬「逐服务一条带索引的
+- [x] `ModbusAlarmQueryService`：`limit+1` / `at` 倒序 / `truncated`；空间级照搬「逐服务一条带索引的
       查询 + 内存归并」，`serviceId == null` ⇒ `subtreeServiceIds(spaceId)`。
-- [ ] `ModbusAlarmResource`：`/many/{spaceId}` + `/handle/{spaceId}/{id}`，逐行照
+      单服务那条路**只是批量那条路的一个元素**（`alarms(...)` → `alarmsOfServices(List.of(id), …)`）：
+      排序与截断的口径只有一份，日后不会改漏一边。参数校验也在这里（不是 Resource）——它是能被单测覆盖的部分。
+- [x] `ModbusAlarmResource`：`/many/{spaceId}` + `/handle/{spaceId}/{id}`，逐行照
       `ModbusHistoryResource.failures(...)` 的结构（`requireSpaceMember` / `OxResponse.ok` / 内联错误）。
-- [ ] `handle` 校验该告警落在传入空间的子树内 —— 否则拿别人的 id 就能点。
-- [ ] `subtreeServiceIds` 从 `ModbusHistoryResource` 下沉到 `ModbusServiceService`（两个资源共用）；
-      不想 churn 就复制那 15 行并注明。
-- [ ] 单测：`ModbusAlarmQueryServiceTest`（对齐 `ModbusHistoryQueryServiceTest`）。
+- [x] `handle` 校验该告警落在传入空间的子树内 —— 否则拿别人的 id 就能点。
+      判法是「先 `findById` 拿行 → 该行的 `serviceId` 在 `subtreeServiceIds(spaceId)` 里吗 → 才写」，
+      用的是与列表查询**同一个**函数，于是「列表里看得到的就能点」恰好成立。
+- [x] `subtreeServiceIds` 从 `ModbusHistoryResource` 下沉到 `ModbusServiceService`（两个资源共用）；
+      选的是**下沉**不是复制（`SpaceService` 只依赖仓储与账号查询，注入进去不成环）。
+- [x] 单测：`ModbusAlarmQueryServiceTest`（7，对齐 `ModbusHistoryQueryServiceTest`）+
+      `ModbusAlarmServiceTest` 补 6 例（`handle`）。
+
+**两处实现时定下的口径，值得记一笔：**
+
+* **`handle` 里「已经处理过了」算成功，不算错**：CAS 改动 0 时**再读一次**，行在就照常返回它
+  （并记一条日志说明是重复点击）、行不在了才 not found。报错会让页面为一件恰好如愿的事弹红字。
+  读那一次就是为了分辨这两种解释 —— 与 `SpaceService` 里「删除 0 条按 not found 失败」不同：
+  那里 0 条只有一种解释。
+* **`/handle` 的参数里，非法 id 必须在进库之前先挡**（`ObjectId.isValid(id)`）：Panache 的
+  `findById(String)` 在构造 `ObjectId` 时就抛，而那是个普通 `RuntimeException`，
+  落不到 `.onFailure(IllegalArgumentException.class)` 那个兜底里（先例：`AccountUserLookup`、
+  `ModbusPollReconciler`）。
 
 ## 第六步：前端（待落地）
 

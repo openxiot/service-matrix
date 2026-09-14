@@ -14,7 +14,7 @@
 | 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节；唯一部分索引按第七节刻意未建） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
 | 6 | 定义变更对账 / 删除级联 | **已落地**（见第五节「定义变更对账与删除级联」） |
-| 7 | 查询接口 `ModbusAlarmResource` | 设计已定，待落地（见第九节） |
+| 7 | 查询接口 `ModbusAlarmResource` | **已落地**（见第九节） |
 | 8 | 前端：编辑器逐字段配置 + `/main/alarm` 列表页 | 设计已定，待落地 |
 
 没落地的部分不是「以后再说」，是**设计已定、按顺序落**；写在这里是为了让判定口径与落库口径
@@ -311,7 +311,7 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 `alarmRepo.deleteByServiceIds(serviceIds)`，与影子 / 历史 / 故障并列。为什么这里走**真删**而不是
 像定义变更那样按 `DEFINITION` 关掉，见第五节「定义变更对账与删除级联」末。
 
-## 九、接口（待落地）
+## 九、接口
 
 `api/modbus/alarm/ModbusAlarmResource`，`@Path("/matrix/v1/modbus/alarm")`：
 
@@ -320,17 +320,59 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 | GET | `/many/{spaceId}` | 空间成员 | `serviceId`（不传 = **整个空间含子空间**）、`functionIndex`、`field`、`level`、`open`、`handled`、`from`/`to`、`limit` |
 | POST | `/handle/{spaceId}/{id}` | **空间成员** | 无 body，处理人取 `currentUser()`；返回更新后的那条 |
 
+路径另起一段（不挂在 `/modbus/history` 或 `/modbus/service` 之下）：告警是**第三件事** ——
+既不是用户维护的配置，也不是设备跑出来的时间序列，而是判定出来的事件，且它有自己的权限粒度
+（成员可处理、不需要管理员）与保留口径（永久保留，不挂 TTL）。与历史接口当初另起一段同理。
+
 * `DEFAULT_ALARM_LIMIT = 200` / `MAX_ALARM_LIMIT = 1000` —— **自己的常量**，不复用故障那两个
   （跨用途复用比两行重复更糟）。
 * `items` 按 `at` 倒序，**每条带自己的 `id`** —— 这是相对 `ModbusServiceFailureCodec`（不发 `_id`）
   的**有意偏离**：告警行有逐行动作。
 * `summary` = `{total, open, unhandled, byLevel, byText}`；`byText` 是「告警类型分布」。
-* `handle` 要校验该告警确实落在传入空间的子树内，否则拿别人的 id 就能点。
 * Codec **只出不进**（告警由采集侧写、不由请求体写），`openKey` **绝不下发**，时刻一律 epoch 毫秒。
 * **不要往 `/history/current` 上加告警**：那个接口项目页已经在 N 次扇出调用它，加一次逐 function
   的告警查询会把两个页面依赖的接口成本翻倍；告警页要的「这个项目现在哪儿在告警」正是
   「不传 `serviceId`」那一个请求。
 * `text` 是**用户数据**，前后端一律原样显示、**永不翻译**（前端 `AGENTS.md` 的 i18n 一节）。
+
+### 查询服务
+
+`api/modbus/alarm/ModbusAlarmQueryService` 与 `ModbusAlarmService` **分开**：那边管写
+（采集侧评估、用户点处理），判定口径与副作用纪律是它的核心约束，混进查询代码会被淹掉；
+这边只管读，调用方只有 Resource。
+
+* **单服务那条路只是批量那条路的一个元素**（`alarms(...)` → `alarmsOfServices(List.of(id), …)`）：
+  排序与截断的口径只有一份，日后不会改漏一边。
+* **参数校验放在服务里而不是 Resource**（区间必填、`from < to`、`level` 走 `ModbusAlarmPolicy.LEVELS`
+  白名单）：Resource 只做鉴权与编码，而校验是能被单测覆盖的部分。
+  拼错的级别**报错而不是返回空列表** —— 它与「这段时间没这个级别的告警」在界面上长得一样。
+* 空间级是**逐服务各查一次再内存归并**（理由与故障清单同：告警集合的索引以 `serviceId` 打头，
+  跨服务查等于丢掉索引前缀做全表扫，而一个空间下的服务只有十几条）；每服务取 `limit + 1` 条，
+  所以「先按服务截一刀再合并」得到的仍是真正的全局前 `limit` 条，`truncated` 也据此判。
+
+### 处理（回执）
+
+* **`handle` 写之前先判归属**：路径上的 `spaceId` 只证明「你是这个空间的成员」，不证明
+  「这条告警属于这个空间」。判法是「先按 id 读出那行 → 它的 `serviceId` 在
+  `ModbusServiceService.subtreeServiceIds(spaceId)` 里吗 → 才写」。用的是与列表查询**同一个**函数，
+  于是「列表里看得到的就能点」恰好成立。
+* **非法 id 必须在进库之前先挡**（`ObjectId.isValid(id)`）：Panache 的 `findById(String)` 在构造
+  `ObjectId` 时就抛，而那是个普通 `RuntimeException`，落不到 Resource 那个
+  `.onFailure(IllegalArgumentException.class)` 的兜底里。
+* **「已经处理过了」算成功，不算错**（见 `ModbusAlarmService.handle`）：用户要的结果已经成立，
+  报错只会为一件恰好如愿的事弹一条红字。CAS 改动为 0 时**再读一次**，行在就照常返回它
+  （并记一条日志说明重复点击）、行不在了才 not found —— 那一次读就是为了分辨这两种解释。
+  这与 `SpaceService` 里「删除 0 条按 not found 失败」不同：那里 0 条只有一种解释。
+* `handledBy` 记的是**第一个**处理的人（仓储那条 `updateOne` 的过滤条件带 `{handled: {$ne: true}}`），
+  后点的不会把前一个顶掉。
+* **不整页刷新**：返回更新后的那条，前端就地替换该行。
+
+### 空间 → 服务清单
+
+`subtreeServiceIds` 从 `ModbusHistoryResource` **下沉**到 `ModbusServiceService`（它本就是
+「空间 → 服务」），故障清单与告警清单共用。选下沉而不是复制那 15 行：两处的口径必须一致，
+复制之后「一处改了另一处忘了」不会报错，只会让两个页面的可见范围悄悄不同
+（`SpaceService` 只依赖仓储与账号查询，注入进 `ModbusServiceService` 不成环）。
 
 ## 十、不做防抖的代价（触发线）
 
@@ -356,12 +398,22 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
   键缺失 / `NaN` / 值为 null ⇒ `SKIP` **且不关闭**已开的告警；字段已不在定义里 ⇒ `DEFINITION` 关闭；
   一次采样里两个字段一开一关；`hasEnabledAlarm` 闸门（含位上的告警也算）；
   `Open` 带着单位快照、位没有单位。
-* `ModbusAlarmServiceTest`（13 例，Mockito 不连库）：没配告警 ⇒ `verifyNoInteractions(alarmRepo)`；
+* `ModbusAlarmServiceTest`（19 例，Mockito 不连库）：没配告警 ⇒ `verifyNoInteractions(alarmRepo)`；
   稳态**零写**（读一次、一个写操作都没有）；开出来的行带着定义快照（含 `unit`、位不带）；
   按值关 / 按定义关各自的 `closeType`；一次采样里既开又关；判不了**只警告一次**（含跨帧的
   截断样本）且不写库；警告里带上当时的原始值与完整定义；去重上限会清空重来；
   读失败与写失败都**照常外传**（记日志、咽下去是调用方的决定）；
   **关掉最后一个告警时闸门照常跳过**（钉住「闸门在前、对账在后」的分工）。
+  后 6 例是 `handle`：写回执后返回**读回来的那一条**（不是拿入参拼的，页面要就地替换）；
+  CAS 改动 0 且行还在 ⇒ **成功**并记一条日志；CAS 改动 0 且行不在 ⇒ not found；
+  两个入参缺失各自报错且**不碰库**；写失败与**读失败都照常外传**
+  （后者尤其不能咽 —— 咽下去就得凭空拼一条返回给页面）。
+* `ModbusAlarmQueryServiceTest`（7 例，纯函数不连库，对齐 `ModbusHistoryQueryServiceTest`）：
+  跨服务按 `at` 倒序（不是「服务 1 的全部在前」）；多于 `limit` 时截掉更早的并置 `truncated`；
+  **正好等于 `limit` 不算截断**；同一时刻保持传入顺序（`sort` 稳定 ⇒ 两次查询之间不跳）；
+  空清单给空结果而不是报错；`at` 缺失按 0 算落最后；**合并不按 `open` / `handled` 分堆**
+  （那是筛选参数的职责，不是排序的 —— 列表要的是时间线）。
+  只测 `merge` 这一个静态函数：它是那个「逐服务截一刀再合并仍等于全局前 `limit` 条」论证的落点。
 * `ModbusServiceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
   告警评估失败**不改写**一次已成功采集的响应，也不变成一条故障记录。
 * `ModbusServiceValidatorTest` 补 9 例：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
@@ -406,6 +458,23 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 ### 2026-09-14
 
+* **第七步落地：查询服务与接口**（`api/modbus/alarm/ModbusAlarmQueryService` +
+  `ModbusAlarmResource`；`ModbusAlarmService.handle`；`subtreeServiceIds` 下沉）。
+  几处值得记下的口径：
+  * **单服务那条路只是批量那条路的一个元素**：`alarms(...)` 直接转调
+    `alarmsOfServices(List.of(serviceId), …)` —— 排序与截断的口径只有一份，日后不会改漏一边。
+  * **参数校验放服务层不放 Resource**：那边只做鉴权与编码，而校验是能被单测覆盖的部分；
+    拼错的 `level` **报错而不是返回空列表**（它与「这段时间没这个级别的告警」在界面上长得一样）。
+  * **`handle` 的「已经处理过了」算成功**：CAS 改动 0 时再读一次，行在就照常返回并记一条日志、
+    行不在了才 not found。那一次读就是为了分辨两种解释 —— 报错会为一件恰好如愿的事弹红字。
+  * **`/handle` 的非法 id 在进库之前先挡**（`ObjectId.isValid`）：Panache 在构造 `ObjectId` 时就抛
+    普通 `RuntimeException`，落不到 `IllegalArgumentException` 的兜底里。
+  * **归属判据与列表查询共用 `subtreeServiceIds`**：于是「列表里看得到的就能点」恰好成立，
+    而不是两处各写一份、日后慢慢分叉。
+  * **`subtreeServiceIds` 选了下沉而不是复制**：两处口径必须一致，复制之后分叉不会报错，
+    只会让两个页面的可见范围悄悄不同。
+  * 单测：`ModbusAlarmQueryServiceTest`（7）+ `ModbusAlarmServiceTest` 补 6 例（`handle`）。
+    全量 511 例中 510 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第六步落地：定义变更对账与删除级联**（`api/modbus/alarm/ModbusAlarmPlan` +
   `ModbusAlarmReconciler`、`ModbusServiceAlarmRepository` 两个只投影坐标的查询、
   `ModbusServiceService` 的写入路径接线、`ModbusHistoryService.purge` 的第四个 `Uni`）。
