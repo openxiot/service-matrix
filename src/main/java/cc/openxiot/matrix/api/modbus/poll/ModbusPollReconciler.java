@@ -319,8 +319,12 @@ public class ModbusPollReconciler {
                 for (ModbusPoll task : planned) {
                     ModbusPollKey key = new ModbusPollKey(serviceId, task.functionIndex);
                     plannedKeys.add(key);
-                    ModbusPollTask memory = ModbusPollTask.of(task, ownerId);
                     ModbusPoll row = rowOf(existing, task.functionIndex);
+                    // id 以库里的那一行为准：计划对象上的 id 只在「这一轮要插入」时才等于落库后的 _id。
+                    // 反过来（读计划对象的 id）会让库里已有的任务永远带着 null id 进时间轮 ——
+                    // 表现就是每周期一条 "modbus poll task has no id"、一次采集也不发生。
+                    ObjectId id = row == null ? task.id : row.id;
+                    ModbusPollTask memory = ModbusPollTask.of(task, id, ownerId);
                     // 库里的 nextRunAt 优先：对账不是重排，别把一次采集往后推
                     long nextRunAt = row != null && row.nextRunAt != null
                             ? row.nextRunAt.getTime()

@@ -4,6 +4,7 @@ import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -68,7 +69,12 @@ public final class ModbusPollPlan {
 
     /**
      * 一份定义 → 该服务的任务清单（{@code functionIndex} 升序，不改动入参），
-     * 输入是**未落库**的 {@link ModbusPoll}（{@code _id} 由插入时生成）。
+     * 输入是**未落库**的 {@link ModbusPoll}（{@code _id} 由**这里**生成，插入时原样落库）。
+     *
+     * <p>{@code _id} 不等插入回写（回写时机由驱动/编解码器决定，不是这条链路能假定的）：
+     * 内存时间轮里的任务必须在**放进去的那一刻**就有 id —— 抢租约、写结果、认领都靠它，
+     * 而没有 id 的任务只能每周期空转一遍。所以 id 在计划里就定下来，插入与内存表用同一个。
+     * 库里**已经有这一行**时以行上的 {@code _id} 为准（见 {@code ModbusPollReconciler}）。</p>
      *
      * <p>{@code did} / {@code interval} 冗余进任务表只为调度：按设备串行、算下一次时刻都不必回查定义。
      * 定义改了由对账跟着改（见 {@code ModbusPollReconciler}），这张表随时可以全量重建。</p>
@@ -88,6 +94,7 @@ public final class ModbusPollPlan {
                 continue;
             }
             ModbusPoll task = new ModbusPoll();
+            task.id = new ObjectId();
             task.serviceId = serviceId;
             task.functionIndex = function.index;
             task.did = did;

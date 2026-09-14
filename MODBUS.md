@@ -158,6 +158,34 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ## 八、变更记录
 
+### 2026-09-14
+
+* **修：轮询器一次都没采到设备 —— 内存任务没带 `_id`**。现网现象（staging，
+  `MODBUS_POLL_ENABLED=true` 的副本）：每周期一条
+  `modbus poll task has no id, key: <serviceId>:<functionIndex>`，间隔看着就是 `interval`，
+  而设备一次都没被采到 —— 库里那一行只有写入路径插进去的那几个字段
+  （`nextRunAt` 停在首次写入的时刻，`lastRunAt` / `leaseOwner` / `lastStatus` **始终为空**，
+  说明认领（`claim`）一次都没成功过）。
+  成因：对账重建内存任务时，id 取的是**计划对象**（`ModbusPollPlan.tasksOf` 现算的那条）身上的 `id`，
+  而库里**已经有这一行**时它身上没有 id —— `_id` 是插入那一刻才有的。库里那一行是写入路径
+  （`ModbusPollReconciler.applyService`）早就插好的，所以「先建服务、后起 poller」这个最自然的顺序
+  **必然**踩到：任务每周期进一次轮、每次都在 `claim` 前被跳过，空转但不报错。
+  两条一起改：
+  * `_id` 由**计划**就生成（`ModbusPollPlan.tasksOf`）：插入原样落库、内存表用同一个，
+    **不等插入回写**（回写时机由驱动/编解码器决定，不是这条链路能假定的）。
+  * 对账以**库里那一行的 `_id`** 为准（`ModbusPollReconciler`）：计划对象上的 id 只在
+    「这一轮要插入」时才等于落库后的 `_id`。
+* **顺带收掉同族的第二处隐患**：库里那一行被删了又插（关掉轮询再打开、方法序号删了又加）
+  会换 `_id`，内存任务停在旧 `_id` 上时认领永远「抢不到」—— 而且同样是**静默**的。
+  所以 `ModbusPollTask.id` 不再是 final，由 `ModbusPollWheel.offer` 跟着对账同步
+  （在飞的那一帧不能换**对象**，换的是对象上的字段，与 `intervalSeconds` / `ownerId` 同一条路）。
+  `ModbusPollScheduler.claim` 里那条守卫从 warn 提到 error：它现在只可能是不变式破了。
+  测试：新增 `ModbusPollReconcilerTest`（3 例：库里已有行 / 还没有行 / 行换了 `_id`；
+  **已反向验证** —— 去掉「以库行为准」那一行，3 例挂 2 例），
+  `ModbusPollPlanTest` 里的 `assertNull(task.id)` 随之改成 `assertNotNull`。纯单测合计 371 例。
+  部署后 poller 重启即自愈：启动对账按库行的 `_id` 重建内存任务，而它那行 `nextRunAt` 是过去的时刻，
+  于是**立刻补采一次**（「错过不补」的口径：只补一次），之后按周期走。
+
 ### 2026-09-13
 
 * **历史明细保留策略：`service-histories` 挂 TTL 索引，保留 90 天**

@@ -244,8 +244,10 @@ public class ModbusPollScheduler {
     private void claim(ModbusPollTask task, long now) {
         long nextRunAt = nextRunAt(now, now, task);
         if (task.id == null) {
-            // 对账插入后才会放进内存表，正常到不了这里；真到了就等下一次对账把 id 补上
-            logger.warnv("modbus poll task has no id, key: {0}", task.key());
+            // 守卫，不是流程：对账给每个入轮的任务都带上 id（见 ModbusPollTask.of 的注释）。
+            // 真到了这里就是不变式破了 —— 任务一次都跑不了、每周期重复一遍，所以记 error 而不是 warn，
+            // 并且**照样放回时间轮**：它会在下一次对账时被重建成带 id 的（丢掉它反而会静默地不采）
+            logger.errorv("modbus poll task has no id, key: {0}", task.key());
             finish(task, nextRunAt);
             return;
         }

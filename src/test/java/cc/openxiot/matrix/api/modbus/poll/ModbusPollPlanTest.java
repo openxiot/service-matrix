@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -115,7 +116,7 @@ class ModbusPollPlanTest {
         for (ModbusPoll task : tasks) {
             assertEquals(service.id.toHexString(), task.serviceId);
             assertEquals("did-1", task.did);
-            assertNull(task.id);                              // 还没落库
+            assertNotNull(task.id);                           // id 在这里就定下来，不等插入回写
             assertNull(task.lastStatus);
             assertNull(task.leaseOwner);
             assertTrue(task.nextRunAt.getTime() > NOW);        // 不立刻跑第一次

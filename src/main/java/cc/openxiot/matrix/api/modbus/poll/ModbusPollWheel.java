@@ -113,6 +113,9 @@ public final class ModbusPollWheel {
             if (!live.did.equals(task.did)) {
                 return false;
             }
+            // id 也同步：库里那一行可能已经换了一个（关掉轮询再打开 = 删了又插），
+            // 停在旧的 _id 上会「抢不到租约」到天荒地老 —— 而这是静默的，一次采集都不会发生
+            live.id = task.id;
             live.intervalSeconds = task.intervalSeconds;
             live.ownerId = task.ownerId;
             return true;    // nextRunAt 不动：跑完时 finish 会按新周期重排
@@ -121,6 +124,7 @@ public final class ModbusPollWheel {
         waiting.remove(live);   // 先摘再改：nextRunAt 是排序键
         byKey.remove(key);
         if (live.did.equals(task.did)) {
+            live.id = task.id;
             live.intervalSeconds = task.intervalSeconds;
             live.ownerId = task.ownerId;
             live.nextRunAt = nextRunAt;
