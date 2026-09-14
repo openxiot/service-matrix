@@ -29,6 +29,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 import java.util.Date;
+import java.util.List;
 
 /**
  * Modbus 采集历史的读取（见 Modbus-History.md 第五节）：当前值、区间曲线、故障列表。
@@ -38,7 +39,9 @@ import java.util.Date;
  * （比如给只读的历史看板单独授权）。</p>
  *
  * <p><b>按空间鉴权</b>，与 {@code ModbusServiceResource.invoke} 同口径：路径上的 {@code spaceId}
- * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「服务是否属于该空间」。</p>
+ * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「服务是否属于该空间」。
+ * 唯一的例外是故障清单不传 {@code serviceId} 时（见 {@link #failures}）：那种查法没有 id 可依，
+ * spaceId 同时决定了「查哪些服务」—— 取该空间及其**子空间**下的全部服务，与空间图同口径。</p>
  *
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recordedAt} 同口径），
  * 省掉两端各写一遍格式解析。</p>
@@ -129,11 +132,15 @@ public class ModbusHistoryResource extends AbstractResource {
      * 远端原始码（{@code byRemoteCode}）的聚合，两者总是一起看 —— {@code truncated} 为 true
      * 时说明还有更早的故障没取回来，前端应提示缩小时间范围。</p>
      *
-     * <p>{@code serviceId} 不传 = **整个空间**：把空间下所有服务的故障合成一条时间倒序的清单，
-     * 每条 item 自带 {@code serviceId}（见 {@code ModbusServiceFailureCodec}），前端据此认领归属。
-     * 这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 —— 项目级的历史页要的正是
-     * 「这个项目里哪儿在报错」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
+     * <p>{@code serviceId} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的故障合成
+     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusServiceFailureCodec}），
+     * 前端据此认领归属。这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 —— 项目级的历史页
+     * 要的正是「这个项目里哪儿在报错」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
      * 此时响应里**不出 {@code serviceId} 键**（与 Codec 里「null 不出键」同口径）：它不是某个服务的结果。</p>
+     *
+     * <p>**为什么含子空间**：前端两页的服务清单来自 {@code /space/graph/{rootId}}，那张图取的就是
+     * 整棵子树（项目 = 根空间 + 子空间，设备可以挂在任一子空间上）。故障清单若只查根空间自己的服务，
+     * 子空间里的服务就会「表里列着、异常栏永远是空的」—— 把「没查」显示成「没问题」。</p>
      *
      * <p>{@code functionIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
      * {@code type} 不传 = 所有分类。</p>
@@ -156,12 +163,9 @@ public class ModbusHistoryResource extends AbstractResource {
         boolean wholeSpace = serviceId == null || serviceId.isBlank();
         return requireSpaceMember(spaceId, orgId)
                 .chain(ignored -> wholeSpace
-                        // 只有 id 有用，故走精简投影（functions / response 不上网络，见 ModbusServiceService）
-                        ? serviceService.getBriefBySpaceId(spaceId)
-                        .chain(services -> queryService.failuresOfServices(
-                                services.stream().filter(s -> s != null && s.id != null)
-                                        .map(s -> s.id.toHexString()).toList(),
-                                functionIndex, type, millis(from), millis(to), limit))
+                        ? subtreeServiceIds(spaceId)
+                        .chain(ids -> queryService.failuresOfServices(
+                                ids, functionIndex, type, millis(from), millis(to), limit))
                         : queryService.failures(serviceId, functionIndex, type,
                         millis(from), millis(to), limit))
                 .map(result -> {
@@ -182,6 +186,32 @@ public class ModbusHistoryResource extends AbstractResource {
     }
 
     // -- helper methods --
+
+    /**
+     * 空间（含子空间）下的服务 id —— 与 {@code SpaceResource.getGraph} 同一条路：
+     * 先取整棵子树，再逐空间取服务，最后拍平成一张 id 表。
+     *
+     * <p>逐空间查而不是一条跨空间查询，是因为服务的「按空间查」索引在
+     * {@code device.space.spaceId} 上（见 {@code ModbusServiceRepository.ensureIndexes}）；
+     * 一个项目下的空间只有几个，与空间图付的是同一笔账。</p>
+     *
+     * <p>只取 id，故走精简投影：{@code functions / response} 不上网络。</p>
+     */
+    private Uni<List<String>> subtreeServiceIds(String spaceId) {
+        return spaceService.getDescendants(spaceId)
+                .chain(spaces -> Uni.join()
+                        .all(spaces.stream()
+                                .map(space -> serviceService.getBriefBySpaceId(space.id.toString()))
+                                .toList())
+                        .andFailFast())
+                .map(groups -> groups.stream()
+                        .flatMap(List::stream)
+                        .filter(service -> service != null && service.id != null)
+                        .map(service -> service.id.toHexString())
+                        // 去重是保险：万一同一个服务在子树里被数到两次，合并出来的故障会重复占 limit
+                        .distinct()
+                        .toList());
+    }
 
     private JsonObject rangeBody(String serviceId, Integer functionIndex, String field,
                                  ModbusHistoryQueryService.RangeResult result) {
