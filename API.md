@@ -19,6 +19,7 @@ Matrix 服务向客户端提供两类能力：
 | --- | --- | --- |
 | 空间（Space） | 场地 / 楼宇 / 楼层 / 房间等多级空间的组织 | 空间的增删改查、树 / 图查询、组织归属 |
 | 设备（Device） | 接入到场地中的物联网设备 | 设备的注册、删除、查询、空间归属，以及属性读写与方法调用 |
+| 统计（Statistics） | 数据看板（首页）的聚合数字 | 一个空间（含子空间）内的设备 / 服务 / 告警 / 故障计数与分布（见第 8 节） |
 
 其中 **设备操作**（属性读写、方法调用、设备影子）本身由下游服务 `service-manipulation` 提供，
 Matrix 负责：校验调用者的空间 / 组织权限 → 以 `appId + ownerId` 的 JWT 转发给 manipulation → 返回结果。
@@ -35,6 +36,7 @@ Matrix 负责：校验调用者的空间 / 组织权限 → 以 `appId + ownerId
 | --- | --- |
 | 空间 | `/matrix/v1/space` |
 | 设备 | `/matrix/v1/device` |
+| 统计 | `/matrix/v1/statistics` |
 
 > 部署说明：在公网网关（如 `site.openxiot.cn`）之后，`/matrix` 前缀可能由网关剥离，对外暴露为 `/v1/space/**`、`/v1/device/**`（与 webapp-matrix 前端调用一致）。以实际部署的网关转发规则为准。
 
@@ -648,3 +650,89 @@ curl -X POST "$BASE/device/properties/<floorSpaceId>" -H "Authorization: Bearer 
 curl -X POST "$BASE/device/actions/<floorSpaceId>" -H "Authorization: Bearer $TOKEN" -H "X-Org-Id: $ORG" \
   -H 'Content-Type: application/json' -d '[{"aid":"abc.1.9","in":[{"piid":2,"values":[37]}]}]'
 ```
+
+---
+
+## 8. 统计 API（Statistics）
+
+Base Path：`/matrix/v1/statistics`
+
+### 8.1 数据看板总览 `GET /overview/{spaceId}`
+
+一次取回数据看板（首页）一屏要用的全部数字：设备、Modbus 服务、阈值告警、Modbus 故障。
+范围是**该空间及其全部后代空间**（项目 = 根空间 + 子空间，设备与服务可以挂在任一子空间上），
+与 `GET /space/graph/{rootId}` 同一条路径。
+
+- **权限**：空间成员（只读，不需要管理员）。
+- **说明**：**为什么是一个聚合接口**：现成的清单接口都带条数上限（告警缺省 200 / 封顶 1000、
+  故障 1000），且它们的 `summary` 只统计**本次返回的那一批** —— 拿它们算「今日告警 / 告警曲线 /
+  类型分布」得到的是**被截断的下限**，而卡片和曲线完全看不出来。本接口不打上限，量级由窗口上限兜住。
+
+**查询参数**：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `from` | 是 | 区间起点，**epoch 毫秒** |
+| `to` | 否 | 区间终点，epoch 毫秒；缺省 = 现在 |
+
+窗口由**调用方**算（后端没有「最近 N 分钟」这类参数，这是本服务的既有约定）：要看最近 24 小时的
+告警曲线，就传「当前整点往前 23 小时」到「现在」，后端按整点返回 24 个桶。约束：
+
+- `from` 必填；`to` 必须晚于 `from`（反着或零宽报错，不返回空结果）。
+- 区间**不得超过 31 天**，否则报 `time range too wide`（本接口不打条数上限，窗口是唯一的量级闸门）。
+- 报错与别的接口一致：HTTP 200 + `{"success": false, "message": "..."}`。
+
+**响应 `data` 字段**：
+
+| 字段 | 说明 |
+| --- | --- |
+| `from` / `to` | 实际生效的区间（`to` 缺省时补的是「现在」，回显给调用方） |
+| `devices` | `{total, online, byType: [{type, count}]}`；`type` 是设备 URN 的**第 4 段**（如 `dtu`） |
+| `services` | `{total, byConfig: [{configId, count}]}`；按服务所配的**点表 id** 分组，未配点表的落在 `""` 键上 |
+| `alarms` | `{total, byText: [{text, count}], hourly: [{at, count}]}`；按**告警文本**（用户自己填的）分组 |
+| `failures` | `{total, hourly: [{at, count}]}` |
+
+口径说明：
+
+- **`total` 都是整个窗口内的条数**。「今日」由调用方从 `hourly` 里取桶起点在本地今天 00:00 之后的
+  那些相加（今日恒被 24 小时窗口盖住），曲线与数字因此同源。
+- **`hourly` 是整点桶，窗口内每个桶都在**（没有发生的整点给 `count: 0`）—— 调用方不必猜
+  「这段是没数据还是没请求」。桶的 `at` 是桶**起点**的 epoch 毫秒。
+- **`failures.total` 是「有几种失败」而不是「失败了多少次」**：故障行在写入时就按 message 去重，
+  同一条消息只记首次出现的那一行。
+- 三份分组都按**条数降序、同数按名称升序**排好，调用方拿到即画。缺键（设备没类型、告警没文本）
+  归到 `UNKNOWN` 桶，让计数与总数对得上。
+- `type` / `configId` / `text` 全是**数据**，原样下发、**永不翻译**。
+
+- **请求示例**（最近 24 小时，按整点对齐）：
+
+```bash
+HOUR=3600000
+NOW=$(date +%s000)
+FROM=$(( NOW / HOUR * HOUR - 23 * HOUR ))
+
+curl "$BASE/statistics/overview/66f2...0001?from=$FROM&to=$NOW" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Org-Id: $ORG"
+```
+
+- **响应**：
+
+```json
+{
+  "success": true,
+  "data": {
+    "from": 1757833200000,
+    "to": 1757919600000,
+    "devices": { "total": 12, "online": 9, "byType": [{ "type": "dtu", "count": 5 }] },
+    "services": { "total": 7, "byConfig": [{ "configId": "65f0...", "count": 3 }, { "configId": "", "count": 1 }] },
+    "alarms": {
+      "total": 42,
+      "byText": [{ "text": "温度过高", "count": 9 }],
+      "hourly": [{ "at": 1757833200000, "count": 2 }]
+    },
+    "failures": { "total": 5, "hourly": [{ "at": 1757833200000, "count": 1 }] }
+  }
+}
+```
+

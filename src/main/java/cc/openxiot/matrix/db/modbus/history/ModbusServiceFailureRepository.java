@@ -2,6 +2,7 @@ package cc.openxiot.matrix.db.modbus.history;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.FindOptions;
@@ -71,6 +72,23 @@ public class ModbusServiceFailureRepository implements ReactivePanacheMongoRepos
         return collection()
                 .find(Filters.and(filters),
                         new FindOptions().sort(Sorts.descending("at")).limit(limit))
+                .collect().asList();
+    }
+
+    /**
+     * 某个服务在一段区间内的失败记录**时间线**，只取统计要用的那一列：{@code at}。
+     *
+     * <p>与 {@link #findRange} 的两处不同，都是有意的：**不打 limit**（调用方是统计，截断会让
+     * 「今日异常」变成静默的下限，量级由窗口上限兜住）、**不排序**（统计在内存里分桶，顺序没有意义）。
+     * 故障行本就按 message 去重过，行数很少，但口径仍与告警时间线保持一致。</p>
+     *
+     * <p>返回的对象只有 {@code serviceId} 与 {@code at} 有值，**不要当完整故障行用**。</p>
+     */
+    public Uni<List<ModbusServiceFailure>> findTimeline(String serviceId, Date from, Date to) {
+        return collection()
+                .find(Filters.and(Filters.eq("serviceId", serviceId),
+                                Filters.gte("at", from), Filters.lte("at", to)),
+                        new FindOptions().projection(Projections.include("at")))
                 .collect().asList();
     }
 

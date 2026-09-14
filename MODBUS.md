@@ -206,6 +206,23 @@ ModbusServiceFieldAlarm id / enabled / compare / threshold / state / level / tex
 
 ### 2026-09-14
 
+* **数据看板（首页）的聚合统计接口** `GET /matrix/v1/statistics/overview/{spaceId}`（新包
+  `api/statistics`：`StatisticsResource` + `StatisticsQueryService` + `StatisticsCodec`，
+  见 `API.md` 第 8 节）。这一节只在 MODBUS.md 记与本方案相关的三处口径：
+  * **为什么不复用告警 / 故障的清单接口**：它们都带条数上限（200 / 1000），`summary` 也只统计
+    本次返回的那一批 —— 拿它们算「今日告警 / 告警曲线 / 类型分布」得到的是**被截断的下限**，
+    而卡片和曲线上完全看不出来。新接口不打 limit，量级由 31 天的窗口上限兜住。
+  * **服务这一次读取同时给出总数、按点表分组、以及告警与故障要逐服务查的 id 清单**
+    （`ModbusServiceRepository.findConfigIdsBySpaceId`，与 `findBriefBySpaceId` 同过滤、只投影
+    `configId`；`_id` 由 Mongo 默认带出）。三者同源，故「分组的条数之和 == 服务总数」是构造出来的；
+    这也是没有复用 `ModbusServiceService.subtreeServiceIds` 的原因（它不带 `configId`，点表得再查一次）。
+  * **告警与故障仍逐个 serviceId 各查一次再内存归并**，新增
+    `ModbusServiceAlarmRepository.findTimeline` / `ModbusServiceFailureRepository.findTimeline`
+    （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, functionIndex, at)` 跨服务查
+    会丢掉前缀，与 `ModbusHistoryQueryService` 的说明同一条；分桶也在内存里做（整点密集零填充），
+    全后端依旧没有 `$group` / `Aggregates`。
+
+
 * **阈值告警模型返工：一个出值一组规则**（`alarm` → `alarms[]`、规则加 `id`）。`ModbusServiceField.alarm`
   与 `ModbusServiceFieldBit.alarm` 各改成 `List<ModbusServiceFieldAlarm>`，两处 Codec 与非空数组的
   「不出键」口径成对改掉；校验器改为「逐条 + 组内共性」（条数上限 8、`id` 非空/≤64/组内唯一，

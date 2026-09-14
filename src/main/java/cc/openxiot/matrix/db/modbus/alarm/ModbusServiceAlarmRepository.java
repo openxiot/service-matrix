@@ -314,6 +314,28 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
                 .collect().asList();
     }
 
+    /**
+     * 某个服务在一段区间内的告警**时间线**，只取统计要用的两列：{@code at} 与 {@code text}。
+     *
+     * <p>与 {@link #findRange} 的两处不同，都是有意的：</p>
+     * <ul>
+     *   <li><b>不打 limit</b>：调用方是统计（今日条数、按文本分组、按整点分桶），
+     *       截断会让结果变成静默的下限 —— 而图上完全看不出来。量级由调用方的窗口上限兜住。</li>
+     *   <li><b>不排序</b>：统计在内存里分桶，顺序没有意义；{@link #findRange} 那个倒序是清单页要的。</li>
+     * </ul>
+     *
+     * <p>索引 {@code (serviceId, functionIndex, at)} 上这里只有第一段用得上（与故障清单的
+     * {@code ModbusServiceFailureRepository#findRange} 同一个道理）。返回的对象只有
+     * {@code serviceId} / {@code at} / {@code text} 有值，**不要当完整告警行用**。</p>
+     */
+    public Uni<List<ModbusServiceAlarm>> findTimeline(String serviceId, Date from, Date to) {
+        return collection()
+                .find(Filters.and(Filters.eq("serviceId", serviceId),
+                                Filters.gte("at", from), Filters.lte("at", to)),
+                        new FindOptions().projection(Projections.include("at", "text")))
+                .collect().asList();
+    }
+
     /** 级联删除一批服务的告警：与历史、故障同口径（服务 / 设备被删时一并删）。 */
     public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
         if (serviceIds == null || serviceIds.isEmpty()) {

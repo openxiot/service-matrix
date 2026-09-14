@@ -112,6 +112,23 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
                 .collect().asList();
     }
 
+    /**
+     * 列出设备落点在该空间的服务**所配的点表 id**：与 {@link #findBriefBySpaceId} 同一个过滤条件
+     * （{@code device.space.spaceId}），投影只带 {@code configId}。
+     *
+     * <p>给「服务按点表分组」的统计用：清单里 {@code _id} 不需要（数的是条数），
+     * {@code name} 也不需要（分组键是点表）。调用方按**每个子孙空间**各调一次再拍平，
+     * 故这里只认「恰好落在这个空间」的服务 —— 与 {@link #findBriefBySpaceId} 一致。</p>
+     *
+     * <p>返回的对象只有 {@code configId} 有值（可能是 null），**不要当服务定义用**。</p>
+     */
+    public Uni<List<ModbusService>> findConfigIdsBySpaceId(String spaceId) {
+        return collection()
+                .find(Filters.eq("device.space.spaceId", spaceId),
+                        new FindOptions().projection(Projections.include("configId")))
+                .collect().asList();
+    }
+
     /** 按 id 删除（不带 org 约束，鉴权在资源层）；返回删除条数（非法 id 视为 0 条）。 */
     public Uni<Long> deleteById(String id) {
         ObjectId oid = toObjectId(id);
