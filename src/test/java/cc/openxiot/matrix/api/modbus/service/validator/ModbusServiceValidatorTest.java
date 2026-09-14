@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.service;
+package cc.openxiot.matrix.api.modbus.service.validator;
 
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;

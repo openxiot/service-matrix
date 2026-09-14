@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.frame;
+package cc.openxiot.matrix.typedef.modbus.frame;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 

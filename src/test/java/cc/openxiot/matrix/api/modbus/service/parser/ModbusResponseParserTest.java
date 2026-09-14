@@ -1,11 +1,11 @@
-package cc.openxiot.matrix.api.modbus.service;
+package cc.openxiot.matrix.api.modbus.service.parser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;

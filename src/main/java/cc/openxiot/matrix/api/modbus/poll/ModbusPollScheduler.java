@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;

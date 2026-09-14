@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;

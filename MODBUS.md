@@ -160,6 +160,23 @@ ModbusServiceField   index / field / bytes / format / byteOrder / scale / unit /
 
 ### 2026-09-14
 
+* **整理：把「类型定义」与「接口层」分开 —— `typedef/modbus/{failure,frame}`、`api/modbus/service/{parser,validator}`**。
+  纯搬家，行为不动（纯单测 378 例，搬前搬后同数同绿）。两地混层的理由：
+  * `ModbusFailureType`（10 类失败）、`ModbusInvokeException`（带分类与远端原始码）、
+    `ModbusFrameCodec`（RTU 帧编解码 + CRC）由 `api/modbus/{failure,frame}` 移到
+    `typedef/modbus/{failure,frame}`：三样都不是接口层的东西 —— 协议与 JSON 契约一个字没变，
+    但它们既被 `api` 用、又是「平台自己的类型词汇」，挂在 `api` 下会让别的层要用时反向依赖接口层。
+    命名与前端 `webapp-matrix` 的 `typedef/define/modbus` 对齐。
+  * `ModbusResponseParser`、`ModbusServiceValidator` 由 `api/modbus/service` 下移到同包的
+    `parser` / `validator` 子包（与已有的 `params` 同形）：这两个是纯静态函数、不碰数据库，
+    与 `ModbusServiceService` 的编排逻辑混在一个包里，看包名分不出「哪几个能单测」。
+  * 搬家的两处副产物：`ModbusServiceValidator` 里给 Javadoc `{@link ModbusServiceService}` 用的
+    import 跨包后成了**必需**（不是死 import）；`ModbusServiceCodecTest` 挪到被测类同包
+    `db/modbus/service/codec`（其余三个 codec 测试都在各自实体包下，原地 `db/mongo/codec` 与两套口径都不挨着）。
+  * **提醒后来者**：移动过类之后再跑增量的 `mvn test`，会看起来像改坏了 ——
+    `target/test-classes` 里还留着旧包下的测试类，它们引用的旧包类已不在 classpath 上，
+    surefire 一扫就 `NoClassDefFoundError: cc/openxiot/matrix/api/modbus/failure/ModbusFailureType`
+    （**不是**代码问题）。搬家后跑一次 `clean test` 即可。
 * **修：轮询器一次都没采到设备 —— 内存任务没带 `_id`**。现网现象（staging，
   `MODBUS_POLL_ENABLED=true` 的副本）：每周期一条
   `modbus poll task has no id, key: <serviceId>:<functionIndex>`，间隔看着就是 `interval`，

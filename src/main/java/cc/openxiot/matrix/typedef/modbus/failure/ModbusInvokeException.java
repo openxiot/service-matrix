@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.failure;
+package cc.openxiot.matrix.typedef.modbus.failure;
 
 /**
  * 一次 function 执行失败，带上**分类**（{@link ModbusFailureType}）与远端的原始码。

@@ -116,7 +116,11 @@ public class ManipulationService {
 
         String authorization = JwtUtil.createOwnerIdToken(ownerId, jwtSecret);
         return client.invokeActions(appId, authorization, body)
-                .map(this::getJsonArray);
+                .map(x -> {
+                    JsonArray array =  getJsonArray(x);
+                    logger.infov("{0}", array);
+                    return array;
+                });
     }
 
     private JsonObject getJsonObject(String resp) {

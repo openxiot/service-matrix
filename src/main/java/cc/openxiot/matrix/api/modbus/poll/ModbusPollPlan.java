@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
+import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;

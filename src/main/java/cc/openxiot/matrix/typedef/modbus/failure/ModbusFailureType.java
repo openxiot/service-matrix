@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.failure;
+package cc.openxiot.matrix.typedef.modbus.failure;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 

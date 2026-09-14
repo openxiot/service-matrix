@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.modbus.service;
+package cc.openxiot.matrix.api.modbus.service.parser;
 
-import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.frame.ModbusFrameCodec;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;

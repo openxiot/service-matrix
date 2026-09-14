@@ -15,8 +15,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
-import cc.openxiot.matrix.api.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.api.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
