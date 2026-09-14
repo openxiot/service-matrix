@@ -34,6 +34,12 @@ public final class ModbusServiceFailureCodec {
         if (failure == null) {
             return o;
         }
+        // 每条都带 serviceId：空间级查询（不传 serviceId，见 ModbusHistoryQueryService.failuresOfServices）
+        // 回来的清单里混着多个服务的故障，前端得靠它认领归属。单服务查询时它与顶层那个重复，
+        // 但不值得为此分两套编码 —— 顶层那个是「查了谁」，这是「这条属于谁」。
+        if (failure.serviceId != null) {
+            o.put("serviceId", failure.serviceId);
+        }
         if (failure.functionIndex != null) {
             o.put("functionIndex", failure.functionIndex);
         }

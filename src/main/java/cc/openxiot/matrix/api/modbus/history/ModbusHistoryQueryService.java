@@ -11,6 +11,8 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 
@@ -123,8 +125,33 @@ public class ModbusHistoryQueryService {
      */
     public Uni<FailureResult> failures(String serviceId, Integer functionIndex, String type,
                                        Date from, Date to, Integer limit) {
+        if (isBlank(serviceId)) {
+            return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
+        }
+        // 单服务只是批量那条路的一个元素：排序 / 截断的口径只有一份，免得两条路各写一遍、日后改漏一边
+        return failuresOfServices(List.of(serviceId), functionIndex, type, from, to, limit);
+    }
+
+    /**
+     * **一批服务**在同一区间上的故障记录，合并成一条时间倒序的清单（空间级查询：
+     * {@code ModbusHistoryResource.failures} 不传 {@code serviceId} 时走这里）。
+     *
+     * <p>为什么是「逐服务各查一次再合并」而不是一条跨服务的查询：故障集合的索引是
+     * {@code (serviceId, functionIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
+     * 只有十几条，各查一次的量级完全可控。故障又是**去重过**的（同一条错误持续存在只落一条，
+     * 见 {@link ModbusServiceFailure}），合并出来的行数本就不大 —— 所以合并与排序放在内存里做，
+     * 与「不传 functionIndex 时排序靠内存」是同一个判断。</p>
+     *
+     * <p><b>逐服务多取一条（limit + 1）不影响全局结果</b>：全局前 limit 条必然落在「该服务的前
+     * limit + 1 条」里，所以按服务先截一刀再合并，得到的仍是真正的全局前 limit 条；
+     * {@code truncated} 也据此判 —— 合并后仍多于 limit，就说明还有更早的没取回来。</p>
+     *
+     * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
+     */
+    public Uni<FailureResult> failuresOfServices(List<String> serviceIds, Integer functionIndex, String type,
+                                                 Date from, Date to, Integer limit) {
         Date end = to == null ? new Date() : to;
-        String err = isBlank(serviceId) ? "serviceId is required" : checkRange(from, end);
+        String err = checkRange(from, end);
         if (err == null) {
             err = checkType(type);
         }
@@ -132,13 +159,49 @@ public class ModbusHistoryQueryService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         int size = normalizeLimit(limit);
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            return Uni.createFrom().item(new FailureResult(from, end, size, List.of(), false));
+        }
         String failureType = isBlank(type) ? null : type;
+        List<Uni<List<ModbusServiceFailure>>> queries = serviceIds.stream()
+                .map(id -> failureRepo.findRange(id, functionIndex, failureType, from, end, size + 1))
+                .toList();
 
-        // 同样多取一条判截断：故障列表是倒序的，截掉的是更早的那些
-        return failureRepo.findRange(serviceId, functionIndex, failureType, from, end, size + 1)
-                .map(rows -> rows.size() > size
-                        ? new FailureResult(from, end, size, List.copyOf(rows.subList(0, size)), true)
-                        : new FailureResult(from, end, size, List.copyOf(rows), false));
+        // 并发取：服务之间没有依赖，串行只会把总耗时乘上服务数
+        return Uni.combine().all().unis(queries)
+                .with(groups -> merge(from, end, size, flatten(groups)));
+    }
+
+    /**
+     * 合并各服务的结果：按 {@code at} 倒序（同一时刻的保持传入顺序 —— 排序是稳定的，于是按服务清单的顺序排），
+     * 取前 {@code limit} 条；多出来的就说明还有更早的没取回来。
+     *
+     * <p>抽成静态方法是为了能单测：这个仓库跑不了要连库的测试，而「合并之后对不对」恰恰是最该
+     * 被断言的部分（见 {@code ModbusHistoryQueryServiceTest}）。</p>
+     */
+    static FailureResult merge(Date from, Date to, int limit, List<ModbusServiceFailure> rows) {
+        List<ModbusServiceFailure> sorted = new ArrayList<>(rows);
+        // at 理论上不会缺（写入时必带），但真缺了也得排得出结果：按 0 算，倒序里落在最后
+        sorted.sort(Comparator.comparingLong(
+                (ModbusServiceFailure failure) -> failure.at == null ? 0L : failure.at.getTime()).reversed());
+        boolean truncated = sorted.size() > limit;
+        return new FailureResult(from, to, limit,
+                List.copyOf(truncated ? sorted.subList(0, limit) : sorted), truncated);
+    }
+
+    /** 把 combine 的「每个服务一组」摊平成一个清单（Iterable 版 combine 的泛型被擦成了 List<?>）。 */
+    private static List<ModbusServiceFailure> flatten(List<?> groups) {
+        List<ModbusServiceFailure> merged = new ArrayList<>();
+        for (Object group : groups) {
+            if (group instanceof List<?> rows) {
+                for (Object row : rows) {
+                    if (row instanceof ModbusServiceFailure failure) {
+                        merged.add(failure);
+                    }
+                }
+            }
+        }
+        return merged;
     }
 
     // ===== 参数 =====

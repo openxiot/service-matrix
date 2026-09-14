@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.history;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceFailureCodec;
@@ -56,6 +57,10 @@ public class ModbusHistoryResource extends AbstractResource {
 
     @Inject
     OrgAccessService orgAccessService;
+
+    /** 空间级故障查询要先把空间下的服务 id 收齐（只读 id，见 ModbusServiceService.getBriefBySpaceId）。 */
+    @Inject
+    ModbusServiceService serviceService;
 
     @Inject
     SpaceService spaceService;
@@ -124,7 +129,14 @@ public class ModbusHistoryResource extends AbstractResource {
      * 远端原始码（{@code byRemoteCode}）的聚合，两者总是一起看 —— {@code truncated} 为 true
      * 时说明还有更早的故障没取回来，前端应提示缩小时间范围。</p>
      *
-     * <p>{@code functionIndex} 不传 = 整个服务；{@code type} 不传 = 所有分类。</p>
+     * <p>{@code serviceId} 不传 = **整个空间**：把空间下所有服务的故障合成一条时间倒序的清单，
+     * 每条 item 自带 {@code serviceId}（见 {@code ModbusServiceFailureCodec}），前端据此认领归属。
+     * 这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 —— 项目级的历史页要的正是
+     * 「这个项目里哪儿在报错」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
+     * 此时响应里**不出 {@code serviceId} 键**（与 Codec 里「null 不出键」同口径）：它不是某个服务的结果。</p>
+     *
+     * <p>{@code functionIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
+     * {@code type} 不传 = 所有分类。</p>
      */
     @GET
     @Path("/failures/{spaceId}")
@@ -141,17 +153,30 @@ public class ModbusHistoryResource extends AbstractResource {
     ) {
         logger.infov("query modbus failures, space: {0}, service: {1}, type: {2}",
                 spaceId, serviceId, type);
+        boolean wholeSpace = serviceId == null || serviceId.isBlank();
         return requireSpaceMember(spaceId, orgId)
-                .chain(ignored -> queryService.failures(serviceId, functionIndex, type,
+                .chain(ignored -> wholeSpace
+                        // 只有 id 有用，故走精简投影（functions / response 不上网络，见 ModbusServiceService）
+                        ? serviceService.getBriefBySpaceId(spaceId)
+                        .chain(services -> queryService.failuresOfServices(
+                                services.stream().filter(s -> s != null && s.id != null)
+                                        .map(s -> s.id.toHexString()).toList(),
+                                functionIndex, type, millis(from), millis(to), limit))
+                        : queryService.failures(serviceId, functionIndex, type,
                         millis(from), millis(to), limit))
-                .map(result -> OxResponse.ok(new JsonObject()
-                        .put("serviceId", serviceId)
-                        .put("from", result.from().getTime())
-                        .put("to", result.to().getTime())
-                        .put("limit", result.limit())
-                        .put("truncated", result.truncated())
-                        .put("items", ModbusServiceFailureCodec.encode(result.items()))
-                        .put("summary", ModbusServiceFailureCodec.encodeSummary(result.items()))))
+                .map(result -> {
+                    JsonObject body = new JsonObject()
+                            .put("from", result.from().getTime())
+                            .put("to", result.to().getTime())
+                            .put("limit", result.limit())
+                            .put("truncated", result.truncated())
+                            .put("items", ModbusServiceFailureCodec.encode(result.items()))
+                            .put("summary", ModbusServiceFailureCodec.encodeSummary(result.items()));
+                    if (!wholeSpace) {
+                        body.put("serviceId", serviceId);
+                    }
+                    return OxResponse.ok(body);
+                })
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
