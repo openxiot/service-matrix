@@ -140,25 +140,45 @@
   落不到 `.onFailure(IllegalArgumentException.class)` 那个兜底里（先例：`AccountUserLookup`、
   `ModbusPollReconciler`）。
 
-## 第六步：前端（待落地）
+## 第六步：前端（已完成）
 
-- [ ] 类型与编解码镜像：`ModbusServiceFieldAlarm` + 两处 `alarm?` + `ModbusServiceFieldAlarmCodec`；
-      `ModbusAlarm.ts`（含 `MODBUS_ALARM_LEVELS` / `MODBUS_ALARM_LABELS` /
-      `modbusAlarmCondition(alarm, translate)`，**translate 由调用方传入**，与 `modbusFailureLabel` 同契约）。
-- [ ] `modbus.service.ts`：`getAlarms(...)` / `handleAlarm(spaceId, id)`。
-- [ ] 编辑器逐字段配置：照抄轮询那套「侧表 + 签名」——
+代码在 `webapp-matrix`，0.9.2 → 0.9.6（`7973e80` `5602cea` `813f65e` `66809e3` `6d7307f`）。
+
+- [x] 类型与编解码镜像：`ModbusServiceFieldAlarm` + 两处 `alarm?` + `ModbusServiceFieldAlarmCodec`；
+      `ModbusAlarm.ts`（含 `MODBUS_ALARM_LEVELS` / `MODBUS_ALARM_LEVEL_LABELS` /
+      `MODBUS_ALARM_OPERATOR_LABELS` / `modbusAlarmCondition(alarm, translate)` /
+      `modbusAlarmOperatorLabel` / `modbusAlarmLevelLabel`，**translate 由调用方传入**，
+      与 `modbusFailureLabel` 同契约）。
+      **偏离**：计划里写的是一份 `MODBUS_ALARM_LABELS`，实做分成了级别与比较方式两份 ——
+      两者查的表、兜底值、用在的列都不同，合成一份要按前缀分派。
+- [x] `modbus.service.ts`：`getAlarms(...)` / `handleAlarm(spaceId, id)`。
+- [x] 编辑器逐字段配置：照抄轮询那套「侧表 + 签名」——
       `alarms` 是 `Map`，键 `` `${configId}#${functionIndex}#${fieldKey}` ``（**`configId` 前缀**：
       换源点表不能把告警带到同序号的方法/字段上）、`withAlarms(func)` 在保存时并回去、
       `seedAlarms` 装载、`alarmSignature` 排序序列化。
-- [ ] **`ServiceBaseline` 要加 `alarms: string` 且 `serviceChanged` 要比它** ——
+- [x] **`ServiceBaseline` 加了 `alarms: string` 且 `serviceChanged` 比它** ——
       不加的话**只改告警会让「保存」按钮不亮**，用户以为改动被无声丢掉了。
-- [ ] `describeServiceField` 末尾带上已启用的告警（如 `… → 温度过高(>80)`），那一行摘要才不说谎。
-- [ ] `/main/alarm` 列表页：骨架 `getSpaceGraph(spaceId)`；筛选条用已定的两列网格写法；
-      表头卡（今日告警 / 未处理 / 未恢复 + 按级别分布）；表格含**行内快照**的触发条件与**原样的**告警文本；
-      `handle(row)` 就地替换该行（不整页刷新）。**服务端/用户文本一律不翻译**；表格**不写 `nzWidth`**。
-- [ ] 词典追加 29 个新键 × 66 份（388 → 417），追加后**前 388 键与追加前逐位相同**。
-- [ ] 改掉那条会变成假话的旧提示：`方法由源点表生成（一个功能码动作 = 一个方法），除自动轮询与调用周期外均只读`
-      —— 告警可配之后它不成立了（66 份里替换 key 字符串、保留各语言译文）。
+- [x] `describeServiceField` 末尾带上已启用的告警（如 `… → 温度过高(>80)`），那一行摘要才不说谎。
+      又**拆出 `describeFieldType`** 给展开行的「类型」列：那一列右边紧挨着就是告警控件，
+      再说一遍是同一句话说两遍，而且会随用户敲字实时变。
+- [x] `/main/alarm` 列表页。
+      * 表头卡按实做的三格是「告警清单（条数）/ 未处理 / 未恢复」，**不是**计划里写的「今日告警」——
+        窗口由筛选条决定，写死「今日」在选了「最近 7 天」时就是假话；也**没有**挪用看板那两个键
+        （`今日告警` / `告警类型分布` 是 dashboard 伪造数据在用的）。
+      * 按级别与按告警文本的两份分布（`byLevel` / `byText`）放在卡片里，级别那份走 `levelLabel`。
+      * **筛选下拉不设「全部」那一项**：ng-zorro 的 `writeValue` 里 `covertModelToList` 把 `null`
+        变成 `[]`，值为 null 的选项不显示标签、只显示占位符 —— 那样下拉看着是「未选择」而语义是
+        「全部」，是在骗人。改用 `nzAllowClear` + `nzPlaceHolder` 表达「不限」。
+      * **服务端/用户文本一律不翻译**（告警文本是用户自己敲的）；表格**不写 `nzWidth`**。
+- [x] 词典追加 29 个新键 × 66 份（388 → 417），追加后**前 388 键与追加前逐位相同**（已用脚本与
+      HEAD 逐位比对）。键清单是**反查出来的**：从两个 HTML 抽 `'X' | translate`、两个 TS 抽
+      `instant('X')` / `t('X')`、再从 `ModbusAlarm.ts` 的两份标签映射抽值，与词典求差 ——
+      于是发现方案列过的 `汇总` 与 `告警配置` 实测**没有任何页面用到**，未加。
+- [x] 改掉那条会变成假话的旧提示：`方法由源点表生成（一个功能码动作 = 一个方法），除自动轮询与调用周期外均只读`
+      —— 66 份里原地替换 key 字符串（位置不动）。
+      **偏离**：译文尾巴也一并改写了，不是「保留各语言译文」。原话不成立正是因为多了一件事，
+      译文不提这件事就还是假话；这是本次唯一一处重写既有译文的键。
+- [x] `AGENTS.md`（前端）的 i18n 一节补上「告警的 `text` 是用户自己敲进去的一句话，翻译它就是在改用户的输入」。
 
 ## 第七步：端到端验收（需连接串）
 
