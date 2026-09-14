@@ -12,8 +12,8 @@
 | 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **待做，且门控第 5 步**（见第七节） |
 | 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节；唯一部分索引按第七节刻意未建） |
-| 5 | 采集链路接线 `ModbusAlarmService.evaluate` | 设计已定，待落地 |
-| 6 | 定义变更对账 / 删除级联 | 设计已定，待落地 |
+| 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
+| 6 | 定义变更对账 / 删除级联 | 设计已定，待落地（第五节的闸门边界压在它上面） |
 | 7 | 查询接口 `ModbusAlarmResource` | 设计已定，待落地（见第九节） |
 | 8 | 前端：编辑器逐字段配置 + `/main/alarm` 列表页 | 设计已定，待落地 |
 
@@ -88,6 +88,15 @@ ModbusServiceFieldAlarm  enabled / compare / threshold / state / level / text
 同时记一条 WARN 日志（`alarm not comparable, service…function…field…value…`），不静默；
 新存的定义被校验器挡住了，这条日志是给库里可能已有的老数据留的。
 
+**这条日志每（服务, 方法, 出值）只说一次**（进程内去重，上限 256，记满清空重来）。
+理由：`SKIP` 的常见形态之一是**定义与运行期的值长期对不上**，那是**持续状态**而不是事件 ——
+5 秒一个周期就是一天一万七千行 WARN，刷到这个程度只会训练人忽略它，
+而这条日志存在的全部意义就是**被看见**。说一次、说清楚，比每周期重复一遍有用；
+清空重来是给「坏定义比上限还多」留的退化路径，那种情况下多报几轮是应该的。
+
+去重只影响日志，**不影响判定**：`SKIP` 仍然不写库（见第五节 `Decision.isEmpty()` 有意忽略 skips），
+所以「稳态零写」这条纪律不被日志需求破坏。
+
 `=` 对带 `value-list` 字段有个不对称：值是**数**（原始值没命中取值表）时判 `MISS` 而不是 `SKIP`
 —— 我们明确**知道**它的值，且知道它不等于 `state`。反过来，配置比数、值却是描述字符串 ⇒ `SKIP`
 （定义对不上，老数据）。
@@ -108,6 +117,15 @@ ModbusServiceFieldAlarm  enabled / compare / threshold / state / level / text
 最后一行是**定义变更的自愈主路径**：字段被删、或告警被关掉时，那条未恢复的告警再也判定不到、
 会永远挂着。`decide` 只看**新定义**，所以补了这条。注意它**只对「本次采样里确实存在的键」生效**
 —— 采样里没有的键分不清是「定义删了它」还是「这一帧截断了」，宁可留着也不能凭空恢复。
+
+**这条自愈路径有边界，是有意为之**：第一层闸门 `hasEnabledAlarm` 在**整个方法**上一个启用的告警
+都没有时直接返回 —— 于是「某个方法上**最后一个**告警也被关掉」的那一刻，那条未恢复的告警
+**在这里不会被关**。不为此松开闸门：那会让「绝大多数采集一个数据库操作都没有」这条纪律失效，
+而这个残局的数量与「定义刚被改过」完全同阶（一次编辑最多留下几条），不该用**每次采样**的代价去兜。
+它归**定义变更对账**（第 6 步，`ModbusPollReconciler`）扫掉 —— 那里本来就按定义变更做影子对账，
+加一条告警的拾遗是同一个时机、同一份输入。
+`ModbusAlarmServiceTest.switchingOffTheLastAlarmLeavesTheGateClosedOnPurpose` 钉住的是
+**「闸门在前、对账在后」这个分工**，别让人以为是漏判。
 
 **为什么不放进 `ModbusServiceShadow`** —— 是**正确性**理由，不是成本理由：影子是**全量替换**写的
 （`ModbusHistoryService` 里 `shadowRepo.replace(next)`），而这一带**没有任何事务**。影子按
@@ -282,11 +300,20 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 **纯函数单测**（`@QuarkusTest` 要真连库，故逻辑都抽成无库静态函数）：
 
-* `ModbusAlarmPolicyTest`（14 例）：五种比较与边界；`scale` 生效后比缩放值；
+* `ModbusAlarmPolicyTest`（16 例）：五种比较与边界；`scale` 生效后比缩放值；
   `value-list` 命中走 `=`（命中 / 不命中 / 值是数）；位 0/1；**四种边沿格**；
   **不做防抖**（阈值附近来回穿越产生 开/关/开/关）；重启后遇到已存在的开告警不产生第二条；
   键缺失 / `NaN` / 值为 null ⇒ `SKIP` **且不关闭**已开的告警；字段已不在定义里 ⇒ `DEFINITION` 关闭；
-  一次采样里两个字段一开一关；`hasEnabledAlarm` 闸门（含位上的告警也算）。
+  一次采样里两个字段一开一关；`hasEnabledAlarm` 闸门（含位上的告警也算）；
+  `Open` 带着单位快照、位没有单位。
+* `ModbusAlarmServiceTest`（13 例，Mockito 不连库）：没配告警 ⇒ `verifyNoInteractions(alarmRepo)`；
+  稳态**零写**（读一次、一个写操作都没有）；开出来的行带着定义快照（含 `unit`、位不带）；
+  按值关 / 按定义关各自的 `closeType`；一次采样里既开又关；判不了**只警告一次**（含跨帧的
+  截断样本）且不写库；警告里带上当时的原始值与完整定义；去重上限会清空重来；
+  读失败与写失败都**照常外传**（记日志、咽下去是调用方的决定）；
+  **关掉最后一个告警时闸门照常跳过**（钉住「闸门在前、对账在后」的分工）。
+* `ModbusServiceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
+  告警评估失败**不改写**一次已成功采集的响应，也不变成一条故障记录。
 * `ModbusServiceValidatorTest` 补 9 例：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
   超长 `text`、`string` 字段配告警、`value-list` 字段配 `>`、`=` 缺 `state`、`state` 不在描述里、
   两个都给、都不给、位上配 `>` 或 `0.5`、写方法上配告警）+ `enabled != true` 时全部放行。
@@ -296,10 +323,13 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
   `null 不出键`；`=` 的取值表状态（有 `state` 无 `threshold`）；字符串样本原样出去；
   汇总的计数（`open` 按 `recoveredAt` 数）与两个 tally 的排序；`level`/`text` 缺失归 `UNKNOWN`
   桶而不替用户编文本；空输入全零；`openKeyOf` 的拼法稳定（改了它，库里已有的开行就再也关不掉）。
-* `ModbusServiceAlarmRepositoryTest`（8 例，纯静态不连库）：三种异常形状都认、非 11000 的
+* `ModbusServiceAlarmRepositoryTest`（11 例，纯静态不连库）：三种异常形状都认、非 11000 的
   写错误照常外传、cause 链包装能穿透、自引用 cause 会立刻停下、超长链有界。
   **它值得单独测**：整套并发推理压在「重复键被认出来、然后吞掉」上，判漏就是静默地产生
   两条开着的告警 —— 正是这个特性要避免的失效模式。
+  后 3 例钉住**写语句的形状**（这些错了不会报错、只会悄悄不对）：关闭就是 `$unset openKey`；
+  关闭按整个开行标识 `$in` 一批出值、**不是**定位某条 `_id`；处理是 `{handled: {$ne: true}}` 上的
+  CAS + 只 `$set` 两个字段（整文档替换会抹掉并行的关闭刚写的 `recoveredAt`）。
 
 ## 十二、配置项
 
@@ -314,6 +344,23 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 ### 2026-09-14
 
+* **第五步落地：评估接进采集链路**（`api/modbus/alarm/ModbusAlarmService` +
+  `ModbusServiceService.execute` 里的那一处 `chain`）。几处值得记下的口径：
+  * **两件并列的副作用，不是串在成功路径上**：`recordHistory(...).chain(ignored -> evaluateAlarms(...))`
+    串起来只是为了让**顺序确定**（历史是「采到什么」、告警是「值对不对」，现场排查先看前者），
+    两者互不依赖、也各有各的失败重试。所以这个特性比故障记录简单的地方在于**不需要**
+    「先明细后影子」那套顺序不变量（第五节）。
+  * **`evaluateAlarms` 与 `recordHistory` 同壳**：失败只记日志 + `recoverWithNull`，
+    **既不改写 invoke 的成功响应、也不改写它的失败响应** —— 值已经拿到了，告警只是副作用。
+  * **一次评估里的所有动作共用同一个 `Date`**：否则会写出「关了又开、开的时间还早于关的时间」
+    这种读起来荒谬的历史。
+  * **判不了的日志进程内去重**（上限 256，见第四节）：这是对「不静默」与「别刷屏」两个要求的
+    折中，代价是**多副本下会各报一次** —— 与故障去重那条诚实的竞态记录同一个性质。
+  * **第一层闸门的边界**（第五节末）：方法上最后一个告警被关掉后，残留的开行归第 6 步的对账扫，
+    **不**为它松开闸门。
+  * 单测：`ModbusAlarmServiceTest`（13）+ `ModbusAlarmPolicyTest` 扩到 16 +
+    `ModbusServiceServiceTest` 补 2。全量 469 例中 468 绿；唯一红色的仍是 `SpaceResourceTest`
+    （`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第二步落地：告警文档、仓储与 Codec**（`db/modbus/alarm/ModbusServiceAlarm`、
   `ModbusServiceAlarmRepository`、`codec/ModbusAlarmCodec`）。几处值得记下的口径：
   * **唯一部分索引刻意没建**（只建了采集侧与列表两个）—— 两条理由见第七节：

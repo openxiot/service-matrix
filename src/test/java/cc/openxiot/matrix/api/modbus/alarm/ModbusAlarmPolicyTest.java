@@ -18,6 +18,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -151,11 +153,62 @@ class ModbusAlarmPolicyTest {
         ModbusServiceFunction function = function(field("进水温度", alarm(">", 80.0, null)));
 
         // 键不在本次采样里（这一帧截断了）
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("别的字段", 1), open("进水温度")).isEmpty());
+        Decision truncated = ModbusAlarmPolicy.decide(function, sample("别的字段", 1), open("进水温度"));
+        assertTrue(truncated.isEmpty());
+        assertEquals(1, truncated.skips().size());
+
         // 值是 NaN
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", Double.NaN), open("进水温度")).isEmpty());
+        Decision nan = ModbusAlarmPolicy.decide(function, sample("进水温度", Double.NaN), open("进水温度"));
+        assertTrue(nan.isEmpty());
+        assertEquals(1, nan.skips().size());
+
         // 键在、值为 null
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", null), open("进水温度")).isEmpty());
+        Decision nullValue = ModbusAlarmPolicy.decide(function, sample("进水温度", null), open("进水温度"));
+        assertTrue(nullValue.isEmpty());
+        assertEquals(1, nullValue.skips().size());
+    }
+
+    @Test
+    void notComparableIsReportedNotSilent() {
+        // 判不了必须留下痕迹：它意味着**这条告警配置当前不工作**，而「配了却不工作、还没有声音」
+        // 正是这个特性要消灭的失效模式。判定器只管把材料交出来，怎么记是调用方的事。
+        ModbusServiceFunction function = function(field("进水温度", alarm(">", 80.0, null)));
+        ModbusServiceFieldAlarm configured = function.response.get(0).alarm;
+
+        // 这一帧里没有这个出值：sample 为 null
+        Decision truncated = ModbusAlarmPolicy.decide(function, sample("别的字段", 1), Set.of());
+        assertEquals(1, truncated.skips().size());
+        assertEquals("进水温度", truncated.skips().get(0).field());
+        assertNull(truncated.skips().get(0).sample());
+        assertSame(configured, truncated.skips().get(0).alarm());
+        // 但「判不了」不算「有事要写」：稳态零写这条纪律不能被日志需求破坏
+        assertTrue(truncated.isEmpty());
+
+        // 定义比数、运行期给了字符串（老数据 / 设备固件与点表不符）
+        Decision mismatched = ModbusAlarmPolicy.decide(
+                function(field("进水温度", alarm(">", 80.0, null))), sample("进水温度", "ON"), Set.of());
+        assertEquals(1, mismatched.skips().size());
+        assertEquals("ON", mismatched.skips().get(0).sample());
+
+        // 没配告警、配了但关掉、判得出来：都不是「判不了」，一条都不报
+        assertTrue(ModbusAlarmPolicy.decide(function(field("进水温度", null)), sample("进水温度", "ON"), Set.of())
+                .skips().isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(function(field("进水温度", disabled())), sample("进水温度", "ON"), Set.of())
+                .skips().isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), Set.of()).skips().isEmpty());
+    }
+
+    @Test
+    void openCarriesTheUnitSnapshotAndBitsHaveNone() {
+        ModbusServiceField withUnit = field("进水温度", alarm(">", 80.0, null));
+        withUnit.unit = "℃";
+        assertEquals("℃", ModbusAlarmPolicy.decide(function(withUnit), sample("进水温度", 81.0), Set.of())
+                .opens().get(0).unit());
+
+        // 位没有自己的单位：父字段那个（比如 ℃）贴到 0/1 的位上只会让列表里出现「1 ℃」
+        ModbusServiceField bits = bits("进水阀位", "进水阀", alarm("=", 1.0, null));
+        bits.unit = "℃";
+        assertNull(ModbusAlarmPolicy.decide(function(bits), sample("进水阀", 1), Set.of()).opens().get(0).unit());
     }
 
     // ===== 定义变更的对账 =====
@@ -221,6 +274,9 @@ class ModbusAlarmPolicyTest {
     void emptyResponseDecidesNothing() {
         assertTrue(ModbusAlarmPolicy.decide(function(), sample("进水温度", 99.0), Set.of()).isEmpty());
         assertTrue(ModbusAlarmPolicy.decide(null, sample("进水温度", 99.0), Set.of()).isEmpty());
+        // 空定义也就没有「判不了」：skips 只能来自配了告警的出值
+        assertTrue(ModbusAlarmPolicy.decide(function(), sample("进水温度", 99.0), Set.of()).skips().isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(null, sample("进水温度", 99.0), Set.of()).skips().isEmpty());
     }
 
     // ===== 夹具 =====

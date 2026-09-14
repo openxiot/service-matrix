@@ -43,7 +43,7 @@ public final class ModbusAlarmPolicy {
     public static final Set<String> LEVELS = Set.of("INFO", "WARN", "CRITICAL");
 
     /** 什么都没发生（绝大多数采集走这条）：调用方应当**一次数据库操作都不做**。 */
-    private static final Decision NOTHING = new Decision(List.of(), List.of(), List.of());
+    private static final Decision NOTHING = new Decision(List.of(), List.of(), List.of(), List.of());
 
     private ModbusAlarmPolicy() {
     }
@@ -59,20 +59,37 @@ public final class ModbusAlarmPolicy {
     }
 
     /** 该开的告警：出值名 + 触发那一刻的配置（要快照进告警行，见 Modbus-Alarm.md 第四节）。 */
-    public record Open(String field, ModbusServiceFieldAlarm alarm, Object sample) {
+    public record Open(String field, ModbusServiceFieldAlarm alarm, Object sample, String unit) {
+    }
+
+    /**
+     * 一个**判不了**的出值（{@link Verdict#SKIP}）：配了告警，但这一帧拿不出可比的值。
+     *
+     * <p>带着 {@code alarm} 与 {@code sample} 交给调用方记日志 —— 判定器是纯函数，不碰日志；
+     * 而这三个字段加上服务与方法坐标，正好够把「为什么这条告警不工作」说清楚。
+     * {@code sample} 为 null 表示**这一帧里根本没有这个出值**（截断的应答）。</p>
+     */
+    public record Skip(String field, ModbusServiceFieldAlarm alarm, Object sample) {
     }
 
     /**
      * 一次采集的判定结果。
      *
-     * @param opens           该新开的告警（值越限、且当前没有未恢复的告警）
-     * @param valueCloses     该关的告警（值回到正常）：{@code closeType = VALUE}
+     * @param opens            该新开的告警（值越限、且当前没有未恢复的告警）
+     * @param valueCloses      该关的告警（值回到正常）：{@code closeType = VALUE}
      * @param definitionCloses 该关的告警（本次采样里有这个出值、但新定义已不再给它配告警）：
      *                         {@code closeType = DEFINITION}。否则那条告警再也判定不到、会永远挂着
+     * @param skips            判不了的出值，**只用来记日志**（见 {@link Skip}）
      */
-    public record Decision(List<Open> opens, List<String> valueCloses, List<String> definitionCloses) {
+    public record Decision(List<Open> opens, List<String> valueCloses, List<String> definitionCloses,
+                           List<Skip> skips) {
 
-        /** 有没有事要做；false 时调用方应当一次写操作都不做（稳态走这条）。 */
+        /**
+         * 有没有要**写库**的事；false 时调用方应当一次写操作都不做（稳态走这条）。
+         *
+         * <p>{@link #skips()} 不参与判定：它是日志、不是写 —— 否则一个判不了的出值会让每次采样
+         * 都「有事要做」，把稳态零写这条纪律弄丢。</p>
+         */
         public boolean isEmpty() {
             return opens.isEmpty() && valueCloses.isEmpty() && definitionCloses.isEmpty();
         }
@@ -190,8 +207,7 @@ public final class ModbusAlarmPolicy {
         Map<String, Object> vals = values == null ? Map.of() : values;
         Set<String> open = openFields == null ? Set.of() : openFields;
 
-        List<Open> opens = new ArrayList<>();
-        List<String> valueCloses = new ArrayList<>();
+        Acc acc = new Acc();
         // 新定义里配了告警、且本次采样里确实有这个出值：这些键归「值判定」管，
         // 不能因为「本次没开/没关」而被下面的 DEFINITION 逻辑误关掉
         Set<String> covered = new HashSet<>();
@@ -200,11 +216,13 @@ public final class ModbusAlarmPolicy {
             if (field == null) {
                 continue;
             }
-            covered.addAll(judge(field.field, field.alarm, vals, open, opens, valueCloses));
+            covered.addAll(judge(field.field, field.alarm, field.unit, vals, open, acc));
             if (field.bitList != null) {
                 for (ModbusServiceFieldBit bit : field.bitList) {
                     if (bit != null) {
-                        covered.addAll(judge(bit.field, bit.alarm, vals, open, opens, valueCloses));
+                        // 位没有自己的单位：父字段那个是「整个寄存器」的工程单位，
+                        // 贴到 0/1 的位上只会让列表里出现「1 ℃」这种话。位一律不带单位。
+                        covered.addAll(judge(bit.field, bit.alarm, null, vals, open, acc));
                     }
                 }
             }
@@ -219,25 +237,33 @@ public final class ModbusAlarmPolicy {
             }
         }
 
-        if (opens.isEmpty() && valueCloses.isEmpty() && definitionCloses.isEmpty()) {
+        if (acc.isEmpty() && definitionCloses.isEmpty()) {
             return NOTHING;
         }
-        return new Decision(List.copyOf(opens), List.copyOf(valueCloses), List.copyOf(definitionCloses));
+        return new Decision(List.copyOf(acc.opens), List.copyOf(acc.valueCloses),
+                List.copyOf(definitionCloses), List.copyOf(acc.skips));
     }
 
     /**
-     * 判定单个出值，把结果记进 opens / valueCloses 两张表。
+     * 判定单个出值，把结果记进累积器。
      *
+     * @param unit 快照进告警行的单位（位传 null，见调用处）
      * @return 这个出值是否归「值判定」管（配了告警、且本次采样里有它）—— 是的话返回它的名字，供
      *         DEFINITION 那条逻辑排除
      */
     private static Set<String> judge(String field,
                                      ModbusServiceFieldAlarm alarm,
+                                     String unit,
                                      Map<String, Object> vals,
                                      Set<String> open,
-                                     List<Open> opens,
-                                     List<String> valueCloses) {
-        if (field == null || !isEnabled(alarm) || !vals.containsKey(field)) {
+                                     Acc acc) {
+        if (field == null || !isEnabled(alarm)) {
+            return Set.of();
+        }
+        if (!vals.containsKey(field)) {
+            // 配了告警、这一帧里却没有这个出值：判不了，记下来让调用方说一声（不能当成「没越限」，
+            // 那会把一条开着的告警凭空关掉）。不看 `open`：没开着也一样要报，否则定义配错了没人知道。
+            acc.skips.add(new Skip(field, alarm, null));
             return Set.of();
         }
         Object value = vals.get(field);
@@ -245,12 +271,27 @@ public final class ModbusAlarmPolicy {
         if (verdict == Verdict.HIT) {
             // 开着就什么都不做 —— 稳态零写，这是「一次越限一条」的落点
             if (!open.contains(field)) {
-                opens.add(new Open(field, alarm, value));
+                acc.opens.add(new Open(field, alarm, value, unit));
             }
-        } else if (verdict == Verdict.MISS && open.contains(field)) {
-            valueCloses.add(field);
+        } else if (verdict == Verdict.MISS) {
+            if (open.contains(field)) {
+                acc.valueCloses.add(field);
+            }
+        } else {
+            acc.skips.add(new Skip(field, alarm, value));
         }
-        // SKIP、以及「没开行 + MISS」：什么都不做
         return Set.of(field);
+    }
+
+    /** 判定过程中的三张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
+    private static final class Acc {
+
+        private final List<Open> opens = new ArrayList<>();
+        private final List<String> valueCloses = new ArrayList<>();
+        private final List<Skip> skips = new ArrayList<>();
+
+        private boolean isEmpty() {
+            return opens.isEmpty() && valueCloses.isEmpty() && skips.isEmpty();
+        }
     }
 }

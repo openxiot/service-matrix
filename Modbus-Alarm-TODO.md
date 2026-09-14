@@ -52,23 +52,38 @@
       目前告警还没有写入者，缺索引不产生脏数据。
 - [x] 全量 449 例中 448 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
 
-## 第三步：评估接线进采集链路（待落地）
+## 第三步：评估接线进采集链路（已完成）
 
-- [ ] `ModbusAlarmService.evaluate`：第一层闸门 `hasEnabledAlarm` 不过就**一次库操作都不做**；
+- [x] `ModbusAlarmService.evaluate`：第一层闸门 `hasEnabledAlarm` 不过就**一次库操作都不做**；
       过了才读一次 `listOpenFields`（带索引、只投影 `field`）→ `decide` → 执行三件事
       （`insertOpen` / `closeByKeys`）。
-- [ ] 接进 `ModbusServiceService.execute`，与 `recordHistory` **并列**（不是串进成功路径）：
+- [x] 接进 `ModbusServiceService.execute`，与 `recordHistory` **并列**（不是串进成功路径）：
 
       .chain(values -> recordHistory(service, function, values, baselines)
               .chain(ignored -> evaluateAlarms(service, function, values))
               .replaceWith(values));
 
-- [ ] 与 `recordHistory` 同壳：失败只记日志、`recoverWithNull`，
+- [x] 与 `recordHistory` 同壳：失败只记日志、`recoverWithNull`，
       **既不影响 invoke 的成功响应、也不改写失败响应**。
-- [ ] **重复键（11000）必须吞掉**：吞掉之后不变式「该键有一条开着的告警」恰好成立。
-- [ ] 单测（Mockito，不连库）：没开告警 ⇒ `verifyNoInteractions(alarmRepo)`；稳态**零写**；
-      重复键异常被吞且不让调用方失败；仓储失败不外传；关闭捕获到的 filter 是**按 key 的 `updateMany`**；
-      `evaluateAlarms` 在 `recordHistory` **之后**（`InOrder`）。
+- [x] **重复键（11000）必须吞掉**：吞掉之后不变式「该键有一条开着的告警」恰好成立。
+      （实现在第二步的 `insertOpen`；本步只是它的调用方。）
+- [x] **`SKIP` 的日志去重**：进程内按开行标识记，上限 256、记满清空重来（理由见 `Modbus-Alarm.md` 第四节）。
+- [x] 单测（Mockito，不连库）：`ModbusAlarmServiceTest` 13 例 —— 没开告警 ⇒ `verifyNoInteractions(alarmRepo)`；
+      稳态**零写**；行为快照（定义快照 / 单位 / 位不带单位）；两种 `closeType`；一次采样里既开又关；
+      判不了只警告一次且不写库；警告内容带上原始值与完整定义；去重上限会清空重来；
+      读失败与写失败都**照常外传**；关掉最后一个告警时闸门照常跳过（有意为之，见 `Modbus-Alarm.md` 第五节末）。
+- [x] `ModbusServiceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
+      告警评估失败不改写已成功采集的响应、也不变成一条故障记录。
+- [x] 全量 469 例中 468 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
+
+**两处口径从 mock 测试挪到了别处，别以为漏了：**
+
+* 「关闭是**按 key 的 `updateMany`**、不是定位某条 `_id`」——mock 观察不到 `Bson` 形状，
+  改由 `ModbusServiceAlarmRepositoryTest.closingTargetsTheWholeOpenKeyNotOneRow` 断言过滤条件
+  （第二步已落地）。这条写错了不会报错，只会「关不掉」，比报错的写难查得多。
+* 「重复键被吞掉」的**识别**那一半由 `ModbusServiceAlarmRepositoryTest` 钉住（三种异常形状）；
+  **吞**的那一半（`insertOpen` 把 11000 变成 `false`）要连库才能触发，
+  归第七步的端到端验收。
 
 ## 第四步：定义变更对账与删除级联（待落地）
 

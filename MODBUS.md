@@ -127,6 +127,15 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
   与轮询器走的是同一个入口 —— 所以「只想看一眼当前值」的调用也会在曲线上留一个点。
   记录写失败既不改写成功响应、也不改写失败响应：值已经拿到了，历史只是副作用。
 
+* **`invoke` 还有第二个副作用：顺带评阈值告警**（`Modbus-Alarm.md`）。成功路径上是
+  `recordHistory(...).chain(ignored -> evaluateAlarms(...))` —— 两件事**并列**，
+  串起来只是为了顺序确定（历史是「采到什么」、告警是「值对不对」，现场排查先看前者），
+  它们互不依赖、也各有各的失败重试。`evaluateAlarms` 与 `recordHistory` 同壳：
+  失败只记日志 + `recoverWithNull`，**既不改写成功响应、也不改写失败响应**。
+  第一层闸门 `ModbusAlarmPolicy.hasEnabledAlarm` 是纯内存判断，所以**没配告警的服务在告警这一步
+  零库操作**；配了的方法每轮多一次带索引的读（「这个方法的哪些出值开着」）。
+  失败路径（帧非法 / 无应答等）没有读值，不评告警 —— 那是 `service-failures` 的事。
+
 ## 六、空间图里的服务
 
 `/matrix/v1/space/graph/{rootId}` 在 `spaces` / `devices` 之外平级返回 `services`：取该根空间下全部子孙空间，
@@ -186,6 +195,25 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
 ## 八、变更记录
 
 ### 2026-09-14
+
+* **Modbus 阈值告警（第三步：评估接进采集链路）**。`api/modbus/alarm/ModbusAlarmService`（新）+
+  `ModbusServiceService.execute` 里的那一处 `chain`：采集成功后先记历史、再评告警（第五节）。
+  几处值得记下的口径：
+  * **两件并列的副作用，不是串在成功路径上**：各有各的失败重试（下一个仍越限的样本重试插入、
+    下一个仍正常的样本重试关闭），两者都对库幂等 —— 所以这个特性**不需要**故障记录那套
+    「先明细后影子」的顺序不变量。但**后果等级不同**：历史多一行是信息，告警多一条是页面上
+    同一件事出现两次、而未处理计数永远不对，所以插入走唯一索引 + 重复键吞掉，关闭按整个开行标识
+    `updateMany`。
+  * **`SKIP` 的日志进程内去重**（上限 256，记满清空重来）：判不了的常见形态是**长期对不上**，
+    5 秒一条就是一天一万七千行 WARN，刷到那个程度只会训练人忽略它 —— 而这条日志存在的全部意义
+    就是被看见。去重只影响日志，不影响判定（`SKIP` 仍然不写库）。
+  * **一次评估里的所有动作共用同一个时刻**：否则会写出「关了又开、开的时间还早于关的时间」。
+  * **闸门有边界**：方法上**最后一个**告警被关掉时，闸门整个跳过这个方法，那条残留的开行
+    **不在这里关**，归定义变更对账（`ModbusPollReconciler`）扫。不为此松开闸门是因为残局的数量
+    与「定义刚被改过」同阶，不该用**每次采样**的代价去兜。
+  测试：`ModbusAlarmServiceTest`（13 例，Mockito 不连库）+ `ModbusAlarmPolicyTest` 扩到 16 +
+  `ModbusServiceServiceTest` 补 2 例（`InOrder` 顺序、告警失败不改写响应）。
+  全量 469 例中 468 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo）。
 
 * **Modbus 阈值告警（第一步：配置模型与校验）**。在此之前只知道「采到没采到」
   （`ModbusServiceFailure`：帧错 / 设备无应答 / CRC 不过），**采到了但值不对看不见** ——

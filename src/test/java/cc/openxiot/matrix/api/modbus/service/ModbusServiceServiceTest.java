@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,6 +18,7 @@ import static org.mockito.Mockito.when;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
@@ -39,6 +41,7 @@ import org.jboss.logging.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.Map;
@@ -69,17 +72,21 @@ class ModbusServiceServiceTest {
     private ModbusServiceRepository repo;
     private ManipulationService manipulation;
     private ModbusHistoryService history;
+    private ModbusAlarmService alarms;
 
     @BeforeEach
     void setUp() {
         repo = mock(ModbusServiceRepository.class);
         manipulation = mock(ManipulationService.class);
         history = mock(ModbusHistoryService.class);
+        alarms = mock(ModbusAlarmService.class);
+        when(alarms.evaluate(any(), any(), any())).thenReturn(Uni.createFrom().voidItem());
 
         service = new ModbusServiceService();
         service.repo = repo;
         service.manipulationService = manipulation;
         service.historyService = history;
+        service.alarmService = alarms;
         service.logger = Logger.getLogger(ModbusServiceServiceTest.class);
     }
 
@@ -94,6 +101,39 @@ class ModbusServiceServiceTest {
         assertEquals(100, values.getInteger("进水温度"));
         verify(history).record(any(), any(), eq(values));
         verify(history, never()).recordFailure(any(), any(), any());   // 成功路径不碰失败记录
+    }
+
+    @Test
+    void alarmsAreEvaluatedAfterHistoryOnTheSameValues() {
+        // 两件并列的副作用，串起来只是为了**顺序确定**：历史是「采到什么」、告警是「值对不对」，
+        // 现场排查先看前者。倒过来会让告警行指向一条还不存在的采样
+        givenService(modbusService(), function());
+        givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
+        when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
+
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely();
+
+        InOrder order = inOrder(history, alarms);
+        order.verify(history).record(any(), any(), any());
+        // 评估拿到的必须是**同一份**采样（告警行里的 sample 与历史里那条要对得上）
+        order.verify(alarms).evaluate(any(), any(), eq(values));
+    }
+
+    @Test
+    void alarmFailureDoesNotRewriteTheInvokeResponse() {
+        // 告警表写不进去，不该让一次**已经成功**的采集变成失败：值已经拿到了，告警只是副作用。
+        // 与 recordFailure 同一壳：只记日志、recoverWithNull
+        givenService(modbusService(), function());
+        givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
+        when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
+        when(alarms.evaluate(any(), any(), any()))
+                .thenReturn(Uni.createFrom().failure(new IllegalStateException("alarm table is down")));
+
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely();
+
+        assertEquals(100, values.getInteger("进水温度"));
+        // 也不许把这次失败改写成一条故障记录：故障是「采到没采到」，告警是「值对不对」，两回事
+        verify(history, never()).recordFailure(any(), any(), any());
     }
 
     @Test

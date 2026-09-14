@@ -5,6 +5,7 @@ import cc.openxiot.matrix.api.modbus.service.parser.ModbusResponseParser;
 import cc.openxiot.matrix.api.modbus.service.validator.ModbusServiceValidator;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
@@ -56,6 +57,10 @@ public class ModbusServiceService {
 
     @Inject
     ModbusHistoryService historyService;
+
+    /** 阈值告警的评估（与历史并列的副作用，见 Modbus-Alarm.md）。 */
+    @Inject
+    ModbusAlarmService alarmService;
 
     /** 轮询任务表的对账（写入路径挂这里，见 Modbus-Service-Poller.md 第三节）。 */
     @Inject
@@ -283,7 +288,11 @@ public class ModbusServiceService {
                 .map(ActionOperationCodec.RESULT::decode)
                 .map(results -> results.isEmpty() ? null : results.getFirst())
                 .map(result -> decodeFields(function, result))
-                .chain(values -> recordHistory(service, function, values, baselines).replaceWith(values));
+                // 两件并列的副作用：先记历史、再评告警。串起来只是为了让顺序确定（历史是「采到什么」，
+                // 告警是「值对不对」，出问题时先看前者），两者互不依赖、也各有各的失败重试
+                .chain(values -> recordHistory(service, function, values, baselines)
+                        .chain(ignored -> evaluateAlarms(service, function, values))
+                        .replaceWith(values));
     }
 
     /**
@@ -346,6 +355,25 @@ public class ModbusServiceService {
                         service.id, function.index, e.getMessage()))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
+    }
+
+    /**
+     * 评估阈值告警（见 Modbus-Alarm.md）。
+     *
+     * <p>与 {@link #recordHistory} **同一个壳**：失败只记日志、{@code recoverWithNull}，
+     * 既不改写 invoke 的成功响应、也不改写它的失败响应 —— 值已经拿到了，告警是副作用。
+     * 失败也不会丢：下一个仍越限的样本会重试插入、下一个仍正常的样本会重试关闭
+     * （两个边沿各自对库幂等，这正是这个特性不需要「先明细后影子」那套顺序不变量的原因）。</p>
+     *
+     * <p>没有内存基准、也不扩影子：判定需要的「哪些出值开着」只能从告警表读，
+     * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
+     */
+    private Uni<Void> evaluateAlarms(ModbusService service, ModbusServiceFunction function, JsonObject values) {
+        return alarmService.evaluate(service, function, values)
+                .onFailure().invoke(e -> logger.warnv(
+                        "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
+                        service.id, function.index, e.getMessage()))
+                .onFailure().recoverWithNull();
     }
 
     /**
