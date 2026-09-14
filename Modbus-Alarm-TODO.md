@@ -2,7 +2,7 @@
 
 设计见 `Modbus-Alarm.md`。图例：`[x]` 已完成，`[ ]` 待办。**最险的先列。**
 
-## 第 0 步：Azure DocumentDB 上验「唯一部分索引」（**门控第三步，先做**）
+## 第 0 步：Azure DocumentDB 上验「唯一部分索引」（**门控第三步那个第一个写入者，先做**）
 
 - [ ] 在 staging 临时集合 `modbus/alarm-smoke` 建 `{openKey: 1}` unique +
       `partialFilterExpression: {openKey: {$exists: true}}`。
@@ -33,21 +33,30 @@
       （`SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，本机读超时，与本次改动无关）。
 - [x] `MODBUS.md` 三 / 七 / 八节 + 本文件 + `Modbus-Alarm.md`。
 
-## 第二步：告警文档与仓储（待落地）
+## 第二步：告警文档与仓储（已完成）
 
-- [ ] `db/modbus/alarm/ModbusServiceAlarm`：含触发那一刻的**定义快照**（`compare`/`threshold`/`state`/
+- [x] `db/modbus/alarm/ModbusServiceAlarm`：含触发那一刻的**定义快照**（`compare`/`threshold`/`state`/
       `level`/`text`/`unit`）—— 定义是活的、行是不可变的历史，只存引用会让改阈值悄悄改写历史告警的含义。
-- [ ] `ModbusServiceAlarmRepository`（照 `ModbusServiceFailureRepository`）：
-      三个索引（唯一部分索引 / 采集侧未恢复 / 列表）、`insert`、`listOpen`、`closeByKey`（`updateMany`）、
-      `handle`（CAS，**绝不 `replaceOne`**）、`deleteByServiceIds`。
-- [ ] `db/modbus/alarm/codec/ModbusAlarmCodec`：**只出不进**，`id` = `_id.toHexString()`，
-      `openKey` **绝不下发**，时刻一律 epoch 毫秒，`handledBy` 走既有 `PersonCodec`。
-- [ ] 单测：`ModbusAlarmCodecTest`（`null 不出键`、`openKey` 不出现、epoch 毫秒、汇总排序）。
+      另有 `CLOSE_VALUE` / `CLOSE_DEFINITION` 两个关闭方式常量与 `openKeyOf(...)`。
+- [x] `ModbusServiceAlarmRepository`（照 `ModbusServiceFailureRepository`）：索引（**只建了两个**，
+      见下）、`insertOpen`、`listOpenFields`、`closeByKeys`（`updateMany`）、`handle`（CAS，
+      **绝不 `replaceOne`**）、`deleteByServiceIds`、`findRange` + `RangeFilter`。
+- [x] `db/modbus/alarm/codec/ModbusAlarmCodec`：**只出不进**，`id` = `_id.toHexString()`，
+      `openKey` **绝不下发**，时刻一律 epoch 毫秒，`handledBy` 走既有 `PersonCodec`；
+      `encodeSummary` 出 `{total, open, unhandled, byLevel, byText}`。
+- [x] 单测：`ModbusAlarmCodecTest`（9 例：`null 不出键`、`openKey` 不出现、epoch 毫秒、
+      `=` 的取值表状态、汇总排序与归桶）+ `ModbusServiceAlarmRepositoryTest`（8 例：三种异常形状、
+      非 11000 照常外传、cause 链包装、自引用终止、超长链有界）。
+- [ ] **唯一部分索引仍待第 0 步的冒烟结论**（`ensureIndexes()` 里刻意只建了 2、3 两号）。
+      两条理由写在 `Modbus-Alarm.md` 第七节：建了被静默吞掉 = 以为有护栏，建错 = 告警开始丢。
+      目前告警还没有写入者，缺索引不产生脏数据。
+- [x] 全量 449 例中 448 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
 
 ## 第三步：评估接线进采集链路（待落地）
 
 - [ ] `ModbusAlarmService.evaluate`：第一层闸门 `hasEnabledAlarm` 不过就**一次库操作都不做**；
-      过了才读一次 `listOpen`（带索引、只投影 `field`）→ `decide` → 执行三件事。
+      过了才读一次 `listOpenFields`（带索引、只投影 `field`）→ `decide` → 执行三件事
+      （`insertOpen` / `closeByKeys`）。
 - [ ] 接进 `ModbusServiceService.execute`，与 `recordHistory` **并列**（不是串进成功路径）：
 
       .chain(values -> recordHistory(service, function, values, baselines)

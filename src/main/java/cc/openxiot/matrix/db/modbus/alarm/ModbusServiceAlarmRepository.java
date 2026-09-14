@@ -1,0 +1,272 @@
+package cc.openxiot.matrix.db.modbus.alarm;
+
+import cc.openxiot.common.person.Person;
+import com.mongodb.MongoCommandException;
+import com.mongodb.MongoWriteException;
+import com.mongodb.WriteConcernException;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
+import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.Updates;
+import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
+import io.quarkus.mongodb.FindOptions;
+import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * {@link ModbusServiceAlarm} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-alarms}）。
+ *
+ * <p>这个仓储里没有一条「整文档替换」：告警行一旦落下，此后只有两种改动 ——
+ * 关闭（写 {@code recoveredAt} / {@code closeType}、{@code $unset} {@code openKey}）与
+ * 处理（写 {@code handled} / {@code handledBy}）。它们是**互不相交的字段**，用 {@code $set}
+ * 各写各的，谁也盖不掉谁 —— 与 {@code ModbusPollRepository} 同一条纪律。</p>
+ *
+ * <p>写侧的另一条纪律：<b>关闭按整个开行标识 {@code updateMany}，不定位到某条 {@code _id}</b>。
+ * 这消除了「幽灵告警永远关不掉」这个失效模式，也让采集热路径只需要「存在性」而不需要身份。</p>
+ */
+@ApplicationScoped
+public class ModbusServiceAlarmRepository implements ReactivePanacheMongoRepository<ModbusServiceAlarm> {
+
+    /** MongoDB 的重复键错误码。 */
+    private static final int DUPLICATE_KEY = 11000;
+
+    private ReactiveMongoCollection<ModbusServiceAlarm> collection() {
+        return mongoCollection();
+    }
+
+    /**
+     * 启动时确保索引存在（幂等；失败仅告警，不阻断启动，与其它仓储同口径）。
+     *
+     * <p>建两个：</p>
+     * <ol>
+     *   <li>{@code (serviceId, functionIndex, openKey)} —— 采集侧每轮查「这个出值开着吗」
+     *       （见 {@link #listOpenFields}），一个方法配 3 个字段也只查一次。</li>
+     *   <li>{@code (serviceId, functionIndex, at)} —— 列表查询，前两段等值 + {@code at} 倒序。</li>
+     * </ol>
+     *
+     * <p><b>还差一个：{@code {openKey: 1}} unique + {@code partialFilterExpression: {openKey: {$exists: true}}}
+     * —— 并发护栏，这里故意没建。</b>部署是 Postgres 底的 Azure DocumentDB，**部分索引支持未实证**；
+     * 如果它不支持，{@code createIndex} 会抛错，然后被这行 {@code recoverWithNull} 静默吞掉 ——
+     * 于是「以为有护栏、其实没有」，比明说没有更糟。而**建错了更危险**：万一服务端忽略了
+     * {@code partialFilterExpression} 而当成普通唯一索引，所有已恢复的行 {@code openKey} 都是
+     * 缺失（等同 null），同一出值的**第二条已恢复告警会被拒**——告警就开始丢。</p>
+     *
+     * <p>所以顺序是：先在 staging 冒烟（插两条同 {@code openKey} 的应第二条报 11000、
+     * 插两条都没有 {@code openKey} 的应**都成功**），结论定下来再在这里补一行（或改走回退档）。
+     * 步骤与回退档见 {@code Modbus-Alarm.md} 第七节、{@code Modbus-Alarm-TODO.md} 第 0 步。
+     * <b>在此之前告警还没有任何写入者</b>（评估尚未接进采集链路），所以缺这个索引不会产生脏数据。</p>
+     */
+    public Uni<Void> ensureIndexes() {
+        return collection()
+                .createIndex(Indexes.ascending("serviceId", "functionIndex", "openKey"))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "functionIndex", "at")))
+                .onFailure().recoverWithNull()
+                .replaceWithVoid();
+    }
+
+    /**
+     * 落一条**未恢复**的告警（{@code openKey} 已由调用方填好）。
+     *
+     * <p>返回值是「**这条是不是我建的**」，用来把并发吞掉：poller 与 API 副本可能同时判定同一
+     * {@code (service, function, field)}，两边都读到「没有未恢复的告警」于是都插入。唯一部分索引
+     * （见 {@link #ensureIndexes}）挡住第二条，这里把重复键当作**「别的副本先开了」**，
+     * 返回 {@code false} 而不是失败 —— 吞掉之后不变式「该键有一条开着的告警」恰好成立，
+     * 所以这不是妥协。这与故障去重的竞态**不是同一个后果等级**：那边是追加型日志上多一行信息，
+     * 这边两条重复行不会作为一个单位一起恢复（用户处理了 A，B 还挂着未处理，未处理计数永远不对，
+     * 页面上同一件事出现两次）。</p>
+     *
+     * <p>其它失败一律照常外传：调用方（采集链路）自己决定记日志还是咽下去。</p>
+     */
+    public Uni<Boolean> insertOpen(ModbusServiceAlarm alarm) {
+        return persist(alarm)
+                .map(ignored -> true)
+                .onFailure(ModbusServiceAlarmRepository::isDuplicateKey)
+                .recoverWithItem(false);
+    }
+
+    /**
+     * 这个方法当前**有哪些出值开着告警**（未恢复）。
+     *
+     * <p>只投影 {@code field}：判定要的是「开着的行就是状态」这张集合，不需要行的其余部分。
+     * 一次查回整个方法的所有开行，所以一个方法配 3 个字段也只查一次。</p>
+     */
+    public Uni<List<String>> listOpenFields(String serviceId, Integer functionIndex) {
+        return collection()
+                .find(Filters.and(
+                                Filters.eq("serviceId", serviceId),
+                                Filters.eq("functionIndex", functionIndex),
+                                Filters.exists("openKey")),
+                        new FindOptions().projection(Projections.include("field")))
+                .collect().asList()
+                .map(rows -> {
+                    List<String> fields = new ArrayList<>(rows.size());
+                    for (ModbusServiceAlarm row : rows) {
+                        if (row.field != null) {
+                            fields.add(row.field);
+                        }
+                    }
+                    return fields;
+                });
+    }
+
+    /**
+     * 关闭一批出值的告警（值回到正常、或新定义已不再配它）。
+     *
+     * <p>条件是**整个开行标识**（{@code serviceId} + {@code functionIndex} + {@code field} +
+     * {@code openKey} 存在），不是某条 {@code _id}；{@code updateMany} 因此天然幂等 ——
+     * 两个评估者同时关闭同一出值，第二个匹配 0 条，不算失败。
+     * 过滤条件里那个 {@code exists("openKey")} 不是多余的：已恢复的行 {@code openKey} 已被
+     * {@code $unset}，不该被再关一次而覆盖掉它第一次的 {@code recoveredAt}。</p>
+     *
+     * @param fields    要关的出值名；空集合直接返回 0，不查库
+     * @param closeType {@link ModbusServiceAlarm#CLOSE_VALUE} 或 {@link ModbusServiceAlarm#CLOSE_DEFINITION}
+     * @return 实际关闭的条数
+     */
+    public Uni<Long> closeByKeys(String serviceId, Integer functionIndex, Collection<String> fields,
+                                 String closeType, Date at) {
+        if (fields == null || fields.isEmpty()) {
+            return Uni.createFrom().item(0L);
+        }
+        Bson filter = Filters.and(
+                Filters.eq("serviceId", serviceId),
+                Filters.eq("functionIndex", functionIndex),
+                Filters.in("field", fields),
+                Filters.exists("openKey"));
+        Bson update = Updates.combine(
+                Updates.set("recoveredAt", at),
+                Updates.set("closeType", closeType),
+                Updates.unset("openKey"));
+
+        return collection().updateMany(filter, update).map(UpdateResult::getModifiedCount);
+    }
+
+    /**
+     * 用户点「处理」：CAS 写回执（{@code handled} 从「不是 true」变成 {@code true}）。
+     *
+     * <p>用 {@code updateOne} 而**绝不 {@code replaceOne}**：处理与告警关闭是两条互不相交的字段写，
+     * 替换会把另一方刚写的字段抹掉。过滤条件带 {@code handled: {$ne: true}} 是为了让重复点击
+     * 只生效一次（判定与「已处理」/「不存在」的区分留给调用方，它才拿得到精确文案）。</p>
+     *
+     * <p>{@code handledBy} 显式写成一个 {@link Document}（而不是直接塞 {@link Person}）：
+     * 更新语句里没有实体字段的声明类型可用，走 POJO 编码在这里是多余的猜测 ——
+     * 与 {@code SpaceRepository.pushAccess} 同口径。处理时刻取 {@code Person.timestamp}，
+     * 不另开字段（与 {@code creator} / {@code updater} 一致）。</p>
+     *
+     * @return 改动条数：1 = 这次处理生效；0 = 已经处理过了（或行不在了，由调用方分辨）
+     */
+    public Uni<Long> handle(ObjectId id, Person who) {
+        Document handledBy = new Document("id", who.id)
+                .append("name", who.name)
+                .append("timestamp", who.timestamp);
+        Bson update = Updates.combine(
+                Updates.set("handled", true),
+                Updates.set("handledBy", handledBy));
+
+        return collection()
+                .updateOne(Filters.and(Filters.eq("_id", id), Filters.ne("handled", true)), update)
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /**
+     * 告警清单：一个服务下的一段区间，按 {@code at} **倒序**（最近的在前）。
+     *
+     * <p>{@code filter} 里为 null 的项表示不限。空间级查询由调用方**逐服务**调这个方法再内存归并
+     * （与故障清单同口径：不做聚合管道）。</p>
+     *
+     * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
+     */
+    public Uni<List<ModbusServiceAlarm>> findRange(String serviceId, RangeFilter filter, int limit) {
+        List<Bson> filters = new ArrayList<>();
+        filters.add(Filters.eq("serviceId", serviceId));
+        if (filter.functionIndex() != null) {
+            filters.add(Filters.eq("functionIndex", filter.functionIndex()));
+        }
+        if (filter.field() != null && !filter.field().isBlank()) {
+            filters.add(Filters.eq("field", filter.field()));
+        }
+        if (filter.level() != null && !filter.level().isBlank()) {
+            filters.add(Filters.eq("level", filter.level()));
+        }
+        if (filter.open() != null) {
+            filters.add(filter.open() ? Filters.exists("openKey") : Filters.exists("openKey", false));
+        }
+        if (filter.handled() != null) {
+            filters.add(filter.handled()
+                    ? Filters.eq("handled", true)
+                    : Filters.ne("handled", true));
+        }
+        filters.add(Filters.gte("at", filter.from()));
+        filters.add(Filters.lte("at", filter.to()));
+
+        return collection()
+                .find(Filters.and(filters),
+                        new FindOptions().sort(Sorts.descending("at")).limit(limit))
+                .collect().asList();
+    }
+
+    /** 级联删除一批服务的告警：与历史、故障同口径（服务 / 设备被删时一并删）。 */
+    public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            return Uni.createFrom().item(0L);
+        }
+        return collection()
+                .deleteMany(Filters.in("serviceId", serviceIds))
+                .map(DeleteResult::getDeletedCount);
+    }
+
+    /**
+     * 告警清单的筛选条件（为 null 的项 = 不限）。
+     *
+     * @param open    {@code true} 只看未恢复、{@code false} 只看已恢复、{@code null} 都要
+     * @param handled 同上，针对「是否已处理」
+     */
+    public record RangeFilter(Integer functionIndex, String field, String level,
+                              Boolean open, Boolean handled, Date from, Date to) {
+    }
+
+    /**
+     * 是不是「重复键」失败（MongoDB 11000）。
+     *
+     * <p>三种异常类型都认，因为同一次冲突在不同调用路径上会以不同形状冒出来，而**判漏的后果是静默的**
+     * （两条开着的告警，见 {@link #insertOpen}）：单条插入抛 {@link MongoWriteException}、
+     * 服务端命令抛 {@link MongoCommandException}、驱动自己那个「这就是重复键」的类型
+     * {@link com.mongodb.DuplicateKeyException} 继承的是 {@link WriteConcernException}
+     * （**不是** {@code MongoWriteException} 的子类，容易想当然）。三者都以错误码判定，
+     * 不靠类型名称猜 —— 11000 才是语义，类型只是它的外壳。</p>
+     *
+     * <p>要顺着 {@code cause} 链找：驱动的异常有可能被上层包一层。链上出现自引用时立刻停下
+     * （异常里的自引用 cause 是已知的坑，会让这里变成死循环）。</p>
+     */
+    public static boolean isDuplicateKey(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 16; depth++) {
+            if (current instanceof MongoWriteException write
+                    && write.getError().getCode() == DUPLICATE_KEY) {
+                return true;
+            }
+            if (current instanceof MongoCommandException command
+                    && command.getErrorCode() == DUPLICATE_KEY) {
+                return true;
+            }
+            if (current instanceof WriteConcernException concern
+                    && concern.getErrorCode() == DUPLICATE_KEY) {
+                return true;
+            }
+            Throwable cause = current.getCause();
+            current = cause == current ? null : cause;
+        }
+        return false;
+    }
+}

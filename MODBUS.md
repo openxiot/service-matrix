@@ -193,7 +193,7 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
   `ModbusServiceFieldAlarm`（新）、`ModbusServiceField.alarm` 与 `ModbusServiceFieldBit.alarm`（新）、
   `ModbusServiceFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
   `ModbusServiceValidator.validateAlarm`；`validateInterval` 里那段取功能码的代码同时抽成了
-  共用的 `isReadFunction`。**告警行本身、采集链路上的接线、查询接口与前端在后续提交** ——
+  共用的 `isReadFunction`。**采集链路上的接线、查询接口与前端在后续提交** ——
   这一步零 IO、可独立落地，没配告警的服务在采集热路径上一分钱都不多花
   （`ModbusAlarmPolicy.hasEnabledAlarm` 是纯内存判断，与 `ModbusHistoryPolicy`「绝大多数采集
   一个数据库操作都没有」同一条纪律）。几处值得记下的口径：
@@ -207,6 +207,31 @@ ModbusServiceFieldAlarm enabled / compare / threshold / state / level / text
   `ModbusServiceCodecTest` 把告警收进示例体（encode∘decode 稳定性 + 「没配就不出键」）。
   全量 432 例中 431 绿；唯一红色的 `SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，
   本机没有库所以读超时，与本次改动无关。
+
+* **Modbus 阈值告警（第二步：告警文档与仓储）**。`db/modbus/alarm/` 新包：
+  `ModbusServiceAlarm`（库 `modbus`、集合 `service-alarms`，**带触发那一刻的定义快照** ——
+  定义是活的、行是不可变的历史，只存引用会让改阈值悄悄改写历史告警的含义）、
+  `ModbusServiceAlarmRepository`、`codec/ModbusAlarmCodec`。这一步还没有写入者
+  （评估在下一步接进采集链路），落地的是「行长什么样、怎么关、怎么处理」这套口径：
+  * **状态就是 `openKey` 有没有值**：未恢复时有它，恢复时 `$unset` 掉；不另存一份告警态，
+    于是「这个出值当前开着吗」是一次带索引的存在性查询。
+  * **关闭按整个开行标识 `updateMany`，不定位到某条 `_id`** —— 消除了「幽灵告警永远关不掉」，
+    也让采集热路径只需要存在性而不需要身份；过滤条件带 `exists("openKey")`，
+    免得把已恢复行的第一次 `recoveredAt` 覆盖掉。
+  * **处理用 `updateOne`（CAS `{handled: {$ne: true}}`），绝不 `replaceOne`**：
+    处理与关闭是互不相交字段的写，替换会抹掉另一方刚写的字段。
+  * **唯一部分索引刻意没建**（只建了采集侧与列表两个）。部署是 Postgres 底的 Azure DocumentDB，
+    部分索引支持未实证：建了不支持就是一串被 `recoverWithNull` 静默吞掉的错（以为有护栏、其实没有），
+    而**建错**（服务端忽略 `partialFilterExpression`）会让已恢复的行撞唯一索引、**告警开始丢**。
+    冒烟步骤与两条回退档写在 `Modbus-Alarm.md` 第七节。缺它不产生脏数据，因为还没有写入者。
+  * **汇总里 `open` 按 `recoveredAt` 数，不按 `openKey`**：两者本该等价，但汇总不能和它汇总的那批行
+    自相矛盾 —— `recoveredAt` 才是前端能看到、据以渲染状态的那个字段。
+  * **`encode` 每条都发 `id`**（有意偏离 `ModbusServiceFailureCodec`）：故障记录是纯日志、只能看，
+    告警行有逐行动作（点「处理」）。`openKey` **绝不下发**：它把内部主键的拼法泄漏成接口契约，
+    以后就改不动了。
+  测试：`ModbusAlarmCodecTest`（9 例）+ `ModbusServiceAlarmRepositoryTest`（8 例，纯静态）。
+  全量 449 例中 448 绿（唯一红色仍是上面那个要连 Mongo 的 `SpaceResourceTest`）。
+  设计见 `Modbus-Alarm.md`，余下步骤见 `Modbus-Alarm-TODO.md`。
 
 * **整理：把「类型定义」与「接口层」分开 —— `typedef/modbus/{failure,frame}`、`api/modbus/service/{parser,validator}`**。
   纯搬家，行为不动（纯单测 378 例，搬前搬后同数同绿）。两地混层的理由：

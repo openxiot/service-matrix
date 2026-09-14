@@ -11,7 +11,7 @@
 | 2 | 判定口径 `ModbusAlarmPolicy`（纯函数） | **已落地**（见第四、五节） |
 | 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **待做，且门控第 5 步**（见第七节） |
-| 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | 设计已定，待落地（见第八节） |
+| 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节；唯一部分索引按第七节刻意未建） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | 设计已定，待落地 |
 | 6 | 定义变更对账 / 删除级联 | 设计已定，待落地 |
 | 7 | 查询接口 `ModbusAlarmResource` | 设计已定，待落地（见第九节） |
@@ -162,6 +162,19 @@ poller（1 副本）与 API 副本（N 个）可能同时判定同一 `(service,
 > 插两条同 `openKey` 的应第二条报 11000 → **插两条都没有 `openKey` 的应都成功**
 > （这一步才证明「部分」；普通唯一索引会把第二条 null 当重复拒掉）→ drop → 结果记进本文件。
 >
+> **在这个结论出来之前，`ensureIndexes()` 里刻意没有建这个索引**（只建第八节那 2、3 两号）。
+> 两条理由，方向相反但都指向「先别建」：
+> * **建了但被静默吞掉**：`ensureIndexes()` 的失败处理是 `recoverWithNull`（不阻断启动，
+>   与其它仓储同口径）。服务端若不支持部分索引而抛错，那一行会被吞掉 —— 于是「以为有护栏、
+>   其实没有」，**比明说没有更糟**（读到 `listIndexes` 也证明不了语义，只能靠行为冒烟）。
+> * **建错了更危险**：万一服务端忽略 `partialFilterExpression` 当成普通唯一索引，
+>   所有**已恢复**的行 `openKey` 都是缺失（等同 null），同一出值的第二条已恢复告警会被拒 ——
+>   **告警开始丢**。这是把「多一条重复」换成「少一条真告警」，两害相权，后者重得多。
+>
+> 目前没有这个索引也**不产生脏数据**：告警还没有任何写入者（评估尚未接进采集链路，第四步才接）。
+> 第二步落地的只是「文档 + 仓储 + Codec」，`insertOpen` 在重复键上是**吞掉并返回 `false`**
+> 而不是失败 —— 那一支的判定（`isDuplicateKey`）已有单测钉住，等索引到位即生效。
+>
 > **回退档**（冒烟失败时用，**不静默降级**）：
 > * **F1**：普通唯一复合索引 `{serviceId, functionIndex, field, recoveredAt}` —— 不用任何冷门特性。
 >   开着的行 `recoveredAt` 都是 null，唯一索引把 null 当一个值，所以第二条开行会撞；
@@ -175,9 +188,9 @@ poller（1 副本）与 API 副本（N 个）可能同时判定同一 `(service,
 过滤条件带 `{handled: {$ne: true}}`，`matchedCount == 0` 时再 `findById` 一次以区分「已处理」与「不存在」，
 好给出精确文案。
 
-## 八、数据模型（待落地）
+## 八、数据模型
 
-新建 `db/modbus/alarm/ModbusServiceAlarm.java`，`@MongoEntity(database="modbus", collection="service-alarms")`：
+`db/modbus/alarm/ModbusServiceAlarm.java`，`@MongoEntity(database="modbus", collection="service-alarms")`：
 
 ```java
 public String  serviceId;
@@ -206,9 +219,27 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 **索引**（`ensureIndexes()`：幂等、失败不阻断启动、沿用 `modbus.index.enabled`）：
 
-1. `{openKey: 1}` unique + `partialFilterExpression`（并发护栏，见第七节）
-2. `{serviceId: 1, functionIndex: 1, openKey: 1}` —— 采集侧查未恢复
-3. `{serviceId: 1, functionIndex: 1, at: -1}` —— 列表查询
+1. `{openKey: 1}` unique + `partialFilterExpression` —— **并发护栏，见第七节的取舍：代码里还没建**
+   （文档里仍列为第 1 号，冒烟一过就补一行）
+2. `{serviceId: 1, functionIndex: 1, openKey: 1}` —— 采集侧查未恢复（**已建**）
+3. `{serviceId: 1, functionIndex: 1, at: -1}` —— 列表查询（**已建**）
+
+**仓储**（`ModbusServiceAlarmRepository`）里没有一条「整文档替换」：行落下之后只有两种改动 ——
+关闭（`recoveredAt` / `closeType`、`$unset openKey`）与处理（`handled` / `handledBy`），
+是**互不相交的字段**，各写各的 `$set`，谁也盖不掉谁。三条要点：
+
+* **关闭按整个开行标识 `updateMany`，不定位到某条 `_id`** —— 这消除了「幽灵告警永远关不掉」，
+  也让采集热路径只需要「存在性」而不需要身份。过滤条件里的 `exists("openKey")` 不是多余的：
+  已恢复的行 `openKey` 已被 `$unset`，不该被再关一次而覆盖掉它第一次的 `recoveredAt`。
+* **`handle` 用 `updateOne`，绝不 `replaceOne`**（理由同上：替换会抹掉另一方刚写的字段），
+  过滤条件带 `{handled: {$ne: true}}` 让重复点击只生效一次。处理人写成显式 `Document`
+  而不是塞 `Person` —— 更新语句里没有实体字段的声明类型可用，走 POJO 编码是多余的猜测
+  （与 `SpaceRepository.pushAccess` 同口径）；处理时刻取 `Person.timestamp`，不另开字段。
+* **`isDuplicateKey` 认三种异常形状**（`MongoWriteException` / `MongoCommandException` /
+  `WriteConcernException`），都以**错误码 11000** 判定而不按类型名猜。第三支容易漏：
+  驱动那个「这就是重复键」的 `com.mongodb.DuplicateKeyException` 继承的是
+  `WriteConcernException`，**不是** `MongoWriteException` 的子类。判漏的后果是静默的（两条开着的告警），
+  所以它单独有单测（含 cause 链包装与自引用终止）。
 
 **级联删除**：`ModbusServiceService.purgeHistory(...)` 里加一句，删服务 / 设备时一并删告警。
 
@@ -261,6 +292,14 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
   两个都给、都不给、位上配 `>` 或 `0.5`、写方法上配告警）+ `enabled != true` 时全部放行。
 * `ModbusServiceCodecTest`：示例体收进 `alarm`（encode∘decode 稳定性）+ 「没配就不出键」+
   空对象读作「没配」。
+* `ModbusAlarmCodecTest`（9 例）：全字段行；**`openKey` 绝不出现**（行内带着它、出去没有它）；
+  `null 不出键`；`=` 的取值表状态（有 `state` 无 `threshold`）；字符串样本原样出去；
+  汇总的计数（`open` 按 `recoveredAt` 数）与两个 tally 的排序；`level`/`text` 缺失归 `UNKNOWN`
+  桶而不替用户编文本；空输入全零；`openKeyOf` 的拼法稳定（改了它，库里已有的开行就再也关不掉）。
+* `ModbusServiceAlarmRepositoryTest`（8 例，纯静态不连库）：三种异常形状都认、非 11000 的
+  写错误照常外传、cause 链包装能穿透、自引用 cause 会立刻停下、超长链有界。
+  **它值得单独测**：整套并发推理压在「重复键被认出来、然后吞掉」上，判漏就是静默地产生
+  两条开着的告警 —— 正是这个特性要避免的失效模式。
 
 ## 十二、配置项
 
@@ -275,6 +314,20 @@ public String  openKey;      // 未恢复时才有：serviceId#functionIndex#fie
 
 ### 2026-09-14
 
+* **第二步落地：告警文档、仓储与 Codec**（`db/modbus/alarm/ModbusServiceAlarm`、
+  `ModbusServiceAlarmRepository`、`codec/ModbusAlarmCodec`）。几处值得记下的口径：
+  * **唯一部分索引刻意没建**（只建了采集侧与列表两个）—— 两条理由见第七节：
+    建了被 `recoverWithNull` 静默吞掉是「以为有护栏、其实没有」；建错（服务端忽略
+    `partialFilterExpression`）会让已恢复的行撞唯一索引、**告警开始丢**。目前没有它也不产生脏数据，
+    因为告警还没有写入者（第四步才接线）。冒烟台账进第七节。
+  * **`open` 按 `recoveredAt` 数，不按 `openKey`**（汇总处）：两者本该等价，但汇总不能和它汇总的
+    那批行自相矛盾 —— `recoveredAt` 才是前端能看到、据以渲染状态的那个字段。
+  * **`encode` 有意偏离故障 Codec：每条都发 `id`**。故障记录是纯日志、只能看；告警行有**逐行动作**
+    （点「处理」），前端得知道点的是哪一条。
+  * **`isDuplicateKey` 认三种异常形状**，其中 `com.mongodb.DuplicateKeyException` 继承的是
+    `WriteConcernException` 而非 `MongoWriteException`（容易想当然漏掉）。
+  * 单测：`ModbusAlarmCodecTest`（9）+ `ModbusServiceAlarmRepositoryTest`（8，纯静态）。
+    全量 449 例中 448 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第一步落地：配置模型与校验**（`ModbusServiceFieldAlarm` + 两处 `alarm` 字段 +
   `ModbusServiceFieldAlarmCodec` + `ModbusAlarmPolicy` + `ModbusServiceValidator.validateAlarm`）。
   零 IO、可独立验证；没配告警的服务在采集热路径上一分钱都不多花。同时写下判定口径与落库口径
