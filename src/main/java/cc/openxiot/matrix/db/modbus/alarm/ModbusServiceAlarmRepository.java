@@ -139,17 +139,35 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
         if (fields == null || fields.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
-        Bson filter = Filters.and(
+        return collection().updateMany(closeFilter(serviceId, functionIndex, fields), closeUpdate(at, closeType))
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /**
+     * 关闭的过滤条件：**整个开行标识**，不是某条 {@code _id}。
+     *
+     * <p>抽成静态是为了能单测（本仓库的库测试要连 Mongo）：这个条件写错了不会报错，
+     * 只会「关不掉」—— 一条永远关不掉的告警比一条报错的写难查得多。</p>
+     */
+    static Bson closeFilter(String serviceId, Integer functionIndex, Collection<String> fields) {
+        return Filters.and(
                 Filters.eq("serviceId", serviceId),
                 Filters.eq("functionIndex", functionIndex),
                 Filters.in("field", fields),
                 Filters.exists("openKey"));
-        Bson update = Updates.combine(
+    }
+
+    /**
+     * 关闭的写语句：{@code $set recoveredAt / closeType} + <b>{@code $unset openKey}</b>。
+     *
+     * <p>那个 {@code $unset} 就是「关闭」本身：{@code openKey} 是状态，只写 {@code recoveredAt}
+     * 而不拿掉它，这条会永远被算作「还开着」（采集侧的判断、列表的筛选、汇总的 {@code open} 计数全都看它）。</p>
+     */
+    static Bson closeUpdate(Date at, String closeType) {
+        return Updates.combine(
                 Updates.set("recoveredAt", at),
                 Updates.set("closeType", closeType),
                 Updates.unset("openKey"));
-
-        return collection().updateMany(filter, update).map(UpdateResult::getModifiedCount);
     }
 
     /**
@@ -164,19 +182,34 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
      * 与 {@code SpaceRepository.pushAccess} 同口径。处理时刻取 {@code Person.timestamp}，
      * 不另开字段（与 {@code creator} / {@code updater} 一致）。</p>
      *
+     * <p>过滤条件与写语句抽成了 {@link #handleFilter} / {@link #handleUpdate}：本仓库的库测试要连
+     * Mongo，而这两样恰恰是「写错了也不报错、只是行为悄悄不对」的部分（比如整文档替换会抹掉关闭字段）。</p>
+     *
      * @return 改动条数：1 = 这次处理生效；0 = 已经处理过了（或行不在了，由调用方分辨）
      */
     public Uni<Long> handle(ObjectId id, Person who) {
-        Document handledBy = new Document("id", who.id)
+        return collection()
+                .updateOne(handleFilter(id), handleUpdate(who))
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /** 处理的过滤条件：{@code _id} 定位到一条，且 {@code handled} 还不是 true（重复点击只生效一次）。 */
+    static Bson handleFilter(ObjectId id) {
+        return Filters.and(Filters.eq("_id", id), Filters.ne("handled", true));
+    }
+
+    /** 处理的写语句：两个互不相干的字段各写各的 `$set`（不是整文档替换）。 */
+    static Bson handleUpdate(Person who) {
+        return Updates.combine(
+                Updates.set("handled", true),
+                Updates.set("handledBy", handledByDocument(who)));
+    }
+
+    /** 处理人落成一个显式 {@link Document}（理由见 {@link #handle}）。 */
+    private static Document handledByDocument(Person who) {
+        return new Document("id", who.id)
                 .append("name", who.name)
                 .append("timestamp", who.timestamp);
-        Bson update = Updates.combine(
-                Updates.set("handled", true),
-                Updates.set("handledBy", handledBy));
-
-        return collection()
-                .updateOne(Filters.and(Filters.eq("_id", id), Filters.ne("handled", true)), update)
-                .map(UpdateResult::getModifiedCount);
     }
 
     /**
