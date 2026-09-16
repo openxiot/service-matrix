@@ -119,7 +119,7 @@ class ModbusPollResourceTest {
         when(scheduler.inFlightCount()).thenReturn(1);
         when(scheduler.lastTickAt()).thenReturn(NOW);
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -149,7 +149,7 @@ class ModbusPollResourceTest {
         when(serviceService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
         when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("data.enabled", equalTo(false))
@@ -167,7 +167,7 @@ class ModbusPollResourceTest {
         when(serviceService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
         when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of()));
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -179,7 +179,7 @@ class ModbusPollResourceTest {
     void list_notMember_returnsError() {
         denySpaceMember();
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
@@ -193,7 +193,7 @@ class ModbusPollResourceTest {
     void list_spaceNotFound_returnsError() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().nullItem());
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));

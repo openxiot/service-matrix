@@ -18,7 +18,6 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -80,12 +79,11 @@ public class ModbusHistoryResource extends AbstractResource {
     @Path("/current/{spaceId}/{serviceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> current(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("serviceId") String serviceId
     ) {
         logger.infov("get modbus current values, space: {0}, service: {1}", spaceId, serviceId);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.currentValues(serviceId))
                 .map(shadows -> OxResponse.ok(new JsonObject()
                         .put("serviceId", serviceId)
@@ -106,7 +104,6 @@ public class ModbusHistoryResource extends AbstractResource {
     @Path("/range/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> range(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
             @QueryParam("functionIndex") Integer functionIndex,
@@ -117,7 +114,7 @@ public class ModbusHistoryResource extends AbstractResource {
     ) {
         logger.infov("query modbus history, space: {0}, service: {1}, function: {2}, field: {3}",
                 spaceId, serviceId, functionIndex, field);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.range(serviceId, functionIndex, field,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(rangeBody(serviceId, functionIndex, field, result)))
@@ -149,7 +146,6 @@ public class ModbusHistoryResource extends AbstractResource {
     @Path("/failures/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> failures(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
             @QueryParam("functionIndex") Integer functionIndex,
@@ -161,7 +157,7 @@ public class ModbusHistoryResource extends AbstractResource {
         logger.infov("query modbus failures, space: {0}, service: {1}, type: {2}",
                 spaceId, serviceId, type);
         boolean wholeSpace = serviceId == null || serviceId.isBlank();
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
                         .chain(ids -> queryService.failuresOfServices(
@@ -219,14 +215,12 @@ public class ModbusHistoryResource extends AbstractResource {
     }
 
     /** 空间成员（读历史与 invoke 同口径，见 {@code ModbusServiceResource}）。 */
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });

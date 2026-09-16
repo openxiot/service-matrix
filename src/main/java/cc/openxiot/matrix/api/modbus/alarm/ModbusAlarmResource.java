@@ -15,7 +15,6 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -99,7 +98,6 @@ public class ModbusAlarmResource extends AbstractResource {
     @Path("/many/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> many(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
             @QueryParam("functionIndex") Integer functionIndex,
@@ -114,7 +112,7 @@ public class ModbusAlarmResource extends AbstractResource {
         logger.infov("query modbus alarms, space: {0}, service: {1}, level: {2}",
                 spaceId, serviceId, level);
         boolean wholeSpace = serviceId == null || serviceId.isBlank();
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
                         .chain(ids -> queryService.alarmsOfServices(ids, functionIndex, field, level,
@@ -153,7 +151,6 @@ public class ModbusAlarmResource extends AbstractResource {
     @Path("/handle/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> handle(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("id") String id
     ) {
@@ -166,7 +163,7 @@ public class ModbusAlarmResource extends AbstractResource {
         ObjectId alarmId = new ObjectId(id);
         Person who = currentUser();
 
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.findById(alarmId))
                 .chain(row -> {
                     if (row == null) {
@@ -190,14 +187,12 @@ public class ModbusAlarmResource extends AbstractResource {
     // -- helper methods --
 
     /** 空间成员（告警的读与处理同口径：回执不是改配置，与 invoke 一样只要求成员）。 */
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });

@@ -116,7 +116,7 @@ class ModbusServiceResourceTest {
         when(service.create(any())).thenAnswer(invocation ->
                 Uni.createFrom().item((ModbusService) invocation.getArgument(0)));
 
-        given().header("X-Org-Id", ORG).contentType("application/json").body(requestBody())
+        given().contentType("application/json").body(requestBody())
                 .when().post("/matrix/v1/modbus/service/one/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -133,7 +133,7 @@ class ModbusServiceResourceTest {
     void createOne_notAdmin_returnsError() {
         denySpaceAdmin();
 
-        given().header("X-Org-Id", ORG).contentType("application/json").body(requestBody())
+        given().contentType("application/json").body(requestBody())
                 .when().post("/matrix/v1/modbus/service/one/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
@@ -147,7 +147,7 @@ class ModbusServiceResourceTest {
         allowSpaceAdmin();
         when(service.update(eq(SID), any())).thenReturn(Uni.createFrom().item(sample()));
 
-        given().header("X-Org-Id", ORG).contentType("application/json").body(requestBody())
+        given().contentType("application/json").body(requestBody())
                 .when().put("/matrix/v1/modbus/service/one/{spaceId}/{id}", SPACE_ID, SID)
                 .then().statusCode(200)
                 .body("success", equalTo(true));
@@ -161,7 +161,7 @@ class ModbusServiceResourceTest {
         allowSpaceAdmin();
         when(service.deleteById(SID)).thenReturn(Uni.createFrom().item(1L));
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().delete("/matrix/v1/modbus/service/one/{spaceId}/{id}", SPACE_ID, SID)
                 .then().statusCode(200)
                 .body("success", equalTo(true));
@@ -174,7 +174,7 @@ class ModbusServiceResourceTest {
     void deleteOne_notAdmin_returnsError() {
         denySpaceAdmin();
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().delete("/matrix/v1/modbus/service/one/{spaceId}/{id}", SPACE_ID, SID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
@@ -189,7 +189,7 @@ class ModbusServiceResourceTest {
         when(service.deleteById(SID)).thenReturn(Uni.createFrom()
                 .failure(new IllegalArgumentException("modbus service not found: " + SID)));
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().delete("/matrix/v1/modbus/service/one/{spaceId}/{id}", SPACE_ID, SID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
@@ -200,7 +200,7 @@ class ModbusServiceResourceTest {
     void deleteOne_spaceNotFound_returnsError() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().nullItem());
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().delete("/matrix/v1/modbus/service/one/{spaceId}/{id}", SPACE_ID, SID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
@@ -216,7 +216,7 @@ class ModbusServiceResourceTest {
         allowSpaceMember();
         when(service.listByParent(DID)).thenReturn(Uni.createFrom().item(List.of(sample())));
 
-        given().header("X-Org-Id", ORG)
+        given()
                 .when().get("/matrix/v1/modbus/service/parent/{spaceId}/{did}", SPACE_ID, DID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -231,7 +231,7 @@ class ModbusServiceResourceTest {
         when(service.invoke(eq(SPACE_ID), eq(SID), eq(1)))
                 .thenReturn(Uni.createFrom().item(new JsonObject().put("进水温度", 61.5)));
 
-        given().header("X-Org-Id", ORG).contentType("application/json")
+        given().contentType("application/json")
                 .body(new JsonObject().put("service", SID).put("function", 1).encode())
                 .when().post("/matrix/v1/modbus/service/invoke/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
@@ -244,7 +244,7 @@ class ModbusServiceResourceTest {
     void invoke_notMember_returnsError() {
         denySpaceMember();
 
-        given().header("X-Org-Id", ORG).contentType("application/json")
+        given().contentType("application/json")
                 .body(new JsonObject().put("service", SID).put("function", 1).encode())
                 .when().post("/matrix/v1/modbus/service/invoke/{spaceId}", SPACE_ID)
                 .then().statusCode(200)

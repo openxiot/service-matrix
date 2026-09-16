@@ -93,7 +93,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("[{\"did\":\"d1\",\"key\":\"k1\"}]")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
@@ -114,7 +113,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("[{\"did\":\"d1\",\"key\":\"k1\",\"type\":\"sensor\"}]")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
@@ -128,7 +126,6 @@ class DeviceResourceTest {
         // body 由 List<DeviceAddRequest> 参数反序列化，不是数组时由框架直接 400（不再走 OxResponse）
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("\"not-json\"")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
@@ -140,7 +137,6 @@ class DeviceResourceTest {
     void addDevices_emptyBody_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .when().post("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -164,7 +160,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"did\":\"abc\",\"key\":\"k1\"}")
                 .when().post("/matrix/v1/device/one/{spaceId}", "sid")
                 .then()
@@ -178,7 +173,6 @@ class DeviceResourceTest {
     void addOne_missingFields_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"key\":\"k1\"}")
                 .when().post("/matrix/v1/device/one/{spaceId}", "sid")
                 .then()
@@ -203,7 +197,6 @@ class DeviceResourceTest {
                 .thenReturn(Uni.createFrom().item(List.of(device)));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -239,7 +232,6 @@ class DeviceResourceTest {
                 .thenReturn(Uni.createFrom().item(1L));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .queryParam("did", "d1", "d2")
                 .when().delete("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
@@ -264,7 +256,6 @@ class DeviceResourceTest {
                 .thenReturn(Uni.createFrom().item(1L));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/device/one/{spaceId}/{did}", "sid", "d1")
                 .then()
                 .statusCode(200)
@@ -285,7 +276,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"spaceId\":\"new-space\",\"dids\":[\"d1\",\"d2\"]}")
                 .when().put("/matrix/v1/device/many/space")
                 .then()
@@ -341,7 +331,6 @@ class DeviceResourceTest {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -363,7 +352,6 @@ class DeviceResourceTest {
                 .thenReturn(Uni.createFrom().item(new JsonArray()));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/device/shadows/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -396,7 +384,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":4.0,\"y\":0.5,\"z\":2.0,\"ry\":1.57}")
                 .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
@@ -419,7 +406,6 @@ class DeviceResourceTest {
     void setAnchor_missingModel_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
@@ -443,7 +429,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
@@ -462,7 +447,6 @@ class DeviceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
@@ -480,7 +464,6 @@ class DeviceResourceTest {
         when(deviceService.clearAnchor("d1")).thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
                 .statusCode(200)
@@ -496,7 +479,6 @@ class DeviceResourceTest {
         when(deviceService.getByDeviceId("d1")).thenReturn(Uni.createFrom().nullItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
                 .then()
                 .statusCode(200)

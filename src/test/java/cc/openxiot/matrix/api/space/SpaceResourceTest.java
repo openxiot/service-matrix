@@ -75,7 +75,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/space/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -89,7 +88,6 @@ class SpaceResourceTest {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/space/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -272,7 +270,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().item(true));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/space/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -292,7 +289,6 @@ class SpaceResourceTest {
                         new IllegalArgumentException("Cannot delete space with children")));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/space/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -312,7 +308,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().item(space));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .contentType(ContentType.JSON)
                 .body("{\"id\":\"507f1f77bcf86cd799439011\",\"name\":\"renamed\"}")
                 .when().put("/matrix/v1/space/one")
@@ -334,7 +329,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().item(List.of(root)));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/space/tree/{rootId}", "root-id")
                 .then()
                 .statusCode(200)
@@ -360,7 +354,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().item(List.of()));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/space/graph/{rootId}", "root-id")
                 .then()
                 .statusCode(200)
@@ -383,7 +376,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .contentType(ContentType.JSON)
                 .body("{\"memberId\": \"m1\", \"role\": \"admin\"}")
                 .when().put("/matrix/v1/space/{rootId}/access", "root-id")
@@ -403,7 +395,6 @@ class SpaceResourceTest {
                 .thenThrow(new IllegalArgumentException("No access"));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .contentType(ContentType.JSON)
                 .body("{\"memberId\": \"m1\", \"role\": \"admin\"}")
                 .when().put("/matrix/v1/space/{rootId}/access", "root-id")
@@ -423,7 +414,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .contentType(ContentType.JSON)
                 .body("{\"role\": \"admin\"}")
                 .when().put("/matrix/v1/space/{rootId}/access", "root-id")
@@ -445,7 +435,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .contentType(ContentType.JSON)
                 .body("{\"memberId\": \"m1\", \"remark\": \"对接人\"}")
                 .when().put("/matrix/v1/space/{rootId}/access", "root-id")
@@ -468,7 +457,6 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .queryParam("memberId", "test-user")
                 .when().delete("/matrix/v1/space/{rootId}/access", "root-id")
                 .then()
@@ -488,7 +476,6 @@ class SpaceResourceTest {
                 .thenThrow(new IllegalArgumentException("No access"));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .queryParam("memberId", "m1")
                 .when().delete("/matrix/v1/space/{rootId}/access", "root-id")
                 .then()
@@ -502,7 +489,11 @@ class SpaceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void setAnchor_succeeds() {
+    void setAnchor_succeeds_withoutOrgIdHeader() {
+        // 就是用户报的那个场景：组织建的项目（org-1 的管理员），客户端**不发** X-Org-Id。
+        // 端点从前会拿请求头去比对空间上的组织条目，比对不上就报 OrgId does not match the space；
+        // 现在这个头既不声明也不参与判定，这条用例就是它的回归测试。
+        // （判定本身在 OrgAccessServiceTest 里逐条覆盖，这里只管「接口收不收这个头」。）
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
         when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -511,7 +502,6 @@ class SpaceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1.5,\"y\":2.25,\"z\":-3.0}")
                 .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
@@ -536,7 +526,6 @@ class SpaceResourceTest {
     void setAnchor_missingRev_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
@@ -553,7 +542,6 @@ class SpaceResourceTest {
     void setAnchor_blankModel_returnsError() {
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"  \",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
@@ -570,7 +558,6 @@ class SpaceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
@@ -590,7 +577,6 @@ class SpaceResourceTest {
 
         given()
                 .contentType(ContentType.JSON)
-                .header("X-Org-Id", "org-1")
                 .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
                 .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
@@ -609,7 +595,6 @@ class SpaceResourceTest {
         when(spaceService.clearAnchor("sid")).thenReturn(Uni.createFrom().voidItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
                 .statusCode(200)
@@ -624,7 +609,6 @@ class SpaceResourceTest {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().delete("/matrix/v1/space/one/{spaceId}/anchor", "sid")
                 .then()
                 .statusCode(200)

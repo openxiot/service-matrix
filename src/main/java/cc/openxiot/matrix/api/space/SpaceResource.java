@@ -66,7 +66,7 @@ public class SpaceResource extends AbstractResource {
             SpaceEntity space
     ) {
         if (space.parentId != null && !space.parentId.isBlank()) {
-            return getSpaceIfAdmin(space.parentId, orgId)
+            return getSpaceIfAdmin(space.parentId)
                     .chain(ignored -> service.create(space).map(OxResponse::ok))
                     .onFailure(IllegalArgumentException.class)
                     .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -92,10 +92,9 @@ public class SpaceResource extends AbstractResource {
     @Path("/one/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> removeOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        return getSpaceIfAdmin(spaceId, orgId)
+        return getSpaceIfAdmin(spaceId)
                 .chain(existing -> service.delete(spaceId))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -107,14 +106,13 @@ public class SpaceResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     @Consumes(MediaType.APPLICATION_JSON)
     public Uni<Response> updateOne(
-            @HeaderParam("X-Org-Id") String orgId,
             SpaceEntity space
     ) {
         if (space.id == null) {
             return Uni.createFrom().item(OxResponse.error("Space id is required"));
         }
 
-        return getSpaceIfAdmin(space.id.toString(), orgId)
+        return getSpaceIfAdmin(space.id.toString())
                 .chain(existing -> service.update(space))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -132,7 +130,6 @@ public class SpaceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> setAnchor(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             ModelAnchor anchor
     ) {
@@ -142,7 +139,7 @@ public class SpaceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("anchor.model and anchor.rev are required"));
         }
 
-        return getSpaceIfAdmin(spaceId, orgId)
+        return getSpaceIfAdmin(spaceId)
                 .chain(space -> service.setAnchor(spaceId, anchor))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -154,10 +151,9 @@ public class SpaceResource extends AbstractResource {
     @Path("/one/{spaceId}/anchor")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> clearAnchor(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        return getSpaceIfAdmin(spaceId, orgId)
+        return getSpaceIfAdmin(spaceId)
                 .chain(space -> service.clearAnchor(spaceId))
                 .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -168,10 +164,9 @@ public class SpaceResource extends AbstractResource {
     @Path("/one/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        return getSpaceIfMember(spaceId, orgId)
+        return getSpaceIfMember(spaceId)
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -202,10 +197,9 @@ public class SpaceResource extends AbstractResource {
     @Path("/tree/{rootId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getTree(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId
     ) {
-        return getSpaceIfMember(rootId, orgId)
+        return getSpaceIfMember(rootId)
                 .chain(ignored -> service.getDescendants(rootId))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -216,10 +210,9 @@ public class SpaceResource extends AbstractResource {
     @Path("/graph/{rootId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getGraph(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("rootId") String rootId
     ) {
-        return getSpaceIfMember(rootId, orgId)
+        return getSpaceIfMember(rootId)
                 .chain(ignored -> service.getDescendants(rootId))
                 .chain(spaces -> {
                     // 设备与服务都按空间取：同一个空间一次查询，两个列表并行，再各自拍平成一张表。
@@ -250,26 +243,23 @@ public class SpaceResource extends AbstractResource {
                 .map(lists -> lists.stream().flatMap(List::stream).toList());
     }
 
-    private Uni<SpaceEntity> getSpaceIfMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> getSpaceIfMember(String spaceId) {
         return service.getById(spaceId)
                 .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 }));
     }
 
-    private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId, String orgId) {
+    private Uni<SpaceEntity> getSpaceIfAdmin(String spaceId) {
         return service.getById(spaceId)
                 .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-                    // 同上：orgId 不再进判定。
                     return orgAccessService.checkSpaceAdmin(space, getUserId())
                             .map(ignored -> space);
                 }));

@@ -31,8 +31,7 @@ import org.jboss.logging.Logger;
  *
  * <p>{@code spaceId} 只作**鉴权锚点**：判定通过后一律按 id 操作，不再校验「服务是否真属于该空间」
  * ——与 {@code DeviceResource} 的 {@code spaceId} 一样（前端统一传当前项目根空间）。
- * {@code X-Org-Id} 头在增删改上完全不需要 —— 判定只读空间自己，这个参数（连同 {@code @HeaderParam}）
- * 是待摘的遗留。</p>
+ * 本资源**不收** {@code X-Org-Id}：判定只读空间自己的 accesses。</p>
  *
  * <p>invoke 一次调用一个 function（一次父设备往返），返回「字段 → 值」；写方法没有读值，
  * 返回空对象。</p>
@@ -66,11 +65,10 @@ public class ModbusServiceResource extends AbstractResource {
     @Path("/many/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> listBySpace(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
         logger.infov("list modbus services, space: {0}", spaceId);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> service.listBySpaceId(spaceId))
                 .map(list -> OxResponse.ok(ModbusServiceCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
@@ -82,12 +80,11 @@ public class ModbusServiceResource extends AbstractResource {
     @Path("/parent/{spaceId}/{did}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> listByParent(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
         logger.infov("list modbus services, space: {0}, parent: {1}", spaceId, did);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> service.listByParent(did))
                 .map(list -> OxResponse.ok(ModbusServiceCodec.encode(list)))
                 .onFailure(IllegalArgumentException.class)
@@ -98,12 +95,11 @@ public class ModbusServiceResource extends AbstractResource {
     @Path("/one/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("id") String id
     ) {
         logger.infov("get modbus service, space: {0}, id: {1}", spaceId, id);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> service.get(id))
                 .map(found -> OxResponse.ok(ModbusServiceCodec.encode(found)))
                 .onFailure(IllegalArgumentException.class)
@@ -115,7 +111,6 @@ public class ModbusServiceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> createOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             ModbusService body
     ) {
@@ -124,9 +119,9 @@ public class ModbusServiceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         Person who = currentUser();
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(ignored -> {
-                    // 鉴权按空间判，X-Org-Id 用不上；服务本身也不再记 org（归属是设备的根空间，见 ManipulationService）
+                    // 服务本身不记 org：归属是设备的根空间，见 ManipulationService
                     body.creator = who;
                     body.updater = who;
                     return service.create(body);
@@ -141,7 +136,6 @@ public class ModbusServiceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> updateOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("id") String id,
             ModbusService body
@@ -151,7 +145,7 @@ public class ModbusServiceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         body.updater = currentUser();
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(ignored -> service.update(id, body))
                 .map(updated -> OxResponse.ok(ModbusServiceCodec.encode(updated)))
                 .onFailure(IllegalArgumentException.class)
@@ -162,12 +156,11 @@ public class ModbusServiceResource extends AbstractResource {
     @Path("/one/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> deleteOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("id") String id
     ) {
         logger.infov("delete modbus service, space: {0}, id: {1}", spaceId, id);
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(ignored -> service.deleteById(id))
                 .map(v -> OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
@@ -178,7 +171,7 @@ public class ModbusServiceResource extends AbstractResource {
      * 调用一个方法：body {@code {"service": "<服务 id>", "function": <方法序号>}}。
      * 返回该方法的「字段 → 值」（写方法为空对象）。
      *
-     * <p>传给 manipulation 的归属用**根空间 id**（不是请求头里的 orgId）：设备归属是按根空间记的，
+     * <p>传给 manipulation 的归属用**根空间 id**（不是调用方所在的组织）：设备归属是按根空间记的，
      * 见 {@link cc.openxiot.matrix.api.device.manipulation.ManipulationService}。这里的 spaceId 可以
      * 是根下的任意一级子空间，取根即可。</p>
      */
@@ -187,7 +180,6 @@ public class ModbusServiceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> invoke(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             InvokeModbusServiceRequest req
     ) {
@@ -196,7 +188,7 @@ public class ModbusServiceResource extends AbstractResource {
         }
         logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}",
                 spaceId, req.service, req.function);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.function))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -206,27 +198,24 @@ public class ModbusServiceResource extends AbstractResource {
     // -- helper methods --
 
     /** 空间管理员（增删改）：空间不存在按「无权限」处理，不区分 404（与 DeviceResource 同口径）。 */
-    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceAdmin(space, getUserId())
                             .map(ignored -> space);
                 });
     }
 
     /** 空间成员（查询与 invoke）。 */
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // 同上：orgId 不再进判定。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });

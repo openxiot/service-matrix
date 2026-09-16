@@ -18,7 +18,6 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -82,11 +81,10 @@ public class ModbusPollResource extends AbstractResource {
     @Path("/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> list(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
         logger.infov("list modbus poll tasks, space: {0}", spaceId);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> serviceService.getBriefBySpaceId(spaceId))
                 .chain(briefs -> {
                     Map<String, String> nameById = new HashMap<>();
@@ -130,14 +128,12 @@ public class ModbusPollResource extends AbstractResource {
         return body;
     }
 
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });

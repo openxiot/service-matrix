@@ -11,7 +11,6 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -74,13 +73,12 @@ public class StatisticsResource extends AbstractResource {
     @Path("/overview/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> overview(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to
     ) {
         logger.infov("query statistics overview, space: {0}", spaceId);
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.overview(spaceId, millis(from), millis(to)))
                 .map(overview -> OxResponse.ok(StatisticsCodec.encode(overview)))
                 .onFailure(IllegalArgumentException.class)
@@ -90,14 +88,12 @@ public class StatisticsResource extends AbstractResource {
     // -- helper methods --
 
     /** 空间成员（看板是只读的，与告警清单同口径：成员即可，不需要管理员）。 */
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });

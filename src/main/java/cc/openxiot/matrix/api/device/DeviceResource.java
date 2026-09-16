@@ -64,7 +64,6 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> addOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             DeviceAddRequest req
     ) {
@@ -72,7 +71,7 @@ public class DeviceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("did and key are required"));
         }
 
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(space -> addDevice(req, space))
                 .chain(entity -> deviceService.save(entity))
                 .map(OxResponse::ok)
@@ -90,11 +89,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/one/{spaceId}/{did}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> removeOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(space -> manipulationService.removeDevice(space.rootSpaceId(), did))
                 // 级联清理该设备下的 Modbus 服务（按 device.did 匹配，不限组织）：
                 // 服务先删、设备行后删，任一步失败整链失败还能重试，不会留下删不掉的服务
@@ -109,11 +107,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/one/{spaceId}/{did}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getOne(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> deviceService.getByDeviceId(did))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -131,7 +128,6 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> setAnchor(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did,
             ModelAnchor anchor
@@ -142,7 +138,7 @@ public class DeviceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("anchor.model and anchor.rev are required"));
         }
 
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(ignored -> requireDevice(did))
                 .chain(ignored -> deviceService.setAnchor(did, anchor))
                 .replaceWith(OxResponse.ok())
@@ -155,11 +151,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/one/{spaceId}/{did}/anchor")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> clearAnchor(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @PathParam("did") String did
     ) {
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(ignored -> requireDevice(did))
                 .chain(ignored -> deviceService.clearAnchor(did))
                 .replaceWith(OxResponse.ok())
@@ -183,7 +178,6 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> addMany(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             List<DeviceAddRequest> req
     ) {
@@ -191,7 +185,7 @@ public class DeviceResource extends AbstractResource {
             return Uni.createFrom().item(OxResponse.error("devices are required"));
         }
 
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(space -> addDevices(req, space))
                 .chain(entities -> deviceService.saveAll(entities))
                 .map(OxResponse::ok)
@@ -209,11 +203,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/many/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> removeDevices(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        return requireSpaceAdmin(spaceId, orgId)
+        return requireSpaceAdmin(spaceId)
                 .chain(space -> manipulationService.removeDevices(space.rootSpaceId(), did))
                 // 级联清理这批设备下的 Modbus 服务（一次删完，不限组织）
                 .chain(ignore -> modbusServiceService.deleteByDeviceDids(did))
@@ -228,14 +221,13 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> updateSpace(
-            @HeaderParam("X-Org-Id") String orgId,
             DeviceUpdateSpaceRequest req
     ) {
         if (req == null || req.spaceId == null || req.spaceId.isBlank()) {
             return Uni.createFrom().item(OxResponse.error("spaceId is required"));
         }
 
-        return requireSpaceAdmin(req.spaceId, orgId)
+        return requireSpaceAdmin(req.spaceId)
                 .chain(space -> updateSpaceDevices(req, space.rootSpaceId()))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -245,10 +237,9 @@ public class DeviceResource extends AbstractResource {
     @Path("/many/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getDevices(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(ignored -> deviceService.getBySpaceId(spaceId))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -259,11 +250,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/shadows/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getShadows(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("did") List<String> did
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(space -> fetchShadows(space, did))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -274,11 +264,10 @@ public class DeviceResource extends AbstractResource {
     @Path("/properties/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> getProperties(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             @QueryParam("pid") List<String> pid
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(space -> manipulationService.getProperties(space.rootSpaceId(), pid))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -290,11 +279,10 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> setProperties(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(space -> manipulationService.setProperties(space.rootSpaceId(), body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -306,11 +294,10 @@ public class DeviceResource extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> invokeActions(
-            @HeaderParam("X-Org-Id") String orgId,
             @PathParam("spaceId") String spaceId,
             String body
     ) {
-        return requireSpaceMember(spaceId, orgId)
+        return requireSpaceMember(spaceId)
                 .chain(space -> manipulationService.invokeActions(space.rootSpaceId(), body))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -355,26 +342,23 @@ public class DeviceResource extends AbstractResource {
         return Uni.createFrom().item(OxResponse.ok());
     }
 
-    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
-                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
                     return orgAccessService.checkSpaceAdmin(space, getUserId())
                             .map(ignored -> space);
                 });
     }
 
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId, String orgId) {
+    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    // 同上：orgId 不再进判定。
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });
