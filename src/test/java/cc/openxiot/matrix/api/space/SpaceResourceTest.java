@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.space;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -14,12 +15,17 @@ import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @QuarkusTest
@@ -477,5 +483,142 @@ class SpaceResourceTest {
                 .then()
                 .statusCode(200)
                 .body("success", is(false));
+    }
+
+    /* ------------------------------------------------------------------------------------------
+     * 3D 锚点
+     * ------------------------------------------------------------------------------------------*/
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_succeeds() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(spaceService.setAnchor(eq("sid"), any()))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1.5,\"y\":2.25,\"z\":-3.0}")
+                .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+
+        ArgumentCaptor<ModelAnchor> captor = ArgumentCaptor.forClass(ModelAnchor.class);
+        verify(spaceService).setAnchor(eq("sid"), captor.capture());
+        ModelAnchor sent = captor.getValue();
+        assertEquals("001", sent.model);
+        assertEquals("001.1", sent.rev);
+        assertEquals(1.5, sent.x);
+        assertEquals(2.25, sent.y);
+        assertEquals(-3.0, sent.z);
+        // 没传就是 null，不是 0 —— 0 会被当成「真的朝正北」，而「没朝向」和「朝北」是两回事
+        assertNull(sent.ry);
+    }
+
+    /** model / rev 缺一不可：它们是判定锚点在模型重导出后是否还有效的唯一依据。 */
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_missingRev_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        // 校验没过就不该继续往下走，更不该写库
+        verify(spaceService, never()).setAnchor(anyString(), any());
+    }
+
+    /** 空白 rev 跟缺字段一样拦掉 —— 前端塞 `""` 比漏字段更常见。 */
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_blankModel_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"  \",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(spaceService, never()).setAnchor(anyString(), any());
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_spaceNotFound_returnsError() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(spaceService, never()).setAnchor(anyString(), any());
+    }
+
+    /** 不是管理员就写不了锚点（普通成员点「标注空间」会走到这里）。 */
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_notAdmin_returnsError() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("No access")));
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(spaceService, never()).setAnchor(anyString(), any());
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void clearAnchor_succeeds() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+        when(spaceService.clearAnchor("sid")).thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .when().delete("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+
+        verify(spaceService).clearAnchor("sid");
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void clearAnchor_spaceNotFound_returnsError() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().nullItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .when().delete("/matrix/v1/space/one/{spaceId}/anchor", "sid")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(spaceService, never()).clearAnchor(anyString());
     }
 }

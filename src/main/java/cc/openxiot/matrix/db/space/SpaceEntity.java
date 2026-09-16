@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.space;
 
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
@@ -46,6 +47,16 @@ public class SpaceEntity extends ReactivePanacheMongoEntity {
 
     @Schema(description = "扩展属性", required = false)
     public Map<String, Object> attributes;
+
+    /**
+     * 这个空间在 3D 模型里的位置。
+     *
+     * <p><b>只能经专用端点写</b>（{@code PUT /matrix/v1/space/one/{spaceId}/anchor}），
+     * 不要加进 {@link cc.openxiot.matrix.api.space.SpaceService#update} 的复制列表 ——
+     * 那个接口是整体语义，不认识本字段的老客户端（比如安卓）改一次空间名就会把它抹成 null。</p>
+     */
+    @Schema(description = "在 3D 模型中的位置", required = false)
+    public ModelAnchor anchor;
 
     @Schema(description = "创建时间", required = true)
     public LocalDateTime createTime;

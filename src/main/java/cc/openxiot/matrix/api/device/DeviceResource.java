@@ -9,6 +9,7 @@ import cc.openxiot.matrix.api.device.request.DeviceUpdateSpaceRequest;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceEntityMapper;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -117,6 +118,64 @@ public class DeviceResource extends AbstractResource {
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /**
+     * 写入该设备在 3D 模型里的位置。
+     *
+     * <p>本实体除了 {@code space} 之外没有任何写接口，所以标锚点必须单开一个 —— 也用不着
+     * 走整体语义，只动 {@code anchor} 一个字段。</p>
+     */
+    @PUT
+    @Path("/one/{spaceId}/{did}/anchor")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> setAnchor(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            @PathParam("did") String did,
+            ModelAnchor anchor
+    ) {
+        // model / rev 是判定锚点是否还有效的依据，缺了这条锚点就永远不可能被渲染
+        if (anchor == null || anchor.model == null || anchor.model.isBlank()
+                || anchor.rev == null || anchor.rev.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("anchor.model and anchor.rev are required"));
+        }
+
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> requireDevice(did))
+                .chain(ignored -> deviceService.setAnchor(did, anchor))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /** 清除该设备的 3D 位置，退回它所属空间的锚点。 */
+    @DELETE
+    @Path("/one/{spaceId}/{did}/anchor")
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> clearAnchor(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            @PathParam("did") String did
+    ) {
+        return requireSpaceAdmin(spaceId, orgId)
+                .chain(ignored -> requireDevice(did))
+                .chain(ignored -> deviceService.clearAnchor(did))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /** 设备不存在就让整条链失败，别静默返回「成功」—— $set 匹配不到时 modifiedCount 是 0，看不出来。 */
+    private Uni<DeviceEntity> requireDevice(String did) {
+        return deviceService.getByDeviceId(did)
+                .map(device -> {
+                    if (device == null) {
+                        throw new IllegalArgumentException("Device not found: " + did);
+                    }
+                    return device;
+                });
     }
 
     @POST

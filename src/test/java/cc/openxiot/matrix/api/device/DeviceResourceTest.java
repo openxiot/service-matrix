@@ -8,6 +8,7 @@ import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
+import cc.openxiot.matrix.db.ModelAnchor;
 import cn.geekcity.xiot.spec.device.Device;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
@@ -20,13 +21,16 @@ import io.restassured.http.ContentType;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import io.vertx.core.json.JsonArray;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -350,5 +354,140 @@ class DeviceResourceTest {
                 .then()
                 .statusCode(200)
                 .body("success", is(true));
+    }
+
+    /* ------------------------------------------------------------------------------------------
+     * 3D 锚点
+     * ------------------------------------------------------------------------------------------*/
+
+    private static DeviceEntity device(String did) {
+        DeviceEntity d = new DeviceEntity();
+        d.did = did;
+        return d;
+    }
+
+    private void adminOk() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().voidItem());
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_succeeds() {
+        adminOk();
+        when(deviceService.getByDeviceId("d1")).thenReturn(Uni.createFrom().item(device("d1")));
+        when(deviceService.setAnchor(eq("d1"), any(ModelAnchor.class)))
+                .thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":4.0,\"y\":0.5,\"z\":2.0,\"ry\":1.57}")
+                .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+
+        ArgumentCaptor<ModelAnchor> captor = ArgumentCaptor.forClass(ModelAnchor.class);
+        verify(deviceService).setAnchor(eq("d1"), captor.capture());
+        ModelAnchor sent = captor.getValue();
+        assertEquals("001", sent.model);
+        assertEquals("001.1", sent.rev);
+        assertEquals(4.0, sent.x);
+        assertEquals(0.5, sent.y);
+        assertEquals(2.0, sent.z);
+        assertEquals(1.57, sent.ry);
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_missingModel_returnsError() {
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(deviceService, never()).setAnchor(anyString(), any(ModelAnchor.class));
+    }
+
+    /**
+     * 设备不存在要报错，不能静默成功。
+     *
+     * <p>{@code $set} 匹配不到文档时 modifiedCount 就是 0，不报错的话前端会显示「已保存」，
+     * 但刷新后标记消失 —— 这种 bug 最难查。</p>
+     */
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_deviceNotFound_returnsError() {
+        adminOk();
+        when(deviceService.getByDeviceId("d1")).thenReturn(Uni.createFrom().nullItem());
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(deviceService, never()).setAnchor(anyString(), any(ModelAnchor.class));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void setAnchor_notAdmin_returnsError() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("No access")));
+
+        given()
+                .contentType(ContentType.JSON)
+                .header("X-Org-Id", "org-1")
+                .body("{\"model\":\"001\",\"rev\":\"001.1\",\"x\":1,\"y\":2,\"z\":3}")
+                .when().put("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(deviceService, never()).setAnchor(anyString(), any(ModelAnchor.class));
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void clearAnchor_succeeds() {
+        adminOk();
+        when(deviceService.getByDeviceId("d1")).thenReturn(Uni.createFrom().item(device("d1")));
+        when(deviceService.clearAnchor("d1")).thenReturn(Uni.createFrom().voidItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .when().delete("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(true));
+
+        verify(deviceService).clearAnchor("d1");
+    }
+
+    @Test
+    @TestSecurity(user = "test-user", roles = {OxRole.USER})
+    void clearAnchor_deviceNotFound_returnsError() {
+        adminOk();
+        when(deviceService.getByDeviceId("d1")).thenReturn(Uni.createFrom().nullItem());
+
+        given()
+                .header("X-Org-Id", "org-1")
+                .when().delete("/matrix/v1/device/one/{spaceId}/{did}/anchor", "sid", "d1")
+                .then()
+                .statusCode(200)
+                .body("success", is(false));
+
+        verify(deviceService, never()).clearAnchor(anyString());
     }
 }

@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.api.device;
 
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -56,6 +57,9 @@ public class DeviceService {
      * 每次调用都会报 "device not owned"，看起来像设备全坏了。要跨就先删掉再添加。</p>
      *
      * <p>设备还没有落点（{@code device.space} 为空）时不拦：那是从没分配过的设备，没有「原根空间」可言。</p>
+     *
+     * <p>搬完会清掉设备自己的 3D 锚点（见方法内注释）：锚点记的是「在原来那个位置」，
+     * 留着只会把设备画到错误的楼上。</p>
      */
     public Uni<Void> updateSpace(String did, String spaceId, String rootSpaceId) {
         return deviceRepository.findByDeviceId(did)
@@ -69,6 +73,9 @@ public class DeviceService {
                                 space.spaceId = spaceId;
                                 space.rootId = rootSpaceId;
                                 device.space = space;
+                                // 换空间就丢掉自己的 3D 锚点：那是「在原来那个位置」的坐标，
+                                // 搬走之后留着只会把设备画到错误的楼上。清掉即退回所属空间的锚点。
+                                device.anchor = null;
                                 return deviceRepository.persistOrUpdate(device).replaceWithVoid();
                             });
                 });
@@ -96,6 +103,21 @@ public class DeviceService {
                     return null;
                 })
                 .replaceWithVoid();
+    }
+
+    /**
+     * 写入设备的 3D 锚点。
+     *
+     * <p>与 {@link #updateSpace} 分开：那个只会被「移动设备」调到，且会顺带清掉锚点；
+     * 标锚点是独立动作，不该牵动设备的空间归属。</p>
+     */
+    public Uni<Void> setAnchor(String did, ModelAnchor anchor) {
+        return deviceRepository.setAnchor(did, anchor).replaceWithVoid();
+    }
+
+    /** 清除设备的 3D 锚点（退回所属空间的锚点）。 */
+    public Uni<Void> clearAnchor(String did) {
+        return deviceRepository.clearAnchor(did).replaceWithVoid();
     }
 
     public Uni<Long> deleteByDeviceIds(List<String> dids) {

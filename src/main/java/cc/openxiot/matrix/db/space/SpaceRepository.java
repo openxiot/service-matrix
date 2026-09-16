@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.space;
 
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import com.mongodb.client.model.Filters;
@@ -110,6 +111,25 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
                                         Filters.eq("type", SpaceAccessType.USER),
                                         Filters.eq("id", memberId)))),
                         Updates.set("accesses.$.remark", remark))
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /**
+     * 原子写入 3D 锚点（$set）。
+     *
+     * <p>用更新操作符而不是「查出来赋值再存」：锚点只动 {@code anchor} 一个字段，
+     * 跟同时改名字/属性的别的客户端互不覆盖，也不会把整份文档按陈旧副本写回去。</p>
+     */
+    public Uni<Long> setAnchor(String spaceId, ModelAnchor anchor) {
+        return mongoCollection()
+                .updateOne(Filters.eq("_id", new ObjectId(spaceId)), Updates.set("anchor", anchor.toDocument()))
+                .map(UpdateResult::getModifiedCount);
+    }
+
+    /** 原子清除 3D 锚点（$unset）。字段整个移除，不是置 null。 */
+    public Uni<Long> clearAnchor(String spaceId) {
+        return mongoCollection()
+                .updateOne(Filters.eq("_id", new ObjectId(spaceId)), Updates.unset("anchor"))
                 .map(UpdateResult::getModifiedCount);
     }
 

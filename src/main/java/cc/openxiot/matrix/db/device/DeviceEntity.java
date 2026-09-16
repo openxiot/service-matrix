@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.device;
 
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.SpaceOn;
 
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntityBase;
@@ -48,6 +49,16 @@ public class DeviceEntity extends ReactivePanacheMongoEntityBase {
 
     @Schema(description = "设备所在的空间", required = false)
     public SpaceOn space;
+
+    /**
+     * 这台设备在 3D 模型里的位置。为空时前端落到它所属空间的锚点上。
+     *
+     * <p><b>只能经专用端点写</b>（{@code PUT /matrix/v1/device/one/{spaceId}/{did}/anchor}）——
+     * 本实体除了 {@code space} 之外没有任何写接口，{@code DeviceService.updateSpace}
+     * 也刻意不碰本字段。</p>
+     */
+    @Schema(description = "在 3D 模型中的位置", required = false)
+    public ModelAnchor anchor;
 
     @Schema(description = "创建时间", required = false)
     public Date create;

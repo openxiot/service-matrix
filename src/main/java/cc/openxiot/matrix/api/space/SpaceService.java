@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.matrix.api.space.access.AccountUserLookup;
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
@@ -264,6 +265,21 @@ public class SpaceService {
 
                     return spaceRepository.persistOrUpdateEntity(existing);
                 });
+    }
+
+    /**
+     * 写入 3D 锚点。
+     *
+     * <p>与 {@link #update} 是两回事，别合并：{@code update} 是整体语义（谁调都得把整份实体发过来），
+     * 而锚点必须能被「只知道锚点的客户端」单独写、单独清，且不被别的客户端顺手抹掉。</p>
+     */
+    public Uni<Void> setAnchor(String spaceId, ModelAnchor anchor) {
+        return spaceRepository.setAnchor(spaceId, anchor).replaceWithVoid();
+    }
+
+    /** 清除 3D 锚点（只删字段，不删空间）。 */
+    public Uni<Void> clearAnchor(String spaceId) {
+        return spaceRepository.clearAnchor(spaceId).replaceWithVoid();
     }
 
     public Uni<Boolean> delete(String spaceId) {

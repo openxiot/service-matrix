@@ -8,6 +8,7 @@ import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
+import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
@@ -116,6 +117,49 @@ public class SpaceResource extends AbstractResource {
         return getSpaceIfAdmin(space.id.toString(), orgId)
                 .chain(existing -> service.update(space))
                 .map(OxResponse::ok)
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /**
+     * 写入该空间在 3D 模型里的位置。
+     *
+     * <p>刻意不走 {@link #updateOne}：那个接口是整体语义，不认识 {@code anchor} 的客户端
+     * （比如安卓只发 id + name）改一次空间名就会把锚点抹成 null。这里只动 {@code anchor} 一个字段。</p>
+     */
+    @PUT
+    @Path("/one/{spaceId}/anchor")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> setAnchor(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId,
+            ModelAnchor anchor
+    ) {
+        // model / rev 是判定锚点是否还有效的依据，缺了这条锚点就永远不可能被渲染
+        if (anchor == null || anchor.model == null || anchor.model.isBlank()
+                || anchor.rev == null || anchor.rev.isBlank()) {
+            return Uni.createFrom().item(OxResponse.error("anchor.model and anchor.rev are required"));
+        }
+
+        return getSpaceIfAdmin(spaceId, orgId)
+                .chain(space -> service.setAnchor(spaceId, anchor))
+                .replaceWith(OxResponse.ok())
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    /** 清除该空间的 3D 位置（只删字段，不删空间）。 */
+    @DELETE
+    @Path("/one/{spaceId}/anchor")
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> clearAnchor(
+            @HeaderParam("X-Org-Id") String orgId,
+            @PathParam("spaceId") String spaceId
+    ) {
+        return getSpaceIfAdmin(spaceId, orgId)
+                .chain(space -> service.clearAnchor(spaceId))
+                .replaceWith(OxResponse.ok())
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
