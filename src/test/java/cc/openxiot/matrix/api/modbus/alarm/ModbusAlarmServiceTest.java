@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
@@ -273,6 +274,32 @@ class ModbusAlarmServiceTest {
         order.verify(alarmRepo).closeByKeys(eq(SERVICE_ID), eq(FUNCTION_INDEX), eq(List.of("进水温度")),
                 eq(ModbusServiceAlarm.CLOSE_SUPERSEDED), any());
         order.verify(alarmRepo).insertOpen(any());
+    }
+
+    @Test
+    void handledRowIsClosedBeforeTheNewOneIsInserted() {
+        // 与上一条同一性质、同一理由（先关再插，否则插入撞唯一索引被静默吞掉），而这里的代价
+        // 更容易被当成 bug：用户刚点完「处理」，下一秒那条就整个不见了
+        ModbusServiceFieldAlarm rule = alarm(">", 80.0);
+        when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(openHandled("进水温度", rule)));
+        when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
+        when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
+                .thenReturn(Uni.createFrom().item(1L));
+
+        service.evaluate(modbusService(), function(field("进水温度", rule)),
+                sample("进水温度", 99.0)).await().indefinitely();
+
+        InOrder order = inOrder(alarmRepo);
+        order.verify(alarmRepo).closeByKeys(eq(SERVICE_ID), eq(FUNCTION_INDEX), eq(List.of("进水温度")),
+                eq(ModbusServiceAlarm.CLOSE_HANDLED), any());
+        order.verify(alarmRepo).insertOpen(any());
+
+        // 新开的那条**显式**是未处理（不是留空）：要再点一次「处理」才算认领 —— 这正是这条改动的意思，
+        // 也让「未处理」的两种表示（null 与 false）在库里不会混着出现
+        ModbusServiceAlarm row = insertedRow();
+        assertEquals(Boolean.FALSE, row.handled);
+        assertEquals(rule.id, row.ruleId);
     }
 
     // ===== 判不了：说一声，但只说一次 =====
@@ -575,11 +602,21 @@ class ModbusAlarmServiceTest {
         return values;
     }
 
-    /** 开着的行：{@code 出值名, 那条规则} 成对给；不给就是「一条开着的都没有」。 */
-    private static Map<String, String> open(Object... pairs) {
-        Map<String, String> open = new LinkedHashMap<>();
+    /** 开着的行（**未处理**）：{@code 出值名, 那条规则} 成对给；不给就是「一条开着的都没有」。 */
+    private static Map<String, OpenAlarmRule> open(Object... pairs) {
+        return openWith(false, pairs);
+    }
+
+    /** 开着的行、且**已经被处理过** —— 重报那一条分支要用到这个状态。 */
+    private static Map<String, OpenAlarmRule> openHandled(Object... pairs) {
+        return openWith(true, pairs);
+    }
+
+    private static Map<String, OpenAlarmRule> openWith(boolean handled, Object... pairs) {
+        Map<String, OpenAlarmRule> open = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
-            open.put((String) pairs[i], ((ModbusServiceFieldAlarm) pairs[i + 1]).id);
+            ModbusServiceFieldAlarm rule = (ModbusServiceFieldAlarm) pairs[i + 1];
+            open.put((String) pairs[i], new OpenAlarmRule(rule.id, handled));
         }
         return open;
     }

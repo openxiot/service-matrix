@@ -204,6 +204,26 @@ ModbusServiceFieldAlarm id / enabled / compare / threshold / state / level / tex
 
 ## 八、变更记录
 
+### 2026-09-16
+
+* **阈值告警的第四个边沿：`handled == true` 也关旧行、开新行**（`CLOSE_HANDLED`，页面文案
+  「处理后再报」）。起因是一条**语义反了**的现场事实：「处理」的意思是「我知道了，**以后还有
+  越线再提醒我**」，而不是「这事到此为止」；在那之前，一条已处理而未恢复的行会一直挂着挡住
+  后续越限，判定每轮都落在稳态零写那一支，用户再也收不到提醒。改动只有四处：
+  `ModbusServiceAlarm`（加常量）、`ModbusAlarmPolicy`（`judge` 多一支 + `Decision` 多一张
+  `handledCloses`）、`ModbusServiceAlarmRepository`（投影加 `handled`，值型 `String` →
+  `OpenAlarmRule`）、`ModbusAlarmService.apply`（第四段关闭）。三条口径记在这里：
+  * **不动任何已落库的行**：只加了新的关行判据，行上的定义快照 / `handledBy` / `ruleId` 都不改写。
+    旧行留着 `handled=true` 与它的处理人（那是**当时**的记录），新行 `handled=false` 且不带
+    `handledBy` —— 回执不继承，新的一条要重新处理。
+  * **顺序即语义**：`judge` 的 `else if` 链里换规则的检查排在处理检查**之前**（规则换了又恰好
+    处理过 ⇒ 只记 `SUPERSEDED`）；值恢复正常时走 `VALUE` 而不是 `HANDLED`（**值恢复才是实情**）；
+    全 `SKIP` 时什么都不做（截断 / 畸形的应答既不关也不重报）。
+  * **`OpenAlarmRule` 放在 `db` 包**：判定要的资料从「出值名 → ruleId」变成「出值名 →
+    (ruleId, handled)」。放 `api` 会新造一条 `db → api` 的反向依赖（现有的箭头是
+    `ModbusAlarmPolicy` → `db.modbus.service.*`，而 `ModbusServiceAlarmRepository` 一个 `api`
+    包都不 import）。详见 `Modbus-Alarm.md` 第十三节 2026-09-16 那条。
+
 ### 2026-09-14
 
 * **数据看板（首页）的聚合统计接口** `GET /matrix/v1/statistics/overview/{spaceId}`（新包

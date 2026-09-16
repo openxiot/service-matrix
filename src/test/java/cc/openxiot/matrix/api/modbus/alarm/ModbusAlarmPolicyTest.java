@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Decision;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Open;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Verdict;
+import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
@@ -194,6 +195,79 @@ class ModbusAlarmPolicyTest {
         assertEquals(1, replaced.opens().size());
     }
 
+    // ===== 处理过之后再越线：第四个边沿 =====
+
+    @Test
+    void handledRowIsClosedAndReopenedWhileTheSameRuleStillHits() {
+        // 「处理」的意思是「我知道了，以后还有越线再提醒我」，不是「这事到此为止」：
+        // 开着的那条已处理过、而这条规则**还在命中**时，关掉它（HANDLED）并另开一条未处理的新行。
+        // 不这么做的话这一行会一直挂着，把后续每一次越线全挡在门外
+        ModbusServiceFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        ModbusServiceFunction function = function(field("进水温度", rule));
+
+        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0),
+                openHandled("进水温度", rule));
+
+        assertEquals(List.of("进水温度"), decision.handledCloses());
+        assertEquals(List.of("进水温度"), decision.opens().stream().map(Open::field).toList());
+        assertSame(rule, decision.opens().get(0).alarm());
+        assertFalse(decision.isEmpty());
+        // 四个关闭原因互斥：既然记了 HANDLED，就不能同时还是别的
+        assertTrue(decision.valueCloses().isEmpty());
+        assertTrue(decision.supersededCloses().isEmpty());
+        assertTrue(decision.definitionCloses().isEmpty());
+    }
+
+    @Test
+    void handledOnlyReopensWhileTheValueStillCrosses() {
+        ModbusServiceFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        ModbusServiceFunction function = function(field("进水温度", rule));
+
+        // 处理过的那条 + 值已回到正常：关它的理由是**值恢复**（这才是实情），不是「处理过」
+        Decision recovered = ModbusAlarmPolicy.decide(function, sample("进水温度", 79.0),
+                openHandled("进水温度", rule));
+        assertEquals(List.of("进水温度"), recovered.valueCloses());
+        assertTrue(recovered.handledCloses().isEmpty());
+        assertTrue(recovered.opens().isEmpty());
+
+        // 处理过的那条 + 这一帧拿不出可比的值（全 SKIP）：什么都不做 —— 截断的应答既不关也不重报
+        ModbusServiceFieldAlarm broken = withId(alarm("??", 80.0, null), "broken");
+        Decision brokenFrame = ModbusAlarmPolicy.decide(function(field("进水温度", broken)),
+                sample("进水温度", 81.0), openHandled("进水温度", broken));
+        assertTrue(brokenFrame.isEmpty());
+    }
+
+    @Test
+    void aChangedRuleIsSupersededEvenIfTheRowWasHandled() {
+        // 换了规则**又**恰好处理过：只记 SUPERSEDED（更具体的原因）。按 HANDLED 再关一次是重复记账，
+        // 而且会把「是谁接手了」这件事说成「被人处理过」
+        ModbusServiceFieldAlarm old = withId(alarm(">", 80.0, null), "r1");
+        ModbusServiceFieldAlarm winner = withId(level(alarm(">", 60.0, null), "CRITICAL"), "r2");
+
+        Decision decision = ModbusAlarmPolicy.decide(function(field("进水温度", winner)),
+                sample("进水温度", 81.0), openHandled("进水温度", old));
+
+        assertEquals(List.of("进水温度"), decision.supersededCloses());
+        assertTrue(decision.handledCloses().isEmpty());
+        assertEquals(1, decision.opens().size());
+        assertSame(winner, decision.opens().get(0).alarm());
+    }
+
+    @Test
+    void eachHandlingYieldsAtMostOneNewRow() {
+        // 重报是**人驱动**的：没人再点「处理」，第二帧就回到稳态零写。
+        // 上限因此是「越限次数 + 人工处理次数」，不会自激（Modbus-Alarm.md 第十节）
+        ModbusServiceFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        ModbusServiceFunction function = function(field("进水温度", rule));
+        Map<String, OpenAlarmRule> open = openHandled("进水温度", rule);
+
+        Decision first = ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open);
+        assertEquals(List.of("进水温度"), first.handledCloses());
+        apply(first, open);
+        // 新开的那条是未处理的，所以下一帧没有边沿可走
+        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open).isEmpty());
+    }
+
     @Test
     void aHitBeatsASkipInTheSameField() {
         // 同一出值的规则之间可能一条 HIT、另一条判不了（定义与值形态对不上；校验器挡新数据、老数据可能出现）。
@@ -231,7 +305,7 @@ class ModbusAlarmPolicyTest {
         // 将来要加回差，必须先改掉这条测试 —— 让它成为有意为之的决定，而不是顺手加的补丁。
         ModbusServiceFieldAlarm rule = alarm(">", 80.0, null);
         ModbusServiceFunction function = function(field("进水温度", rule));
-        Map<String, String> open = new HashMap<>();
+        Map<String, OpenAlarmRule> open = new HashMap<>();
         List<Boolean> opened = new ArrayList<>();
 
         for (double value : new double[]{81.0, 79.0, 81.0, 79.0, 81.0}) {
@@ -241,7 +315,7 @@ class ModbusAlarmPolicyTest {
         }
 
         assertEquals(List.of(true, false, true, false, true), opened);
-        assertEquals(Map.of("进水温度", rule.id), open);
+        assertEquals(Map.of("进水温度", new OpenAlarmRule(rule.id, false)), open);
     }
 
     @Test
@@ -469,15 +543,18 @@ class ModbusAlarmPolicyTest {
     // ===== 夹具 =====
 
     /** 把判定结果落到「开着的行」上 —— 调用方（告警表）就是这么把它当状态的。 */
-    private static void apply(Decision decision, Map<String, String> open) {
+    private static void apply(Decision decision, Map<String, OpenAlarmRule> open) {
         // 先关后开，与写序同口径：同一个出值被取代时，先落的那条要让位给新开的
         open.keySet().removeAll(decision.valueCloses());
         open.keySet().removeAll(decision.supersededCloses());
         open.keySet().removeAll(decision.definitionCloses());
-        decision.opens().forEach(opened -> open.put(opened.field(), opened.alarm().id));
+        open.keySet().removeAll(decision.handledCloses());
+        // 新开的行一律是**未处理**的：重报之后要重新处理，这正是这条改动的意思
+        decision.opens().forEach(opened ->
+                open.put(opened.field(), new OpenAlarmRule(opened.alarm().id, false)));
     }
 
-    private static Decision decision(ModbusServiceField field, double value, Map<String, String> open) {
+    private static Decision decision(ModbusServiceField field, double value, Map<String, OpenAlarmRule> open) {
         return ModbusAlarmPolicy.decide(function(field), sample(field.field, value), open);
     }
 
@@ -557,11 +634,21 @@ class ModbusAlarmPolicyTest {
         return values;
     }
 
-    /** 开着的行：{@code 出值名, 那条规则} 成对给；不给就是「一条开着的都没有」。 */
-    private static Map<String, String> open(Object... pairs) {
-        Map<String, String> open = new LinkedHashMap<>();
+    /** 开着的行（**未处理**）：{@code 出值名, 那条规则} 成对给；不给就是「一条开着的都没有」。 */
+    private static Map<String, OpenAlarmRule> open(Object... pairs) {
+        return openWith(false, pairs);
+    }
+
+    /** 开着的行、且**已经被处理过** —— 重报那一条分支要用到这个状态（见 {@code judge} 的第三个分支）。 */
+    private static Map<String, OpenAlarmRule> openHandled(Object... pairs) {
+        return openWith(true, pairs);
+    }
+
+    private static Map<String, OpenAlarmRule> openWith(boolean handled, Object... pairs) {
+        Map<String, OpenAlarmRule> open = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
-            open.put((String) pairs[i], ((ModbusServiceFieldAlarm) pairs[i + 1]).id);
+            ModbusServiceFieldAlarm rule = (ModbusServiceFieldAlarm) pairs[i + 1];
+            open.put((String) pairs[i], new OpenAlarmRule(rule.id, handled));
         }
         return open;
     }

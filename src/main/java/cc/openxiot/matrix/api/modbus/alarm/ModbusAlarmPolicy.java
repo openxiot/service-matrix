@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
@@ -57,7 +58,7 @@ public final class ModbusAlarmPolicy {
 
     /** 什么都没发生（绝大多数采集走这条）：调用方应当**一次数据库操作都不做**。 */
     private static final Decision NOTHING =
-            new Decision(List.of(), List.of(), List.of(), List.of(), List.of());
+            new Decision(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
 
     private ModbusAlarmPolicy() {
     }
@@ -98,10 +99,17 @@ public final class ModbusAlarmPolicy {
      *                         {@code closeType = SUPERSEDED}。降级时值并没有回到正常，记 VALUE 是谎话
      * @param definitionCloses 该关的告警（本次采样里有这个出值、但新定义已不再给它配启用的规则）：
      *                         {@code closeType = DEFINITION}。否则那条告警再也判定不到、会永远挂着
+     * @param handledCloses    该关的告警（那条规则**还在命中**，但开着的那行已经被人处理过了）：
+     *                         {@code closeType = HANDLED}。同一次判定里还会有一条同出值的新 {@link Open} ——
+     *                         「处理」的意思是「我知道了，以后还有越线再提醒我」，所以关掉旧的、重开新的
      * @param skips            判不了的规则，**只用来记日志**（见 {@link Skip}）
+     *
+     * <p>四个关闭列表**互斥**：一个出值在一次判定里最多进其中一个（{@link #judge} 每个出值只调一次，
+     * 那里是 {@code if / else if} 链）。所以调用方可以按 closeType 各发一条 {@code updateMany}，
+     * 不必担心同一条行被两个原因先后改两次。</p>
      */
     public record Decision(List<Open> opens, List<String> valueCloses, List<String> supersededCloses,
-                           List<String> definitionCloses, List<Skip> skips) {
+                           List<String> definitionCloses, List<String> handledCloses, List<Skip> skips) {
 
         /**
          * 有没有要**写库**的事；false 时调用方应当一次写操作都不做（稳态走这条）。
@@ -111,7 +119,8 @@ public final class ModbusAlarmPolicy {
          */
         public boolean isEmpty() {
             return opens.isEmpty() && valueCloses.isEmpty()
-                    && supersededCloses.isEmpty() && definitionCloses.isEmpty();
+                    && supersededCloses.isEmpty() && definitionCloses.isEmpty()
+                    && handledCloses.isEmpty();
         }
     }
 
@@ -260,18 +269,20 @@ public final class ModbusAlarmPolicy {
      *
      * @param function        本次调用的方法定义（用它的 response 里的告警配置，**新定义**）
      * @param values          本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
-     * @param openRuleByField 该方法当前**有未恢复告警**的出值 → 那条开着的行上的 {@code ruleId}。
-     *                        无开着的不在表里；值可以是 {@code null}（行上的 {@code ruleId} 缺失，
-     *                        只可能出现在更早的数据里）—— 故调用方要用允许 null 值的 {@code Map}
+     * @param openRuleByField 该方法当前**有未恢复告警**的出值 → 那条开着的行上的
+     *                        {@link OpenAlarmRule}（哪条规则开的、有没有被处理过）。
+     *                        无开着的不在表里；值里的 {@code ruleId} 可以是 {@code null}
+     *                        （行上的 {@code ruleId} 缺失，只可能出现在更早的数据里）——
+     *                        故调用方要用允许 null 值的 {@code Map}
      */
     public static Decision decide(ModbusServiceFunction function,
                                   Map<String, Object> values,
-                                  Map<String, String> openRuleByField) {
+                                  Map<String, OpenAlarmRule> openRuleByField) {
         if (function == null || function.response == null || function.response.isEmpty()) {
             return NOTHING;
         }
         Map<String, Object> vals = values == null ? Map.of() : values;
-        Map<String, String> open = openRuleByField == null ? Map.of() : openRuleByField;
+        Map<String, OpenAlarmRule> open = openRuleByField == null ? Map.of() : openRuleByField;
 
         Acc acc = new Acc();
         // 新定义里配了启用的规则、且本次采样里确实有这个出值：这些键归「值判定」管，
@@ -308,7 +319,7 @@ public final class ModbusAlarmPolicy {
         }
         return new Decision(List.copyOf(acc.opens), List.copyOf(acc.valueCloses),
                 List.copyOf(acc.supersededCloses), List.copyOf(definitionCloses),
-                List.copyOf(acc.skips));
+                List.copyOf(acc.handledCloses), List.copyOf(acc.skips));
     }
 
     /**
@@ -322,8 +333,9 @@ public final class ModbusAlarmPolicy {
      * <p><b>命中优先于判不了</b>：同一出值的规则之间可能一条 HIT、另一条 SKIP（定义与值形态对不上，
      * 校验器挡新数据、老数据可能出现）。有胜者就按胜者走，判不了的那些只进日志。</p>
      *
-     * <p><b>胜者与开着的行是同一条规则时什么都不做</b>：这是稳态零写的落点，也是「改阈值不会把
-     * 开着的告警关掉重开」的原因 —— 规则身份是配置里的 {@code id}，改阈值不动它。</p>
+     * <p><b>胜者与开着的行是同一条规则时</b>：那一行**没被处理过**就什么都不做 —— 这是稳态零写的落点，
+     * 也是「改阈值不会把开着的告警关掉重开」的原因（规则身份是配置里的 {@code id}，改阈值不动它）；
+     * **被处理过**则先关（{@code HANDLED}）再开一条新的，见下面那个分支。</p>
      *
      * @param unit 快照进告警行的单位（位传 null，见调用处）
      * @return 这个出值是否归「值判定」管（有启用的规则、且本次采样里有它）—— 是的话返回它的名字，
@@ -333,7 +345,7 @@ public final class ModbusAlarmPolicy {
                                      List<ModbusServiceFieldAlarm> alarms,
                                      String unit,
                                      Map<String, Object> vals,
-                                     Map<String, String> open,
+                                     Map<String, OpenAlarmRule> open,
                                      Acc acc) {
         if (field == null) {
             return Set.of();
@@ -375,36 +387,46 @@ public final class ModbusAlarmPolicy {
 
         boolean hasOpen = open.containsKey(field);
         if (winner != null) {
+            OpenAlarmRule openRule = hasOpen ? open.get(field) : null;
             if (!hasOpen) {
                 acc.opens.add(new Open(field, winner, value, unit));
-            } else if (!Objects.equals(open.get(field), winner.id)) {
+            } else if (!Objects.equals(openRule.ruleId(), winner.id)) {
                 // 开着的行是**另一条规则**开的：先关（SUPERSEDED）再开胜者。升级与降级都走这条 ——
-                // 降级时值并没有回到正常，记 VALUE 是谎话（见 ModbusAlarmPolicy 的 Decision 文档）
+                // 降级时值并没有回到正常，记 VALUE 是谎话（见 ModbusAlarmPolicy 的 Decision 文档）。
+                // 这一支排在「已处理」之前：换了规则时被取代是更准确的原因，不能按 HANDLED 记
                 acc.supersededCloses.add(field);
                 acc.opens.add(new Open(field, winner, value, unit));
+            } else if (openRule.handled()) {
+                // 还是这条规则、还在命中，但开着的行**已经被人处理过**了。处理的含义是「我知道了，
+                // 以后还有越线再提醒我」—— 所以关掉它、再开一条 handled=false 的新行，
+                // 让同一件事重新回到「未处理」里。不关的话这一行会一直挂着，把后续的越线全挡在门外
+                acc.handledCloses.add(field);
+                acc.opens.add(new Open(field, winner, value, unit));
             }
-            // 同一条规则：什么都不做
+            // 同一条规则、且未处理：什么都不做（稳态零写）
         } else if (missed) {
             if (hasOpen) {
+                // 值回到正常了：这时「处理过没有」无所谓，值恢复才是实情（关的是 VALUE 而不是 HANDLED）
                 acc.valueCloses.add(field);
             }
         }
         // 剩下的情形就是「一条都没命中，且至少有一条判不了」（全 SKIP）：
-        // 什么都不做 —— 一次截断/畸形的应答不能把开着的告警凭空关掉
+        // 什么都不做 —— 一次截断/畸形的应答不能把开着的告警凭空关掉，也不重报
         return Set.of(field);
     }
 
-    /** 判定过程中的四张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
+    /** 判定过程中的几张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
     private static final class Acc {
 
         private final List<Open> opens = new ArrayList<>();
         private final List<String> valueCloses = new ArrayList<>();
         private final List<String> supersededCloses = new ArrayList<>();
+        private final List<String> handledCloses = new ArrayList<>();
         private final List<Skip> skips = new ArrayList<>();
 
         private boolean isEmpty() {
             return opens.isEmpty() && valueCloses.isEmpty()
-                    && supersededCloses.isEmpty() && skips.isEmpty();
+                    && supersededCloses.isEmpty() && handledCloses.isEmpty() && skips.isEmpty();
         }
     }
 }

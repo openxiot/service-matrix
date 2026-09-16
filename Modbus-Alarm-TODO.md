@@ -255,7 +255,68 @@
       （值仍然越限，记成「值恢复」是谎话）。
 - [ ] invoke 一个正常值 → 那条开着的关闭、`closeType = VALUE`，`handled` 仍为 `false`。
 - [ ] 调 `handle` → `handled=true`、`handledBy` 是当前账号。
-- [ ] 再越限一次 → 出现**第二条**开着的（与前面若干条已恢复的共存）。
+- [ ] 再越限一次 → 出现**第二条**开着的（与前面若干条已恢复的共存）——
+      **第 7.5 步改了口径**：旧行按 `HANDLED` 关掉，不是留着；这一条按下面的新步骤走。
 - [ ] 删掉该出值**其中一条**规则的保存 → 若它有一条开着的行，应被 `DEFINITION` 关闭
       （**判据细到规则**：同出值别的规则还在，也要关掉它）。
 - [ ] 整个字段的告警全停用保存 → 开着的行按 `DEFINITION` 关闭（不是 `SUPERSEDED`）。
+
+## 第 7.5 步：处理过之后再越线要重报（已完成）
+
+第七步验收之前插进来的一步。起因是一条**语义反了**的现场事实：「处理」的意思是「我知道了，
+**以后还有越线再提醒我**」，而不是「这事到此为止」；可在那之前，一条已处理而未恢复的行会一直
+挂着挡住后续越限（判定每轮都落在稳态零写那一支），用户再也收不到提醒。
+完整口径见 `Modbus-Alarm.md` 第十三节 2026-09-16 那条，这里只列交付物与**刻意偏离**。
+
+- [x] `ModbusServiceAlarm` 加 `CLOSE_HANDLED = "HANDLED"`（页面文案「处理后再报」）。
+- [x] 新类型 `db/modbus/alarm/OpenAlarmRule(String ruleId, boolean handled)` ——
+      判定要的资料从「出值名 → ruleId」变成「出值名 → (ruleId, handled)」。
+      **放在 `db` 包而不是 `ModbusAlarmPolicy` 里**：放 `api` 会新造一条 `db → api` 的反向依赖。
+- [x] `ModbusServiceAlarmRepository.mapOpenRuleByField`：投影加 `handled`、返回新值型；
+      折算走一个可单测的静态助手，**`Boolean.TRUE.equals(handled)` 不能省** ——
+      可空的 `handled` 必须当**未处理**，与仓储自己的 CAS 过滤 `Filters.ne("handled", true)` 同口径。
+- [x] `ModbusAlarmPolicy`：`judge` 加一支（同一条规则、仍在命中、`handled == true` ⇒
+      `handledCloses` + 重开一条）；`Decision` 加第五个组件 `handledCloses`，
+      **`isEmpty()` 与 `Acc.isEmpty()` 都要算上它**（漏了会让「只剩一次 HANDLED 关闭」的判定
+      被当成无事发生而直接返回，重报整个不发生）。
+      **顺序即语义**：换规则的检查排在处理检查之前；值恢复走 `VALUE`；全 `SKIP` 什么都不做。
+- [x] `ModbusAlarmService.apply` 加第四段关闭，**留在 `closes` 那一段里**（先关后插）——
+      反了会撞唯一索引被 `insertOpen` 静默吞掉，用户刚点完「处理」就什么都看不到了。
+- [x] 单测：Policy 26 → 30（4 例：重报 / 只按值恢复关 / 规则换了只记 `SUPERSEDED` /
+      全 `SKIP` 不重报）、Service 22 → 23（`InOrder` 钉住关闭先于插入）、Repository 11 → 12
+      （缺失的 `handled` 折算成未处理）。**全量 579 例全绿**（40 个类）。
+- [x] 文档：`Modbus-Alarm.md` 第五、七、八、十、十一、十三节 + `MODBUS.md` 第八节。
+
+**前端**（`webapp-matrix`，1.0.1 → 1.0.2）：
+
+- [x] `MODBUS_ALARM_CLOSE_LABELS` 加 `HANDLED: '处理后再报'`；`ModbusAlarm.closeType` 与
+      三处注释里把枚举说成「三个」的地方改成四个。**渲染路径一行没改** ——
+      `modbusAlarmCloseLabel` 本来就是「查表 + 没收录的原样回退」，加一个键就够了。
+- [x] 词典 468 → 469 × 66 份。**这次逐语种给了真译文**（上一轮 `显示信息` 那个键 65 个语种
+      填成了中文键本身，是事后才发现的）：`en`/`en_AU`/`en_GB` = `Re-reported after handling`，
+      `zh_HK`/`zh_TW` = `處理後再報`，其余各按该语种 `值恢复`/`定义变更`/`被取代` 三个兄弟键的
+      用词与语序给译文；追加在末尾、键序一致、`json.dumps(ensure_ascii=False, indent=2)` 往返
+      逐字节不变；另跑了一遍逐语种的值检查（除 `zh` 外不得等于键本身）。
+- [x] `npm test`（10 文件 **234 例**）与 `npm run build` 均过。
+
+**刻意偏离与不做的**：
+
+- **不做防抖、不加冷却期、不按「已处理过几次」限流**。触发条件精确到 `handled == true`，
+  所以重报由人驱动（每次都要有人真按一次「处理」），上限是「越限次数 + 人工处理次数」，
+  不会自激。这是明确的选择，不是漏掉。
+- **不改写任何已落库的行**：只加了新的关行判据。旧行留着 `handled=true` 与它的处理人，
+  新行是 `handled=false` 且**不带** `handledBy` —— 回执不继承。
+- **不动 `handled` 的写入路径**（`handle` / 它的 CAS 过滤），本次只**读**它。
+- **不改告警页与 3D 页的筛选语义**（仍是 `handled` 一个口径）。副作用是「只看未处理」那张
+  视图会「闪一下」：处理过的那条消失、紧接着出现一条内容相同但 `at` 更新的新行。
+  这是本次**要**的行为（不处理就不再出现），但第一次看到会以为是重复上报，验收时看一眼。
+
+**验收（要写 staging，动手前先说一声）**：
+
+- [ ] 阈值改成 24℃、让它越限、并在页面上点一次「处理」。
+- [ ] 触发一次采集 → 旧行 `closeType=HANDLED`、`recoveredAt` 有值、`openKey` 已消失；
+      同一时刻出现**新的一条**：`at` = 那一刻、`handled=false`、阈值快照是 24；
+      **未处理计数不变**（旧的减一、新的加一）。
+- [ ] 再触发一次采集（没人处理）→ **不再新增行**（稳态零写没被破坏）。
+- [ ] 再点一次「处理」+ 采集 → 又一轮：旧的关、新的开。
+- [ ] `mongosh` 查该 `openKey` 的历史，确认既有行的**其余字段一个都没被改**。

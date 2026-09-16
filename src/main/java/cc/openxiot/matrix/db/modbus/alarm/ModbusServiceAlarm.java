@@ -57,6 +57,19 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
      */
     public static final String CLOSE_SUPERSEDED = "SUPERSEDED";
 
+    /**
+     * {@link #closeType}：这条**已经被人处理过**，而它那条规则**还在命中**，故关闭并另开一条新的。
+     *
+     * <p>「处理」在业务上的意思是「我知道了，以后还有越线再提醒我」—— 不是「这事到此为止」。
+     * 所以一条未恢复且已处理的行不能就这么一直挂着把后续的越线全挡住：只要那条规则还在命中，
+     * 就把它按这个原因关掉、再开一条 {@code handled = false} 的新行，让同一件事重新回到未处理里。
+     * 新行的 {@code at} 与旧行的 {@code recoveredAt} 是同一个时刻（见 {@code ModbusAlarmService#apply}）。</p>
+     *
+     * <p>几种关闭原因**互斥**，判定侧按优先级只挑一个：换规则（{@link #CLOSE_SUPERSEDED}）比它更具体，
+     * 排在前；值已回到正常时走 {@link #CLOSE_VALUE}（值恢复才是实情），它不参与。</p>
+     */
+    public static final String CLOSE_HANDLED = "HANDLED";
+
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
@@ -99,7 +112,8 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
     public Date recoveredAt;
 
     @Schema(description = "关闭方式：VALUE 值回到正常 / DEFINITION 新定义已不再配这个告警 /"
-            + " SUPERSEDED 同一个出值的另一条规则接手了", examples = {"VALUE"})
+            + " SUPERSEDED 同一个出值的另一条规则接手了 / HANDLED 已处理但仍在越限，另开了一条",
+            examples = {"VALUE"})
     public String closeType;
 
     // ===== 处理 =====

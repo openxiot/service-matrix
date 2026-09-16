@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
 import io.quarkus.runtime.StartupEvent;
@@ -91,8 +92,8 @@ public class ModbusAlarmService {
                 : new LinkedHashMap<>(values.getMap());
         Date now = new Date();
 
-        // 一个方法配了 3 个字段也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的」
-        // 这张表，它**就是**状态本身（见 Modbus-Alarm.md 第三节）
+        // 一个方法配了 3 个字段也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的、
+        // 处理过没有」这张表，它**就是**状态本身（见 Modbus-Alarm.md 第三节）
         return alarmRepo.mapOpenRuleByField(serviceId, function.index)
                 .chain(open -> apply(serviceId, function, sample, open, now));
     }
@@ -139,17 +140,18 @@ public class ModbusAlarmService {
      * 判定 → 执行。
      *
      * <p><b>先关、后插，顺序是语义的一部分</b>：同一个出值可以既关又开 —— 命中了同一出值的**另一条**
-     * 规则时，那条开着的行按 {@code SUPERSEDED} 关掉、胜者再开一条。而 {@code Uni.combine().all()}
+     * 规则时，那条开着的行按 {@code SUPERSEDED} 关掉、胜者再开一条；那条规则没换但行**已被处理过**时，
+     * 按 {@code HANDLED} 关掉、同样再开一条。而 {@code Uni.combine().all()}
      * 是**并发**的（不是按列表顺序依次执行），把两类动作一起发出去，插入会抢在关闭之前撞上
      * {@code {openKey}} 那条唯一部分索引，被{@link ModbusServiceAlarmRepository#insertOpen}
      * 当成「别的副本先开了」**静默吞掉**（它本来就该吞 11000，从结果上看不出区别）——
      * 于是这个出值一条开着的都没有。下一轮采样会自愈（没有开行 ⇒ 重新开那个胜者），
      * 但那个窗口里告警是消失的，而轮询一停就永久丢。所以这里是两段：关闭先并发做完，再并发插。</p>
      *
-     * <p>其它动作之间确实互不依赖（开落在不同出值上，三类关闭按出值互斥），并发是对的。</p>
+     * <p>其它动作之间确实互不依赖（开落在不同出值上，四类关闭按出值互斥），并发是对的。</p>
      */
     private Uni<Void> apply(String serviceId, ModbusServiceFunction function, Map<String, Object> sample,
-                            Map<String, String> open, Date now) {
+                            Map<String, OpenAlarmRule> open, Date now) {
         ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(function, sample, open);
         reportSkips(serviceId, function, decision.skips());
         if (decision.isEmpty()) {
@@ -169,6 +171,13 @@ public class ModbusAlarmService {
         if (!decision.definitionCloses().isEmpty()) {
             closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.definitionCloses(),
                     ModbusServiceAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
+        }
+        // 「已处理但还在越限」：关掉这一条，紧接着在 opens 里开一条同出值的新行（后者的 handled 为 false）。
+        // 必须留在 closes 这一段里，理由见上面「先关、后插」—— 抢在关闭之前插会撞唯一索引被静默吞掉，
+        // 而这里的代价比别处更大：用户刚处理完就什么都看不到了
+        if (!decision.handledCloses().isEmpty()) {
+            closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.handledCloses(),
+                    ModbusServiceAlarm.CLOSE_HANDLED, now).replaceWithVoid());
         }
 
         List<Uni<Void>> opens = new ArrayList<>();

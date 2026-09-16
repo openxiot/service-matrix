@@ -121,32 +121,50 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
     }
 
     /**
-     * 这个方法当前**有哪些出值开着告警**（未恢复）：出值名 → 那条开行上的 {@code ruleId}。
+     * 这个方法当前**有哪些出值开着告警**（未恢复）：出值名 → 那条开行上的
+     * {@link OpenAlarmRule}（哪条规则开的、有没有被处理过）。
      *
-     * <p>只投影 {@code field} 与 {@code ruleId}：判定要的是「开着的行就是状态」这张表，不需要行的其余部分。
-     * 一次查回整个方法的所有开行，所以一个方法配 3 个字段也只查一次。</p>
+     * <p>只投影 {@code field} / {@code ruleId} / {@code handled}：判定要的是「开着的行就是状态」这张表，
+     * 不需要行的其余部分。一次查回整个方法的所有开行，所以一个方法配 3 个字段也只查一次。</p>
      *
-     * <p><b>值是允许 null 的</b>（{@code ruleId} 缺失只可能出现在更早的数据里），所以这里手工装进
+     * <p><b>值是允许 {@code ruleId} 为 null 的</b>（缺失只可能出现在更早的数据里），所以这里手工装进
      * {@code HashMap} 而不用 {@code Collectors.toMap}（那个连 null 值都不收）——
      * 判定侧 {@code open.containsKey(field)} 只用键，值与当前胜者的 {@code id} 比对时 null 自然不相等。</p>
+     *
+     * <p>{@code handled} 的缺失转换见 {@link #openRuleOf}：null 与 false 在判定上完全一样。</p>
      */
-    public Uni<Map<String, String>> mapOpenRuleByField(String serviceId, Integer functionIndex) {
+    public Uni<Map<String, OpenAlarmRule>> mapOpenRuleByField(String serviceId, Integer functionIndex) {
         return collection()
                 .find(Filters.and(
                                 Filters.eq("serviceId", serviceId),
                                 Filters.eq("functionIndex", functionIndex),
                                 Filters.exists("openKey")),
-                        new FindOptions().projection(Projections.include("field", "ruleId")))
+                        new FindOptions().projection(Projections.include("field", "ruleId", "handled")))
                 .collect().asList()
                 .map(rows -> {
-                    Map<String, String> open = new HashMap<>(rows.size());
+                    Map<String, OpenAlarmRule> open = new HashMap<>(rows.size());
                     for (ModbusServiceAlarm row : rows) {
                         if (row.field != null) {
-                            open.put(row.field, row.ruleId);
+                            open.put(row.field, openRuleOf(row.ruleId, row.handled));
                         }
                     }
                     return open;
                 });
+    }
+
+    /**
+     * 一行的「开着状态」：{@code ruleId} 原样，{@code handled} 把缺失折成 false。
+     *
+     * <p>抽成静态是为了能单测（本仓库的库测试要连 Mongo）：这一条写错了不会报错，只会让**所有老数据**
+     * （{@code handled} 字段缺失）在判定侧被当成「已经处理过」—— 于是每一轮采集都给它们关旧开新，
+     * 稳态零写当场失效、告警列表每采一次翻一倍。与 {@link #closeUpdate} / {@link #handleFilter}
+     * 同一条理由。</p>
+     *
+     * <p>{@code null} 当 false，与 {@link #handleFilter} 的 {@code handled: {$ne: true}} 是同一个口径：
+     * 「不是 true」就是未处理，判定侧与写入侧对「未处理」的理解必须一模一样。</p>
+     */
+    static OpenAlarmRule openRuleOf(String ruleId, Boolean handled) {
+        return new OpenAlarmRule(ruleId, Boolean.TRUE.equals(handled));
     }
 
     /**

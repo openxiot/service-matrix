@@ -20,14 +20,16 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusServiceAlarmRepository#isDuplicateKey} 的判定。
+ * {@link ModbusServiceAlarmRepository} 里那些**纯静态、不需要数据库**的部分：
+ * 重复键的识别、关闭与处理的写语句形状、以及开行状态值的折算。
  *
- * <p>纯静态、不需要数据库。单独测它是因为：并发护栏的整套推理压在「重复键被认出来、然后吞掉」上
- * （{@code Modbus-Alarm.md} 第七节）——**判漏了就会静默产生两条开着的告警**，
- * 而那正是这个特性要避免的失效模式。</p>
+ * <p>单独测它们是因为：这些地方写错了都不会报错，只是行为悄悄不对 ——
+ * 判漏了重复键会静默产生两条开着的告警（{@code Modbus-Alarm.md} 第七节）；
+ * 整文档替换会抹掉并行的关闭字段；把缺失的 {@code handled} 当成已处理会让稳态零写失效。</p>
  */
 class ModbusServiceAlarmRepositoryTest {
 
@@ -148,6 +150,18 @@ class ModbusServiceAlarmRepositoryTest {
         assertEquals(OID, clause(filter, "_id").asObjectId().getValue());
         // CAS：重复点击只生效一次
         assertTrue(clause(filter, "handled").asDocument().getBoolean("$ne").getValue());
+    }
+
+    @Test
+    void missingHandledCountsAsUnhandled() {
+        // 判定侧的状态值：这一条写错了不会报错，只会让**所有老数据**（handled 缺失）被当成
+        // 「已经处理过」—— 于是每一轮采集都给它们关旧开新，稳态零写当场失效、告警列表每采一次翻一倍
+        assertFalse(ModbusServiceAlarmRepository.openRuleOf("r1", null).handled());
+        assertFalse(ModbusServiceAlarmRepository.openRuleOf("r1", false).handled());
+        assertTrue(ModbusServiceAlarmRepository.openRuleOf("r1", true).handled());
+        // ruleId 原样带着：null 只可能出现在更早的数据里，判定侧与当前胜者比不相等时会走「被取代」
+        assertEquals("r1", ModbusServiceAlarmRepository.openRuleOf("r1", null).ruleId());
+        assertNull(ModbusServiceAlarmRepository.openRuleOf(null, false).ruleId());
     }
 
     // ===== 夹具 =====
