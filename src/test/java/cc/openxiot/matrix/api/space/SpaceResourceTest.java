@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
+import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.db.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -37,6 +38,14 @@ class SpaceResourceTest {
     @InjectMock
     DeviceService deviceService;
 
+    /**
+     * {@code /space/graph} 会对每个空间再取一遍服务（{@code ModbusServiceService.getBriefBySpaceId}）。
+     * 不顶掉它，真正跑起来的 bean 会去连一个不存在的 Mongo，那条链**永不完成** —— 于是这个用例不是
+     * 断言失败，而是干等 30 秒到 RestAssured 读超时。别的用例不走这条链，所以只有 graph 这一个会卡。
+     */
+    @InjectMock
+    ModbusServiceService modbusServiceService;
+
     @InjectMock
     OrgAccessService orgAccessService;
 
@@ -62,7 +71,7 @@ class SpaceResourceTest {
         space.name = "test-space";
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
@@ -89,14 +98,13 @@ class SpaceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void getOne_wrongOrgId_returnsError() {
+    void getOne_notMember_returnsError() {
         SpaceEntity space = orgSpace("org-2");
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
-                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("OrgId does not match the space")));
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the organization")));
 
         given()
-                .header("X-Org-Id", "org-1")
                 .when().get("/matrix/v1/space/one/{spaceId}", "sid")
                 .then()
                 .statusCode(200)
@@ -220,12 +228,12 @@ class SpaceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void addOne_childSpace_withoutOrgId_returnsError() {
+    void addOne_childSpaceWithoutParentAdmin_returnsError() {
         SpaceEntity parent = orgSpace("org-1");
 
         when(spaceService.getById("parent-id")).thenReturn(Uni.createFrom().item(parent));
-        when(orgAccessService.checkSpaceAdmin(any(), isNull(), eq("test-user")))
-                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("X-Org-Id header is required")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("No access to this space")));
 
         given()
                 .contentType(ContentType.JSON)
@@ -258,7 +266,7 @@ class SpaceResourceTest {
         space.id = new ObjectId("507f1f77bcf86cd799439011");
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.delete("sid"))
                 .thenReturn(Uni.createFrom().item(true));
@@ -277,7 +285,7 @@ class SpaceResourceTest {
         SpaceEntity space = orgSpace("org-1");
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.delete("sid"))
                 .thenReturn(Uni.createFrom().failure(
@@ -298,7 +306,7 @@ class SpaceResourceTest {
         space.id = new ObjectId("507f1f77bcf86cd799439011");
 
         when(spaceService.getById("507f1f77bcf86cd799439011")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.update(any()))
                 .thenReturn(Uni.createFrom().item(space));
@@ -320,7 +328,7 @@ class SpaceResourceTest {
         root.name = "root";
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.getDescendants("root-id"))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
@@ -342,11 +350,13 @@ class SpaceResourceTest {
         root.name = "root";
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.getDescendants("root-id"))
                 .thenReturn(Uni.createFrom().item(List.of(root)));
         when(deviceService.getBySpaceId(any()))
+                .thenReturn(Uni.createFrom().item(List.of()));
+        when(modbusServiceService.getBriefBySpaceId(any()))
                 .thenReturn(Uni.createFrom().item(List.of()));
 
         given()
@@ -356,7 +366,8 @@ class SpaceResourceTest {
                 .statusCode(200)
                 .body("success", is(true))
                 .body("data.spaces.size()", is(1))
-                .body("data.devices.size()", is(0));
+                .body("data.devices.size()", is(0))
+                .body("data.services.size()", is(0));
     }
 
     @Test
@@ -366,7 +377,7 @@ class SpaceResourceTest {
         root.id = new ObjectId();
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.updateAccessRole("root-id", "m1", "admin"))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -388,7 +399,7 @@ class SpaceResourceTest {
         root.id = new ObjectId();
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenThrow(new IllegalArgumentException("No access"));
 
         given()
@@ -408,7 +419,7 @@ class SpaceResourceTest {
         root.id = new ObjectId();
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         given()
@@ -428,7 +439,7 @@ class SpaceResourceTest {
         root.id = new ObjectId();
 
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.updateAccessRemark("root-id", "m1", "对接人"))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -449,9 +460,9 @@ class SpaceResourceTest {
         SpaceEntity root = orgSpace("org-1");
         root.id = new ObjectId();
 
-        // memberId == 当前用户 → 走成员权限（checkRootSpaceMember）
+        // memberId == 当前用户 → 走成员权限（checkSpaceMember）
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceMember(any(), eq("root-id"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.removeAccess("root-id", "test-user"))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -473,7 +484,7 @@ class SpaceResourceTest {
 
         // memberId != 当前用户 → 走管理员权限
         when(spaceService.getById("root-id")).thenReturn(Uni.createFrom().item(root));
-        when(orgAccessService.checkRootSpaceAdmin(any(), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenThrow(new IllegalArgumentException("No access"));
 
         given()
@@ -493,7 +504,7 @@ class SpaceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void setAnchor_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.setAnchor(eq("sid"), any()))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -574,7 +585,7 @@ class SpaceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void setAnchor_notAdmin_returnsError() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("No access")));
 
         given()
@@ -593,7 +604,7 @@ class SpaceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void clearAnchor_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(orgSpace("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(spaceService.clearAnchor("sid")).thenReturn(Uni.createFrom().voidItem());
 

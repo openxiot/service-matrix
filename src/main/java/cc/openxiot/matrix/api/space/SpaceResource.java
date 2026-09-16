@@ -256,7 +256,9 @@ public class SpaceResource extends AbstractResource {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-                    return orgAccessService.checkSpaceMember(space, orgId, getUserId())
+                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
+                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
+                    return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 }));
     }
@@ -267,7 +269,8 @@ public class SpaceResource extends AbstractResource {
                     if (space == null) {
                         throw new IllegalArgumentException("Space not found: " + spaceId);
                     }
-                    return orgAccessService.checkSpaceAdmin(space, orgId, getUserId())
+                    // 同上：orgId 不再进判定。
+                    return orgAccessService.checkSpaceAdmin(space, getUserId())
                             .map(ignored -> space);
                 }));
     }

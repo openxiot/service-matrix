@@ -71,7 +71,12 @@ class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void addDevices_missingOrgId_returnsError() {
+    void addDevices_spaceCheckFails_returnsError() {
+        // 判定不通过（不是本人不是该空间管理员）→ 200 + success:false，别漏成 500
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not an admin of the organization")));
+
         given()
                 .contentType(ContentType.JSON)
                 .body("[{\"did\":\"d1\",\"key\":\"k1\"}]")
@@ -100,7 +105,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void addDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.addDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(List.of()));
@@ -148,7 +153,7 @@ class DeviceResourceTest {
         SpaceEntity space = spaceWithOrg("org-1");
 
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(space));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.addDevice(anyString(), any(DeviceAddRequest.class)))
                 .thenReturn(Uni.createFrom().item(new Device("abc")));
@@ -185,7 +190,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getDevices_returnsList() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
@@ -208,7 +213,11 @@ class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void getDevices_missingOrgId_returnsError() {
+    void getDevices_spaceCheckFails_returnsError() {
+        when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the organization")));
+
         given()
                 .when().get("/matrix/v1/device/many/{spaceId}", "sid")
                 .then()
@@ -220,7 +229,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void removeDevices_succeeds() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
@@ -245,7 +254,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void removeOne_cascadesModbusServices() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevice(anyString(), anyString()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
@@ -269,7 +278,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void updateSpace_succeeds() {
         when(spaceService.getById("new-space")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(deviceService.updateSpace(anyString(), anyString(), anyString()))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -286,7 +295,12 @@ class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void updateSpace_missingOrgId_returnsError() {
+    void updateSpace_spaceCheckFails_returnsError() {
+        // spaceId 在 body 里（不在路径上），判定的还是那个空间
+        when(spaceService.getById("new-space")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not an admin of the organization")));
+
         given()
                 .contentType(ContentType.JSON)
                 .body("{\"spaceId\":\"new-space\"}")
@@ -338,7 +352,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void getShadows_returnsData() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceMember(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceMember(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
 
         DeviceEntity device = new DeviceEntity();
@@ -368,7 +382,7 @@ class DeviceResourceTest {
 
     private void adminOk() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
     }
 
@@ -443,7 +457,7 @@ class DeviceResourceTest {
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
     void setAnchor_notAdmin_returnsError() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
-        when(orgAccessService.checkSpaceAdmin(any(), eq("org-1"), eq("test-user")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("No access")));
 
         given()

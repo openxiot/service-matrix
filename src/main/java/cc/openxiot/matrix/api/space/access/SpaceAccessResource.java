@@ -151,7 +151,10 @@ public class SpaceAccessResource extends AbstractResource {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
-                    return orgAccessService.checkRootSpaceAdmin(space, accountId)
+                    // 与其余空间接口用的是同一个判定：组织从空间自己的 accesses 读。
+                    // （原先这里单独有一份 checkRootSpaceAdmin —— 差别只在「组织怎么挑」，
+                    // 那份不看请求头，其余接口那份看，已合并，见 OrgAccessService。）
+                    return orgAccessService.checkSpaceAdmin(space, accountId)
                             .map(ignored -> space);
                 }));
     }
@@ -162,7 +165,7 @@ public class SpaceAccessResource extends AbstractResource {
                     if (space == null || space.parentId != null) {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
-                    return orgAccessService.checkRootSpaceMember(space, rootId, accountId)
+                    return orgAccessService.checkSpaceMember(space, accountId)
                             .map(ignored -> space);
                 }));
     }
@@ -175,10 +178,10 @@ public class SpaceAccessResource extends AbstractResource {
                         throw new IllegalArgumentException("Root space not found: " + rootId);
                     }
                     if (memberId.equals(accountId)) {
-                        return orgAccessService.checkRootSpaceMember(space, rootId, accountId)
+                        return orgAccessService.checkSpaceMember(space, accountId)
                                 .map(ignored -> space);
                     }
-                    return orgAccessService.checkRootSpaceAdmin(space, accountId)
+                    return orgAccessService.checkSpaceAdmin(space, accountId)
                             .map(ignored -> space);
                 }));
     }

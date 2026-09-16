@@ -27,11 +27,12 @@ import org.jboss.logging.Logger;
  * <p><b>按空间鉴权</b>（与 {@code DeviceResource} 同口径）：路径上的 {@code spaceId} 是当前项目空间，
  * 增删改要该空间的**管理员**、查询与 {@code invoke} 要该空间的**成员**，判定见
  * {@link OrgAccessService#checkSpaceAdmin} / {@link OrgAccessService#checkSpaceMember}
- * （空间 accesses 里的组织条目 + {@code X-Org-Id} 命中时，组织管理员 / 组织成员同样通过）。</p>
+ * （空间 accesses 里的组织条目说了这个项目属于哪个组织，组织管理员 / 组织成员据此通过）。</p>
  *
  * <p>{@code spaceId} 只作**鉴权锚点**：判定通过后一律按 id 操作，不再校验「服务是否真属于该空间」
  * ——与 {@code DeviceResource} 的 {@code spaceId} 一样（前端统一传当前项目根空间）。
- * {@code X-Org-Id} 头因此在增删改上不再是必填，只在空间判定里作为组织条目的匹配依据。</p>
+ * {@code X-Org-Id} 头在增删改上完全不需要 —— 判定只读空间自己，这个参数（连同 {@code @HeaderParam}）
+ * 是待摘的遗留。</p>
  *
  * <p>invoke 一次调用一个 function（一次父设备往返），返回「字段 → 值」；写方法没有读值，
  * 返回空对象。</p>
@@ -125,7 +126,7 @@ public class ModbusServiceResource extends AbstractResource {
         Person who = currentUser();
         return requireSpaceAdmin(spaceId, orgId)
                 .chain(ignored -> {
-                    // 鉴权按空间判，X-Org-Id 可以不传；服务本身也不再记 org（归属是设备的根空间，见 ManipulationService）
+                    // 鉴权按空间判，X-Org-Id 用不上；服务本身也不再记 org（归属是设备的根空间，见 ManipulationService）
                     body.creator = who;
                     body.updater = who;
                     return service.create(body);
@@ -211,7 +212,9 @@ public class ModbusServiceResource extends AbstractResource {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    return orgAccessService.checkSpaceAdmin(space, orgId, getUserId())
+                    // orgId 不再进判定：组织从空间自己的 accesses 读（见 OrgAccessService）。
+                    // 参数与请求头一起摘掉是后续单独一步，先留着不动签名。
+                    return orgAccessService.checkSpaceAdmin(space, getUserId())
                             .map(ignored -> space);
                 });
     }
@@ -223,7 +226,8 @@ public class ModbusServiceResource extends AbstractResource {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
-                    return orgAccessService.checkSpaceMember(space, orgId, getUserId())
+                    // 同上：orgId 不再进判定。
+                    return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
                 });
     }

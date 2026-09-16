@@ -84,25 +84,25 @@ class ModbusServiceResourceTest {
 
     private void allowSpaceAdmin() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceAdmin(any(), eq(ORG), eq("tester")))
+        when(orgAccessService.checkSpaceAdmin(any(), eq("tester")))
                 .thenReturn(Uni.createFrom().voidItem());
     }
 
     private void denySpaceAdmin() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceAdmin(any(), anyString(), anyString()))
+        when(orgAccessService.checkSpaceAdmin(any(), anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not an admin of the space")));
     }
 
     private void allowSpaceMember() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceMember(any(), eq(ORG), eq("tester")))
+        when(orgAccessService.checkSpaceMember(any(), eq("tester")))
                 .thenReturn(Uni.createFrom().voidItem());
     }
 
     private void denySpaceMember() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceMember(any(), anyString(), anyString()))
+        when(orgAccessService.checkSpaceMember(any(), anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
     }
 

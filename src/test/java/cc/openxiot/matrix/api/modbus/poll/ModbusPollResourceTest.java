@@ -96,13 +96,13 @@ class ModbusPollResourceTest {
 
     private void allowSpaceMember() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceMember(any(), eq(ORG), eq("tester")))
+        when(orgAccessService.checkSpaceMember(any(), eq("tester")))
                 .thenReturn(Uni.createFrom().voidItem());
     }
 
     private void denySpaceMember() {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
-        when(orgAccessService.checkSpaceMember(any(), anyString(), anyString()))
+        when(orgAccessService.checkSpaceMember(any(), anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
     }
 

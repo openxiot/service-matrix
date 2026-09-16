@@ -65,24 +65,32 @@ GET /user/oauth2/v1/login/{platformId}?code={授权码}
 
 返回体中的 `data.token` 即所需 JWT（有效期为 7 天）。
 
-#### X-Org-Id 请求头（必需）
+#### X-Org-Id 请求头（只有少数接口需要）
 
-绝大多数接口还需要 `X-Org-Id` 请求头来标识 **组织 ID**（organizationId）。组织成员关系由 service-account 的
-`UserOrganization`（`user-organizations` 集合）维护，成员字段包含 `userId` 与 `role`（`admin` / `member`）。
+`X-Org-Id` 标识 **组织 ID**（organizationId）。它只用来表达「**作用于哪个组织**」，
+**不参与权限判定**：
+
+- **需要它的**：`GET /space/all`（列哪个组织的项目）、`POST /space/one`（建组织的项目还是个人的项目）、
+  `/modbus/config/**`（组织级点表配置）。这几个接口的请求里没有别的途径表达「哪个组织」。
+- **不需要它的**：其余全部接口。空间类接口的归属从**空间自己的 `accesses`** 读 ——
+  里面那条组织条目就是「这个项目属于哪个组织」，客户端填什么都不会改变判定结果（填错也不会）。
 
 ```http
 X-Org-Id: openxiot
 ```
 
+组织成员关系由 service-account 的 `UserOrganization`（`user-organizations` 集合）维护，
+成员字段包含 `userId` 与 `role`（`admin` / `member`）。
+
 #### 权限模型
 
 | 校验级别 | 判定条件 | 适用操作 |
 | --- | --- | --- |
-| 空间管理员（Admin） | `X-Org-Id` 与空间 `organizationId` 一致，且当前用户是该组织的 `admin` 成员 | 空间的增删改、设备的增删 / 移动 |
-| 空间成员（Member） | `X-Org-Id` 与空间 `organizationId` 一致，且当前用户是组织的任一成员 | 空间 / 设备的查询、属性读写、方法调用 |
+| 空间管理员（Admin） | 空间的 `accesses` 含「该用户的 user 条目且 `role = admin`」；或含组织条目，且当前用户是该组织的 `admin` 成员 | 空间的增删改、设备的增删 / 移动 |
+| 空间成员（Member） | 空间的 `accesses` 含该用户的 user 条目（任意角色）；或含组织条目，且当前用户是该组织的任一成员 | 空间 / 设备的查询、属性读写、方法调用 |
 
-> 注意：空间不存在、`X-Org-Id` 与空间归属不一致、或用户非组织成员时，均会返回
-> `{"success": false, "message": "<原因>"}`。
+> 注意：空间不存在、用户既不是该空间的 user 条目也不在其所属组织里、或所属组织已不存在时，
+> 均会返回 `{"success": false, "message": "<原因>"}`。
 
 ### 2.3 统一响应格式
 
@@ -608,7 +616,9 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
 | --- | --- |
 | 缺少 `X-Org-Id` | `X-Org-Id header is required` |
 | 空间不存在 | `Space not found: <spaceId>` |
-| 组织不匹配 | `OrgId does not match the space` |
+| 空间无权访问 | `No access to this space` |
+| 空间未配置访问条目 | `Space accesses is not set` |
+| 组织已不存在（如被删除） | `Organization not found` |
 | 非组织成员 | `Not a member of the organization` |
 | 非组织管理员 | `Not an admin of the organization` |
 | 删除非叶子空间 | `Cannot delete space with children` |
