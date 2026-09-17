@@ -97,6 +97,21 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
     }
 
     /**
+     * 列出设备落点在这些空间的服务（一次 {@code $in}）。{@link #listBySpaceId} 的批量版，
+     * 同一个字段 {@code device.space.spaceId}，所以与归属校验、取数三处口径一致。
+     *
+     * <p>给「整个子树」的清单用（看板编辑器的候选服务）：子树的空间 id 是现算的
+     * （{@code SpaceService.getDescendants}），逐个空间各查一次会把一次清单变成 N 次往返。
+     * 空清单短路，不必为空 {@code $in} 打一次库。</p>
+     */
+    public Uni<List<ModbusService>> listBySpaceIds(List<String> spaceIds) {
+        if (spaceIds == null || spaceIds.isEmpty()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return collection().find(Filters.in("device.space.spaceId", spaceIds)).collect().asList();
+    }
+
+    /**
      * 列出依赖的设备落在该空间的服务，**只取清单用得到的字段**：{@code _id}（Mongo 默认带出）、
      * {@code name}、{@code device.did}、{@code device.space.spaceId}（见 {@link #BRIEF_FIELDS}）。
      *

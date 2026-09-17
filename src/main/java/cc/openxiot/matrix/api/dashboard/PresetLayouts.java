@@ -1,0 +1,132 @@
+package cc.openxiot.matrix.api.dashboard;
+
+import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.WidgetSize;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 空间从未配置过时下发的**预置布局**：就是原来那一屏（4 张统计卡 + 3 张分布 + 1 条告警曲线），
+ * 用新 schema 表达。
+ *
+ * <p><b>纯函数，不落库</b>（方案 §6.5）：布局是空间共享一份，若走「首次 GET 时补一条文档」，
+ * 两个成员同时打开页面就会并发建两条 —— 要么加唯一索引加重试，要么面对重复文档，
+ * 代价都大于收益。落库只发生在 {@code PUT}，所以在预置状态下 {@code version} 恒为 0，
+ * 第一次保存提交 {@code version: 0} 即可。</p>
+ *
+ * <p><b>卡片位置就是数组顺序</b>：{@code widgets} 从前往后铺开，4 张 {@code S}（各占 6 列）
+ * 正好填满第一行的 24 列，剩下 4 张 {@code M}（各占 12 列）两两一行、填满两行，共 12 行、
+ * 无空洞 —— 也就是说这里的数组顺序**已经是**视觉顺序（先行后列），排版由前端按顺序流式铺出来，
+ * 服务端一个坐标都不给。这也是把告警曲线定为 {@code M} 而不是 {@code L}/{@code XL} 的原因
+ * （§D4 说 {@code M} 的用途就是「单曲线、分布图」）：一屏 9 张卡里若有半屏是空的，
+ * 用户第一眼看到的就是「这东西没做完」。<b>改动这里时数组顺序不能乱</b>，
+ * 否则用户看到的预置首屏会跟着变。</p>
+ *
+ * <p><b>标题走 {@code titleKey} 而不是 {@code title}</b>：预置布局是服务端造的，
+ * 而 {@code title} 属于用户数据、前端不许翻译（{@code AGENTS.md}）。若把「设备总量」
+ * 直接写进 {@code title}，英文界面就会看到中文。所以这里给的是 i18n key，
+ * 前端翻成当前语言；用户自己改过标题后 {@code title} 优先。</p>
+ *
+ * <p><b>去掉了两张假数据卡片</b>：原页面的「本月能耗」与「日能耗曲线」读的是
+ * {@code dashboard.mock.ts} 的假数据（种子随机数），而 §5.3 的 metric 表里根本没有能耗 ——
+ * 一个没有数据源的卡片不该出现在预置布局里（用户第一次编辑时没法把它改成真数据，
+ * 只能删掉）。第四张统计卡改用 {@code failures.total}：它是 §5.3 里唯一还没被用到的 metric，
+ * 且原页面从来没展示过故障，正好补上。它的口径（「几种」不是「几次」）在编辑器里有专门提示。</p>
+ */
+public final class PresetLayouts {
+
+    private PresetLayouts() {
+    }
+
+    /** 预置布局的版本号：从未保存过。与 {@code DashboardLayoutEntity.version} 同义。 */
+    public static final long PRESET_VERSION = 0L;
+
+    /**
+     * 造一份预置布局。返回的实体 {@code id == null}（没落库），
+     * {@code creator} / {@code updater} 也是 null（预置布局没有作者）——
+     * codec 对这三者都是「没有就不下发」，所以不需要特殊的编码路径。
+     */
+    public static DashboardLayoutEntity build(String spaceId) {
+        DashboardLayoutEntity layout = new DashboardLayoutEntity();
+        layout.spaceId = spaceId;
+        layout.version = PRESET_VERSION;
+        layout.widgets = List.of(
+                // ── 第一行：4 张统计卡，各 6 列，正好 24 列 ──
+                stat("w_preset_devices", "设备总量",
+                        "devices.total", null),
+                stat("w_preset_services", "服务总量",
+                        "services.total", null),
+                stat("w_preset_alarms", "今日告警",
+                        "alarms.today", window(24)),
+                // failures.total 必须带窗口（§5.3），且「故障种类数」的正确译法是「故障种类」
+                stat("w_preset_failures", "故障种类",
+                        "failures.total", window(24)),
+
+                // ── 第二、三行：4 张 M（各 12 列），两两一行 ──
+                distribution("w_preset_device_type", "设备类型分布", "deviceType", null),
+                distribution("w_preset_service_type", "服务类型分布", "serviceType", null),
+                distribution("w_preset_alarm_type", "告警类型分布", "alarmType", window(24)),
+                alarmLine("w_preset_alarm_curve", "告警曲线")
+        );
+        return layout;
+    }
+
+    private static DashboardWidget stat(String id, String titleKey,
+                                       String metric, Map<String, Object> window) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("metric", metric);
+        if (window != null) {
+            config.put("window", window);
+        }
+        return widget(id, "stat", titleKey, WidgetSize.S, config);
+    }
+
+    private static DashboardWidget distribution(String id, String titleKey,
+                                                String dimension, Map<String, Object> window) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("dimension", dimension);
+        if (window != null) {
+            config.put("window", window);
+        }
+        config.put("chart", "pie");
+        return widget(id, "distribution", titleKey, WidgetSize.M, config);
+    }
+
+    private static DashboardWidget alarmLine(String id, String titleKey) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("source", "alarmCount");
+        config.put("window", window(24));
+        config.put("bucket", "hour");
+        return widget(id, "line", titleKey, WidgetSize.M, config);
+    }
+
+    /**
+     * 最近 N 小时的窗口。**存语义，不存绝对时刻** —— 预置布局要是写成绝对毫秒，
+     * 它在下发的那一刻就固化了，用户第二天打开看到的还是昨天的区间。
+     *
+     * <p>{@code {kind: "last", hours: N}} 由 {@code WidgetDataService} 在**取数时**按服务端的
+     * 「现在」解析成绝对区间（见 {@code WidgetDataService.windowOf}），前端不需要在调 render 前
+     * 做换算；前端读这个字段只是为了显示「最近 24 小时」这类窗口标签。
+     * 另一种形态 {@code {kind: "range", from, to}} 才是编辑器里手动选了绝对区间的情形，
+     * 那种由前端算成 epoch 毫秒。</p>
+     */
+    private static Map<String, Object> window(int hours) {
+        return Map.of("kind", "last", "hours", hours);
+    }
+
+    private static DashboardWidget widget(String id, String type, String titleKey,
+                                          WidgetSize size, Map<String, Object> config) {
+        DashboardWidget widget = new DashboardWidget();
+        widget.id = id;
+        widget.type = type;
+        // titleKey 而不是 title：见类注释
+        widget.titleKey = titleKey;
+        // 只给档位名。占几列几行是前端的事（见 WidgetSize），位置是数组下标（见类注释）
+        widget.size = size.name();
+        widget.config = config;
+        return widget;
+    }
+}

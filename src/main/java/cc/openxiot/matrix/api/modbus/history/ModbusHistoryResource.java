@@ -5,14 +5,11 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceFailureCodec;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
@@ -117,7 +114,8 @@ public class ModbusHistoryResource extends AbstractResource {
         return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.range(serviceId, functionIndex, field,
                         millis(from), millis(to), maxPoints))
-                .map(result -> OxResponse.ok(rangeBody(serviceId, functionIndex, field, result)))
+                .map(result -> OxResponse.ok(
+                        ModbusHistoryRangeCodec.encode(serviceId, functionIndex, field, result)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -182,37 +180,6 @@ public class ModbusHistoryResource extends AbstractResource {
     }
 
     // -- helper methods --
-
-    private JsonObject rangeBody(String serviceId, Integer functionIndex, String field,
-                                 ModbusHistoryQueryService.RangeResult result) {
-        ModbusHistoryWindow.Window window = result.window();
-        JsonArray points = new JsonArray();
-        if (window.downsampled()) {
-            for (ModbusHistoryWindow.Bucket bucket : window.buckets()) {
-                points.add(ModbusServiceHistoryCodec.encode(bucket));
-            }
-        } else {
-            for (ModbusServiceHistory sample : window.samples()) {
-                points.add(ModbusServiceHistoryCodec.encode(sample));
-            }
-        }
-
-        JsonObject body = new JsonObject()
-                .put("serviceId", serviceId)
-                .put("functionIndex", functionIndex)
-                .put("field", field)
-                .put("from", result.from().getTime())
-                .put("to", result.to().getTime())
-                .put("maxPoints", result.maxPoints())
-                .put("downsampled", window.downsampled())
-                .put("total", window.samples().size())
-                .put("points", points);
-        // 没有更早的样本时不出键（与 Codec 里「null 不出键」同口径）：它不是一条空样本
-        if (window.carryIn() != null) {
-            body.put("carryIn", ModbusServiceHistoryCodec.encode(window.carryIn()));
-        }
-        return body;
-    }
 
     /** 空间成员（读历史与 invoke 同口径，见 {@code ModbusServiceResource}）。 */
     private Uni<SpaceEntity> requireSpaceMember(String spaceId) {

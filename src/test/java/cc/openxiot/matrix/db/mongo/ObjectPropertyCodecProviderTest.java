@@ -1,13 +1,18 @@
 package cc.openxiot.matrix.db.mongo;
 
+import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.space.SpaceEntity;
+import cc.openxiot.common.person.Person;
 import com.mongodb.MongoClientSettings;
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;
 import org.bson.BsonInt32;
+import org.bson.BsonInt64;
 import org.bson.BsonString;
 import org.bson.Document;
 import org.bson.codecs.Codec;
@@ -140,6 +145,105 @@ class ObjectPropertyCodecProviderTest {
         assertEquals(fields, read.fields);
         assertEquals(new Date(AT), read.recordedAt);
         assertNull(read.lastError, "最后一次调用是成功的，故障位不该有值");
+    }
+
+    /**
+     * 看板卡片的 {@code config}：{@code Map<String, Object>} 里**再嵌 Map 与 List**
+     * （{@code window} 是文档、{@code fields} 是数组），值还有 Integer / Long / Boolean。
+     *
+     * <p>比 {@link #shadowFieldsRoundTrip} 深一层：那张卡上的每个值都是标量，而看板卡片的值
+     * **本身就是容器**。{@code DashboardWidget} 的「config 异构、不做结构化」这个设计
+     * 整个压在「能原样读回」上 —— 读回来若变成了字符串或丢了一层，校验器与取数都会静默失灵。</p>
+     */
+    @Test
+    void dashboardWidgetConfigRoundTrips() {
+        DashboardWidget widget = new DashboardWidget();
+        widget.id = "w1";
+        widget.type = "stat";
+        widget.size = "S";
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("metric", "alarms.today");
+        config.put("window", new Document("kind", "last").append("hours", 24));
+        config.put("fields", List.of("temp", "status.bit0"));
+        config.put("limit", 8);
+        config.put("showUnit", Boolean.TRUE);
+        widget.config = config;
+
+        DashboardLayoutEntity layout = new DashboardLayoutEntity();
+        layout.id = new ObjectId();
+        layout.spaceId = "space-1";
+        layout.version = 3L;
+        layout.widgets = List.of(widget);
+        layout.creator = Person.of("acc-1", "张三");
+
+        DashboardLayoutEntity read = decode(DashboardLayoutEntity.class, encode(layout));
+
+        assertEquals("space-1", read.spaceId);
+        assertEquals(3L, read.version);
+        assertEquals("acc-1", read.creator.id);
+        assertEquals(1, read.widgets.size());
+        DashboardWidget readWidget = read.widgets.get(0);
+        assertEquals("w1", readWidget.id);
+        // title 没设就是不落键：读回来是 null，而不是空串（读侧靠这个区分「没设」与「设成了空」）
+        assertNull(readWidget.title);
+        assertEquals(config, readWidget.config);
+        // 嵌套的文档读回来是 Document、数组读回来是 List：读 config 的一方（校验器 / 取数）
+        // 一律按 Map / List 取值，不假设具体实现类
+        assertInstanceOf(Map.class, readWidget.config.get("window"));
+        assertInstanceOf(List.class, readWidget.config.get("fields"));
+        assertEquals(24, ((Map<?, ?>) readWidget.config.get("window")).get("hours"));
+    }
+
+    /**
+     * <b>老文档里的 {@code widgets[].layout} 被跳过</b> —— 这是「顺序进线格式不需要迁移」
+     * 那条论证的证据。
+     *
+     * <p>改造之前每张卡片都带一个 {@code layout: {x, y, w, h}}。现在 {@code DashboardWidget}
+     * 上没有这个字段了，而<b>现网库里存着的文档还带着它</b>。这里手工造一份那种老文档
+     * （{@code BsonDocument} 直接写，绕过实体），按 {@code DashboardLayoutEntity} 解码：
+     * 只要 POJO codec 遇到类上没有的键是<b>跳过</b>而不是报错，老布局就读得出来，
+     * 不需要任何迁移脚本。</p>
+     *
+     * <p>验证的是「这一侧的编解码行为」：与真落库时驱动走的是同一个注册表、同一条
+     * {@code BsonDocumentReader} 路径。唯一没覆盖到的是真 Mongo 本身 —— 而它在这件事上
+     * 只是把文档原样吐回来。</p>
+     *
+     * <p><b>卡片 id 的 BSON 键是 {@code _id} 而不是 {@code id}</b>：POJO codec 会把一个名叫
+     * {@code id} 的属性映射成 {@code _id}（下面 {@link #dashboardWidgetConfigRoundTrips} 那条
+     * 往返用例不容易看出来，因为编码与解码用的是同一个名字）。手工造文档时这一点很关键 ——
+     * 写成 {@code "id"} 不会报错，只会静默得到一张没有 id 的卡片。</p>
+     */
+    @Test
+    void legacyLayoutKeyIsIgnored() {
+        BsonDocument legacyWidget = new BsonDocument()
+                .append("_id", new BsonString("w1"))
+                .append("type", new BsonString("stat"))
+                .append("size", new BsonString("S"))
+                // 老文档里那个坐标对象。它嵌的深一层，是「未知的键」这条规则的更深一层证据
+                .append("layout", new BsonDocument()
+                        .append("x", new BsonInt32(6))
+                        .append("y", new BsonInt32(4))
+                        .append("w", new BsonInt32(6))
+                        .append("h", new BsonInt32(4)))
+                .append("config", new BsonDocument("metric", new BsonString("devices.total")));
+
+        BsonDocument legacy = new BsonDocument()
+                .append("spaceId", new BsonString("space-1"))
+                .append("version", new BsonInt64(2L))
+                .append("widgets", new BsonArray(List.of(legacyWidget)));
+
+        DashboardLayoutEntity read = decode(DashboardLayoutEntity.class, legacy);
+
+        assertEquals("space-1", read.spaceId);
+        assertEquals(2L, read.version);
+        assertEquals(1, read.widgets.size());
+        DashboardWidget readWidget = read.widgets.get(0);
+        assertEquals("w1", readWidget.id);
+        assertEquals("stat", readWidget.type);
+        assertEquals("devices.total", readWidget.config.get("metric"));
+        // 再编回去：layout 不会出现 —— 第一次保存就把它从文档里洗掉了，
+        // 「解出来再存回去」之后老键自然消失，这正是「不需要迁移」的具体含义
+        assertTrue(!encode(read).getArray("widgets").get(0).asDocument().containsKey("layout"));
     }
 
     /** 同一格兜的还有空间属性；顺带说明这条 provider 是跨实体生效的，不是给历史打的一个补丁。 */

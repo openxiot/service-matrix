@@ -17,6 +17,23 @@ public class DeviceRepository implements ReactivePanacheMongoRepository<DeviceEn
         return list("space.spaceId", spaceId);
     }
 
+    /**
+     * 列出落点在这些空间的设备（一次 {@code $in}）。
+     *
+     * <p>给「整个子树」的清单用（看板编辑器的候选设备）：子树的空间 id 是**现算**出来的
+     * （{@code SpaceService.getDescendants}），逐个空间各查一次会把一次清单变成 N 次往返。
+     * 与 {@link #findBySpaceId} 同一个字段，所以口径与归属校验、取数三处一致。</p>
+     *
+     * <p>空清单**短路**：{@code $in []} 一条也匹配不到，但没必要为此打一次库
+     * （同 {@code ModbusServiceRepository.deleteByDeviceDids}）。</p>
+     */
+    public Uni<List<DeviceEntity>> findBySpaceIds(List<String> spaceIds) {
+        if (spaceIds == null || spaceIds.isEmpty()) {
+            return Uni.createFrom().item(List.of());
+        }
+        return list("space.spaceId in ?1", spaceIds);
+    }
+
     public Uni<List<DeviceEntity>> findByRootId(String rootId) {
         return list("rootId", rootId);
     }
