@@ -11,6 +11,7 @@ import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
 import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.WidgetSize;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -29,6 +30,15 @@ import org.junit.jupiter.api.Test;
  * </ul>
  */
 class DashboardWidgetValidatorTest {
+
+    /**
+     * 报错文案里的档位名单，**手抄**在这里，不要用 {@code WidgetSize.values()} 拼：
+     * 拼出来的话断言的两边同源，改错了也照样过。这一串正是「名单真的列全了」的凭据 ——
+     * 加档位那天它会红，提醒你去对 {@code DashboardWidgetValidator} 那句文案
+     * （那处是从枚举生成的，会自动更新）。
+     */
+    private static final String SIZE_NAMES = "W6H92/W12H92/W6H200/W12H200/W24H200"
+            + "/W12H308/W24H308/W12H416/W24H416";
 
     // ===== 布局外壳 =====
 
@@ -145,7 +155,7 @@ class DashboardWidgetValidatorTest {
     void validateWidget_sizeRequired() {
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = null;
-        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
+        assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
 
     @Test
@@ -153,7 +163,7 @@ class DashboardWidgetValidatorTest {
         // 档位名大小写不符按「不认识」处理（WidgetSize.of 是全等比较），不悄悄接受 "m"
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = "m";
-        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
+        assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
 
     @Test
@@ -248,19 +258,37 @@ class DashboardWidgetValidatorTest {
     /** 档位只认名字，服务端不认识占格 —— 任何合法档位都直接通过，不需要任何占格信息 */
     @Test
     void validateWidget_sizeIsTierNameOnly() {
-        for (String size : List.of("S1", "M1", "S", "M", "L", "XL")) {
+        for (WidgetSize size : WidgetSize.values()) {
             DashboardWidget w = widget("stat", config("metric", "devices.total"));
-            w.size = size;
+            w.size = size.name();
             assertValid(w);
         }
     }
 
-    /** 报错文案里的档位名单**从枚举生成**，加档位那天不会说错话 */
+    /**
+     * 改造前的档位名仍然收（{@link WidgetSize#of}）：旧标签页/缓存着旧脚本的前端保存时发的还是
+     * 这些名字，不认的话整个 PUT 被拒，用户那一屏的改动白做。翻译过去占格完全相同，看不出变化。
+     */
+    @Test
+    void validateWidget_legacySizeNamesAreStillAccepted() {
+        for (String legacy : List.of("S1", "M1", "S", "M", "L", "XL")) {
+            DashboardWidget w = widget("stat", config("metric", "devices.total"));
+            w.size = legacy;
+            assertValid(w);
+        }
+    }
+
+    /**
+     * 报错文案里的档位名单**从枚举生成**，加档位那天不会说错话。
+     *
+     * <p>期望值取自手抄的 {@link #SIZE_NAMES}，不是拿 {@code WidgetSize.values()} 拼的
+     * —— 拼出来的话断言的两边同源，怎么改都过，这条用例就白写了。</p>
+     */
     @Test
     void validateWidget_unknownSizeErrorListsEveryTier() {
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = "XXL";
-        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
+        assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
 
     // ===== stat =====
@@ -573,7 +601,7 @@ class DashboardWidgetValidatorTest {
         DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = type;
-        w.size = "S";
+        w.size = "W6H200";
         w.config = config;
         return w;
     }

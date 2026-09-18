@@ -160,7 +160,7 @@ class ObjectPropertyCodecProviderTest {
         DashboardWidget widget = new DashboardWidget();
         widget.id = "w1";
         widget.type = "stat";
-        widget.size = "S";
+        widget.size = "W6H200";
         // 坐标是平铺的两个 Integer（不是老的那个嵌套 layout），落库要原样读回来 ——
         // 读丢了的后果是「拖完保存、刷新回到原位」，而且不报任何错
         widget.x = 6;
@@ -228,6 +228,8 @@ class ObjectPropertyCodecProviderTest {
         BsonDocument legacyWidget = new BsonDocument()
                 .append("_id", new BsonString("w1"))
                 .append("type", new BsonString("stat"))
+                // 档位名也照着老文档写（`S` 是改造前的名字）：落库这一层不认识档位、
+                // 也不认新旧，原样读回 —— 翻译成新名是 codec / 枚举那一层的事
                 .append("size", new BsonString("S"))
                 // 老文档里那个坐标对象。它嵌的深一层，是「未知的键」这条规则的更深一层证据
                 .append("layout", new BsonDocument()

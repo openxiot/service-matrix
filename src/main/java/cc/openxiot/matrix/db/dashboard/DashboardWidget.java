@@ -69,8 +69,9 @@ public class DashboardWidget {
             + "`title` 存在时以 `title` 为准", examples = {"设备总量"})
     public String titleKey;
 
-    @Schema(description = "尺寸档位 S1 / M1 / S / M / L / XL：决定这张卡占几列几行"
-            + "（**占格表在前端**，服务端只认档位名认不认识）", examples = {"S"}, required = true)
+    @Schema(description = "尺寸档位 W{列}H{像素}，如 W6H200 = 6 列宽、200 像素高：决定这张卡"
+            + "占几列几行（**占格表在前端**，服务端只认档位名认不认识；改造前的 S1/M1/S/M/L/XL "
+            + "仍然收，见 WidgetSize.of）", examples = {"W12H200"}, required = true)
     public String size;
 
     @Schema(description = "起始列（0 起，0..23）。**没有这个键 = 老文档**（改造前的卡片没有坐标），"

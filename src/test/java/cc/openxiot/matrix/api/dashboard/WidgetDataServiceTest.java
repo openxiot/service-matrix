@@ -157,7 +157,7 @@ class WidgetDataServiceTest {
         stubOverview();
         // 早先存下来的 config（那时统计卡还有个次要数字）：不认识就不理，主数字照给
         Map<String, Object> config = config("metric", "devices.total", "subMetric", "devices.online");
-        JsonObject data = data(render(widget("w1", "stat", "S", config)), 0);
+        JsonObject data = data(render(widget("w1", "stat", "W6H92", config)), 0);
         assertEquals(10, data.getInteger("value"));
         assertFalse(data.containsKey("subValue"));
     }
@@ -637,7 +637,7 @@ class WidgetDataServiceTest {
     void render_unknownLineSourceIsNotSupported() {
         stubOverview();
         Map<String, Object> config = config("source", "bogus", "window", last(24));
-        WidgetDataService.Item item = render(widget("w1", "line", "M", config)).widgets().get(0);
+        WidgetDataService.Item item = render(widget("w1", "line", "W12H200", config)).widgets().get(0);
 
         assertFalse(item.success());
         assertEquals("widget type is not supported yet: line(bogus)", item.message());
@@ -651,7 +651,7 @@ class WidgetDataServiceTest {
     void render_failureTypeDistributionIsNotSupportedYet() {
         stubOverview();
         Map<String, Object> config = config("dimension", "failureType", "window", last(24));
-        WidgetDataService.Item item = render(widget("w1", "distribution", "M", config)).widgets().get(0);
+        WidgetDataService.Item item = render(widget("w1", "distribution", "W12H200", config)).widgets().get(0);
 
         assertFalse(item.success());
         assertEquals("dimension is not supported yet: failureType", item.message());
@@ -710,7 +710,7 @@ class WidgetDataServiceTest {
     void render_distributionIsNotTruncated() {
         stubOverview();
         Map<String, Object> config = config("dimension", "deviceType", "chart", "pie", "limit", 1);
-        JsonObject data = data(render(widget("w1", "distribution", "M", config)), 0);
+        JsonObject data = data(render(widget("w1", "distribution", "W12H200", config)), 0);
 
         assertEquals(2, data.getJsonArray("groups").size());
     }
@@ -748,7 +748,7 @@ class WidgetDataServiceTest {
     @Test
     void render_lineWithoutSourceIsNotSupported() {
         stubOverview();
-        WidgetDataService.Item item = render(widget("w1", "line", "M", config("window", last(24)))).widgets().get(0);
+        WidgetDataService.Item item = render(widget("w1", "line", "W12H200", config("window", last(24)))).widgets().get(0);
         assertFalse(item.success());
         assertEquals("widget type is not supported yet: line(null)", item.message());
     }
@@ -896,7 +896,7 @@ class WidgetDataServiceTest {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
                 "functionIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
-        return widget(id, "line", "M", config);
+        return widget(id, "line", "W12H200", config);
     }
 
     private static DashboardWidget curve(String id, Map<String, Object> window) {
@@ -955,7 +955,7 @@ class WidgetDataServiceTest {
         if (window != null) {
             config.put("window", window);
         }
-        return widget(id, "stat", "S", config);
+        return widget(id, "stat", "W6H92", config);
     }
 
     private static DashboardWidget distribution(String id, String dimension, Map<String, Object> window) {
@@ -963,15 +963,15 @@ class WidgetDataServiceTest {
         if (window != null) {
             config.put("window", window);
         }
-        return widget(id, "distribution", "M", config);
+        return widget(id, "distribution", "W12H200", config);
     }
 
     private static DashboardWidget line(String id, Map<String, Object> window) {
-        return widget(id, "line", "M", config("source", "alarmCount", "window", window));
+        return widget(id, "line", "W12H200", config("source", "alarmCount", "window", window));
     }
 
     private static DashboardWidget device(String id, String did, String pid) {
-        return widget(id, "device", "M", config("did", did, "pid", pid));
+        return widget(id, "device", "W12H200", config("did", did, "pid", pid));
     }
 
     /** 一次查询返回的设备（只为型号：卡片把它转给前端去查产品规格）。 */
@@ -1003,7 +1003,7 @@ class WidgetDataServiceTest {
     }
 
     private static DashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
-        return widget(id, "service", "M", config("serviceId", SERVICE_ID,
+        return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
                 "functionIndex", functionIndex, "fields", fields));
     }
 

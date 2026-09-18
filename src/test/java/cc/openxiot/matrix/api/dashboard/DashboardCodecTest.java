@@ -61,27 +61,27 @@ class DashboardCodecTest {
         JsonObject first = widgets.getJsonObject(0);
         assertEquals("设备总量", first.getString("titleKey"));
         assertEquals("stat", first.getString("type"));
-        // 统计卡是 S1（一行高 92px）：它没有卡头、按内容自然高约 90px，塞在 200px 的
-        // 档位里下面会空 110px。这一条同时钉住「预置布局的档位不许被顺手改回 S」
-        assertEquals("S1", first.getString("size"));
+        // 统计卡是 W6H92（一行高 92px）：它没有卡头、按内容自然高约 90px，塞在 200px 的
+        // 档位里下面会空 110px。这一条同时钉住「预置布局的档位不许被顺手改回 W6H200」
+        assertEquals("W6H92", first.getString("size"));
     }
 
     @Test
     void encode_presetWidgetsAreInVisualOrder() {
         JsonArray widgets = DashboardLayoutCodec.encode(PresetLayouts.build("space-1")).getJsonArray("widgets");
         // **数组顺序是阅读顺序**（先行后列，也正是视觉顺序）：4 张统计卡在前（各占 6 列、
-        // 一行高），后 4 张 M 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
+        // 一行高），后 4 张 W12H200 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
         // 所以改动 PresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
         assertEquals(8, widgets.size());
         for (int i = 0; i < 4; i++) {
             assertEquals("stat", widgets.getJsonObject(i).getString("type"), "widget " + i);
-            assertEquals("S1", widgets.getJsonObject(i).getString("size"), "widget " + i);
+            assertEquals("W6H92", widgets.getJsonObject(i).getString("size"), "widget " + i);
             // 预置布局**不带坐标**：坐标得配着 w 一起写才对，而 w 只在前端（见 PresetLayouts）
             assertFalse(widgets.getJsonObject(i).containsKey("x"), "widget " + i);
             assertFalse(widgets.getJsonObject(i).containsKey("y"), "widget " + i);
         }
         for (int i = 4; i < 8; i++) {
-            assertEquals("M", widgets.getJsonObject(i).getString("size"), "widget " + i);
+            assertEquals("W12H200", widgets.getJsonObject(i).getString("size"), "widget " + i);
         }
     }
 
@@ -243,7 +243,7 @@ class DashboardCodecTest {
         DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = "stat";
-        w.size = "S";
+        w.size = "W6H200";
         w.config = new LinkedHashMap<>(Map.of("metric", "devices.total"));
         return w;
     }

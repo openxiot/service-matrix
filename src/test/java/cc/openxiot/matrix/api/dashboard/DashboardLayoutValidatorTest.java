@@ -320,7 +320,7 @@ class DashboardLayoutValidatorTest {
         DashboardWidget w = new DashboardWidget();
         w.id = id;
         w.type = type;
-        w.size = "M";
+        w.size = "W12H200";
         w.config = config;
         return w;
     }

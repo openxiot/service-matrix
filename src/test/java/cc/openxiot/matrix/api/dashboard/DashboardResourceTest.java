@@ -421,7 +421,7 @@ class DashboardResourceTest {
         DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = "stat";
-        w.size = "S";
+        w.size = "W6H200";
         w.config = new LinkedHashMap<>(Map.of("metric", "devices.total"));
         return w;
     }

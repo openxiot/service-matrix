@@ -55,7 +55,9 @@ public final class DashboardWidgetValidator {
 
     /**
      * 档位名单的文案，**从枚举生成**。上一版这里是手抄的 {@code "S/M/L/XL"} —— 那是第四处
-     * 硬编码名单（另三处是前端的类型、占格表、codec），加 {@code S1}/{@code M1} 那天它就会说错话。
+     * 硬编码名单（另三处是前端的类型、占格表、codec），档位一改名它就会说错话
+     * （{@code S/M/L/XL} → {@code S1/M1/...} → 今天的 {@code W6H200} 那一套，改了两次）。
+     * 生成出来则永远与枚举一致。
      */
     private static final String SIZE_NAMES =
             Arrays.stream(WidgetSize.values()).map(Enum::name).collect(Collectors.joining("/"));
