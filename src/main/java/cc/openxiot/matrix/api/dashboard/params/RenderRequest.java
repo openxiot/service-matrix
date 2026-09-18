@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.params;
 
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -16,7 +16,7 @@ import java.util.List;
  * 而那时候用户看到的「预览」就不再是承诺。</p>
  *
  * <p>草稿是**成员可用的**（§6.2）：{@code render} 只读，且归属校验照做
- * （{@code DashboardLayoutValidator}），所以成员预览不了别人的卡片，这不构成漏洞。</p>
+ * （{@code WidgetOwnershipValidator}），所以成员预览不了别人的卡片，这不构成漏洞。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)

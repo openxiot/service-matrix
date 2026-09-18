@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.dashboard;
+package cc.openxiot.matrix.db.dashboard.widget;
 
 import java.util.Map;
 

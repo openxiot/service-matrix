@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.layout;
 
 import cc.openxiot.common.person.codec.PersonCodec;
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 

@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db;
+package cc.openxiot.matrix.typedef.model;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.Document;

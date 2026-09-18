@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.catalog;
 
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;

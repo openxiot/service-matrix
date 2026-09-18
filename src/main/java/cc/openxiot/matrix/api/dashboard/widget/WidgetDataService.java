@@ -1,10 +1,10 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -68,7 +68,7 @@ public class WidgetDataService {
     StatisticsQueryService statisticsQueryService;
 
     @Inject
-    DashboardLayoutValidator layoutValidator;
+    WidgetOwnershipValidator ownershipValidator;
 
     @Inject
     ModbusHistoryQueryService historyQueryService;
@@ -132,7 +132,7 @@ public class WidgetDataService {
      * （编辑器预览用；成员可用，见 §6.2）。
      */
     public Uni<WidgetData> render(SpaceEntity space, List<DashboardWidget> widgets) {
-        String spaceId = DashboardLayoutService.spaceIdOf(space);
+        String spaceId = space.rootSpaceId();
         // 整份请求共用一个「现在」：各卡片的窗口若各取各的 now，`last 24h` 之间会差几毫秒，
         // 于是本该共用一次查询的卡片被拆成多次
         Date now = new Date();
@@ -177,7 +177,7 @@ public class WidgetDataService {
         // 2) 先判归属，再取数。**这一步是安全边界，不是优化**：`serviceId` / `did` 是用户填的，
         //    只按 id 查（`Modbus-History.md` 当前的写法）就意味着拿到别人的 id 就能读别人的数据。
         //    已存布局同样要判 —— 保存时校验过，但那张卡片引用的服务可能在那之后被删掉了。
-        return layoutValidator.errorsByWidget(space, widgets)
+        return ownershipValidator.errorsByWidget(space, widgets)
                 .chain(errors -> Uni.combine().all()
                         .unis(fetchOverviews(spaceId, windows), fetchServices(serviceIds),
                                 fetchDevices(space.rootSpaceId(), dids), fetchCurves(curves),
@@ -220,7 +220,7 @@ public class WidgetDataService {
      *
      * <p>写坏的 {@code source}（比如库里存着上一版的名字）归 {@link Source#NONE}：它会在
      * {@link #unsupportedDetail} 里被说成 {@code line(bogus)}，比含混的「这个窗口没取到数」
-     * 更能指出是哪儿写坏了。保存时 {@code DashboardWidgetValidator} 已经拦过一道，
+     * 更能指出是哪儿写坏了。保存时 {@code WidgetStructureValidator} 已经拦过一道，
      * 但服务端加过一个取值又删掉时，老布局就会带着它躺在库里。</p>
      */
     private static Source sourceOf(DashboardWidget widget) {
@@ -792,7 +792,7 @@ public class WidgetDataService {
 
     /**
      * 一个字段名在服务定义里的展示元数据。**先找父字段、再找位**，与归属校验的
-     * {@code DashboardLayoutValidator.hasField} 同一顺序：位名是用户自己填的，可能与别的字段重名，
+     * {@code WidgetOwnershipValidator.hasField} 同一顺序：位名是用户自己填的，可能与别的字段重名，
      * 先命中父字段才对。
      *
      * <p>找不到时给「无单位、非位」：正常路径上到不了（字段名在保存时已校验过），
@@ -822,7 +822,7 @@ public class WidgetDataService {
     }
 
     /**
-     * 按 {@code index} 找方法。与 {@code DashboardLayoutValidator} / {@code ModbusServiceService}
+     * 按 {@code index} 找方法。与 {@code WidgetOwnershipValidator} / {@code ModbusServiceService}
      * 里那两个同名私有方法同一段逻辑（那两处的签名一个收 {@code Integer}、一个收 {@code int}）——
      * 三次出现仍是各写一份：为 8 行扫描去动两个正在工作的类，风险比收益大。
      */
@@ -936,7 +936,7 @@ public class WidgetDataService {
         }
 
         /**
-         * 从卡片配置里读。三元组缺一就给 {@code null}（{@code DashboardWidgetValidator} 已经拦过，
+         * 从卡片配置里读。三元组缺一就给 {@code null}（{@code WidgetStructureValidator} 已经拦过，
          * 这里是兜底：服务端加过一个必填项又撤掉时，老布局会带着不完整的配置躺在库里）。
          */
         static CurveQuery of(DashboardWidget widget, Window window) {

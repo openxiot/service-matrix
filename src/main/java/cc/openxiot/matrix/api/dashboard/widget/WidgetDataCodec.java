@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;

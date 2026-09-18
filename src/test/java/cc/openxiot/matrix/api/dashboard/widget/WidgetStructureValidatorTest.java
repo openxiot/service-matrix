@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
-import cc.openxiot.matrix.db.dashboard.WidgetSize;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.WidgetSize;
 import org.junit.jupiter.api.Test;
 
 /**
- * 卡片配置的结构性校验。**纯 JUnit，不连库**（这正是把纯校验从
- * {@code DashboardLayoutValidator} 里切出来的原因）：{@code @QuarkusTest} 会拉起整个应用。
+ * 卡片配置的结构性校验。**纯 JUnit，不连库**（这正是把纯校验从查库的
+ * {@code WidgetOwnershipValidator} 里切出来的原因）：{@code @QuarkusTest} 会拉起整个应用。
  *
  * <p>覆盖的重点不是「每条规则各有一句代码」，而是两类容易写错的地方：</p>
  * <ul>
@@ -29,12 +29,12 @@ import org.junit.jupiter.api.Test;
  *       仪表盘、刷新后却看到一个数字，是比报错更差的体验。</li>
  * </ul>
  */
-class DashboardWidgetValidatorTest {
+class WidgetStructureValidatorTest {
 
     /**
      * 报错文案里的档位名单，**手抄**在这里，不要用 {@code WidgetSize.values()} 拼：
      * 拼出来的话断言的两边同源，改错了也照样过。这一串正是「名单真的列全了」的凭据 ——
-     * 加档位那天它会红，提醒你去对 {@code DashboardWidgetValidator} 那句文案
+     * 加档位那天它会红，提醒你去对 {@code WidgetStructureValidator} 那句文案
      * （那处是从枚举生成的，会自动更新）。
      */
     private static final String SIZE_NAMES = "W6H92/W12H92/W6H200/W12H200/W24H200"
@@ -44,47 +44,47 @@ class DashboardWidgetValidatorTest {
 
     @Test
     void validate_ok() {
-        assertNull(DashboardWidgetValidator.validate(body(0L, widget("stat", config("metric", "devices.total")))));
+        assertNull(WidgetStructureValidator.validate(body(0L, widget("stat", config("metric", "devices.total")))));
     }
 
     @Test
     void validate_bodyRequired() {
-        assertTrue(DashboardWidgetValidator.validate(null).contains("body is required"));
+        assertTrue(WidgetStructureValidator.validate(null).contains("body is required"));
     }
 
     @Test
     void validate_versionRequired() {
         // version 用包装类型就是为了能区分「没传」和「传了 0」：漏传必须报错
-        assertTrue(DashboardWidgetValidator.validate(body(null, widget("stat", config("metric", "devices.total"))))
+        assertTrue(WidgetStructureValidator.validate(body(null, widget("stat", config("metric", "devices.total"))))
                 .contains("version is required"));
     }
 
     @Test
     void validate_versionNegative() {
-        assertTrue(DashboardWidgetValidator.validate(body(-1L, widget("stat", config("metric", "devices.total"))))
+        assertTrue(WidgetStructureValidator.validate(body(-1L, widget("stat", config("metric", "devices.total"))))
                 .contains("version must not be negative"));
     }
 
     @Test
     void validate_widgetsRequired() {
-        assertTrue(DashboardWidgetValidator.validate(body(0L, (List<DashboardWidget>) null))
+        assertTrue(WidgetStructureValidator.validate(body(0L, (List<DashboardWidget>) null))
                 .contains("widgets is required"));
     }
 
     @Test
     void validate_emptyWidgetsAllowed() {
         // 空看板是合法状态（用户把卡片全删了），不该报错
-        assertNull(DashboardWidgetValidator.validate(body(0L, List.of())));
+        assertNull(WidgetStructureValidator.validate(body(0L, List.of())));
     }
 
     @Test
     void validate_tooManyWidgets() {
         List<DashboardWidget> widgets = new ArrayList<>();
-        for (int i = 0; i <= DashboardWidgetValidator.MAX_WIDGETS; i++) {
+        for (int i = 0; i <= WidgetStructureValidator.MAX_WIDGETS; i++) {
             widgets.add(widget("stat", config("metric", "devices.total")));
         }
-        assertTrue(DashboardWidgetValidator.validate(body(0L, widgets))
-                .contains("too many widgets: at most " + DashboardWidgetValidator.MAX_WIDGETS));
+        assertTrue(WidgetStructureValidator.validate(body(0L, widgets))
+                .contains("too many widgets: at most " + WidgetStructureValidator.MAX_WIDGETS));
     }
 
     @Test
@@ -93,7 +93,7 @@ class DashboardWidgetValidatorTest {
         DashboardWidget b = widget("stat", config("metric", "services.total"));
         b.id = a.id;
         // 渲染结果按 id 对应卡片，id 重了就会出现「两张卡显示同一个数」
-        assertTrue(DashboardWidgetValidator.validate(body(0L, List.of(a, b))).contains("duplicated widget id"));
+        assertTrue(WidgetStructureValidator.validate(body(0L, List.of(a, b))).contains("duplicated widget id"));
     }
 
     /**
@@ -104,7 +104,7 @@ class DashboardWidgetValidatorTest {
         DashboardWidget ok = widget("stat", config("metric", "devices.total"));
         DashboardWidget bad = widget("stat", config("metric", "devices.total"));
         bad.type = "pie";
-        String err = DashboardWidgetValidator.validate(body(0L, List.of(ok, bad)));
+        String err = WidgetStructureValidator.validate(body(0L, List.of(ok, bad)));
         assertNotNull(err);
         assertTrue(err.startsWith("widgets[1]: "), () -> "unexpected message: " + err);
     }
@@ -520,7 +520,7 @@ class DashboardWidgetValidatorTest {
     @Test
     void service_fieldsLimit() {
         List<String> tooMany = new ArrayList<>();
-        for (int i = 0; i <= DashboardWidgetValidator.MAX_SERVICE_FIELDS; i++) {
+        for (int i = 0; i <= WidgetStructureValidator.MAX_SERVICE_FIELDS; i++) {
             tooMany.add("f" + i);
         }
         assertInvalid("config.fields has too many entries", widget("service",
@@ -608,12 +608,12 @@ class DashboardWidgetValidatorTest {
     }
 
     private static void assertValid(DashboardWidget widget) {
-        String err = DashboardWidgetValidator.validate(body(0L, widget));
+        String err = WidgetStructureValidator.validate(body(0L, widget));
         assertNull(err, () -> "expected valid but got: " + err);
     }
 
     private static void assertInvalid(String expected, DashboardWidget widget) {
-        String err = DashboardWidgetValidator.validate(body(0L, widget));
+        String err = WidgetStructureValidator.validate(body(0L, widget));
         assertNotNull(err, () -> "expected an error containing <" + expected + ">");
         assertTrue(err.contains(expected), () -> "expected <" + expected + "> but was <" + err + ">");
     }

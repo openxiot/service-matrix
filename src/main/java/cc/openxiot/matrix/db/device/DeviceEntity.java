@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.device;
 
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.SpaceOn;
 
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntityBase;

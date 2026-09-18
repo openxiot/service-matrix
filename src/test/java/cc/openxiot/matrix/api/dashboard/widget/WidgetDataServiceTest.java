@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,7 +24,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -75,7 +75,7 @@ class WidgetDataServiceTest {
     StatisticsQueryService statisticsQueryService;
 
     @InjectMock
-    DashboardLayoutValidator layoutValidator;
+    WidgetOwnershipValidator ownershipValidator;
 
     @InjectMock
     ModbusHistoryQueryService historyQueryService;
@@ -106,7 +106,7 @@ class WidgetDataServiceTest {
      */
     @BeforeEach
     void stubDefaults() {
-        when(layoutValidator.errorsByWidget(any(), anyList())).thenReturn(Uni.createFrom().item(Map.of()));
+        when(ownershipValidator.errorsByWidget(any(), anyList())).thenReturn(Uni.createFrom().item(Map.of()));
         when(historyQueryService.currentValues(anyString())).thenReturn(Uni.createFrom().item(List.of()));
         when(serviceRepo.findById(anyString())).thenReturn(Uni.createFrom().nullItem());
         when(manipulationService.getShadows(anyString(), anyList()))
@@ -262,7 +262,7 @@ class WidgetDataServiceTest {
     }
 
     /**
-     * 布局按**根空间**存与取（{@code DashboardLayoutService.spaceIdOf}）：子空间页面看到的是
+     * 布局按**根空间**存与取（{@code SpaceEntity.rootSpaceId()}）：子空间页面看到的是
      * 项目那一份布局，取数也必须按同一个基准，否则会出现「存得下但渲染是空的」。
      */
     @Test
@@ -329,7 +329,7 @@ class WidgetDataServiceTest {
      */
     @Test
     void render_ownershipErrorTakesPrecedenceOverUnsupported() {
-        when(layoutValidator.errorsByWidget(any(), anyList()))
+        when(ownershipValidator.errorsByWidget(any(), anyList()))
                 .thenReturn(Uni.createFrom().item(Map.of("w1", "device not found: did-9")));
         stubOverview();
 
@@ -348,7 +348,7 @@ class WidgetDataServiceTest {
         stubOverview();
         render(stat("w1", "devices.total", null));
 
-        verify(layoutValidator).errorsByWidget(any(), anyList());
+        verify(ownershipValidator).errorsByWidget(any(), anyList());
     }
 
     // ===== device =====

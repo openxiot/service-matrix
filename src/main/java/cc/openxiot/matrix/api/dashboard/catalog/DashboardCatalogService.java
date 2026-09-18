@@ -1,9 +1,8 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.catalog;
 
+import cc.openxiot.matrix.api.dashboard.widget.WidgetOwnershipValidator;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
@@ -27,7 +26,7 @@ import java.util.List;
  * 再按 {@code space.spaceId} / {@code device.space.spaceId} 取。
  * 不一致的表现是最难查的那种 ——「编辑器里选得到，保存报『不属于本空间』」，
  * 或者更糟「存得下、渲染永远是空的」。所以这里刻意复用
- * {@link DashboardLayoutValidator} 判归属时用的同一个字段路径，不另算一套。</p>
+ * {@link WidgetOwnershipValidator} 判归属时用的同一个字段路径，不另算一套。</p>
  *
  * <p>可见性粒度就是「空间成员看到本项目子树的全部设备/服务」：{@code DeviceResource}
  * 那边也只做一次 {@code requireSpaceMember}，没有更细的口径可用。</p>
@@ -46,7 +45,7 @@ public class DashboardCatalogService {
 
     /** 本项目的候选设备与服务，一次子树查询两路并发。 */
     public Uni<JsonObject> catalog(SpaceEntity space) {
-        String rootId = space == null ? null : DashboardLayoutService.spaceIdOf(space);
+        String rootId = space == null ? null : space.rootSpaceId();
         if (rootId == null) {
             return Uni.createFrom().item(DashboardCatalogCodec.encode(List.of(), List.of()));
         }

@@ -4,10 +4,17 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.dashboard.catalog.DashboardCatalogService;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutCodec;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutService;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutValidator;
 import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.params.RenderRequest;
+import cc.openxiot.matrix.api.dashboard.widget.WidgetStructureValidator;
+import cc.openxiot.matrix.api.dashboard.widget.WidgetDataCodec;
+import cc.openxiot.matrix.api.dashboard.widget.WidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -38,7 +45,7 @@ import java.util.List;
  * 它只读，且归属校验照做，所以成员预览不了别人的卡片（§6.2）。</p>
  *
  * <p>鉴权是本类的两个私有 helper，「卡片配置本身合不合法」是
- * {@link DashboardWidgetValidator} / {@link DashboardLayoutValidator} 的事 —— 两者分开，
+ * {@link WidgetStructureValidator} / {@link DashboardLayoutValidator} 的事 —— 两者分开，
  * 校验器才能被成员可用的 {@code render} 复用。</p>
  */
 @Path("/matrix/v1/dashboard")
@@ -124,7 +131,7 @@ public class DashboardResource extends AbstractResource {
                         ? renderStored(space)
                         // 草稿的**结构**错误整份拒绝：body 不成形时连「有哪些卡片」都无从谈起，
                         // 报第一处错比逐张标红更好定位（归属错误则相反，逐张隔离，见 build）
-                        : failFast(DashboardWidgetValidator.validateWidgets(draft))
+                        : failFast(WidgetStructureValidator.validateWidgets(draft))
                         .chain(ignored -> widgetDataService.render(space, draft)))
                 .map(data -> OxResponse.ok(WidgetDataCodec.encode(data)))
                 .onFailure(IllegalArgumentException.class)

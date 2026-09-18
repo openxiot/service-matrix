@@ -9,7 +9,7 @@ import cc.openxiot.matrix.api.device.request.DeviceUpdateSpaceRequest;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceEntityMapper;
 import cc.openxiot.matrix.db.space.SpaceEntity;

@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
-import cc.openxiot.matrix.db.dashboard.WidgetSize;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.WidgetSize;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>「能不能写」是资源层 {@code requireSpaceAdmin} 的事；</li>
  *   <li>「设备/服务是否属于该空间」「{@code (serviceId, functionIndex, field)} 三元组是否存在」
- *       需要查库，是 {@link DashboardLayoutValidator} 的事。</li>
+ *       需要查库，是 {@link WidgetOwnershipValidator} 的事。</li>
  * </ul>
  * <p>这样切分的实际好处：本类能被不碰库的纯 JUnit 覆盖（{@code @QuarkusTest} 会要求连 Mongo），
  * 而且成员可用的 {@code render} 也能直接复用它校验请求体里那份「未保存的草稿」。</p>
@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * <p>错误文案一律带 {@code widgets[i]} 前缀（i 是卡片在数组里的下标）：编辑器一次能提交几十张卡，
  * 不指出是哪一张的报错等于没报。</p>
  */
-public final class DashboardWidgetValidator {
+public final class WidgetStructureValidator {
 
     /** 一个看板的卡片数上限：防止一次 render 打爆后端（每张卡都可能触发一次上游查询）。 */
     public static final int MAX_WIDGETS = 30;
@@ -88,7 +88,7 @@ public final class DashboardWidgetValidator {
      */
     private static final Set<String> DISPLAYS = Set.of("value");
 
-    private DashboardWidgetValidator() {
+    private WidgetStructureValidator() {
     }
 
     /** 校验保存请求体。返回 {@code null} 表示通过。 */
@@ -234,7 +234,7 @@ public final class DashboardWidgetValidator {
             }
             return null;
         }
-        // serviceField：三元组必须齐全。字段是否存在由 DashboardWidgetOwnershipValidator 查库确认。
+        // serviceField：三元组必须齐全。字段是否存在由 WidgetOwnershipValidator 查库确认。
         if (WidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
         }

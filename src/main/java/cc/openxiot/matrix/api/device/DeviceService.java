@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.device;
 
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;

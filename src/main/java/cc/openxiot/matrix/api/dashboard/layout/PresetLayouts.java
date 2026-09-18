@@ -1,8 +1,8 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.layout;
 
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
-import cc.openxiot.matrix.db.dashboard.WidgetSize;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.WidgetSize;
 
 import java.util.LinkedHashMap;
 import java.util.List;

@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.space;
 
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import com.mongodb.client.model.Filters;

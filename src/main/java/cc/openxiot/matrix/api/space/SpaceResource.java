@@ -8,7 +8,7 @@ import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;

@@ -19,9 +19,17 @@ import java.util.Map;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.dashboard.catalog.DashboardCatalogCodec;
+import cc.openxiot.matrix.api.dashboard.catalog.DashboardCatalogService;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutCodec;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutService;
+import cc.openxiot.matrix.api.dashboard.layout.DashboardLayoutValidator;
+import cc.openxiot.matrix.api.dashboard.layout.PresetLayouts;
+import cc.openxiot.matrix.api.dashboard.widget.WidgetStructureValidator;
+import cc.openxiot.matrix.api.dashboard.widget.WidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
@@ -383,7 +391,7 @@ class DashboardResourceTest {
     void render_draftTooManyWidgets_isRejected() {
         allowSpaceMember();
         List<DashboardWidget> tooMany = new ArrayList<>();
-        for (int i = 0; i <= DashboardWidgetValidator.MAX_WIDGETS; i++) {
+        for (int i = 0; i <= WidgetStructureValidator.MAX_WIDGETS; i++) {
             DashboardWidget w = statWidget();
             w.id = "w" + i;
             tooMany.add(w);
@@ -393,7 +401,7 @@ class DashboardResourceTest {
                 .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
-                .body("message", equalTo("too many widgets: at most " + DashboardWidgetValidator.MAX_WIDGETS));
+                .body("message", equalTo("too many widgets: at most " + WidgetStructureValidator.MAX_WIDGETS));
 
         verify(widgetDataService, never()).render(any(), anyList());
     }

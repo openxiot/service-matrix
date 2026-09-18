@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,13 +16,13 @@ import java.util.List;
  * 需要区分类型错误的地方（如 {@code intVal} 拿到字符串 {@code "24"}）由调用方用
  * {@code config.containsKey} 自行判断，因为多数可选项「没给」是合法缺省。</p>
  */
-final class WidgetConfigs {
+public final class WidgetConfigs {
 
     private WidgetConfigs() {
     }
 
     /** 非空字符串才算给了。 */
-    static String str(Object value) {
+    public static String str(Object value) {
         if (!(value instanceof String s) || s.isBlank()) {
             return null;
         }
@@ -30,16 +30,16 @@ final class WidgetConfigs {
     }
 
     /** JSON 数字在 Jackson 下可能是 Integer / Long / Double，一律按 {@code Number} 收。 */
-    static Integer intVal(Object value) {
+    public static Integer intVal(Object value) {
         return value instanceof Number n ? n.intValue() : null;
     }
 
-    static Long longVal(Object value) {
+    public static Long longVal(Object value) {
         return value instanceof Number n ? n.longValue() : null;
     }
 
     /** 字符串数组；非字符串元素直接跳过（该报的错由结构校验负责，这里只求不抛异常）。 */
-    static List<String> strList(Object value) {
+    public static List<String> strList(Object value) {
         List<String> result = new ArrayList<>();
         if (value instanceof List<?> list) {
             for (Object item : list) {

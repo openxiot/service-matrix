@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test;
  * **拿什么当基准、以及哪些情况算不属于**。</p>
  */
 @QuarkusTest
-class DashboardLayoutValidatorTest {
+class WidgetOwnershipValidatorTest {
 
     private static final String ROOT_ID = "6512f3a4b5c6d7e8f9a0b1c2";
     private static final String CHILD_ID = "6512f3a4b5c6d7e8f9a0b1c3";
@@ -63,7 +63,7 @@ class DashboardLayoutValidatorTest {
     DeviceRepository deviceRepo;
 
     @Inject
-    DashboardLayoutValidator validator;
+    WidgetOwnershipValidator validator;
 
     /** 默认：根空间 + 一个子空间；两个库都查不到东西。要测什么的用例各自再 stub。 */
     @BeforeEach

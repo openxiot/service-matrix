@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.matrix.api.space.access.AccountUserLookup;
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;

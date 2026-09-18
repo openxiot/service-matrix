@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.db.mongo;
 
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.space.SpaceEntity;

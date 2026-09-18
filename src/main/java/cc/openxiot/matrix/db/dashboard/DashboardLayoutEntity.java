@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.db.dashboard;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;

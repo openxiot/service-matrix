@@ -4,7 +4,7 @@ import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
-import cc.openxiot.matrix.db.ModelAnchor;
+import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import cc.openxiot.matrix.db.space.SpaceEntity;

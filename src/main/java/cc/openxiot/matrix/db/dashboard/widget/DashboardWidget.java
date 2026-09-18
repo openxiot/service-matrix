@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.dashboard;
+package cc.openxiot.matrix.db.dashboard.widget;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -34,7 +34,7 @@ import java.util.Map;
  * <p><b>{@code config} 是异构的，且故意不建成统一的 POJO</b>：五种卡片的配置字段几乎不重叠
  * （统计卡片要 metric、曲线要服务与字段、分布要 dimension 与窗口…），硬塞进一个大 POJO 会得到
  * 一个大部分字段长期为 null 的类。用 {@code Map<String, Object>} 的代价是校验要在
- * {@code DashboardWidgetValidator} 里手写（不能靠 Jackson 绑定），这个代价是值得的。</p>
+ * {@code WidgetStructureValidator} 里手写（不能靠 Jackson 绑定），这个代价是值得的。</p>
  *
  * <p><b>不需要为它写 codec</b>：{@code db/mongo/ObjectPropertyCodecProvider} 已经把
  * 「声明类型是 Object 的字段」这一格的 codec 兜底装好了，而值类型为 Object 的 Map 本来也有

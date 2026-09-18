@@ -1,10 +1,10 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.layout;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.DashboardLayoutRepository;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.widget.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -23,9 +23,9 @@ import java.util.List;
  * 权限、合法性、持久化三层各管各的。</p>
  *
  * <p><b>布局按根空间存</b>：路径上给的 {@code spaceId} 可能是子空间，而布局是「项目一份」，
- * 所以落库与查询一律用 {@code space.rootSpaceId()}（见 {@link #spaceIdOf}）。这样管理员在
+ * 所以落库与查询一律用 {@code space.rootSpaceId()}。这样管理员在
  * 子空间页面和项目页面看到的是同一份布局，也不会因为换了子空间就多出一份空布局。
- * 判定归属（{@code DashboardLayoutValidator}）与取数（{@code WidgetDataService}）用的都是
+ * 判定归属（{@code WidgetOwnershipValidator}）与取数（{@code WidgetDataService}）用的都是
  * 同一个基准 —— 三处必须一致，否则会出现「存得下但渲染是空的」这种最难查的不一致。</p>
  */
 @ApplicationScoped
@@ -56,7 +56,7 @@ public class DashboardLayoutService {
      * 所以前端不需要知道「我拿到的是预置还是真的」—— 直接原样回传 {@code version} 即可。</p>
      */
     public Uni<DashboardLayoutEntity> load(SpaceEntity space) {
-        String spaceId = spaceIdOf(space);
+        String spaceId = space.rootSpaceId();
         return repo.findBySpaceId(spaceId)
                 .map(stored -> stored != null ? stored : PresetLayouts.build(spaceId));
     }
@@ -74,7 +74,7 @@ public class DashboardLayoutService {
      * 保住「谁建的这份看板」。</p>
      */
     public Uni<DashboardLayoutEntity> save(SpaceEntity space, DashboardLayoutDto body, Person who) {
-        String spaceId = spaceIdOf(space);
+        String spaceId = space.rootSpaceId();
         return repo.findBySpaceId(spaceId).chain(current -> {
             if (current == null) {
                 return create(spaceId, body, who);
@@ -92,7 +92,7 @@ public class DashboardLayoutService {
      * 也就不需要「先删掉文档」那一步。
      */
     public DashboardLayoutEntity preset(SpaceEntity space) {
-        return PresetLayouts.build(spaceIdOf(space));
+        return PresetLayouts.build(space.rootSpaceId());
     }
 
     private Uni<DashboardLayoutEntity> create(String spaceId, DashboardLayoutDto body, Person who) {
@@ -154,13 +154,5 @@ public class DashboardLayoutService {
 
     private static Uni<DashboardLayoutEntity> conflict() {
         return Uni.createFrom().failure(new IllegalArgumentException(VERSION_CONFLICT));
-    }
-
-    /** 布局的持久化键：根空间（项目）。路径上给子空间时也归到同一个项目。 */
-    public static String spaceIdOf(SpaceEntity space) {
-        String rootId = space.rootSpaceId();
-        // rootSpaceId() 在 parentId 为空时返回自己的 id，正常不会为 null；真为 null 时退回实体 id，
-        // 总比拿 null 当键（所有空间共用一份布局）安全
-        return rootId == null || rootId.isBlank() ? space.id.toString() : rootId;
     }
 }
