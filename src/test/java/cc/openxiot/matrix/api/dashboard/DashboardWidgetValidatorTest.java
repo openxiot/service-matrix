@@ -38,7 +38,7 @@ class DashboardWidgetValidatorTest {
      * （那处是从枚举生成的，会自动更新）。
      */
     private static final String SIZE_NAMES = "W6H92/W12H92/W6H200/W12H200/W24H200"
-            + "/W12H308/W24H308/W12H416/W24H416";
+            + "/W6H308/W12H308/W24H308/W12H416/W24H416";
 
     // ===== 布局外壳 =====
 
