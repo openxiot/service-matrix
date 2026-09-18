@@ -14,7 +14,6 @@ import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
@@ -95,20 +94,22 @@ public class DashboardResource extends AbstractResource {
     }
 
     /**
-     * 恢复默认：删掉文档，下次读回到预置布局。
+     * 预置布局（只读，无副作用）。「恢复默认」拿它当草稿的起点。
      *
-     * <p>返回的是**删完之后**读到的预置布局，而不是一个空响应：前端「恢复默认」之后本来就要重画看板，
-     * 直接把新布局带回去既省一次 GET，也不会出现「删完再读」之间被别人插进一次保存的竞态。
-     * 响应形状因此与 GET/PUT 完全一致，前端复用同一段解析。</p>
+     * <p><b>所以这是个 GET 而不是 DELETE</b>（改造前是 DELETE：点一下就把库里那份删了）。
+     * 「恢复默认」现在是**纯前端的一次草稿替换**：装进草稿、标脏，用户再点「保存布局」才落库 ——
+     * 在那之前「退出编辑」就等于没发生过。后端因此只提供这一份「预置长什么样」的答案，
+     * 由前端决定要不要用它、什么时候写下去。</p>
+     *
+     * <p>权限与读布局相同（空间成员）：它没有任何副作用，而「预置布局是什么样」本来就是
+     * 每个人打开这个页面都会看到的公开信息。</p>
      */
-    @DELETE
-    @Path("/layout/{spaceId}")
+    @GET
+    @Path("/layout/{spaceId}/preset")
     @RolesAllowed({OxRole.USER})
-    public Uni<Response> reset(@PathParam("spaceId") String spaceId) {
-        return requireSpaceAdmin(spaceId)
-                .chain(space -> layoutService.reset(space)
-                        .chain(ignored -> layoutService.load(space)))
-                .map(layout -> OxResponse.ok(DashboardLayoutCodec.encode(layout)))
+    public Uni<Response> preset(@PathParam("spaceId") String spaceId) {
+        return requireSpaceMember(spaceId)
+                .map(space -> OxResponse.ok(DashboardLayoutCodec.encode(layoutService.preset(space))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -177,7 +178,7 @@ public class DashboardResource extends AbstractResource {
                 });
     }
 
-    /** 空间管理员（保存 / 恢复默认）：改布局影响所有成员，所以比读严一档。 */
+    /** 空间管理员（保存布局）：改布局影响所有成员，所以比读严一档。 */
     private Uni<SpaceEntity> requireSpaceAdmin(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {

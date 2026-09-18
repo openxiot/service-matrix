@@ -82,9 +82,6 @@ public class DashboardWidget {
     @Schema(description = "起始行（0 起，上不封顶）。与 `x` 同生同灭", examples = {"4"})
     public Integer y;
 
-    @Schema(description = "自动刷新间隔（秒）；0 = 不自动刷新", examples = {"60"})
-    public Integer refresh;
-
     @Schema(description = "按 type 而异构的配置（见方案 §5 各卡片一节），落库不做结构化")
     public Map<String, Object> config = new LinkedHashMap<>();
 }

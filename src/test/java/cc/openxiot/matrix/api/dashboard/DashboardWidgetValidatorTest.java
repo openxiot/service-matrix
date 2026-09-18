@@ -167,22 +167,6 @@ class DashboardWidgetValidatorTest {
     }
 
     @Test
-    void validateWidget_refreshRange() {
-        DashboardWidget w = widget("stat", config("metric", "devices.total"));
-        w.refresh = 86_401;
-        assertInvalid("refresh must be between 0 and 86400 seconds", w);
-
-        DashboardWidget negative = widget("stat", config("metric", "devices.total"));
-        negative.refresh = -1;
-        assertInvalid("refresh must be between 0 and 86400 seconds", negative);
-
-        // 0 是合法的：它的含义是「不自动刷新」，不是「没设」
-        DashboardWidget never = widget("stat", config("metric", "devices.total"));
-        never.refresh = 0;
-        assertValid(never);
-    }
-
-    @Test
     void validateWidget_configRequired() {
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.config = null;

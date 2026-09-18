@@ -66,9 +66,8 @@ public final class DashboardLayoutCodec {
 
     /**
      * 一张卡片。缺省项**不补空值**：{@code title} 没设就是不出现（前端据此走「用默认标题」），
-     * {@code refresh} 没设就是不出现（走默认刷新策略），与 {@code ModbusServiceFieldCodec}
-     * 对 {@code value-list} / {@code bit-list} 的处理同口径 —— 补成空串/0 会让「没设」和
-     * 「设成了空」再也分不开。
+     * 与 {@code ModbusServiceFieldCodec} 对 {@code value-list} / {@code bit-list} 的处理同口径
+     * —— 补成空串会让「没设」和「设成了空」再也分不开。
      */
     public static JsonObject encodeWidget(DashboardWidget widget) {
         JsonObject o = new JsonObject();
@@ -91,16 +90,13 @@ public final class DashboardLayoutCodec {
             o.put("size", widget.size);
         }
         // 坐标：两个一起发。老文档（改造前存的）两个都没有，那就两个都不出现 ——
-        // 与上面 title / refresh 同一条口径，不补空值。前端据此知道「这份没有坐标」，
+        // 与上面 title 同一条口径，不补空值。前端据此知道「这份没有坐标」，
         // 会按数组顺序铺一遍（铺法复刻改造前的流式排布，所以老布局长相不变）
         if (widget.x != null) {
             o.put("x", widget.x);
         }
         if (widget.y != null) {
             o.put("y", widget.y);
-        }
-        if (widget.refresh != null) {
-            o.put("refresh", widget.refresh);
         }
         Map<String, Object> config = widget.config;
         o.put("config", config == null ? new JsonObject() : new JsonObject(config));

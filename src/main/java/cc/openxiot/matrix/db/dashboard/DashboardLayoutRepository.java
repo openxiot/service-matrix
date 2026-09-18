@@ -6,7 +6,6 @@ import com.mongodb.WriteConcernException;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
-import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
@@ -66,13 +65,6 @@ public class DashboardLayoutRepository implements ReactivePanacheMongoRepository
                                 Filters.eq("version", expectedVersion)),
                         layout)
                 .map(result -> result.getMatchedCount() > 0);
-    }
-
-    /** 删除某个空间的布局（恢复默认）；返回删除条数，没文档时是 0，不报错。 */
-    public Uni<Long> deleteBySpaceId(String spaceId) {
-        return collection()
-                .deleteOne(Filters.eq("spaceId", spaceId))
-                .map(DeleteResult::getDeletedCount);
     }
 
     /**

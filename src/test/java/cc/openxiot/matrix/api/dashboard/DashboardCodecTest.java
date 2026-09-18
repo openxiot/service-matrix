@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 /**
  * 两个 codec 的线上形状。**纯 JUnit，不连库**。
  *
- * <p>重点在「什么都不补」这条约定：缺省项（{@code title} 没设、{@code refresh} 没设、
+ * <p>重点在「什么都不补」这条约定：缺省项（{@code title} 没设、{@code x}/{@code y} 没给、
  * 预置布局没有 id/creator/updater）一律<b>不出现在 JSON 里</b>。补成空串或 0 会让「没设」
  * 和「设成了空」再也分不开，前端也就没法区分「用默认标题」和「标题被清空了」。</p>
  */
@@ -103,7 +103,6 @@ class DashboardCodecTest {
         JsonObject o = DashboardLayoutCodec.encodeWidget(w);
         assertFalse(o.containsKey("title"));
         assertFalse(o.containsKey("titleKey"));
-        assertFalse(o.containsKey("refresh"));
         assertTrue(o.containsKey("id"));
         assertTrue(o.containsKey("type"));
         assertTrue(o.containsKey("size"));

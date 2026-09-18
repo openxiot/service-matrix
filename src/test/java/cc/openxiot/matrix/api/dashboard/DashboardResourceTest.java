@@ -270,40 +270,43 @@ class DashboardResourceTest {
                 .body("message", equalTo("layout has been modified by someone else, please reload"));
     }
 
-    // ===== DELETE /layout：空间管理员 =====
+    // ===== GET /layout/{spaceId}/preset：空间成员（只读） =====
 
     /**
-     * 恢复默认返回的是**删完之后读到的预置布局**，与 GET/PUT 同形状：前端「恢复默认」之后
-     * 本来就要重画看板，省一次 GET 也就少一次「删完再读」之间被人插进一次保存的竞态。
+     * 「恢复默认」改造后拿它当**草稿的起点**：与 GET /layout 同形状（版本号 0），
+     * 但**一个字节都不写** —— 用户还要点「保存布局」才落库，在那之前「退出编辑」就等于没发生过。
+     *
+     * <p>权限因此比 PUT 松一档（成员即可）：它没有副作用，而「预置布局长什么样」本来就是
+     * 每个人打开这个页面都会看到的公开信息。</p>
      */
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void reset_spaceAdmin_returnsPreset() {
-        allowSpaceAdmin();
-        when(layoutService.reset(any())).thenReturn(Uni.createFrom().item(1L));
-        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(PresetLayouts.build(SPACE_ID)));
+    void preset_member_returnsPreset() {
+        allowSpaceMember();
+        when(layoutService.preset(any())).thenReturn(PresetLayouts.build(SPACE_ID));
 
         given()
-                .when().delete("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/layout/{spaceId}/preset", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.version", equalTo(0))
                 .body("data.widgets.size()", equalTo(8));
 
-        verify(layoutService).reset(any());
+        verify(layoutService).preset(any());
     }
 
+    /**
+     * 这条同时钉住「**没有 DELETE 了**」：改造前「恢复默认」是靠删文档实现的，现在没有删除这回事。
+     * 端点被谁加回来时，这里会告诉他要连测试一起想清楚。
+     */
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void reset_notAdmin_isRejected() {
-        denySpaceAdmin();
+    void preset_isReadOnly_notDelete() {
+        allowSpaceAdmin();
 
         given()
                 .when().delete("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
-                .then().statusCode(200)
-                .body("success", equalTo(false));
-
-        verify(layoutService, never()).reset(any());
+                .then().statusCode(405);
     }
 
     // ===== POST /render：空间成员 =====

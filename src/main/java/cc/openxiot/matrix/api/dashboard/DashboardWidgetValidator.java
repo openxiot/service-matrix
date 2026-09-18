@@ -154,9 +154,6 @@ public final class DashboardWidgetValidator {
         if (WidgetSize.of(widget.size) == null) {
             return "size must be one of " + SIZE_NAMES;
         }
-        if (widget.refresh != null && (widget.refresh < 0 || widget.refresh > 86_400)) {
-            return "refresh must be between 0 and 86400 seconds";
-        }
         String positionError = validatePosition(widget);
         if (positionError != null) {
             return positionError;

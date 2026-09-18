@@ -16,7 +16,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.List;
 
 /**
- * 看板布局的读写：查（没有就给预置）、存（乐观锁）、恢复默认。
+ * 看板布局的读写：查（没有就给预置）、存（乐观锁）、取预置（只读，给「恢复默认」当草稿起点）。
  *
  * <p><b>鉴权不在这里</b>：读写权限（成员 / 管理员）由资源层的 {@code requireSpaceMember} /
  * {@code requireSpaceAdmin} 判，本类只管「怎么读怎么写」。这与 validator 的分工是同一条线：
@@ -86,14 +86,19 @@ public class DashboardLayoutService {
         });
     }
 
-    /** 恢复默认：删掉文档，下次读又回到预置布局。没有文档时也算成功（用户的目标就是「没有自定义」）。 */
-    public Uni<Long> reset(SpaceEntity space) {
-        return repo.deleteBySpaceId(spaceIdOf(space));
+    /**
+     * 预置布局（只读）。「恢复默认」拿它当**草稿的起点** —— 由前端装进草稿、标脏，
+     * 用户再点「保存布局」才落库（修订（十七））。所以这里是纯读：一个字节都不写，
+     * 也就不需要「先删掉文档」那一步。
+     */
+    public DashboardLayoutEntity preset(SpaceEntity space) {
+        return PresetLayouts.build(spaceIdOf(space));
     }
 
     private Uni<DashboardLayoutEntity> create(String spaceId, DashboardLayoutDto body, Person who) {
         if (body.version != 0L) {
-            // 客户端说「库里是第 N 版」，可库里什么都没有 —— 多半是别人刚把这份布局删了（恢复默认）
+            // 客户端说「库里是第 N 版」，可库里什么都没有。改造前这条路是「别人刚点了恢复默认」
+            // （那时它真会删文档）；现在没有删除这一说了，剩下的可能只有并发首次保存或脏数据
             return conflict();
         }
         DashboardLayoutEntity layout = new DashboardLayoutEntity();
@@ -127,34 +132,22 @@ public class DashboardLayoutService {
     }
 
     /**
-     * 落库前的规范化：缺省 {@code refresh} 补 60。
+     * 落库前的规范化：**今天只做一件事 —— 把 {@code null} 的清单当成空清单**。
+     *
+     * <p>它原先还负责「缺省 {@code refresh} 补 60」。自动刷新间隔改成工具条上那个**全局**的
+     * 档位之后（修订（十七）），卡片上不再有这个字段，补缺省这件事也就没有了对象。</p>
      *
      * <p><b>位置与顺序都原样保留</b>：坐标（{@code x}/{@code y}）与数组顺序（阅读顺序）
      * 都一个字节不动 —— 这里不排序、不补位、不校验重叠。服务端不持有排版知识
-     * （{@code size} 只是个档位名，占几列几行由前端算），重排是前端的活，
-     * 所以这一层今天仍是「补一个缺省的刷新间隔」这一件事。</p>
+     * （{@code size} 只是个档位名，占几列几行由前端算），重排是前端的活。</p>
      *
      * <p>{@code config} 原样落库，不做「补齐缺省项」：缺省项由读取方解释
      * （{@code window} 缺省即不适用、{@code chart} 缺省即饼图），补空值会让「没设」和
      * 「设成了空」再也分不开（与 {@code DashboardLayoutCodec} 不补空值同口径）。</p>
      */
     private static List<DashboardWidget> normalized(List<DashboardWidget> widgets) {
-        if (widgets == null) {
-            return List.of();
-        }
-        for (DashboardWidget widget : widgets) {
-            if (widget == null) {
-                continue;
-            }
-            if (widget.refresh == null) {
-                widget.refresh = DEFAULT_REFRESH_SECONDS;
-            }
-        }
-        return widgets;
+        return widgets == null ? List.of() : widgets;
     }
-
-    /** 缺省自动刷新间隔（秒）。所有卡片都是纯读，没有需要强制 0 的类型。 */
-    private static final int DEFAULT_REFRESH_SECONDS = 60;
 
     private static final String VERSION_CONFLICT =
             "layout has been modified by someone else, please reload";
