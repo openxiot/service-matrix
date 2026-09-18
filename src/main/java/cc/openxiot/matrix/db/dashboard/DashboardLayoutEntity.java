@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * Web数据看板: 用于浏览器和Pad
+ * Mobile数据看板：用于移动端（iPhone & Android）
  * 自定义数据看板的布局：**一个空间一份**，空间内共享（读写权限不对称，见
  * {@code DashboardResource}：读是空间成员、写是空间管理员）。
  *
