@@ -19,8 +19,8 @@ import java.util.Map;
  *
  * <p><b>服务端一个坐标都不给，位置由前端按数组顺序铺一遍</b>。数组顺序是<b>阅读顺序</b>
  * （先行后列，也正是视觉顺序）：4 张 {@code W6H92}（各占 6 列、一行高 92px）正好填满第一行的
- * 24 列，剩下 4 张 {@code W12H200}（各占 12 列、两行高 200px）两两一行、填满两行 ——
- * 首屏因此是 {@code 92 + 16 + 200 + 16 + 200 = 524px}，无空洞。</p>
+ * 24 列，剩下 4 张 {@code W12H308}（各占 12 列、三行高 308px）两两一行、填满两行 ——
+ * 首屏因此是 {@code 92 + 16 + 308 + 16 + 308 = 740px}，无空洞。</p>
  *
  * <p><b>为什么不在这儿写坐标</b>：写不了。坐标得配着 {@code w} 一起才对（写重叠了就摆出
  * 两张叠在一起的卡），而 {@code w} <b>只在前端</b>（见 {@code WidgetSize}）。前端哪天把
@@ -28,9 +28,9 @@ import java.util.Map;
  * 就会<b>静默地</b>摆出重叠的卡片；交给前端的 {@code placeAt} / {@code ensurePlacements}
  * 反而永远自洽 —— 它铺出来的就是改造前浏览器流式排开的那个样子。</p>
  *
- * <p>这也是把告警曲线定为 {@code W12H200} 而不是 {@code W12H416}/{@code W24H416} 的原因
- * （§D4 说 {@code W12H200} 那一档的用途就是「单曲线、分布图」）：一屏 9 张卡里若有半屏是空的，
- * 用户第一眼看到的就是「这东西没做完」。<b>改动这里时数组顺序不能乱</b>，
+ * <p>四张非统计卡取 {@code W12H308}（三行）而不是两行的 {@code W12H200}：曲线与分布图在
+ * 200px 里要挤掉卡头与坐标轴，剩下画图的地方太扁；也不是四行的 {@code W12H416} ——
+ * 那是为了让首屏不至于一屏只装得下一行卡。<b>改动这里时数组顺序不能乱</b>，
  * 否则用户看到的预置首屏会跟着变。</p>
  *
  * <p>统计卡在二维摆放那一轮从 200px 的档位换成了 92px 的（今天叫 {@code W6H200} →
@@ -106,7 +106,7 @@ public final class PresetLayouts {
             config.put("window", window);
         }
         config.put("chart", "pie");
-        return widget(id, "distribution", titleKey, WidgetSize.W12H200, config);
+        return widget(id, "distribution", titleKey, WidgetSize.W12H308, config);
     }
 
     private static DashboardWidget alarmLine(String id, String titleKey) {
@@ -114,7 +114,7 @@ public final class PresetLayouts {
         config.put("source", "alarmCount");
         config.put("window", window(24));
         config.put("bucket", "hour");
-        return widget(id, "line", titleKey, WidgetSize.W12H200, config);
+        return widget(id, "line", titleKey, WidgetSize.W12H308, config);
     }
 
     /**

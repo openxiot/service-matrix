@@ -70,7 +70,7 @@ class DashboardCodecTest {
     void encode_presetWidgetsAreInVisualOrder() {
         JsonArray widgets = DashboardLayoutCodec.encode(PresetLayouts.build("space-1")).getJsonArray("widgets");
         // **数组顺序是阅读顺序**（先行后列，也正是视觉顺序）：4 张统计卡在前（各占 6 列、
-        // 一行高），后 4 张 W12H200 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
+        // 一行高），后 4 张 W12H308 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
         // 所以改动 PresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
         assertEquals(8, widgets.size());
         for (int i = 0; i < 4; i++) {
@@ -81,7 +81,7 @@ class DashboardCodecTest {
             assertFalse(widgets.getJsonObject(i).containsKey("y"), "widget " + i);
         }
         for (int i = 4; i < 8; i++) {
-            assertEquals("W12H200", widgets.getJsonObject(i).getString("size"), "widget " + i);
+            assertEquals("W12H308", widgets.getJsonObject(i).getString("size"), "widget " + i);
         }
     }
 
