@@ -4,10 +4,12 @@ import cc.openxiot.matrix.api.dashboard.params.DashboardLayoutDto;
 import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.dashboard.WidgetSize;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 看板卡片配置的**结构性**校验：纯函数、无状态、不碰数据库 —— 返回 {@code null} 表示通过，
@@ -43,6 +45,20 @@ public final class DashboardWidgetValidator {
     public static final int MAX_SERVICE_FIELDS = 12;
 
     private static final Set<String> TYPES = Set.of("stat", "line", "distribution", "device", "service");
+
+    /**
+     * 屏幕宽几格。**服务端只有这一个网格数字**，而且它抄不过来第二份 —— 它是屏幕宽，
+     * 不是从档位推出来的（占格表 {@code w}/{@code h} 仍然只在前端）。与前端
+     * {@code DashboardLayout.ts} 的 {@code GRID_COLUMNS} 一致。
+     */
+    private static final int GRID_COLUMNS = 24;
+
+    /**
+     * 档位名单的文案，**从枚举生成**。上一版这里是手抄的 {@code "S/M/L/XL"} —— 那是第四处
+     * 硬编码名单（另三处是前端的类型、占格表、codec），加 {@code S1}/{@code M1} 那天它就会说错话。
+     */
+    private static final String SIZE_NAMES =
+            Arrays.stream(WidgetSize.values()).map(Enum::name).collect(Collectors.joining("/"));
 
     private static final Set<String> STAT_METRICS = Set.of(
             "devices.total", "devices.online", "services.total",
@@ -134,13 +150,15 @@ public final class DashboardWidgetValidator {
             return "titleKey is too long";
         }
         if (WidgetSize.of(widget.size) == null) {
-            return "size must be one of S/M/L/XL";
+            return "size must be one of " + SIZE_NAMES;
         }
         if (widget.refresh != null && (widget.refresh < 0 || widget.refresh > 86_400)) {
             return "refresh must be between 0 and 86400 seconds";
         }
-        // 位置与占格**不校验**：卡片摆在哪儿是它在 widgets 数组里的下标（顺序即位置），
-        // 占几列几行由 size 档位在前端算 —— 服务端没有任何可校验的坐标了
+        String positionError = validatePosition(widget);
+        if (positionError != null) {
+            return positionError;
+        }
         Map<String, Object> config = widget.config;
         if (config == null) {
             return "config is required";
@@ -153,6 +171,33 @@ public final class DashboardWidgetValidator {
             case "service" -> validateService(config);
             default -> "type must be one of " + TYPES;
         };
+    }
+
+    /**
+     * 坐标的**粗校验**：两个一起给、`0 ≤ x ≤ 23`、`y ≥ 0`。
+     *
+     * <p><b>重叠与 {@code x + w ≤ 24} 不校验</b>，而且这不是漏了：服务端<b>没有 {@code w}</b>
+     * —— 占几列几行由 {@code size} 档位在前端算（见 {@link WidgetSize}）。做不了的事不假装做，
+     * 排版正确性由前端的那套坐标运算保证；这一层挡的是「明显不是坐标的数」（负数、越界、给一半）。</p>
+     *
+     * <p><b>两个都不给是合法的</b>：改造前存下来的老文档没有坐标，前端会按数组顺序铺一遍
+     * （铺法复刻改造前的流式排布，所以老布局长相不变）。所以这里「都没有」放行、「只给一个」拒绝
+     * —— 后者只可能是脏数据，放进去就是一张位置来路不明的卡。</p>
+     */
+    private static String validatePosition(DashboardWidget widget) {
+        if (widget.x == null && widget.y == null) {
+            return null;
+        }
+        if (widget.x == null || widget.y == null) {
+            return "x and y must be given together";
+        }
+        if (widget.x < 0 || widget.x >= GRID_COLUMNS) {
+            return "x must be between 0 and " + (GRID_COLUMNS - 1);
+        }
+        if (widget.y < 0) {
+            return "y must not be negative";
+        }
+        return null;
     }
 
     private static String validateStat(Map<String, Object> config) {

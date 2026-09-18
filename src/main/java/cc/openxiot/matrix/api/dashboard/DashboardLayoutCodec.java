@@ -23,8 +23,10 @@ import java.util.Map;
  * String / Number / Boolean / Map / List / null 这几种，不会再遇到需要特殊处理的类型。
  * （落库侧的 codec 兜底见 {@code ObjectPropertyCodecProvider}。）</p>
  *
- * <p><b>卡片不带坐标</b>：{@code widgets} 的数组顺序就是屏幕顺序，从前端读出来什么样、
- * 写回去就是什么样，这里不做任何排序或补位 —— 顺序是用户的意图，不是可推导的派生物。</p>
+ * <p><b>坐标在线上，排序仍然不做</b>：每张卡带 {@code x} / {@code y}（网格单位）——
+ * 那是位置的真值，前端读出来什么样、写回去就是什么样。{@code widgets} 的数组顺序是
+ * <b>阅读顺序</b>（窄屏折成一列时的上下次序），也原样保留。这里<b>不排序、不补位</b>：
+ * 重排是前端的活（它才知道容器多宽、哪张让位到哪），服务端自作主张排一遍只会与前端打架。</p>
  */
 public final class DashboardLayoutCodec {
 
@@ -87,6 +89,15 @@ public final class DashboardLayoutCodec {
         }
         if (widget.size != null) {
             o.put("size", widget.size);
+        }
+        // 坐标：两个一起发。老文档（改造前存的）两个都没有，那就两个都不出现 ——
+        // 与上面 title / refresh 同一条口径，不补空值。前端据此知道「这份没有坐标」，
+        // 会按数组顺序铺一遍（铺法复刻改造前的流式排布，所以老布局长相不变）
+        if (widget.x != null) {
+            o.put("x", widget.x);
+        }
+        if (widget.y != null) {
+            o.put("y", widget.y);
         }
         if (widget.refresh != null) {
             o.put("refresh", widget.refresh);

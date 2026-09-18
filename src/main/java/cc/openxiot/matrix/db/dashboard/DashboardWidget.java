@@ -10,16 +10,26 @@ import java.util.Map;
 /**
  * 一张卡片。五种类型（{@code type}）共用一个壳，差异全在 {@code config} 里。
  *
- * <p><b>卡片没有坐标，顺序即位置</b>：它摆在哪儿由它在 {@code DashboardLayoutEntity.widgets}
- * 里的<b>下标</b>决定，占几列几行由 {@code size} 档位定（占格表在前端）。这里原来有一个
- * {@code layout} 字段（{@code x/y/w/h}），改成了顺序进线之后整个删掉了。</p>
+ * <p><b>卡片有坐标，但只有两个</b>：{@link #x} / {@link #y} 是左上角起点（网格单位，
+ * 屏幕宽 24 格、高无限）。<b>占几列几行（{@code w} / {@code h}）不上行</b> —— 那是从
+ * {@link #size} 档位推出来的，占格表只在前端。这一条是有来历的：这里原来有一个
+ * {@code layout} 字段（{@code x/y/w/h}），其中 {@code w}/{@code h} 是档位知识的
+ * <b>第二份会过期的副本</b>（还要靠 {@code WidgetSize.applyTo} 按档位覆盖一次、
+ * 再在别处校验 {@code x + w ≤ 24}），所以那一版整个删掉了。这一轮把坐标请回来时
+ * <b>只请回了 {@code x}/{@code y}}</b>：那是用户摆的，服务端拿不出第二个人来算它；
+ * {@code w}/{@code h} 仍然只有前端知道。</p>
+ *
+ * <p>{@code widgets} 的<b>数组顺序是阅读顺序</b>（窄屏折成一列时的上下次序），
+ * <b>不是</b>位置 —— 位置是这两个坐标。服务端<b>不排序、不补位</b>：重排是前端的活，
+ * 这里原样收、原样存（见 {@code DashboardLayoutService.normalized}）。</p>
  *
  * <p><b>老文档不需要迁移</b>：落库与读回都走 Mongo 的 POJO codec，它在文档里遇到类上没有的键
  * 是<b>跳过</b>（本类本来就挂着 {@code @JsonIgnoreProperties(ignoreUnknown = true)}），所以
  * 老文档里的 {@code widgets[].layout} 读的时候被忽略，第一次保存就把它从文档里洗掉了。
- * 而<b>老文档的数组顺序本来就等于视觉顺序</b>：预置布局按视觉顺序写，保存路径走的是前端的
- * 紧凑（返回的就是按位置排好的序）。下一个人翻到老文档里的 {@code layout} 时，
- * 那是历史残留，不再有任何作用。</p>
+ * <b>注意别把它与现在的 {@code x}/{@code y} 搞混</b>：那个嵌套的 {@code layout} 是历史残留，
+ * 不读也不写；平铺的 {@code x}/{@code y} 是<b>认识</b>的键。老文档还缺 {@code x}/{@code y}
+ * （改造前存下来的卡片没有坐标），这种文档读出来照常是一份合法布局，由前端按数组顺序铺一遍
+ * —— 铺法复刻的正是改造前浏览器流式排开的那个样子，所以长相不变。</p>
  *
  * <p><b>{@code config} 是异构的，且故意不建成统一的 POJO</b>：五种卡片的配置字段几乎不重叠
  * （统计卡片要 metric、曲线要服务与字段、分布要 dimension 与窗口…），硬塞进一个大 POJO 会得到
@@ -59,9 +69,17 @@ public class DashboardWidget {
             + "`title` 存在时以 `title` 为准", examples = {"设备总量"})
     public String titleKey;
 
-    @Schema(description = "尺寸档位 S / M / L / XL：决定这张卡占几列几行"
+    @Schema(description = "尺寸档位 S1 / M1 / S / M / L / XL：决定这张卡占几列几行"
             + "（**占格表在前端**，服务端只认档位名认不认识）", examples = {"S"}, required = true)
     public String size;
+
+    @Schema(description = "起始列（0 起，0..23）。**没有这个键 = 老文档**（改造前的卡片没有坐标），"
+            + "由前端按数组顺序铺一遍；与 `y` 同生同灭，只给一个的按「都没有」处理",
+            examples = {"6"})
+    public Integer x;
+
+    @Schema(description = "起始行（0 起，上不封顶）。与 `x` 同生同灭", examples = {"4"})
+    public Integer y;
 
     @Schema(description = "自动刷新间隔（秒）；0 = 不自动刷新", examples = {"60"})
     public Integer refresh;

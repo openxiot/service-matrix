@@ -161,6 +161,10 @@ class ObjectPropertyCodecProviderTest {
         widget.id = "w1";
         widget.type = "stat";
         widget.size = "S";
+        // 坐标是平铺的两个 Integer（不是老的那个嵌套 layout），落库要原样读回来 ——
+        // 读丢了的后果是「拖完保存、刷新回到原位」，而且不报任何错
+        widget.x = 6;
+        widget.y = 4;
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("metric", "alarms.today");
         config.put("window", new Document("kind", "last").append("hours", 24));
@@ -186,6 +190,8 @@ class ObjectPropertyCodecProviderTest {
         assertEquals("w1", readWidget.id);
         // title 没设就是不落键：读回来是 null，而不是空串（读侧靠这个区分「没设」与「设成了空」）
         assertNull(readWidget.title);
+        assertEquals(6, readWidget.x);
+        assertEquals(4, readWidget.y);
         assertEquals(config, readWidget.config);
         // 嵌套的文档读回来是 Document、数组读回来是 List：读 config 的一方（校验器 / 取数）
         // 一律按 Map / List 取值，不假设具体实现类
@@ -207,6 +213,10 @@ class ObjectPropertyCodecProviderTest {
      * <p>验证的是「这一侧的编解码行为」：与真落库时驱动走的是同一个注册表、同一条
      * {@code BsonDocumentReader} 路径。唯一没覆盖到的是真 Mongo 本身 —— 而它在这件事上
      * 只是把文档原样吐回来。</p>
+     *
+     * <p><b>注意别把老 {@code layout} 与现在的 {@code x}/{@code y} 搞混</b>：这一轮坐标
+     * 回到了卡片上（平铺的两个数），那两个键是<b>认识</b>的；老 {@code layout} 这个<b>嵌套对象</b>
+     * 仍然不认识、仍然被跳过。两条规则互不相干，下面那条用例钉着「认识的那个能读回来」。</p>
      *
      * <p><b>卡片 id 的 BSON 键是 {@code _id} 而不是 {@code id}</b>：POJO codec 会把一个名叫
      * {@code id} 的属性映射成 {@code _id}（下面 {@link #dashboardWidgetConfigRoundTrips} 那条

@@ -61,19 +61,24 @@ class DashboardCodecTest {
         JsonObject first = widgets.getJsonObject(0);
         assertEquals("设备总量", first.getString("titleKey"));
         assertEquals("stat", first.getString("type"));
-        assertEquals("S", first.getString("size"));
+        // 统计卡是 S1（一行高 92px）：它没有卡头、按内容自然高约 90px，塞在 200px 的
+        // 档位里下面会空 110px。这一条同时钉住「预置布局的档位不许被顺手改回 S」
+        assertEquals("S1", first.getString("size"));
     }
 
     @Test
     void encode_presetWidgetsAreInVisualOrder() {
         JsonArray widgets = DashboardLayoutCodec.encode(PresetLayouts.build("space-1")).getJsonArray("widgets");
-        // **数组顺序就是屏幕顺序**：4 张统计卡在前（各占 6 列，正好第一行），
-        // 后 4 张 M 两两一行。位置不再是字段，所以顺序本身就是这条断言的全部内容 ——
-        // 改动 PresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
+        // **数组顺序是阅读顺序**（先行后列，也正是视觉顺序）：4 张统计卡在前（各占 6 列、
+        // 一行高），后 4 张 M 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
+        // 所以改动 PresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
         assertEquals(8, widgets.size());
         for (int i = 0; i < 4; i++) {
             assertEquals("stat", widgets.getJsonObject(i).getString("type"), "widget " + i);
-            assertEquals("S", widgets.getJsonObject(i).getString("size"), "widget " + i);
+            assertEquals("S1", widgets.getJsonObject(i).getString("size"), "widget " + i);
+            // 预置布局**不带坐标**：坐标得配着 w 一起写才对，而 w 只在前端（见 PresetLayouts）
+            assertFalse(widgets.getJsonObject(i).containsKey("x"), "widget " + i);
+            assertFalse(widgets.getJsonObject(i).containsKey("y"), "widget " + i);
         }
         for (int i = 4; i < 8; i++) {
             assertEquals("M", widgets.getJsonObject(i).getString("size"), "widget " + i);
@@ -102,8 +107,23 @@ class DashboardCodecTest {
         assertTrue(o.containsKey("id"));
         assertTrue(o.containsKey("type"));
         assertTrue(o.containsKey("size"));
-        // 坐标一个都不发：卡片摆在哪儿是它在 widgets 数组里的下标（顺序即位置）
+        // 一个坐标键都不发：没给坐标的卡片（老文档）就是「还没摆过」，
+        // 前端据此整份重铺。老文档里那个嵌套的 `layout` 是历史残留，不读也不写，
+        // 而平铺的 `x`/`y` 是**认识**的键 —— 区别就在下面这条断言与下一条用例之间
         assertFalse(o.containsKey("layout"));
+        assertFalse(o.containsKey("x"));
+        assertFalse(o.containsKey("y"));
+    }
+
+    @Test
+    void encodeWidget_positionIsEmitted() {
+        DashboardWidget w = widget();
+        w.x = 6;
+        w.y = 4;
+        JsonObject o = DashboardLayoutCodec.encodeWidget(w);
+        // 位置是必须发的：不发就等于每次保存都退回「没有坐标」，用户刷新一次整屏重排
+        assertEquals(6, o.getInteger("x"));
+        assertEquals(4, o.getInteger("y"));
     }
 
     @Test

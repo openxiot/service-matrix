@@ -145,7 +145,7 @@ class DashboardWidgetValidatorTest {
     void validateWidget_sizeRequired() {
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = null;
-        assertInvalid("size must be one of S/M/L/XL", w);
+        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
     }
 
     @Test
@@ -153,7 +153,7 @@ class DashboardWidgetValidatorTest {
         // 档位名大小写不符按「不认识」处理（WidgetSize.of 是全等比较），不悄悄接受 "m"
         DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = "m";
-        assertInvalid("size must be one of S/M/L/XL", w);
+        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
     }
 
     @Test
@@ -179,23 +179,88 @@ class DashboardWidgetValidatorTest {
         assertInvalid("config is required", w);
     }
 
-    // ===== 位置与占格 =====
+    // ===== 位置 =====
 
-    /**
-     * 坐标**不再校验**：卡片摆在哪儿是它在 {@code widgets} 数组里的下标（顺序即位置），
-     * 占几列几行属于排版知识、全在前端 —— 服务端没有可校验的东西了。
+    /*
+     * 这一节只有「界内的整数」，**没有「不重叠」** —— 那不是漏了。
      *
-     * <p>原先这里有四条用例（layout 必填 / 不许负 / 不许超出 24 列 / 贴右边与 XL 的边界），
-     * 随 {@code validateLayout} 一起删掉。</p>
+     * 「两张卡压在一起」与 `x + w ≤ 24` 都校验不了：服务端**没有 `w`**，占几列几行由 size
+     * 档位在前端算（见 WidgetSize）。留着这段是为了让下一个人知道：想让服务端也挡住重叠，
+     * 得先把占格表搬过来，而那正是这一轮特意没做的事。
+     *
+     * 原先这里有四条用例（layout 必填 / 不许负 / 不许超出 24 列 / 贴右边与 XL 的边界）。
+     * 只恢复了**与坐标本身有关**的那几条（见下）；依赖 `w` 的两条（超出 24 列、贴右与 XL
+     * 的边界）**明确不恢复**。
      */
+
+    /** 坐标是可选的两个整数：给了就在 0..23 / ≥0 内，不给（老文档）也放行 */
     @Test
-    void validateWidget_positionIsNotPartOfTheWireFormat() {
-        // 任何合法的 size 都直接通过，不需要任何位置信息
-        for (String size : List.of("S", "M", "L", "XL")) {
+    void validateWidget_positionIsOptionalButBoundedWhenGiven() {
+        // 不给坐标：老文档（改造前的卡片没有坐标），前端会按数组顺序铺一遍
+        DashboardWidget legacy = widget("stat", config("metric", "devices.total"));
+        assertValid(legacy);
+
+        // 给了就是一对其中的合法值。0 与 23 是边界，都得是合法的
+        for (int x : List.of(0, 6, 23)) {
+            DashboardWidget w = widget("stat", config("metric", "devices.total"));
+            w.x = x;
+            w.y = 0;
+            assertValid(w);
+        }
+
+        // y 上不封顶：屏幕多高由卡片堆出来，没有「最下面一行」
+        DashboardWidget tall = widget("stat", config("metric", "devices.total"));
+        tall.x = 0;
+        tall.y = 999;
+        assertValid(tall);
+    }
+
+    @Test
+    void validateWidget_positionMustBeGivenTogether() {
+        DashboardWidget onlyX = widget("stat", config("metric", "devices.total"));
+        onlyX.x = 6;
+        assertInvalid("x and y must be given together", onlyX);
+
+        DashboardWidget onlyY = widget("stat", config("metric", "devices.total"));
+        onlyY.y = 4;
+        assertInvalid("x and y must be given together", onlyY);
+    }
+
+    @Test
+    void validateWidget_positionMustBeInBounds() {
+        DashboardWidget negativeX = widget("stat", config("metric", "devices.total"));
+        negativeX.x = -1;
+        negativeX.y = 0;
+        assertInvalid("x must be between 0 and 23", negativeX);
+
+        // 24 是「第一格越界」，不是「最后一格」
+        DashboardWidget pastRight = widget("stat", config("metric", "devices.total"));
+        pastRight.x = 24;
+        pastRight.y = 0;
+        assertInvalid("x must be between 0 and 23", pastRight);
+
+        DashboardWidget negativeY = widget("stat", config("metric", "devices.total"));
+        negativeY.x = 0;
+        negativeY.y = -1;
+        assertInvalid("y must not be negative", negativeY);
+    }
+
+    /** 档位只认名字，服务端不认识占格 —— 任何合法档位都直接通过，不需要任何占格信息 */
+    @Test
+    void validateWidget_sizeIsTierNameOnly() {
+        for (String size : List.of("S1", "M1", "S", "M", "L", "XL")) {
             DashboardWidget w = widget("stat", config("metric", "devices.total"));
             w.size = size;
             assertValid(w);
         }
+    }
+
+    /** 报错文案里的档位名单**从枚举生成**，加档位那天不会说错话 */
+    @Test
+    void validateWidget_unknownSizeErrorListsEveryTier() {
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
+        w.size = "XXL";
+        assertInvalid("size must be one of S1/M1/S/M/L/XL", w);
     }
 
     // ===== stat =====

@@ -17,13 +17,24 @@ import java.util.Map;
  * 代价都大于收益。落库只发生在 {@code PUT}，所以在预置状态下 {@code version} 恒为 0，
  * 第一次保存提交 {@code version: 0} 即可。</p>
  *
- * <p><b>卡片位置就是数组顺序</b>：{@code widgets} 从前往后铺开，4 张 {@code S}（各占 6 列）
- * 正好填满第一行的 24 列，剩下 4 张 {@code M}（各占 12 列）两两一行、填满两行，共 12 行、
- * 无空洞 —— 也就是说这里的数组顺序**已经是**视觉顺序（先行后列），排版由前端按顺序流式铺出来，
- * 服务端一个坐标都不给。这也是把告警曲线定为 {@code M} 而不是 {@code L}/{@code XL} 的原因
- * （§D4 说 {@code M} 的用途就是「单曲线、分布图」）：一屏 9 张卡里若有半屏是空的，
- * 用户第一眼看到的就是「这东西没做完」。<b>改动这里时数组顺序不能乱</b>，
- * 否则用户看到的预置首屏会跟着变。</p>
+ * <p><b>服务端一个坐标都不给，位置由前端按数组顺序铺一遍</b>。数组顺序是<b>阅读顺序</b>
+ * （先行后列，也正是视觉顺序）：4 张 {@code S1}（各占 6 列、一行高 92px）正好填满第一行的
+ * 24 列，剩下 4 张 {@code M}（各占 12 列、两行高 200px）两两一行、填满两行 ——
+ * 首屏因此是 {@code 92 + 16 + 200 + 16 + 200 = 524px}，无空洞。</p>
+ *
+ * <p><b>为什么不在这儿写坐标</b>：写不了。坐标得配着 {@code w} 一起才对（写重叠了就摆出
+ * 两张叠在一起的卡），而 {@code w} <b>只在前端</b>（见 {@code WidgetSize}）。前端哪天把
+ * {@code S1} 从 6 列改成 8 列，这里手写的坐标表就会<b>静默地</b>摆出重叠的卡片；
+ * 交给前端的 {@code placeAt} / {@code ensurePlacements} 反而永远自洽 ——
+ * 它铺出来的就是改造前浏览器流式排开的那个样子。</p>
+ *
+ * <p>这也是把告警曲线定为 {@code M} 而不是 {@code L}/{@code XL} 的原因（§D4 说 {@code M}
+ * 的用途就是「单曲线、分布图」）：一屏 9 张卡里若有半屏是空的，用户第一眼看到的就是
+ * 「这东西没做完」。<b>改动这里时数组顺序不能乱</b>，否则用户看到的预置首屏会跟着变。</p>
+ *
+ * <p>统计卡在这一轮从 {@code S}（200px）换成了 {@code S1}（92px）：统计卡是唯一「没有卡头、
+ * 按内容自然高约 90px」的卡片，塞在 200px 的格子里下面空 110px。<b>只影响从未保存过的空间</b>
+ * —— 存过布局的空间读的是自己那份文档，一张卡的档位都不会被悄悄改掉。</p>
  *
  * <p><b>标题走 {@code titleKey} 而不是 {@code title}</b>：预置布局是服务端造的，
  * 而 {@code title} 属于用户数据、前端不许翻译（{@code AGENTS.md}）。若把「设备总量」
@@ -81,7 +92,8 @@ public final class PresetLayouts {
         if (window != null) {
             config.put("window", window);
         }
-        return widget(id, "stat", titleKey, WidgetSize.S, config);
+        // S1 = 一行高（92px）、6 列。统计卡只给两个矮档位，见 DASHBOARD_SIZE_CHOICES
+        return widget(id, "stat", titleKey, WidgetSize.S1, config);
     }
 
     private static DashboardWidget distribution(String id, String titleKey,
@@ -124,7 +136,7 @@ public final class PresetLayouts {
         widget.type = type;
         // titleKey 而不是 title：见类注释
         widget.titleKey = titleKey;
-        // 只给档位名。占几列几行是前端的事（见 WidgetSize），位置是数组下标（见类注释）
+        // 只给档位名。占几列几行是前端的事（见 WidgetSize），坐标也由前端铺（见类注释）
         widget.size = size.name();
         widget.config = config;
         return widget;
