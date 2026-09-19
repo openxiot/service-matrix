@@ -19,17 +19,17 @@ import java.util.Map;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.dashboard.web.catalog.DashboardCatalogCodec;
-import cc.openxiot.matrix.api.dashboard.web.catalog.DashboardCatalogService;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutCodec;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutService;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutValidator;
-import cc.openxiot.matrix.api.dashboard.web.layout.PresetLayouts;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetStructureValidator;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetDataService;
+import cc.openxiot.matrix.api.dashboard.web.catalog.WebDashboardCatalogCodec;
+import cc.openxiot.matrix.api.dashboard.web.catalog.WebDashboardCatalogService;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutCodec;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutService;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutValidator;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardPresetLayouts;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
@@ -62,16 +62,16 @@ class DashboardResourceTest {
     OrgAccessService orgAccessService;
 
     @InjectMock
-    DashboardLayoutService layoutService;
+    WebDashboardLayoutService layoutService;
 
     @InjectMock
-    DashboardLayoutValidator layoutValidator;
+    WebDashboardLayoutValidator layoutValidator;
 
     @InjectMock
-    WidgetDataService widgetDataService;
+    WebDashboardWidgetDataService widgetDataService;
 
     @InjectMock
-    DashboardCatalogService catalogService;
+    WebDashboardCatalogService catalogService;
 
     private SpaceEntity space() {
         SpaceEntity s = new SpaceEntity();
@@ -106,7 +106,7 @@ class DashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void layout_spaceMember_getsPreset() {
         allowSpaceMember();
-        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(PresetLayouts.build(SPACE_ID)));
+        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(WebDashboardPresetLayouts.build(SPACE_ID)));
 
         given()
                 .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
@@ -127,7 +127,7 @@ class DashboardResourceTest {
     void layout_notConfigured_returnsPresetNotError() {
         allowSpaceMember();
         when(layoutService.load(any()))
-                .thenReturn(Uni.createFrom().item(PresetLayouts.build(SPACE_ID)));
+                .thenReturn(Uni.createFrom().item(WebDashboardPresetLayouts.build(SPACE_ID)));
 
         given()
                 .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
@@ -177,7 +177,7 @@ class DashboardResourceTest {
     void catalog_spaceMember_getsTheLists() {
         allowSpaceMember();
         when(catalogService.catalog(any()))
-                .thenReturn(Uni.createFrom().item(DashboardCatalogCodec.encode(List.of(), List.of())));
+                .thenReturn(Uni.createFrom().item(WebDashboardCatalogCodec.encode(List.of(), List.of())));
 
         given()
                 .when().get("/matrix/v1/dashboard/catalog/{spaceId}", SPACE_ID)
@@ -211,7 +211,7 @@ class DashboardResourceTest {
         allowSpaceAdmin();
         when(layoutValidator.validate(any(), any())).thenReturn(Uni.createFrom().voidItem());
         when(layoutService.save(any(), any(), any())).thenAnswer(invocation -> {
-            DashboardLayoutEntity layout = PresetLayouts.build(SPACE_ID);
+            WebDashboardLayoutEntity layout = WebDashboardPresetLayouts.build(SPACE_ID);
             layout.version = 1L;
             return Uni.createFrom().item(layout);
         });
@@ -291,7 +291,7 @@ class DashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void preset_member_returnsPreset() {
         allowSpaceMember();
-        when(layoutService.preset(any())).thenReturn(PresetLayouts.build(SPACE_ID));
+        when(layoutService.preset(any())).thenReturn(WebDashboardPresetLayouts.build(SPACE_ID));
 
         given()
                 .when().get("/matrix/v1/dashboard/layout/{spaceId}/preset", SPACE_ID)
@@ -327,7 +327,7 @@ class DashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_noDraft_usesStoredLayout() {
         allowSpaceMember();
-        DashboardLayoutEntity stored = PresetLayouts.build(SPACE_ID);
+        WebDashboardLayoutEntity stored = WebDashboardPresetLayouts.build(SPACE_ID);
         when(layoutService.load(any())).thenReturn(Uni.createFrom().item(stored));
         when(widgetDataService.render(any(), anyList())).thenReturn(Uni.createFrom().item(widgetData()));
 
@@ -337,7 +337,7 @@ class DashboardResourceTest {
                 .body("success", equalTo(true))
                 .body("data.widgets[0].success", equalTo(true));
 
-        ArgumentCaptor<List<DashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<WebDashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
         verify(widgetDataService).render(any(), widgets.capture());
         assertEquals(8, widgets.getValue().size());
     }
@@ -353,7 +353,7 @@ class DashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_emptyBody_usesStoredLayout() {
         allowSpaceMember();
-        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(PresetLayouts.build(SPACE_ID)));
+        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(WebDashboardPresetLayouts.build(SPACE_ID)));
         when(widgetDataService.render(any(), anyList())).thenReturn(Uni.createFrom().item(widgetData()));
 
         given().contentType("application/json").body(new JsonObject().encode())
@@ -384,24 +384,24 @@ class DashboardResourceTest {
 
     /**
      * 草稿的**结构性**错误整份拒绝：body 不成形时连「有哪些卡片」都无从谈起。
-     * （归属错误则相反 —— 逐张隔离，见 {@code WidgetDataService}。）
+     * （归属错误则相反 —— 逐张隔离，见 {@code WebDashboardWidgetDataService}。）
      */
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_draftTooManyWidgets_isRejected() {
         allowSpaceMember();
-        List<DashboardWidget> tooMany = new ArrayList<>();
-        for (int i = 0; i <= WidgetStructureValidator.MAX_WIDGETS; i++) {
-            DashboardWidget w = statWidget();
+        List<WebDashboardWidget> tooMany = new ArrayList<>();
+        for (int i = 0; i <= WebDashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
+            WebDashboardWidget w = statWidget();
             w.id = "w" + i;
             tooMany.add(w);
         }
 
-        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new DashboardWidget[0])))
+        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new WebDashboardWidget[0])))
                 .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
-                .body("message", equalTo("too many widgets: at most " + WidgetStructureValidator.MAX_WIDGETS));
+                .body("message", equalTo("too many widgets: at most " + WebDashboardWidgetStructureValidator.MAX_WIDGETS));
 
         verify(widgetDataService, never()).render(any(), anyList());
     }
@@ -423,13 +423,13 @@ class DashboardResourceTest {
 
     // ===== helpers =====
 
-    private static WidgetDataService.WidgetData widgetData() {
-        return new WidgetDataService.WidgetData("space-1", new Date(1L), new Date(2L),
-                List.of(new WidgetDataService.Item("w1", true, new JsonObject().put("value", 10), null)));
+    private static WebDashboardWidgetDataService.WidgetData widgetData() {
+        return new WebDashboardWidgetDataService.WidgetData("space-1", new Date(1L), new Date(2L),
+                List.of(new WebDashboardWidgetDataService.Item("w1", true, new JsonObject().put("value", 10), null)));
     }
 
-    private static DashboardWidget statWidget() {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget statWidget() {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "W6H200";
@@ -438,13 +438,13 @@ class DashboardResourceTest {
     }
 
     /** 保存请求体：{@code version} 可以为 null（那是「漏传」的情形，不在这里测）。 */
-    private static String saveBody(Long version, DashboardWidget... widgets) {
+    private static String saveBody(Long version, WebDashboardWidget... widgets) {
         JsonObject body = new JsonObject().put("widgets", new JsonArray());
         if (version != null) {
             body.put("version", version);
         }
-        for (DashboardWidget widget : widgets) {
-            body.getJsonArray("widgets").add(DashboardLayoutCodec.encodeWidget(widget));
+        for (WebDashboardWidget widget : widgets) {
+            body.getJsonArray("widgets").add(WebDashboardLayoutCodec.encodeWidget(widget));
         }
         return body.encode();
     }

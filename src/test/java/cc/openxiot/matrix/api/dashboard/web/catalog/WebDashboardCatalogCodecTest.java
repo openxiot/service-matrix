@@ -27,7 +27,7 @@ class DashboardCatalogCodecTest {
 
     @Test
     void encode_emptyLists_givesBothKeys() {
-        JsonObject o = DashboardCatalogCodec.encode(List.of(), List.of());
+        JsonObject o = WebDashboardCatalogCodec.encode(List.of(), List.of());
 
         // 两个键恒在：编辑器据此显示「没有可选项」，而不是把级联画成坏掉的样子
         assertTrue(o.getJsonArray("devices").isEmpty());
@@ -36,7 +36,7 @@ class DashboardCatalogCodecTest {
 
     @Test
     void encode_nullLists_doesNotThrow() {
-        JsonObject o = DashboardCatalogCodec.encode(null, null);
+        JsonObject o = WebDashboardCatalogCodec.encode(null, null);
 
         assertTrue(o.getJsonArray("devices").isEmpty());
         assertTrue(o.getJsonArray("services").isEmpty());
@@ -44,7 +44,7 @@ class DashboardCatalogCodecTest {
 
     @Test
     void encodeDevice_carriesDidTypeAndOnline() {
-        JsonObject device = DashboardCatalogCodec.encode(List.of(device("did-1", "urn:x:tr:ac", true)), List.of())
+        JsonObject device = WebDashboardCatalogCodec.encode(List.of(device("did-1", "urn:x:tr:ac", true)), List.of())
                 .getJsonArray("devices").getJsonObject(0);
 
         assertEquals("did-1", device.getString("did"));
@@ -58,7 +58,7 @@ class DashboardCatalogCodecTest {
      */
     @Test
     void encodeDevice_hasNoName() {
-        JsonObject device = DashboardCatalogCodec.encode(List.of(device("did-1", "urn:x:tr:ac", false)), List.of())
+        JsonObject device = WebDashboardCatalogCodec.encode(List.of(device("did-1", "urn:x:tr:ac", false)), List.of())
                 .getJsonArray("devices").getJsonObject(0);
 
         assertFalse(device.containsKey("name"));
@@ -70,7 +70,7 @@ class DashboardCatalogCodecTest {
     /** 服务整份下发，形状与 {@code /modbus/service/one/{id}} 逐字相同，前端直接复用已有的解码器。 */
     @Test
     void encodeService_reusesTheFullServiceShape() {
-        JsonObject service = DashboardCatalogCodec.encode(List.of(), List.of(service()))
+        JsonObject service = WebDashboardCatalogCodec.encode(List.of(), List.of(service()))
                 .getJsonArray("services").getJsonObject(0);
 
         assertEquals("6512f3a4b5c6d7e8f9a0b1c5", service.getString("id"));

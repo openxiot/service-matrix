@@ -12,9 +12,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import cc.openxiot.matrix.api.dashboard.web.params.DashboardLayoutDto;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetOwnershipValidator;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetOwnershipValidator;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
@@ -28,7 +28,7 @@ import org.mockito.quality.Strictness;
 /**
  * 保存路径的**校验编排**：先结构、后归属，第一个错误即整份失败。
  *
- * <p>本类补的是一个真实存在的覆盖空洞。改造前 {@code DashboardLayoutValidator} 同时干两件事，
+ * <p>本类补的是一个真实存在的覆盖空洞。改造前 {@code WebDashboardLayoutValidator} 同时干两件事，
  * 而测试只调了 {@code errorsByWidget} —— 也就是说「先跑结构、结构错了就不查库」这段编排
  * <b>从来没被任何用例执行过</b>；{@code DashboardResourceTest} 又把整个 validator mock 掉了，
  * 更碰不到它。拆成薄壳之后这段逻辑成了本类唯一的职责，也就必须自己有用例。</p>
@@ -41,10 +41,10 @@ import org.mockito.quality.Strictness;
 class DashboardLayoutValidatorTest {
 
     @Mock
-    WidgetOwnershipValidator ownershipValidator;
+    WebDashboardWidgetOwnershipValidator ownershipValidator;
 
     @InjectMocks
-    DashboardLayoutValidator validator;
+    WebDashboardLayoutValidator validator;
 
     /**
      * 这条是拆分的**全部理由**：body 不成形时连「有哪些卡片」都无从谈起，
@@ -53,7 +53,7 @@ class DashboardLayoutValidatorTest {
      */
     @Test
     void validate_structuralErrorFailsWithoutQueryingOwnership() {
-        DashboardLayoutDto body = body(null, List.of(validWidget()));
+        WebDashboardLayoutDto body = body(null, List.of(validWidget()));
 
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> validator.validate(space(), body).await().indefinitely());
@@ -98,8 +98,8 @@ class DashboardLayoutValidatorTest {
         return space;
     }
 
-    private static DashboardLayoutDto body(Long version, List<DashboardWidget> widgets) {
-        DashboardLayoutDto body = new DashboardLayoutDto();
+    private static WebDashboardLayoutDto body(Long version, List<WebDashboardWidget> widgets) {
+        WebDashboardLayoutDto body = new WebDashboardLayoutDto();
         body.version = version;
         body.widgets = widgets;
         return body;
@@ -110,8 +110,8 @@ class DashboardLayoutValidatorTest {
      * 用一张必然过结构校验的卡才不至于让结构规则的变化把编排用例带红 —— 结构规则自己有
      * {@code WidgetStructureValidatorTest} 几十条用例管着。
      */
-    private static DashboardWidget validWidget() {
-        DashboardWidget widget = new DashboardWidget();
+    private static WebDashboardWidget validWidget() {
+        WebDashboardWidget widget = new WebDashboardWidget();
         widget.id = "w1";
         widget.type = "stat";
         widget.size = "W6H92";

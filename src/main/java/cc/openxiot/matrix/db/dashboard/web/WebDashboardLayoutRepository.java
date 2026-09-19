@@ -12,17 +12,17 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * 看板布局的数据访问（Panache，实体固定落库 {@code matrix}/集合 {@code dashboard-layouts}）。
+ * 看板布局的数据访问（Panache，实体固定落库 {@code matrix}/集合 {@code web-dashboard-layouts}）。
  *
  * <p>一个空间最多一份布局，所以这里的查询都以 {@code spaceId} 为键，且<b>没有</b>「按 id 找」
  * 的入口 —— 布局对外的身份就是空间 ID，其 ObjectId 是实现细节，不暴露给前端。</p>
  */
 @ApplicationScoped
-public class DashboardLayoutRepository implements ReactivePanacheMongoRepository<DashboardLayoutEntity> {
+public class WebDashboardLayoutRepository implements ReactivePanacheMongoRepository<WebDashboardLayoutEntity> {
 
     private static final int DUPLICATE_KEY = 11000;
 
-    private ReactiveMongoCollection<DashboardLayoutEntity> collection() {
+    private ReactiveMongoCollection<WebDashboardLayoutEntity> collection() {
         return mongoCollection();
     }
 
@@ -41,12 +41,12 @@ public class DashboardLayoutRepository implements ReactivePanacheMongoRepository
     }
 
     /** 读某个空间的布局；没有文档时返回 {@code null}（调用方据此给预置布局，不报错）。 */
-    public Uni<DashboardLayoutEntity> findBySpaceId(String spaceId) {
+    public Uni<WebDashboardLayoutEntity> findBySpaceId(String spaceId) {
         return list("spaceId", spaceId).map(layouts -> layouts.isEmpty() ? null : layouts.get(0));
     }
 
     /** 新增一份布局（id 由 Panache 生成并回写到 {@code layout.id}）。 */
-    public Uni<Void> insert(DashboardLayoutEntity layout) {
+    public Uni<Void> insert(WebDashboardLayoutEntity layout) {
         return persist(layout).replaceWithVoid();
     }
 
@@ -58,7 +58,7 @@ public class DashboardLayoutRepository implements ReactivePanacheMongoRepository
      * 悄悄盖掉 —— 乐观锁形同虚设。把版本放进筛选条件后，比较与写入在 Mongo 侧是一次原子操作：
      * 匹配数为 0 就说明「我读到的版本已经不是最新的」，此时一个字都不该写。</p>
      */
-    public Uni<Boolean> replaceIfVersion(DashboardLayoutEntity layout, long expectedVersion) {
+    public Uni<Boolean> replaceIfVersion(WebDashboardLayoutEntity layout, long expectedVersion) {
         return collection()
                 .replaceOne(Filters.and(
                                 Filters.eq("_id", layout.id),

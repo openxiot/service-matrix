@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
 import cc.openxiot.common.person.codec.PersonCodec;
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -11,10 +11,10 @@ import java.util.Map;
 
 /**
  * 布局 → 线上 JSON。**只编不解**：请求体由 Jackson 直接绑到
- * {@code DashboardLayoutDto}，这一层只管把读出来的东西写出去。
+ * {@code WebDashboardLayoutDto}，这一层只管把读出来的东西写出去。
  *
  * <p><b>预置布局与已存布局走同一个方法</b>：预置布局是一个 {@code id == null} 的
- * {@link DashboardLayoutEntity}（服务层在内存里造的），所以这里不需要第二套编码路径。
+ * {@link WebDashboardLayoutEntity}（服务层在内存里造的），所以这里不需要第二套编码路径。
  * {@code id} 本身<b>不下发</b> —— 布局对外的身份就是 {@code spaceId}，
  * 暴露一个前端用不上的 ObjectId 只会让人以为它能拿来寻址。</p>
  *
@@ -28,13 +28,13 @@ import java.util.Map;
  * <b>阅读顺序</b>（窄屏折成一列时的上下次序），也原样保留。这里<b>不排序、不补位</b>：
  * 重排是前端的活（它才知道容器多宽、哪张让位到哪），服务端自作主张排一遍只会与前端打架。</p>
  */
-public final class DashboardLayoutCodec {
+public final class WebDashboardLayoutCodec {
 
-    private DashboardLayoutCodec() {
+    private WebDashboardLayoutCodec() {
     }
 
     /** 整份布局：{@code {spaceId, version, widgets, creator, updater}}。 */
-    public static JsonObject encode(DashboardLayoutEntity layout) {
+    public static JsonObject encode(WebDashboardLayoutEntity layout) {
         JsonObject o = new JsonObject();
         if (layout == null) {
             return o;
@@ -53,12 +53,12 @@ public final class DashboardLayoutCodec {
         return o;
     }
 
-    public static JsonArray encodeWidgets(List<DashboardWidget> widgets) {
+    public static JsonArray encodeWidgets(List<WebDashboardWidget> widgets) {
         JsonArray arr = new JsonArray();
         if (widgets == null) {
             return arr;
         }
-        for (DashboardWidget widget : widgets) {
+        for (WebDashboardWidget widget : widgets) {
             arr.add(encodeWidget(widget));
         }
         return arr;
@@ -69,7 +69,7 @@ public final class DashboardLayoutCodec {
      * 与 {@code ModbusServiceFieldCodec} 对 {@code value-list} / {@code bit-list} 的处理同口径
      * —— 补成空串会让「没设」和「设成了空」再也分不开。
      */
-    public static JsonObject encodeWidget(DashboardWidget widget) {
+    public static JsonObject encodeWidget(WebDashboardWidget widget) {
         JsonObject o = new JsonObject();
         if (widget == null) {
             return o;

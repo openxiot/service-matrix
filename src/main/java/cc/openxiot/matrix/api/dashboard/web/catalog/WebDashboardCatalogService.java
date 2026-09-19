@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetOwnershipValidator;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetOwnershipValidator;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
@@ -26,13 +26,13 @@ import java.util.List;
  * 再按 {@code space.spaceId} / {@code device.space.spaceId} 取。
  * 不一致的表现是最难查的那种 ——「编辑器里选得到，保存报『不属于本空间』」，
  * 或者更糟「存得下、渲染永远是空的」。所以这里刻意复用
- * {@link WidgetOwnershipValidator} 判归属时用的同一个字段路径，不另算一套。</p>
+ * {@link WebDashboardWidgetOwnershipValidator} 判归属时用的同一个字段路径，不另算一套。</p>
  *
  * <p>可见性粒度就是「空间成员看到本项目子树的全部设备/服务」：{@code DeviceResource}
  * 那边也只做一次 {@code requireSpaceMember}，没有更细的口径可用。</p>
  */
 @ApplicationScoped
-public class DashboardCatalogService {
+public class WebDashboardCatalogService {
 
     @Inject
     SpaceService spaceService;
@@ -47,7 +47,7 @@ public class DashboardCatalogService {
     public Uni<JsonObject> catalog(SpaceEntity space) {
         String rootId = space == null ? null : space.rootSpaceId();
         if (rootId == null) {
-            return Uni.createFrom().item(DashboardCatalogCodec.encode(List.of(), List.of()));
+            return Uni.createFrom().item(WebDashboardCatalogCodec.encode(List.of(), List.of()));
         }
         return spaceService.getDescendants(rootId)
                 .chain(spaces -> {
@@ -59,13 +59,13 @@ public class DashboardCatalogService {
                     // 而不是因为拿不到 devices/services 键就把级联画成坏掉的样子
                     if (spaceIds.isEmpty()) {
                         return Uni.createFrom()
-                                .item(DashboardCatalogCodec.encode(List.of(), List.of()));
+                                .item(WebDashboardCatalogCodec.encode(List.of(), List.of()));
                     }
                     return Uni.combine().all()
                             .unis(deviceRepo.findBySpaceIds(spaceIds),
                                     serviceRepo.listBySpaceIds(spaceIds))
                             .asTuple()
-                            .map(tuple -> DashboardCatalogCodec.encode(tuple.getItem1(), tuple.getItem2()));
+                            .map(tuple -> WebDashboardCatalogCodec.encode(tuple.getItem1(), tuple.getItem2()));
                 });
     }
 }

@@ -29,9 +29,9 @@ import java.util.List;
  * {@code /modbus/service/one/{id}} 的下发形状**逐字相同**：前端因此能直接复用
  * 已有的 {@code ModbusServiceCodec.decode}，不必为一个新形状再写一个解码器。</p>
  */
-public final class DashboardCatalogCodec {
+public final class WebDashboardCatalogCodec {
 
-    private DashboardCatalogCodec() {
+    private WebDashboardCatalogCodec() {
     }
 
     public static JsonObject encode(List<DeviceEntity> devices, List<ModbusService> services) {

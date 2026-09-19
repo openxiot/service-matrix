@@ -9,7 +9,7 @@ import io.vertx.core.json.JsonObject;
  * 区间曲线（{@code /history/range}）的响应体编码：
  * {@code {serviceId, functionIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
  *
- * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code WidgetDataService}）下发的是**同一份形状**，
+ * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code WebDashboardWidgetDataService}）下发的是**同一份形状**，
  * 只是另外缀上 {@code unit} / {@code step} / {@code failures}。前端两条路共用同一个
  * {@code ModbusHistoryCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
  * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线** —— 图还是画得出来，

@@ -4,17 +4,17 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.dashboard.web.catalog.DashboardCatalogService;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutCodec;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutService;
-import cc.openxiot.matrix.api.dashboard.web.layout.DashboardLayoutValidator;
-import cc.openxiot.matrix.api.dashboard.web.params.DashboardLayoutDto;
-import cc.openxiot.matrix.api.dashboard.web.params.RenderRequest;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetStructureValidator;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetDataCodec;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetDataService;
+import cc.openxiot.matrix.api.dashboard.web.catalog.WebDashboardCatalogService;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutCodec;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutService;
+import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutValidator;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardRenderRequest;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataCodec;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -45,14 +45,14 @@ import java.util.List;
  * 它只读，且归属校验照做，所以成员预览不了别人的卡片（§6.2）。</p>
  *
  * <p>鉴权是本类的两个私有 helper，「卡片配置本身合不合法」是
- * {@link WidgetStructureValidator} / {@link DashboardLayoutValidator} 的事 —— 两者分开，
+ * {@link WebDashboardWidgetStructureValidator} / {@link WebDashboardLayoutValidator} 的事 —— 两者分开，
  * 校验器才能被成员可用的 {@code render} 复用。</p>
  */
 @Path("/matrix/v1/dashboard")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "Dashboard", description = "自定义数据看板布局与卡片数据 API")
+@Tag(name = "WebDashboard", description = "自定义数据看板布局与卡片数据 API")
 @RequestScoped
-public class DashboardResource extends AbstractResource {
+public class WebDashboardResource extends AbstractResource {
 
     @Inject
     SpaceService spaceService;
@@ -61,16 +61,16 @@ public class DashboardResource extends AbstractResource {
     OrgAccessService orgAccessService;
 
     @Inject
-    DashboardLayoutService layoutService;
+    WebDashboardLayoutService layoutService;
 
     @Inject
-    DashboardLayoutValidator layoutValidator;
+    WebDashboardLayoutValidator layoutValidator;
 
     @Inject
-    WidgetDataService widgetDataService;
+    WebDashboardWidgetDataService widgetDataService;
 
     @Inject
-    DashboardCatalogService catalogService;
+    WebDashboardCatalogService catalogService;
 
     @GET
     @Path("/layout/{spaceId}")
@@ -79,7 +79,7 @@ public class DashboardResource extends AbstractResource {
         return requireSpaceMember(spaceId)
                 // 没有文档时返回内存生成的预置布局（§6.5），不报 404、不落库
                 .chain(space -> layoutService.load(space))
-                .map(layout -> OxResponse.ok(DashboardLayoutCodec.encode(layout)))
+                .map(layout -> OxResponse.ok(WebDashboardLayoutCodec.encode(layout)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -87,7 +87,7 @@ public class DashboardResource extends AbstractResource {
     @PUT
     @Path("/layout/{spaceId}")
     @RolesAllowed({OxRole.USER})
-    public Uni<Response> save(@PathParam("spaceId") String spaceId, DashboardLayoutDto body) {
+    public Uni<Response> save(@PathParam("spaceId") String spaceId, WebDashboardLayoutDto body) {
         // 与 ModbusServiceResource.createOne 一样在链外取：链上的回调可能已经不在请求线程上，
         // 那时安全上下文（当前用户）不一定还在
         Person who = currentUser();
@@ -95,7 +95,7 @@ public class DashboardResource extends AbstractResource {
                 // 校验要拿到 space（归属判定按根空间），所以校验完把 space 继续往下传
                 .chain(space -> layoutValidator.validate(space, body).map(ignored -> space))
                 .chain(space -> layoutService.save(space, body, who))
-                .map(layout -> OxResponse.ok(DashboardLayoutCodec.encode(layout)))
+                .map(layout -> OxResponse.ok(WebDashboardLayoutCodec.encode(layout)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -116,7 +116,7 @@ public class DashboardResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> preset(@PathParam("spaceId") String spaceId) {
         return requireSpaceMember(spaceId)
-                .map(space -> OxResponse.ok(DashboardLayoutCodec.encode(layoutService.preset(space))))
+                .map(space -> OxResponse.ok(WebDashboardLayoutCodec.encode(layoutService.preset(space))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -124,16 +124,16 @@ public class DashboardResource extends AbstractResource {
     @POST
     @Path("/render/{spaceId}")
     @RolesAllowed({OxRole.USER})
-    public Uni<Response> render(@PathParam("spaceId") String spaceId, RenderRequest body) {
-        List<DashboardWidget> draft = body == null ? null : body.widgets;
+    public Uni<Response> render(@PathParam("spaceId") String spaceId, WebDashboardRenderRequest body) {
+        List<WebDashboardWidget> draft = body == null ? null : body.widgets;
         return requireSpaceMember(spaceId)
                 .chain(space -> draft == null
                         ? renderStored(space)
                         // 草稿的**结构**错误整份拒绝：body 不成形时连「有哪些卡片」都无从谈起，
                         // 报第一处错比逐张标红更好定位（归属错误则相反，逐张隔离，见 build）
-                        : failFast(WidgetStructureValidator.validateWidgets(draft))
+                        : failFast(WebDashboardWidgetStructureValidator.validateWidgets(draft))
                         .chain(ignored -> widgetDataService.render(space, draft)))
-                .map(data -> OxResponse.ok(WidgetDataCodec.encode(data)))
+                .map(data -> OxResponse.ok(WebDashboardWidgetDataCodec.encode(data)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -160,7 +160,7 @@ public class DashboardResource extends AbstractResource {
      * 前端手里那份可能是几分钟前 GET 的，而「看板自己刷新」应该取当前布局
      * （否则管理员刚改完，别人的页面上还是旧卡片）。
      */
-    private Uni<WidgetDataService.WidgetData> renderStored(SpaceEntity space) {
+    private Uni<WebDashboardWidgetDataService.WidgetData> renderStored(SpaceEntity space) {
         return layoutService.load(space)
                 .chain(layout -> widgetDataService.render(space, layout.widgets));
     }

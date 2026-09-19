@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.web.widget;
 
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -27,12 +27,12 @@ import java.util.Set;
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
  * {@code (serviceId, functionIndex, field)} 三元组是否真实存在。
  *
- * <p>与纯函数的 {@link WidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
+ * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
  * 结构错误是「这份 body 根本不成形」，一次请求只能报一个；归属错误是「某一张卡指向了不存在
  * 或不属于本空间的东西」，**渲染时必须逐张隔离**（一张卡引用了一个已被删除的服务，
  * 只该黑掉那一张，不该让整屏看板都渲染不出来）。所以本类的主入口返回的是
  * {@code widgetId → 错误文案}，整份失败只是保存路径对它的一个包装
- * （那个包装在 {@code DashboardLayoutValidator}）。</p>
+ * （那个包装在 {@code WebDashboardLayoutValidator}）。</p>
  *
  * <h3>为什么要在这里校验归属（而不是只靠 catalog 下拉）</h3>
  * <p>{@code serviceId} / {@code did} 是用户填的。同一个空间里，成员能看见的数据本来就属于他，
@@ -73,7 +73,7 @@ import java.util.Set;
  * 编辑器据此定位到那张卡，用户要做的只是删掉它。</p>
  */
 @ApplicationScoped
-public class WidgetOwnershipValidator {
+public class WebDashboardWidgetOwnershipValidator {
 
     @Inject
     ModbusServiceRepository serviceRepo;
@@ -90,9 +90,9 @@ public class WidgetOwnershipValidator {
      *
      * <p>读的都是提交上来的 body（含编辑器里尚未保存的草稿），所以对形状只做防御性读取、
      * 不重复结构校验 —— 该报的错由调用方先跑一遍
-     * {@link WidgetStructureValidator} 负责。这里是「假定形状合法，只判归属」。</p>
+     * {@link WebDashboardWidgetStructureValidator} 负责。这里是「假定形状合法，只判归属」。</p>
      */
-    public Uni<Map<String, String>> errorsByWidget(SpaceEntity space, List<DashboardWidget> widgets) {
+    public Uni<Map<String, String>> errorsByWidget(SpaceEntity space, List<WebDashboardWidget> widgets) {
         Map<String, String> errors = new LinkedHashMap<>();
         // 归属判定的基准：根空间（项目）。与布局的持久化、取数共用同一个
         // SpaceEntity.rootSpaceId()，三处必须一致
@@ -172,34 +172,34 @@ public class WidgetOwnershipValidator {
      * 收集需要查库的引用。同一个 serviceId / did 只查一次（去重交给 {@code loadXxx}
      * 的入参 List 由调用方保证，这里用 seen 集合保证）。
      */
-    private static void collect(List<DashboardWidget> widgets,
+    private static void collect(List<WebDashboardWidget> widgets,
                                List<ServiceRef> serviceRefs, List<String> serviceIds,
                                Map<String, DeviceRef> deviceRefs, List<String> dids) {
         for (int i = 0; i < widgets.size(); i++) {
-            DashboardWidget widget = widgets.get(i);
+            WebDashboardWidget widget = widgets.get(i);
             if (widget == null || widget.id == null || widget.config == null) {
                 continue;
             }
             Map<String, Object> config = widget.config;
             switch (widget.type == null ? "" : widget.type) {
                 case "service" -> {
-                    String serviceId = WidgetConfigs.str(config.get("serviceId"));
-                    Integer functionIndex = WidgetConfigs.intVal(config.get("functionIndex"));
+                    String serviceId = WebDashboardWidgetConfigs.str(config.get("serviceId"));
+                    Integer functionIndex = WebDashboardWidgetConfigs.intVal(config.get("functionIndex"));
                     if (serviceId == null || functionIndex == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
-                    for (String field : WidgetConfigs.strList(config.get("fields"))) {
+                    for (String field : WebDashboardWidgetConfigs.strList(config.get("fields"))) {
                         serviceRefs.add(new ServiceRef(i, widget.id, serviceId, functionIndex, field));
                     }
                 }
                 case "line" -> {
-                    if (!"serviceField".equals(WidgetConfigs.str(config.get("source")))) {
+                    if (!"serviceField".equals(WebDashboardWidgetConfigs.str(config.get("source")))) {
                         continue;
                     }
-                    String serviceId = WidgetConfigs.str(config.get("serviceId"));
-                    Integer functionIndex = WidgetConfigs.intVal(config.get("functionIndex"));
-                    String field = WidgetConfigs.str(config.get("field"));
+                    String serviceId = WebDashboardWidgetConfigs.str(config.get("serviceId"));
+                    Integer functionIndex = WebDashboardWidgetConfigs.intVal(config.get("functionIndex"));
+                    String field = WebDashboardWidgetConfigs.str(config.get("field"));
                     if (serviceId == null || functionIndex == null || field == null) {
                         continue;
                     }
@@ -207,7 +207,7 @@ public class WidgetOwnershipValidator {
                     serviceRefs.add(new ServiceRef(i, widget.id, serviceId, functionIndex, field));
                 }
                 case "device" -> {
-                    String did = WidgetConfigs.str(config.get("did"));
+                    String did = WebDashboardWidgetConfigs.str(config.get("did"));
                     if (did == null || deviceRefs.containsKey(widget.id)) {
                         continue;
                     }

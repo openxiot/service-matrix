@@ -4,7 +4,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -62,13 +62,13 @@ import java.util.Map;
  * 编辑器里手动选了绝对区间的情形，即 {@code range} 形态）。</p>
  */
 @ApplicationScoped
-public class WidgetDataService {
+public class WebDashboardWidgetDataService {
 
     @Inject
     StatisticsQueryService statisticsQueryService;
 
     @Inject
-    WidgetOwnershipValidator ownershipValidator;
+    WebDashboardWidgetOwnershipValidator ownershipValidator;
 
     @Inject
     ModbusHistoryQueryService historyQueryService;
@@ -131,7 +131,7 @@ public class WidgetDataService {
      * 取一屏数据。{@code widgets} 由调用方决定来源：已存布局，或请求体里**尚未保存的草稿**
      * （编辑器预览用；成员可用，见 §6.2）。
      */
-    public Uni<WidgetData> render(SpaceEntity space, List<DashboardWidget> widgets) {
+    public Uni<WidgetData> render(SpaceEntity space, List<WebDashboardWidget> widgets) {
         String spaceId = space.rootSpaceId();
         // 整份请求共用一个「现在」：各卡片的窗口若各取各的 now，`last 24h` 之间会差几毫秒，
         // 于是本该共用一次查询的卡片被拆成多次
@@ -149,7 +149,7 @@ public class WidgetDataService {
         List<String> dids = new ArrayList<>();
         Map<String, CurveQuery> curves = new LinkedHashMap<>();
         Map<String, FailureQuery> failures = new LinkedHashMap<>();
-        for (DashboardWidget widget : widgets) {
+        for (WebDashboardWidget widget : widgets) {
             Source source = sourceOf(widget);
             if (source == Source.OVERVIEW) {
                 Window window = windowOf(widget, now, fallbackFrom);
@@ -220,10 +220,10 @@ public class WidgetDataService {
      *
      * <p>写坏的 {@code source}（比如库里存着上一版的名字）归 {@link Source#NONE}：它会在
      * {@link #unsupportedDetail} 里被说成 {@code line(bogus)}，比含混的「这个窗口没取到数」
-     * 更能指出是哪儿写坏了。保存时 {@code WidgetStructureValidator} 已经拦过一道，
+     * 更能指出是哪儿写坏了。保存时 {@code WebDashboardWidgetStructureValidator} 已经拦过一道，
      * 但服务端加过一个取值又删掉时，老布局就会带着它躺在库里。</p>
      */
-    private static Source sourceOf(DashboardWidget widget) {
+    private static Source sourceOf(WebDashboardWidget widget) {
         if (widget == null || widget.type == null) {
             return Source.NONE;
         }
@@ -249,18 +249,18 @@ public class WidgetDataService {
      * <p>兜底窗口由调用方算好传进来，而不是在这里各自 {@code now - 1h}：否则两张无窗口的卡片
      * 会得到相差几毫秒的两个窗口，白白多查一次。</p>
      */
-    private static Window windowOf(DashboardWidget widget, Date now, Date fallbackFrom) {
+    private static Window windowOf(WebDashboardWidget widget, Date now, Date fallbackFrom) {
         Object raw = widget == null || widget.config == null ? null : widget.config.get("window");
         if (raw instanceof Map<?, ?> window) {
-            String kind = WidgetConfigs.str(window.get("kind"));
+            String kind = WebDashboardWidgetConfigs.str(window.get("kind"));
             if ("last".equals(kind)) {
-                Integer hours = WidgetConfigs.intVal(window.get("hours"));
+                Integer hours = WebDashboardWidgetConfigs.intVal(window.get("hours"));
                 if (hours != null && hours >= 1) {
                     return new Window(new Date(now.getTime() - hours * 3_600_000L), now);
                 }
             } else if ("range".equals(kind)) {
-                Long from = WidgetConfigs.longVal(window.get("from"));
-                Long to = WidgetConfigs.longVal(window.get("to"));
+                Long from = WebDashboardWidgetConfigs.longVal(window.get("from"));
+                Long to = WebDashboardWidgetConfigs.longVal(window.get("to"));
                 if (from != null && to != null && to > from) {
                     return new Window(new Date(from), new Date(to));
                 }
@@ -471,12 +471,12 @@ public class WidgetDataService {
     }
 
     /** 逐卡片成数据。顺序与请求一致。 */
-    private static WidgetData build(String spaceId, List<DashboardWidget> widgets, Sources sources,
+    private static WidgetData build(String spaceId, List<WebDashboardWidget> widgets, Sources sources,
                                     Map<String, String> ownershipErrors, Date fallbackFrom, Date now) {
         List<Item> items = new ArrayList<>();
         Date from = null;
         Date to = null;
-        for (DashboardWidget widget : widgets) {
+        for (WebDashboardWidget widget : widgets) {
             String id = widget == null || widget.id == null ? "" : widget.id;
             // 归属错误优先于「暂不支持」：引用了不存在或不属于本空间的东西，比「这个版本还没做」
             // 更值得先说 —— 它可能是真的配错了
@@ -510,7 +510,7 @@ public class WidgetDataService {
      * {@link #unsupportedDetail} 的文案 —— 这样「类型支持但某个取值不支持」（比如
      * {@code line} 的数据源写坏了）仍然说得清楚，而不是含混的一句「取数失败」。</p>
      */
-    private static Item item(DashboardWidget widget, String id, Window window, Sources sources) {
+    private static Item item(WebDashboardWidget widget, String id, Window window, Sources sources) {
         if (sourceOf(widget) == Source.SERVICE) {
             ServiceFetched service = sources.services().get(configString(widget.config, "serviceId"));
             if (service == null) {
@@ -565,7 +565,7 @@ public class WidgetDataService {
     }
 
     /** 还没接数据源的卡片：说清楚是「还没做」，而不是「配置错了」。 */
-    private static String unsupported(DashboardWidget widget) {
+    private static String unsupported(WebDashboardWidget widget) {
         if (widget == null || widget.type == null) {
             return "widget type is required";
         }
@@ -575,7 +575,7 @@ public class WidgetDataService {
         };
     }
 
-    private static String unsupportedDetail(DashboardWidget widget) {
+    private static String unsupportedDetail(WebDashboardWidget widget) {
         if ("line".equals(widget.type)) {
             return UNSUPPORTED_TYPE + "line(" + configString(widget.config, "source") + ")";
         }
@@ -586,7 +586,7 @@ public class WidgetDataService {
     }
 
     /** 按卡片类型成 data；返回 {@code null} 表示这一格的组合在 P1 还没有数据源。 */
-    private static JsonObject payload(DashboardWidget widget, StatisticsQueryService.Overview overview) {
+    private static JsonObject payload(WebDashboardWidget widget, StatisticsQueryService.Overview overview) {
         return switch (widget.type) {
             case "stat" -> statData(widget.config, overview);
             case "distribution" -> distributionData(widget.config, overview);
@@ -743,7 +743,7 @@ public class WidgetDataService {
      * （位值说「开/关」、枚举描述）仍留在前端 —— 见 §D5 与本次修订（十）。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
-        Integer functionIndex = WidgetConfigs.intVal(config.get("functionIndex"));
+        Integer functionIndex = WebDashboardWidgetConfigs.intVal(config.get("functionIndex"));
         if (functionIndex == null) {
             return null;
         }
@@ -753,7 +753,7 @@ public class WidgetDataService {
             return data;
         }
         data.put("fields", fieldRows(findFunction(fetched.service(), functionIndex),
-                WidgetConfigs.strList(config.get("fields")),
+                WebDashboardWidgetConfigs.strList(config.get("fields")),
                 shadow.fields == null ? null : new JsonObject(shadow.fields)));
         if (shadow.recordedAt != null) {
             data.put("recordedAt", shadow.recordedAt.getTime());
@@ -792,7 +792,7 @@ public class WidgetDataService {
 
     /**
      * 一个字段名在服务定义里的展示元数据。**先找父字段、再找位**，与归属校验的
-     * {@code WidgetOwnershipValidator.hasField} 同一顺序：位名是用户自己填的，可能与别的字段重名，
+     * {@code WebDashboardWidgetOwnershipValidator.hasField} 同一顺序：位名是用户自己填的，可能与别的字段重名，
      * 先命中父字段才对。
      *
      * <p>找不到时给「无单位、非位」：正常路径上到不了（字段名在保存时已校验过），
@@ -822,7 +822,7 @@ public class WidgetDataService {
     }
 
     /**
-     * 按 {@code index} 找方法。与 {@code WidgetOwnershipValidator} / {@code ModbusServiceService}
+     * 按 {@code index} 找方法。与 {@code WebDashboardWidgetOwnershipValidator} / {@code ModbusServiceService}
      * 里那两个同名私有方法同一段逻辑（那两处的签名一个收 {@code Integer}、一个收 {@code int}）——
      * 三次出现仍是各写一份：为 8 行扫描去动两个正在工作的类，风险比收益大。
      */
@@ -894,7 +894,7 @@ public class WidgetDataService {
     }
 
     private static String configString(Map<String, Object> config, String key) {
-        return config == null ? null : WidgetConfigs.str(config.get(key));
+        return config == null ? null : WebDashboardWidgetConfigs.str(config.get(key));
     }
 
     /** 解析后的窗口（绝对时刻）。{@code key()} 是分组去重用的，只由两端时刻决定。 */
@@ -936,18 +936,18 @@ public class WidgetDataService {
         }
 
         /**
-         * 从卡片配置里读。三元组缺一就给 {@code null}（{@code WidgetStructureValidator} 已经拦过，
+         * 从卡片配置里读。三元组缺一就给 {@code null}（{@code WebDashboardWidgetStructureValidator} 已经拦过，
          * 这里是兜底：服务端加过一个必填项又撤掉时，老布局会带着不完整的配置躺在库里）。
          */
-        static CurveQuery of(DashboardWidget widget, Window window) {
+        static CurveQuery of(WebDashboardWidget widget, Window window) {
             Map<String, Object> config = widget.config;
             String serviceId = configString(config, "serviceId");
-            Integer functionIndex = WidgetConfigs.intVal(config.get("functionIndex"));
+            Integer functionIndex = WebDashboardWidgetConfigs.intVal(config.get("functionIndex"));
             String field = configString(config, "field");
             if (serviceId == null || functionIndex == null || field == null) {
                 return null;
             }
-            Integer maxPoints = WidgetConfigs.intVal(config.get("maxPoints"));
+            Integer maxPoints = WebDashboardWidgetConfigs.intVal(config.get("maxPoints"));
             // 缺省由 queryService 那侧归一（夹到 [1, 2000]），这里只给「没配」的那档
             return new CurveQuery(serviceId, functionIndex, field, window,
                     maxPoints == null ? ModbusHistoryQueryService.DEFAULT_MAX_POINTS : maxPoints);
@@ -972,9 +972,9 @@ public class WidgetDataService {
         }
 
         /** 从卡片配置里读（方法序号缺了就给 {@code null}：没有它也无从查失败）。 */
-        static FailureQuery of(DashboardWidget widget, Window window) {
+        static FailureQuery of(WebDashboardWidget widget, Window window) {
             String serviceId = configString(widget.config, "serviceId");
-            Integer functionIndex = WidgetConfigs.intVal(widget.config.get("functionIndex"));
+            Integer functionIndex = WebDashboardWidgetConfigs.intVal(widget.config.get("functionIndex"));
             return serviceId == null || functionIndex == null
                     ? null : new FailureQuery(serviceId, functionIndex, window);
         }

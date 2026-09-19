@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.db.mongo;
 
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -152,12 +152,12 @@ class ObjectPropertyCodecProviderTest {
      * （{@code window} 是文档、{@code fields} 是数组），值还有 Integer / Long / Boolean。
      *
      * <p>比 {@link #shadowFieldsRoundTrip} 深一层：那张卡上的每个值都是标量，而看板卡片的值
-     * **本身就是容器**。{@code DashboardWidget} 的「config 异构、不做结构化」这个设计
+     * **本身就是容器**。{@code WebDashboardWidget} 的「config 异构、不做结构化」这个设计
      * 整个压在「能原样读回」上 —— 读回来若变成了字符串或丢了一层，校验器与取数都会静默失灵。</p>
      */
     @Test
     void dashboardWidgetConfigRoundTrips() {
-        DashboardWidget widget = new DashboardWidget();
+        WebDashboardWidget widget = new WebDashboardWidget();
         widget.id = "w1";
         widget.type = "stat";
         widget.size = "W6H200";
@@ -173,20 +173,20 @@ class ObjectPropertyCodecProviderTest {
         config.put("showUnit", Boolean.TRUE);
         widget.config = config;
 
-        DashboardLayoutEntity layout = new DashboardLayoutEntity();
+        WebDashboardLayoutEntity layout = new WebDashboardLayoutEntity();
         layout.id = new ObjectId();
         layout.spaceId = "space-1";
         layout.version = 3L;
         layout.widgets = List.of(widget);
         layout.creator = Person.of("acc-1", "张三");
 
-        DashboardLayoutEntity read = decode(DashboardLayoutEntity.class, encode(layout));
+        WebDashboardLayoutEntity read = decode(WebDashboardLayoutEntity.class, encode(layout));
 
         assertEquals("space-1", read.spaceId);
         assertEquals(3L, read.version);
         assertEquals("acc-1", read.creator.id);
         assertEquals(1, read.widgets.size());
-        DashboardWidget readWidget = read.widgets.get(0);
+        WebDashboardWidget readWidget = read.widgets.get(0);
         assertEquals("w1", readWidget.id);
         // title 没设就是不落键：读回来是 null，而不是空串（读侧靠这个区分「没设」与「设成了空」）
         assertNull(readWidget.title);
@@ -204,9 +204,9 @@ class ObjectPropertyCodecProviderTest {
      * <b>老文档里的 {@code widgets[].layout} 被跳过</b> —— 这是「顺序进线格式不需要迁移」
      * 那条论证的证据。
      *
-     * <p>改造之前每张卡片都带一个 {@code layout: {x, y, w, h}}。现在 {@code DashboardWidget}
+     * <p>改造之前每张卡片都带一个 {@code layout: {x, y, w, h}}。现在 {@code WebDashboardWidget}
      * 上没有这个字段了，而<b>现网库里存着的文档还带着它</b>。这里手工造一份那种老文档
-     * （{@code BsonDocument} 直接写，绕过实体），按 {@code DashboardLayoutEntity} 解码：
+     * （{@code BsonDocument} 直接写，绕过实体），按 {@code WebDashboardLayoutEntity} 解码：
      * 只要 POJO codec 遇到类上没有的键是<b>跳过</b>而不是报错，老布局就读得出来，
      * 不需要任何迁移脚本。</p>
      *
@@ -244,12 +244,12 @@ class ObjectPropertyCodecProviderTest {
                 .append("version", new BsonInt64(2L))
                 .append("widgets", new BsonArray(List.of(legacyWidget)));
 
-        DashboardLayoutEntity read = decode(DashboardLayoutEntity.class, legacy);
+        WebDashboardLayoutEntity read = decode(WebDashboardLayoutEntity.class, legacy);
 
         assertEquals("space-1", read.spaceId);
         assertEquals(2L, read.version);
         assertEquals(1, read.widgets.size());
-        DashboardWidget readWidget = read.widgets.get(0);
+        WebDashboardWidget readWidget = read.widgets.get(0);
         assertEquals("w1", readWidget.id);
         assertEquals("stat", readWidget.type);
         assertEquals("devices.total", readWidget.config.get("metric"));

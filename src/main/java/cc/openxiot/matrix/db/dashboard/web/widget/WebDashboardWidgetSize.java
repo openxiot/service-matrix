@@ -38,7 +38,7 @@ import java.util.Map;
  * 也有<b>故意不存在的组合</b>：6 宽没有 416（那样的图太窄太高，不成形状，而竖着叠两张矮卡
  * 就能拼出同样的高度），24 宽没有 92 那一档（整宽的一行高更像一条分隔线，不是一张卡）。</p>
  */
-public enum WidgetSize {
+public enum WebDashboardWidgetSize {
 
     /** 一行高的窄档：**统计卡专用**（那种卡没有卡头，按内容自然高约 90px） */
     W6H92,
@@ -70,11 +70,11 @@ public enum WidgetSize {
      * （400，文案说尺寸不认识），用户那一屏的改动就白做了，而他唯一的线索是一句看不懂的报错。
      * 认下来则是一次无声的、几何上等价的翻译 —— 下一次保存库里就落成新名了，不需要迁移脚本。</p>
      *
-     * <p>前端读线格式时有一张同样作用的旧名表（{@code DashboardLayoutCodec} 的
+     * <p>前端读线格式时有一张同样作用的旧名表（{@code WebDashboardLayoutCodec} 的
      * {@code LEGACY_SIZES}）：那边管「存量的文档读出来是什么」，这边管「旧客户端写进来的是什么」，
      * 两边都要有，谁也替不了谁。</p>
      */
-    private static final Map<String, WidgetSize> LEGACY_NAMES = Map.of(
+    private static final Map<String, WebDashboardWidgetSize> LEGACY_NAMES = Map.of(
             "S1", W6H92,
             "M1", W12H92,
             "S", W6H200,
@@ -87,11 +87,11 @@ public enum WidgetSize {
      * 不认识（含 null、大小写不符、将来某个版本才有的档位）返回 {@code null}，
      * 由调用方给出错误文案。
      */
-    public static WidgetSize of(String size) {
+    public static WebDashboardWidgetSize of(String size) {
         if (size == null) {
             return null;
         }
-        for (WidgetSize value : values()) {
+        for (WebDashboardWidgetSize value : values()) {
             if (value.name().equals(size)) {
                 return value;
             }

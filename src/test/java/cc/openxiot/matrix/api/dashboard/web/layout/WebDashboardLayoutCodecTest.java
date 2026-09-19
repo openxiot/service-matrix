@@ -9,14 +9,14 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link DashboardLayoutCodec} 的线上形状。**纯 JUnit，不连库**。
+ * {@link WebDashboardLayoutCodec} 的线上形状。**纯 JUnit，不连库**。
  *
  * <p>重点在「什么都不补」这条约定：缺省项（{@code title} 没设、{@code x}/{@code y} 没给、
  * 预置布局没有 id/creator/updater）一律<b>不出现在 JSON 里</b>。补成空串或 0 会让「没设」
@@ -29,12 +29,12 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encode_nullLayoutIsEmptyObject() {
-        assertEquals(0, DashboardLayoutCodec.encode(null).size());
+        assertEquals(0, WebDashboardLayoutCodec.encode(null).size());
     }
 
     @Test
     void encode_presetHasNoIdOrCreator() {
-        JsonObject o = DashboardLayoutCodec.encode(PresetLayouts.build("space-1"));
+        JsonObject o = WebDashboardLayoutCodec.encode(WebDashboardPresetLayouts.build("space-1"));
 
         assertEquals("space-1", o.getString("spaceId"));
         // 预置布局的版本号是 0 —— 这同时就是「首次保存要提交的版本号」，
@@ -49,7 +49,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encode_presetWidgetsCarryTitleKeyNotTitle() {
-        JsonArray widgets = DashboardLayoutCodec.encode(PresetLayouts.build("space-1")).getJsonArray("widgets");
+        JsonArray widgets = WebDashboardLayoutCodec.encode(WebDashboardPresetLayouts.build("space-1")).getJsonArray("widgets");
         for (int i = 0; i < widgets.size(); i++) {
             JsonObject widget = widgets.getJsonObject(i);
             // 预置布局是服务端造的：中文只能走 titleKey（页面文案，前端翻译），
@@ -67,15 +67,15 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encode_presetWidgetsAreInVisualOrder() {
-        JsonArray widgets = DashboardLayoutCodec.encode(PresetLayouts.build("space-1")).getJsonArray("widgets");
+        JsonArray widgets = WebDashboardLayoutCodec.encode(WebDashboardPresetLayouts.build("space-1")).getJsonArray("widgets");
         // **数组顺序是阅读顺序**（先行后列，也正是视觉顺序）：4 张统计卡在前（各占 6 列、
         // 一行高），后 4 张 W12H308 两两一行。预置布局一个坐标都没给，位置由前端按这个顺序铺出来，
-        // 所以改动 PresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
+        // 所以改动 WebDashboardPresetLayouts 时把顺序弄乱，用户看到的预置首屏就会跟着变
         assertEquals(8, widgets.size());
         for (int i = 0; i < 4; i++) {
             assertEquals("stat", widgets.getJsonObject(i).getString("type"), "widget " + i);
             assertEquals("W6H92", widgets.getJsonObject(i).getString("size"), "widget " + i);
-            // 预置布局**不带坐标**：坐标得配着 w 一起写才对，而 w 只在前端（见 PresetLayouts）
+            // 预置布局**不带坐标**：坐标得配着 w 一起写才对，而 w 只在前端（见 WebDashboardPresetLayouts）
             assertFalse(widgets.getJsonObject(i).containsKey("x"), "widget " + i);
             assertFalse(widgets.getJsonObject(i).containsKey("y"), "widget " + i);
         }
@@ -86,10 +86,10 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_userTitleWins() {
-        DashboardWidget w = widget();
+        WebDashboardWidget w = widget();
         w.title = "东区温度";
         w.titleKey = "设备总量";
-        JsonObject o = DashboardLayoutCodec.encodeWidget(w);
+        JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
         // 两个都下发，取值顺序（title → titleKey → 按 type 的默认名）由前端定：
         // 服务端替它挑一个，改规则时就得同时改两边
         assertEquals("东区温度", o.getString("title"));
@@ -98,8 +98,8 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_omitsUnsetOptionals() {
-        DashboardWidget w = widget();
-        JsonObject o = DashboardLayoutCodec.encodeWidget(w);
+        WebDashboardWidget w = widget();
+        JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
         assertFalse(o.containsKey("title"));
         assertFalse(o.containsKey("titleKey"));
         assertTrue(o.containsKey("id"));
@@ -115,10 +115,10 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_positionIsEmitted() {
-        DashboardWidget w = widget();
+        WebDashboardWidget w = widget();
         w.x = 6;
         w.y = 4;
-        JsonObject o = DashboardLayoutCodec.encodeWidget(w);
+        JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
         // 位置是必须发的：不发就等于每次保存都退回「没有坐标」，用户刷新一次整屏重排
         assertEquals(6, o.getInteger("x"));
         assertEquals(4, o.getInteger("y"));
@@ -126,21 +126,21 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_configNeverNull() {
-        DashboardWidget w = widget();
+        WebDashboardWidget w = widget();
         w.config = null;
         // config 是必填的，但 codec 不替校验器兜底：这里给空对象而不是 null，
         // 是为了让前端少一个判空分支（缺 config 的卡片在到达 codec 之前就被拒了）
-        assertEquals(new JsonObject(), DashboardLayoutCodec.encodeWidget(w).getJsonObject("config"));
+        assertEquals(new JsonObject(), WebDashboardLayoutCodec.encodeWidget(w).getJsonObject("config"));
     }
 
     @Test
     void encodeWidget_configPassesThroughNestedStructures() {
-        DashboardWidget w = widget();
+        WebDashboardWidget w = widget();
         w.config = new LinkedHashMap<>(Map.of(
                 "metric", "alarms.today",
                 "window", Map.of("kind", "last", "hours", 24),
                 "fields", List.of("temp", "status.bit0")));
-        JsonObject config = DashboardLayoutCodec.encodeWidget(w).getJsonObject("config");
+        JsonObject config = WebDashboardLayoutCodec.encodeWidget(w).getJsonObject("config");
         assertEquals("alarms.today", config.getString("metric"));
         assertEquals(24, config.getJsonObject("window").getInteger("hours"));
         assertEquals("status.bit0", config.getJsonArray("fields").getString(1));
@@ -148,15 +148,15 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encode_nullWidgetIsEmptyObject() {
-        assertEquals(0, DashboardLayoutCodec.encodeWidget(null).size());
-        assertEquals(0, DashboardLayoutCodec.encodeWidgets(null).size());
+        assertEquals(0, WebDashboardLayoutCodec.encodeWidget(null).size());
+        assertEquals(0, WebDashboardLayoutCodec.encodeWidgets(null).size());
     }
 
     @Test
     void encode_creatorEncodedWhenPresent() {
-        DashboardLayoutEntity layout = PresetLayouts.build("space-1");
+        WebDashboardLayoutEntity layout = WebDashboardPresetLayouts.build("space-1");
         layout.creator = Person.of("acc-1", "张三");
-        JsonObject o = DashboardLayoutCodec.encode(layout);
+        JsonObject o = WebDashboardLayoutCodec.encode(layout);
         assertEquals("acc-1", o.getJsonObject("creator").getString("id"));
         assertEquals("张三", o.getJsonObject("creator").getString("name"));
         // 时间戳按毫秒输出，与前端 new Date(ms) 同口径
@@ -166,8 +166,8 @@ class DashboardLayoutCodecTest {
 
     // ===== helpers =====
 
-    private static DashboardWidget widget() {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget widget() {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "W6H200";

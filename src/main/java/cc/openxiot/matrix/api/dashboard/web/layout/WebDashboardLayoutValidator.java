@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
-import cc.openxiot.matrix.api.dashboard.web.params.DashboardLayoutDto;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetOwnershipValidator;
-import cc.openxiot.matrix.api.dashboard.web.widget.WidgetStructureValidator;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetOwnershipValidator;
+import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -13,9 +13,9 @@ import jakarta.inject.Inject;
  *
  * <p>本类自己不校验任何东西，它只决定两件事的顺序和失败语义：</p>
  * <ul>
- *   <li>结构校验在 {@link WidgetStructureValidator} —— 纯函数、不查库。它先跑且是同步的：
+ *   <li>结构校验在 {@link WebDashboardWidgetStructureValidator} —— 纯函数、不查库。它先跑且是同步的：
  *       body 不成形时连「有哪些卡片」都无从谈起，此时<b>一次查询都不该发出去</b>；</li>
- *   <li>归属校验在 {@link WidgetOwnershipValidator} —— 要查库，返回
+ *   <li>归属校验在 {@link WebDashboardWidgetOwnershipValidator} —— 要查库，返回
  *       {@code widgetId → 错误文案}。它对渲染路径是**逐卡隔离**的，但保存路径没有
  *       「部分成功」这一说，所以这里把它收敛成「报第一张出错的卡」。</li>
  * </ul>
@@ -25,20 +25,20 @@ import jakarta.inject.Inject;
  * {@code widget} 包不再依赖 {@code layout} 包，依赖是单向的。</p>
  *
  * <p>为什么保存要一次报一个错而不是全报：错误提示最终是一条 toast / 一个字段，
- * 编辑器一行只放得下一个。逐张标红那条路属于渲染（见 {@code WidgetDataService}）。</p>
+ * 编辑器一行只放得下一个。逐张标红那条路属于渲染（见 {@code WebDashboardWidgetDataService}）。</p>
  */
 @ApplicationScoped
-public class DashboardLayoutValidator {
+public class WebDashboardLayoutValidator {
 
     @Inject
-    WidgetOwnershipValidator ownershipValidator;
+    WebDashboardWidgetOwnershipValidator ownershipValidator;
 
     /**
      * 保存路径：结构校验 + 归属校验，第一个错误即整份失败。
      * 结构校验先跑且同步 —— body 不成形时连「有哪些卡片」都无从谈起。
      */
-    public Uni<Void> validate(SpaceEntity space, DashboardLayoutDto body) {
-        String structural = WidgetStructureValidator.validate(body);
+    public Uni<Void> validate(SpaceEntity space, WebDashboardLayoutDto body) {
+        String structural = WebDashboardWidgetStructureValidator.validate(body);
         if (structural != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(structural));
         }

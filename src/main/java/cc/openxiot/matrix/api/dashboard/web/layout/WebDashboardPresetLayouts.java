@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
-import cc.openxiot.matrix.db.dashboard.web.widget.WidgetSize;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,7 +23,7 @@ import java.util.Map;
  * 首屏因此是 {@code 92 + 16 + 308 + 16 + 308 = 740px}，无空洞。</p>
  *
  * <p><b>为什么不在这儿写坐标</b>：写不了。坐标得配着 {@code w} 一起才对（写重叠了就摆出
- * 两张叠在一起的卡），而 {@code w} <b>只在前端</b>（见 {@code WidgetSize}）。前端哪天把
+ * 两张叠在一起的卡），而 {@code w} <b>只在前端</b>（见 {@code WebDashboardWidgetSize}）。前端哪天把
  * 那一档从 6 列改成 8 列（那样 {@code W6H92} 这个名字本身也得跟着改），这里手写的坐标表
  * 就会<b>静默地</b>摆出重叠的卡片；交给前端的 {@code placeAt} / {@code ensurePlacements}
  * 反而永远自洽 —— 它铺出来的就是改造前浏览器流式排开的那个样子。</p>
@@ -49,12 +49,12 @@ import java.util.Map;
  * 只能删掉）。第四张统计卡改用 {@code failures.total}：它是 §5.3 里唯一还没被用到的 metric，
  * 且原页面从来没展示过故障，正好补上。它的口径（「几种」不是「几次」）在编辑器里有专门提示。</p>
  */
-public final class PresetLayouts {
+public final class WebDashboardPresetLayouts {
 
-    private PresetLayouts() {
+    private WebDashboardPresetLayouts() {
     }
 
-    /** 预置布局的版本号：从未保存过。与 {@code DashboardLayoutEntity.version} 同义。 */
+    /** 预置布局的版本号：从未保存过。与 {@code WebDashboardLayoutEntity.version} 同义。 */
     public static final long PRESET_VERSION = 0L;
 
     /**
@@ -62,8 +62,8 @@ public final class PresetLayouts {
      * {@code creator} / {@code updater} 也是 null（预置布局没有作者）——
      * codec 对这三者都是「没有就不下发」，所以不需要特殊的编码路径。
      */
-    public static DashboardLayoutEntity build(String spaceId) {
-        DashboardLayoutEntity layout = new DashboardLayoutEntity();
+    public static WebDashboardLayoutEntity build(String spaceId) {
+        WebDashboardLayoutEntity layout = new WebDashboardLayoutEntity();
         layout.spaceId = spaceId;
         layout.version = PRESET_VERSION;
         layout.widgets = List.of(
@@ -87,18 +87,18 @@ public final class PresetLayouts {
         return layout;
     }
 
-    private static DashboardWidget stat(String id, String titleKey,
+    private static WebDashboardWidget stat(String id, String titleKey,
                                        String metric, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("metric", metric);
         if (window != null) {
             config.put("window", window);
         }
-        // W6H92 = 一行高（92px）、6 列。统计卡只给两个矮档位（W6H92 / W12H92），见 WidgetSize
-        return widget(id, "stat", titleKey, WidgetSize.W6H92, config);
+        // W6H92 = 一行高（92px）、6 列。统计卡只给两个矮档位（W6H92 / W12H92），见 WebDashboardWidgetSize
+        return widget(id, "stat", titleKey, WebDashboardWidgetSize.W6H92, config);
     }
 
-    private static DashboardWidget distribution(String id, String titleKey,
+    private static WebDashboardWidget distribution(String id, String titleKey,
                                                 String dimension, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("dimension", dimension);
@@ -106,23 +106,23 @@ public final class PresetLayouts {
             config.put("window", window);
         }
         config.put("chart", "pie");
-        return widget(id, "distribution", titleKey, WidgetSize.W12H308, config);
+        return widget(id, "distribution", titleKey, WebDashboardWidgetSize.W12H308, config);
     }
 
-    private static DashboardWidget alarmLine(String id, String titleKey) {
+    private static WebDashboardWidget alarmLine(String id, String titleKey) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("source", "alarmCount");
         config.put("window", window(24));
         config.put("bucket", "hour");
-        return widget(id, "line", titleKey, WidgetSize.W12H308, config);
+        return widget(id, "line", titleKey, WebDashboardWidgetSize.W12H308, config);
     }
 
     /**
      * 最近 N 小时的窗口。**存语义，不存绝对时刻** —— 预置布局要是写成绝对毫秒，
      * 它在下发的那一刻就固化了，用户第二天打开看到的还是昨天的区间。
      *
-     * <p>{@code {kind: "last", hours: N}} 由 {@code WidgetDataService} 在**取数时**按服务端的
-     * 「现在」解析成绝对区间（见 {@code WidgetDataService.windowOf}），前端不需要在调 render 前
+     * <p>{@code {kind: "last", hours: N}} 由 {@code WebDashboardWidgetDataService} 在**取数时**按服务端的
+     * 「现在」解析成绝对区间（见 {@code WebDashboardWidgetDataService.windowOf}），前端不需要在调 render 前
      * 做换算；前端读这个字段只是为了显示「最近 24 小时」这类窗口标签。
      * 另一种形态 {@code {kind: "range", from, to}} 才是编辑器里手动选了绝对区间的情形，
      * 那种由前端算成 epoch 毫秒。</p>
@@ -131,14 +131,14 @@ public final class PresetLayouts {
         return Map.of("kind", "last", "hours", hours);
     }
 
-    private static DashboardWidget widget(String id, String type, String titleKey,
-                                          WidgetSize size, Map<String, Object> config) {
-        DashboardWidget widget = new DashboardWidget();
+    private static WebDashboardWidget widget(String id, String type, String titleKey,
+                                          WebDashboardWidgetSize size, Map<String, Object> config) {
+        WebDashboardWidget widget = new WebDashboardWidget();
         widget.id = id;
         widget.type = type;
         // titleKey 而不是 title：见类注释
         widget.titleKey = titleKey;
-        // 只给档位名。占几列几行是前端的事（见 WidgetSize），坐标也由前端铺（见类注释）
+        // 只给档位名。占几列几行是前端的事（见 WebDashboardWidgetSize），坐标也由前端铺（见类注释）
         widget.size = size.name();
         widget.config = config;
         return widget;

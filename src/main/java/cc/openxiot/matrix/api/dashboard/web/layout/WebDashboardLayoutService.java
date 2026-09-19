@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.api.dashboard.web.params.DashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.DashboardLayoutRepository;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutRepository;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -25,14 +25,14 @@ import java.util.List;
  * <p><b>布局按根空间存</b>：路径上给的 {@code spaceId} 可能是子空间，而布局是「项目一份」，
  * 所以落库与查询一律用 {@code space.rootSpaceId()}。这样管理员在
  * 子空间页面和项目页面看到的是同一份布局，也不会因为换了子空间就多出一份空布局。
- * 判定归属（{@code WidgetOwnershipValidator}）与取数（{@code WidgetDataService}）用的都是
+ * 判定归属（{@code WebDashboardWidgetOwnershipValidator}）与取数（{@code WebDashboardWidgetDataService}）用的都是
  * 同一个基准 —— 三处必须一致，否则会出现「存得下但渲染是空的」这种最难查的不一致。</p>
  */
 @ApplicationScoped
-public class DashboardLayoutService {
+public class WebDashboardLayoutService {
 
     @Inject
-    DashboardLayoutRepository repo;
+    WebDashboardLayoutRepository repo;
 
     /** 建索引开关：测试进程关掉它，免得启动就连库（与 {@code modbus.index.enabled} 同口径）。 */
     @ConfigProperty(name = "dashboard.index.enabled", defaultValue = "true")
@@ -40,7 +40,7 @@ public class DashboardLayoutService {
 
     /**
      * 启动时确保 {@code spaceId} 唯一索引存在。建索引失败只留告警，不阻断启动 ——
-     * 没有索引只是慢，起不来是另一回事。详见 {@link DashboardLayoutRepository#ensureIndexes()}。
+     * 没有索引只是慢，起不来是另一回事。详见 {@link WebDashboardLayoutRepository#ensureIndexes()}。
      */
     void init(@Observes StartupEvent event) {
         if (!indexEnabled) {
@@ -55,10 +55,10 @@ public class DashboardLayoutService {
      * <p>预置布局的 {@code version} 是 0，而 0 恰好也是「首次保存要提交的版本号」，
      * 所以前端不需要知道「我拿到的是预置还是真的」—— 直接原样回传 {@code version} 即可。</p>
      */
-    public Uni<DashboardLayoutEntity> load(SpaceEntity space) {
+    public Uni<WebDashboardLayoutEntity> load(SpaceEntity space) {
         String spaceId = space.rootSpaceId();
         return repo.findBySpaceId(spaceId)
-                .map(stored -> stored != null ? stored : PresetLayouts.build(spaceId));
+                .map(stored -> stored != null ? stored : WebDashboardPresetLayouts.build(spaceId));
     }
 
     /**
@@ -73,7 +73,7 @@ public class DashboardLayoutService {
      * <p>当前用户既是首次的 {@code creator} 也是 {@code updater}；后续保存只动 {@code updater}，
      * 保住「谁建的这份看板」。</p>
      */
-    public Uni<DashboardLayoutEntity> save(SpaceEntity space, DashboardLayoutDto body, Person who) {
+    public Uni<WebDashboardLayoutEntity> save(SpaceEntity space, WebDashboardLayoutDto body, Person who) {
         String spaceId = space.rootSpaceId();
         return repo.findBySpaceId(spaceId).chain(current -> {
             if (current == null) {
@@ -91,17 +91,17 @@ public class DashboardLayoutService {
      * 用户再点「保存布局」才落库（修订（十七））。所以这里是纯读：一个字节都不写，
      * 也就不需要「先删掉文档」那一步。
      */
-    public DashboardLayoutEntity preset(SpaceEntity space) {
-        return PresetLayouts.build(space.rootSpaceId());
+    public WebDashboardLayoutEntity preset(SpaceEntity space) {
+        return WebDashboardPresetLayouts.build(space.rootSpaceId());
     }
 
-    private Uni<DashboardLayoutEntity> create(String spaceId, DashboardLayoutDto body, Person who) {
+    private Uni<WebDashboardLayoutEntity> create(String spaceId, WebDashboardLayoutDto body, Person who) {
         if (body.version != 0L) {
             // 客户端说「库里是第 N 版」，可库里什么都没有。改造前这条路是「别人刚点了恢复默认」
             // （那时它真会删文档）；现在没有删除这一说了，剩下的可能只有并发首次保存或脏数据
             return conflict();
         }
-        DashboardLayoutEntity layout = new DashboardLayoutEntity();
+        WebDashboardLayoutEntity layout = new WebDashboardLayoutEntity();
         layout.spaceId = spaceId;
         layout.version = 1L;
         layout.widgets = normalized(body.widgets);
@@ -110,12 +110,12 @@ public class DashboardLayoutService {
         return repo.insert(layout)
                 // 两个管理员同时创建第一份布局时，唯一索引会让后一个拿到 11000：
                 // 这与「版本不一致」是同一件事（别人先写成功了），报冲突而不是 500
-                .onFailure(DashboardLayoutRepository::isDuplicateKey)
+                .onFailure(WebDashboardLayoutRepository::isDuplicateKey)
                 .transform(failure -> new IllegalArgumentException(VERSION_CONFLICT))
                 .replaceWith(layout);
     }
 
-    private Uni<DashboardLayoutEntity> update(DashboardLayoutEntity current, DashboardLayoutDto body, Person who) {
+    private Uni<WebDashboardLayoutEntity> update(WebDashboardLayoutEntity current, WebDashboardLayoutDto body, Person who) {
         long expected = current.version;
         current.version = expected + 1L;
         current.widgets = normalized(body.widgets);
@@ -143,16 +143,16 @@ public class DashboardLayoutService {
      *
      * <p>{@code config} 原样落库，不做「补齐缺省项」：缺省项由读取方解释
      * （{@code window} 缺省即不适用、{@code chart} 缺省即饼图），补空值会让「没设」和
-     * 「设成了空」再也分不开（与 {@code DashboardLayoutCodec} 不补空值同口径）。</p>
+     * 「设成了空」再也分不开（与 {@code WebDashboardLayoutCodec} 不补空值同口径）。</p>
      */
-    private static List<DashboardWidget> normalized(List<DashboardWidget> widgets) {
+    private static List<WebDashboardWidget> normalized(List<WebDashboardWidget> widgets) {
         return widgets == null ? List.of() : widgets;
     }
 
     private static final String VERSION_CONFLICT =
             "layout has been modified by someone else, please reload";
 
-    private static Uni<DashboardLayoutEntity> conflict() {
+    private static Uni<WebDashboardLayoutEntity> conflict() {
         return Uni.createFrom().failure(new IllegalArgumentException(VERSION_CONFLICT));
     }
 }

@@ -13,7 +13,7 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link WidgetDataCodec} 的线上形状。**纯 JUnit，不连库**。
+ * {@link WebDashboardWidgetDataCodec} 的线上形状。**纯 JUnit，不连库**。
  *
  * <p>重点在「什么都不补」这条约定：{@code from}/{@code to} 没给就是没给（空看板没有窗口可言），
  * 一律<b>不出现在 JSON 里</b>。补成 0 会让「没有窗口」和「窗口从 1970 年开始」再也分不开。</p>
@@ -26,11 +26,11 @@ class WidgetDataCodecTest {
     @Test
     void encodeData_successCarriesDataOnly() {
         JsonObject payload = new JsonObject().put("value", 12);
-        WidgetDataService.WidgetData data = new WidgetDataService.WidgetData(
+        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
                 "space-1", new Date(1_000L), new Date(2_000L),
                 List.of(ok("w1", payload)));
 
-        JsonObject o = WidgetDataCodec.encode(data);
+        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
         assertEquals("space-1", o.getString("spaceId"));
         assertEquals(1_000L, o.getLong("from").longValue());
         assertEquals(2_000L, o.getLong("to").longValue());
@@ -44,10 +44,10 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_failureCarriesMessageOnly() {
-        WidgetDataService.WidgetData data = new WidgetDataService.WidgetData(
+        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
                 "space-1", null, null, List.of(failed("w2", "widget type is not supported yet: device")));
 
-        JsonObject o = WidgetDataCodec.encode(data);
+        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
         JsonObject item = o.getJsonArray("widgets").getJsonObject(0);
         assertFalse(item.getBoolean("success"));
         assertFalse(item.containsKey("data"));
@@ -60,13 +60,13 @@ class WidgetDataCodecTest {
      */
     @Test
     void encodeData_preservesOrderAndMixedOutcomes() {
-        WidgetDataService.WidgetData data = new WidgetDataService.WidgetData(
+        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
                 "space-1", new Date(1L), new Date(2L),
                 List.of(ok("a", new JsonObject().put("value", 1)),
                         failed("b", "boom"),
                         ok("c", new JsonObject().put("value", 3))));
 
-        JsonArray widgets = WidgetDataCodec.encode(data).getJsonArray("widgets");
+        JsonArray widgets = WebDashboardWidgetDataCodec.encode(data).getJsonArray("widgets");
         assertEquals(3, widgets.size());
         assertEquals("a", widgets.getJsonObject(0).getString("id"));
         assertEquals("b", widgets.getJsonObject(1).getString("id"));
@@ -77,8 +77,8 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_emptyWidgetsStillHasArray() {
-        WidgetDataService.WidgetData data = new WidgetDataService.WidgetData("space-1", null, null, List.of());
-        JsonObject o = WidgetDataCodec.encode(data);
+        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData("space-1", null, null, List.of());
+        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
         assertTrue(o.containsKey("widgets"));
         assertEquals(0, o.getJsonArray("widgets").size());
         // from/to 为 null 时不下发（空看板没有窗口可言）
@@ -88,17 +88,17 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_nullIsEmptyObject() {
-        assertEquals(0, WidgetDataCodec.encode(null).size());
-        assertNull(WidgetDataCodec.encode(null).getJsonArray("widgets"));
+        assertEquals(0, WebDashboardWidgetDataCodec.encode(null).size());
+        assertNull(WebDashboardWidgetDataCodec.encode(null).getJsonArray("widgets"));
     }
 
     // ===== helpers =====
 
-    private static WidgetDataService.Item ok(String id, JsonObject data) {
-        return new WidgetDataService.Item(id, true, data, null);
+    private static WebDashboardWidgetDataService.Item ok(String id, JsonObject data) {
+        return new WebDashboardWidgetDataService.Item(id, true, data, null);
     }
 
-    private static WidgetDataService.Item failed(String id, String message) {
-        return new WidgetDataService.Item(id, false, null, message);
+    private static WebDashboardWidgetDataService.Item failed(String id, String message) {
+        return new WebDashboardWidgetDataService.Item(id, false, null, message);
     }
 }

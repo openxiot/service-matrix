@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.dashboard.web.widget;
 
-import cc.openxiot.matrix.api.dashboard.web.params.DashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
-import cc.openxiot.matrix.db.dashboard.web.widget.WidgetSize;
+import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>「能不能写」是资源层 {@code requireSpaceAdmin} 的事；</li>
  *   <li>「设备/服务是否属于该空间」「{@code (serviceId, functionIndex, field)} 三元组是否存在」
- *       需要查库，是 {@link WidgetOwnershipValidator} 的事。</li>
+ *       需要查库，是 {@link WebDashboardWidgetOwnershipValidator} 的事。</li>
  * </ul>
  * <p>这样切分的实际好处：本类能被不碰库的纯 JUnit 覆盖（{@code @QuarkusTest} 会要求连 Mongo），
  * 而且成员可用的 {@code render} 也能直接复用它校验请求体里那份「未保存的草稿」。</p>
@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * <p>错误文案一律带 {@code widgets[i]} 前缀（i 是卡片在数组里的下标）：编辑器一次能提交几十张卡，
  * 不指出是哪一张的报错等于没报。</p>
  */
-public final class WidgetStructureValidator {
+public final class WebDashboardWidgetStructureValidator {
 
     /** 一个看板的卡片数上限：防止一次 render 打爆后端（每张卡都可能触发一次上游查询）。 */
     public static final int MAX_WIDGETS = 30;
@@ -60,7 +60,7 @@ public final class WidgetStructureValidator {
      * 生成出来则永远与枚举一致。
      */
     private static final String SIZE_NAMES =
-            Arrays.stream(WidgetSize.values()).map(Enum::name).collect(Collectors.joining("/"));
+            Arrays.stream(WebDashboardWidgetSize.values()).map(Enum::name).collect(Collectors.joining("/"));
 
     private static final Set<String> STAT_METRICS = Set.of(
             "devices.total", "devices.online", "services.total",
@@ -88,11 +88,11 @@ public final class WidgetStructureValidator {
      */
     private static final Set<String> DISPLAYS = Set.of("value");
 
-    private WidgetStructureValidator() {
+    private WebDashboardWidgetStructureValidator() {
     }
 
     /** 校验保存请求体。返回 {@code null} 表示通过。 */
-    public static String validate(DashboardLayoutDto body) {
+    public static String validate(WebDashboardLayoutDto body) {
         if (body == null) {
             return "body is required";
         }
@@ -109,7 +109,7 @@ public final class WidgetStructureValidator {
      * 只校验卡片列表。{@code render} 用它校验请求体里那份**未保存的草稿** ——
      * 草稿没有 {@code version}，所以不能直接走 {@link #validate}。
      */
-    public static String validateWidgets(List<DashboardWidget> widgets) {
+    public static String validateWidgets(List<WebDashboardWidget> widgets) {
         if (widgets == null) {
             return "widgets is required";
         }
@@ -118,7 +118,7 @@ public final class WidgetStructureValidator {
         }
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < widgets.size(); i++) {
-            DashboardWidget widget = widgets.get(i);
+            WebDashboardWidget widget = widgets.get(i);
             String err = validateWidget(widget);
             if (err != null) {
                 return "widgets[" + i + "]: " + err;
@@ -130,7 +130,7 @@ public final class WidgetStructureValidator {
         return null;
     }
 
-    private static String validateWidget(DashboardWidget widget) {
+    private static String validateWidget(WebDashboardWidget widget) {
         if (widget == null) {
             return "widget is required";
         }
@@ -151,7 +151,7 @@ public final class WidgetStructureValidator {
         if (widget.titleKey != null && widget.titleKey.length() > 128) {
             return "titleKey is too long";
         }
-        if (WidgetSize.of(widget.size) == null) {
+        if (WebDashboardWidgetSize.of(widget.size) == null) {
             return "size must be one of " + SIZE_NAMES;
         }
         String positionError = validatePosition(widget);
@@ -176,14 +176,14 @@ public final class WidgetStructureValidator {
      * 坐标的**粗校验**：两个一起给、`0 ≤ x ≤ 23`、`y ≥ 0`。
      *
      * <p><b>重叠与 {@code x + w ≤ 24} 不校验</b>，而且这不是漏了：服务端<b>没有 {@code w}</b>
-     * —— 占几列几行由 {@code size} 档位在前端算（见 {@link WidgetSize}）。做不了的事不假装做，
+     * —— 占几列几行由 {@code size} 档位在前端算（见 {@link WebDashboardWidgetSize}）。做不了的事不假装做，
      * 排版正确性由前端的那套坐标运算保证；这一层挡的是「明显不是坐标的数」（负数、越界、给一半）。</p>
      *
      * <p><b>两个都不给是合法的</b>：改造前存下来的老文档没有坐标，前端会按数组顺序铺一遍
      * （铺法复刻改造前的流式排布，所以老布局长相不变）。所以这里「都没有」放行、「只给一个」拒绝
      * —— 后者只可能是脏数据，放进去就是一张位置来路不明的卡。</p>
      */
-    private static String validatePosition(DashboardWidget widget) {
+    private static String validatePosition(WebDashboardWidget widget) {
         if (widget.x == null && widget.y == null) {
             return null;
         }
@@ -200,7 +200,7 @@ public final class WidgetStructureValidator {
     }
 
     private static String validateStat(Map<String, Object> config) {
-        String metric = WidgetConfigs.str(config.get("metric"));
+        String metric = WebDashboardWidgetConfigs.str(config.get("metric"));
         if (metric == null || !STAT_METRICS.contains(metric)) {
             return "config.metric must be one of " + STAT_METRICS;
         }
@@ -219,7 +219,7 @@ public final class WidgetStructureValidator {
     }
 
     private static String validateLine(Map<String, Object> config) {
-        String source = WidgetConfigs.str(config.get("source"));
+        String source = WebDashboardWidgetConfigs.str(config.get("source"));
         if (source == null || !LINE_SOURCES.contains(source)) {
             return "config.source must be one of " + LINE_SOURCES;
         }
@@ -228,23 +228,23 @@ public final class WidgetStructureValidator {
             return windowErr;
         }
         if ("alarmCount".equals(source)) {
-            String bucket = WidgetConfigs.str(config.get("bucket"));
+            String bucket = WebDashboardWidgetConfigs.str(config.get("bucket"));
             if (bucket != null && !"hour".equals(bucket)) {
                 return "config.bucket must be hour";
             }
             return null;
         }
-        // serviceField：三元组必须齐全。字段是否存在由 WidgetOwnershipValidator 查库确认。
-        if (WidgetConfigs.str(config.get("serviceId")) == null) {
+        // serviceField：三元组必须齐全。字段是否存在由 WebDashboardWidgetOwnershipValidator 查库确认。
+        if (WebDashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
         }
-        if (WidgetConfigs.intVal(config.get("functionIndex")) == null) {
+        if (WebDashboardWidgetConfigs.intVal(config.get("functionIndex")) == null) {
             return "config.functionIndex must be a number";
         }
-        if (WidgetConfigs.str(config.get("field")) == null) {
+        if (WebDashboardWidgetConfigs.str(config.get("field")) == null) {
             return "config.field is required";
         }
-        Integer maxPoints = WidgetConfigs.intVal(config.get("maxPoints"));
+        Integer maxPoints = WebDashboardWidgetConfigs.intVal(config.get("maxPoints"));
         if (maxPoints != null && (maxPoints < 1 || maxPoints > 2000)) {
             return "config.maxPoints must be between 1 and 2000";
         }
@@ -252,7 +252,7 @@ public final class WidgetStructureValidator {
     }
 
     private static String validateDistribution(Map<String, Object> config) {
-        String dimension = WidgetConfigs.str(config.get("dimension"));
+        String dimension = WebDashboardWidgetConfigs.str(config.get("dimension"));
         if (dimension == null || !DIMENSIONS.contains(dimension)) {
             return "config.dimension must be one of " + DIMENSIONS;
         }
@@ -262,11 +262,11 @@ public final class WidgetStructureValidator {
                 return windowErr;
             }
         }
-        String chart = WidgetConfigs.str(config.get("chart"));
+        String chart = WebDashboardWidgetConfigs.str(config.get("chart"));
         if (config.containsKey("chart") && (chart == null || !CHARTS.contains(chart))) {
             return "config.chart must be one of " + CHARTS;
         }
-        Integer limit = WidgetConfigs.intVal(config.get("limit"));
+        Integer limit = WebDashboardWidgetConfigs.intVal(config.get("limit"));
         if (config.containsKey("limit") && limit == null) {
             return "config.limit must be a number";
         }
@@ -277,13 +277,13 @@ public final class WidgetStructureValidator {
     }
 
     private static String validateDevice(Map<String, Object> config) {
-        if (WidgetConfigs.str(config.get("did")) == null) {
+        if (WebDashboardWidgetConfigs.str(config.get("did")) == null) {
             return "config.did is required";
         }
-        if (WidgetConfigs.str(config.get("pid")) == null) {
+        if (WebDashboardWidgetConfigs.str(config.get("pid")) == null) {
             return "config.pid is required";
         }
-        String display = WidgetConfigs.str(config.get("display"));
+        String display = WebDashboardWidgetConfigs.str(config.get("display"));
         if (display != null && !DISPLAYS.contains(display)) {
             return "config.display must be one of " + DISPLAYS;
         }
@@ -291,10 +291,10 @@ public final class WidgetStructureValidator {
     }
 
     private static String validateService(Map<String, Object> config) {
-        if (WidgetConfigs.str(config.get("serviceId")) == null) {
+        if (WebDashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
         }
-        if (WidgetConfigs.intVal(config.get("functionIndex")) == null) {
+        if (WebDashboardWidgetConfigs.intVal(config.get("functionIndex")) == null) {
             return "config.functionIndex must be a number";
         }
         Object raw = config.get("fields");
@@ -309,7 +309,7 @@ public final class WidgetStructureValidator {
         }
         Set<String> seen = new HashSet<>();
         for (Object field : fields) {
-            String name = WidgetConfigs.str(field);
+            String name = WebDashboardWidgetConfigs.str(field);
             if (name == null) {
                 return "config.fields must contain strings";
             }
@@ -317,7 +317,7 @@ public final class WidgetStructureValidator {
                 return "config.fields has a duplicate: " + name;
             }
         }
-        String display = WidgetConfigs.str(config.get("display"));
+        String display = WebDashboardWidgetConfigs.str(config.get("display"));
         if (display != null && !DISPLAYS.contains(display)) {
             return "config.display must be one of " + DISPLAYS;
         }
@@ -336,13 +336,13 @@ public final class WidgetStructureValidator {
         if (!(raw instanceof Map<?, ?> window)) {
             return "config.window is required";
         }
-        String kind = WidgetConfigs.str(window.get("kind"));
+        String kind = WebDashboardWidgetConfigs.str(window.get("kind"));
         if (kind == null) {
             return "config.window.kind is required";
         }
         return switch (kind) {
             case "last" -> {
-                Integer hours = WidgetConfigs.intVal(window.get("hours"));
+                Integer hours = WebDashboardWidgetConfigs.intVal(window.get("hours"));
                 if (hours == null) {
                     yield "config.window.hours must be a number";
                 }
@@ -352,8 +352,8 @@ public final class WidgetStructureValidator {
                 yield null;
             }
             case "range" -> {
-                Long from = WidgetConfigs.longVal(window.get("from"));
-                Long to = WidgetConfigs.longVal(window.get("to"));
+                Long from = WebDashboardWidgetConfigs.longVal(window.get("from"));
+                Long to = WebDashboardWidgetConfigs.longVal(window.get("to"));
                 if (from == null || to == null) {
                     yield "config.window.from and config.window.to must be numbers (epoch millis)";
                 }

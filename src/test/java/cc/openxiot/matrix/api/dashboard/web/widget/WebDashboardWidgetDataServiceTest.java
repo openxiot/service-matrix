@@ -24,7 +24,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.web.widget.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -51,7 +51,7 @@ import org.mockito.ArgumentCaptor;
  * 一屏取数的编排逻辑：**按窗口去重**、**逐卡片隔离**、以及「哪些组合在 P1 还没有数据源」。
  *
  * <p>两个上游都是 {@code @InjectMock}（{@code StatisticsQueryService} 与
- * {@code DashboardLayoutValidator}），所以这里测的正是本类自己写的那部分：窗口怎么解析、
+ * {@code WebDashboardLayoutValidator}），所以这里测的正是本类自己写的那部分：窗口怎么解析、
  * 什么时候复用一次查询、一张卡失败怎么不牵连别人。上游各自的正确性由它们自己的测试负责。</p>
  *
  * <p>归属校验被换成 mock，是因为那部分需要查库；本类要钉的是**它的结果怎么被用** ——
@@ -75,7 +75,7 @@ class WidgetDataServiceTest {
     StatisticsQueryService statisticsQueryService;
 
     @InjectMock
-    WidgetOwnershipValidator ownershipValidator;
+    WebDashboardWidgetOwnershipValidator ownershipValidator;
 
     @InjectMock
     ModbusHistoryQueryService historyQueryService;
@@ -90,7 +90,7 @@ class WidgetDataServiceTest {
     DeviceRepository deviceRepo;
 
     @Inject
-    WidgetDataService service;
+    WebDashboardWidgetDataService service;
 
     /** 区间查询要返回的样本：用例往这里塞，下面的答案每次调用时现读（见 {@code stubDefaults}）。 */
     private final List<ModbusServiceHistory> rangeRows = new ArrayList<>();
@@ -132,7 +132,7 @@ class WidgetDataServiceTest {
 
     @Test
     void render_noWidgets_noQuery() {
-        WidgetDataService.WidgetData data = render();
+        WebDashboardWidgetDataService.WidgetData data = render();
 
         assertEquals(SPACE_ID, data.spaceId());
         assertTrue(data.widgets().isEmpty());
@@ -273,7 +273,7 @@ class WidgetDataServiceTest {
         child.parentId = "parent-1";
         child.ancestors = List.of("root-1");
 
-        WidgetDataService.WidgetData data = service.render(child, List.of(stat("w1", "devices.total", null)))
+        WebDashboardWidgetDataService.WidgetData data = service.render(child, List.of(stat("w1", "devices.total", null)))
                 .await().indefinitely();
 
         assertEquals("root-1", data.spaceId());
@@ -297,7 +297,7 @@ class WidgetDataServiceTest {
             return Uni.createFrom().item(overview(from, to));
         });
 
-        WidgetDataService.WidgetData data = render(
+        WebDashboardWidgetDataService.WidgetData data = render(
                 stat("good", "alarms.window", last(24)),
                 stat("bad", "alarms.window", last(12)));
 
@@ -313,12 +313,12 @@ class WidgetDataServiceTest {
     @Test
     void render_itemsFollowRequestOrder() {
         stubOverview();
-        WidgetDataService.WidgetData data = render(
+        WebDashboardWidgetDataService.WidgetData data = render(
                 stat("a", "devices.total", null),
                 stat("b", "services.total", null),
                 stat("c", "failures.total", last(24)));
 
-        assertEquals(List.of("a", "b", "c"), data.widgets().stream().map(WidgetDataService.Item::id).toList());
+        assertEquals(List.of("a", "b", "c"), data.widgets().stream().map(WebDashboardWidgetDataService.Item::id).toList());
     }
 
     // ===== 归属校验：安全边界 =====
@@ -333,7 +333,7 @@ class WidgetDataServiceTest {
                 .thenReturn(Uni.createFrom().item(Map.of("w1", "device not found: did-9")));
         stubOverview();
 
-        WidgetDataService.WidgetData data = render(device("w1", "did-9", "did-9.1.1"));
+        WebDashboardWidgetDataService.WidgetData data = render(device("w1", "did-9", "did-9.1.1"));
 
         assertFalse(data.widgets().get(0).success());
         assertEquals("device not found: did-9", data.widgets().get(0).message());
@@ -440,7 +440,7 @@ class WidgetDataServiceTest {
                 new JsonObject().put("pid", "did-1.1.2").put("value", 2),
                 new JsonObject().put("pid", "did-2.1.1").put("value", 3));
 
-        WidgetDataService.WidgetData result = render(
+        WebDashboardWidgetDataService.WidgetData result = render(
                 device("w1", "did-1", PID), device("w2", "did-1", "did-1.1.2"), device("w3", "did-2", "did-2.1.1"));
 
         assertEquals(1, result.widgets().get(0).data().getDouble("value"));
@@ -465,7 +465,7 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("manipulation is down")));
 
-        WidgetDataService.WidgetData result = render(stat("w1", "devices.total", null),
+        WebDashboardWidgetDataService.WidgetData result = render(stat("w1", "devices.total", null),
                 device("w2", "did-1", PID));
 
         assertTrue(result.widgets().get(0).success());
@@ -610,7 +610,7 @@ class WidgetDataServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo timeout")));
         when(serviceRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
-        WidgetDataService.WidgetData data = render(serviceCard("w1", 1, List.of("温度")),
+        WebDashboardWidgetDataService.WidgetData data = render(serviceCard("w1", 1, List.of("温度")),
                 stat("w2", "devices.total", null));
 
         assertFalse(data.widgets().get(0).success());
@@ -637,7 +637,7 @@ class WidgetDataServiceTest {
     void render_unknownLineSourceIsNotSupported() {
         stubOverview();
         Map<String, Object> config = config("source", "bogus", "window", last(24));
-        WidgetDataService.Item item = render(widget("w1", "line", "W12H200", config)).widgets().get(0);
+        WebDashboardWidgetDataService.Item item = render(widget("w1", "line", "W12H200", config)).widgets().get(0);
 
         assertFalse(item.success());
         assertEquals("widget type is not supported yet: line(bogus)", item.message());
@@ -651,7 +651,7 @@ class WidgetDataServiceTest {
     void render_failureTypeDistributionIsNotSupportedYet() {
         stubOverview();
         Map<String, Object> config = config("dimension", "failureType", "window", last(24));
-        WidgetDataService.Item item = render(widget("w1", "distribution", "W12H200", config)).widgets().get(0);
+        WebDashboardWidgetDataService.Item item = render(widget("w1", "distribution", "W12H200", config)).widgets().get(0);
 
         assertFalse(item.success());
         assertEquals("dimension is not supported yet: failureType", item.message());
@@ -748,7 +748,7 @@ class WidgetDataServiceTest {
     @Test
     void render_lineWithoutSourceIsNotSupported() {
         stubOverview();
-        WidgetDataService.Item item = render(widget("w1", "line", "W12H200", config("window", last(24)))).widgets().get(0);
+        WebDashboardWidgetDataService.Item item = render(widget("w1", "line", "W12H200", config("window", last(24)))).widgets().get(0);
         assertFalse(item.success());
         assertEquals("widget type is not supported yet: line(null)", item.message());
     }
@@ -865,7 +865,7 @@ class WidgetDataServiceTest {
                     from, to, 500));
         }).when(historyQueryService).range(anyString(), any(), anyString(), any(), any(), any());
 
-        WidgetDataService.WidgetData data = render(curve("good", last(24)), curve("bad", last(12)));
+        WebDashboardWidgetDataService.WidgetData data = render(curve("good", last(24)), curve("bad", last(12)));
 
         assertTrue(data.widgets().get(0).success());
         assertFalse(data.widgets().get(1).success());
@@ -892,14 +892,14 @@ class WidgetDataServiceTest {
     // ===== helpers =====
 
     /** 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。 */
-    private static DashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
+    private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
                 "functionIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
     }
 
-    private static DashboardWidget curve(String id, Map<String, Object> window) {
+    private static WebDashboardWidget curve(String id, Map<String, Object> window) {
         return curve(id, window, Map.of());
     }
 
@@ -914,7 +914,7 @@ class WidgetDataServiceTest {
     }
 
 
-    private WidgetDataService.WidgetData render(DashboardWidget... widgets) {
+    private WebDashboardWidgetDataService.WidgetData render(WebDashboardWidget... widgets) {
         return service.render(space(), List.of(widgets)).await().indefinitely();
     }
 
@@ -946,11 +946,11 @@ class WidgetDataServiceTest {
                         .item(overview(invocation.getArgument(1), invocation.getArgument(2))));
     }
 
-    private static DashboardWidget[] widgets() {
-        return new DashboardWidget[0];
+    private static WebDashboardWidget[] widgets() {
+        return new WebDashboardWidget[0];
     }
 
-    private static DashboardWidget stat(String id, String metric, Map<String, Object> window) {
+    private static WebDashboardWidget stat(String id, String metric, Map<String, Object> window) {
         Map<String, Object> config = config("metric", metric);
         if (window != null) {
             config.put("window", window);
@@ -958,7 +958,7 @@ class WidgetDataServiceTest {
         return widget(id, "stat", "W6H92", config);
     }
 
-    private static DashboardWidget distribution(String id, String dimension, Map<String, Object> window) {
+    private static WebDashboardWidget distribution(String id, String dimension, Map<String, Object> window) {
         Map<String, Object> config = config("dimension", dimension);
         if (window != null) {
             config.put("window", window);
@@ -966,11 +966,11 @@ class WidgetDataServiceTest {
         return widget(id, "distribution", "W12H200", config);
     }
 
-    private static DashboardWidget line(String id, Map<String, Object> window) {
+    private static WebDashboardWidget line(String id, Map<String, Object> window) {
         return widget(id, "line", "W12H200", config("source", "alarmCount", "window", window));
     }
 
-    private static DashboardWidget device(String id, String did, String pid) {
+    private static WebDashboardWidget device(String id, String did, String pid) {
         return widget(id, "device", "W12H200", config("did", did, "pid", pid));
     }
 
@@ -1002,7 +1002,7 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList())).thenReturn(Uni.createFrom().item(array));
     }
 
-    private static DashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
+    private static WebDashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
         return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
                 "functionIndex", functionIndex, "fields", fields));
     }
@@ -1092,8 +1092,8 @@ class WidgetDataServiceTest {
         return f;
     }
 
-    private static DashboardWidget widget(String id, String type, String size, Map<String, Object> config) {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget widget(String id, String type, String size, Map<String, Object> config) {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = id;
         w.type = type;
         w.size = size;
@@ -1113,8 +1113,8 @@ class WidgetDataServiceTest {
         return config("kind", "last", "hours", hours);
     }
 
-    private static JsonObject data(WidgetDataService.WidgetData data, int index) {
-        WidgetDataService.Item item = data.widgets().get(index);
+    private static JsonObject data(WebDashboardWidgetDataService.WidgetData data, int index) {
+        WebDashboardWidgetDataService.Item item = data.widgets().get(index);
         assertTrue(item.success(), () -> "widget " + item.id() + " failed: " + item.message());
         return item.data();
     }

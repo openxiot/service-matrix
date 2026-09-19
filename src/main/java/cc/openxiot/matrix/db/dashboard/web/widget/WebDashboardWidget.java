@@ -14,14 +14,14 @@ import java.util.Map;
  * 屏幕宽 24 格、高无限）。<b>占几列几行（{@code w} / {@code h}）不上行</b> —— 那是从
  * {@link #size} 档位推出来的，占格表只在前端。这一条是有来历的：这里原来有一个
  * {@code layout} 字段（{@code x/y/w/h}），其中 {@code w}/{@code h} 是档位知识的
- * <b>第二份会过期的副本</b>（还要靠 {@code WidgetSize.applyTo} 按档位覆盖一次、
+ * <b>第二份会过期的副本</b>（还要靠 {@code WebDashboardWidgetSize.applyTo} 按档位覆盖一次、
  * 再在别处校验 {@code x + w ≤ 24}），所以那一版整个删掉了。这一轮把坐标请回来时
  * <b>只请回了 {@code x}/{@code y}}</b>：那是用户摆的，服务端拿不出第二个人来算它；
  * {@code w}/{@code h} 仍然只有前端知道。</p>
  *
  * <p>{@code widgets} 的<b>数组顺序是阅读顺序</b>（窄屏折成一列时的上下次序），
  * <b>不是</b>位置 —— 位置是这两个坐标。服务端<b>不排序、不补位</b>：重排是前端的活，
- * 这里原样收、原样存（见 {@code DashboardLayoutService.normalized}）。</p>
+ * 这里原样收、原样存（见 {@code WebDashboardLayoutService.normalized}）。</p>
  *
  * <p><b>老文档不需要迁移</b>：落库与读回都走 Mongo 的 POJO codec，它在文档里遇到类上没有的键
  * 是<b>跳过</b>（本类本来就挂着 {@code @JsonIgnoreProperties(ignoreUnknown = true)}），所以
@@ -34,7 +34,7 @@ import java.util.Map;
  * <p><b>{@code config} 是异构的，且故意不建成统一的 POJO</b>：五种卡片的配置字段几乎不重叠
  * （统计卡片要 metric、曲线要服务与字段、分布要 dimension 与窗口…），硬塞进一个大 POJO 会得到
  * 一个大部分字段长期为 null 的类。用 {@code Map<String, Object>} 的代价是校验要在
- * {@code WidgetStructureValidator} 里手写（不能靠 Jackson 绑定），这个代价是值得的。</p>
+ * {@code WebDashboardWidgetStructureValidator} 里手写（不能靠 Jackson 绑定），这个代价是值得的。</p>
  *
  * <p><b>不需要为它写 codec</b>：{@code db/mongo/ObjectPropertyCodecProvider} 已经把
  * 「声明类型是 Object 的字段」这一格的 codec 兜底装好了，而值类型为 Object 的 Map 本来也有
@@ -51,7 +51,7 @@ import java.util.Map;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "看板上的一张卡片")
-public class DashboardWidget {
+public class WebDashboardWidget {
 
     @Schema(description = "卡片 ID：前端生成的短串，同一布局内唯一（渲染结果按它对应）",
             examples = {"w_7f3a"}, required = true)
@@ -71,7 +71,7 @@ public class DashboardWidget {
 
     @Schema(description = "尺寸档位 W{列}H{像素}，如 W6H200 = 6 列宽、200 像素高：决定这张卡"
             + "占几列几行（**占格表在前端**，服务端只认档位名认不认识；改造前的 S1/M1/S/M/L/XL "
-            + "仍然收，见 WidgetSize.of）", examples = {"W12H200"}, required = true)
+            + "仍然收，见 WebDashboardWidgetSize.of）", examples = {"W12H200"}, required = true)
     public String size;
 
     @Schema(description = "起始列（0 起，0..23）。**没有这个键 = 老文档**（改造前的卡片没有坐标），"
