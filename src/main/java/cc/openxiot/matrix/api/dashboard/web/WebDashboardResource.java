@@ -48,7 +48,7 @@ import java.util.List;
  * {@link WebDashboardWidgetStructureValidator} / {@link WebDashboardLayoutValidator} 的事 —— 两者分开，
  * 校验器才能被成员可用的 {@code render} 复用。</p>
  */
-@Path("/matrix/v1/dashboard")
+@Path("/matrix/v1/dashboard/web")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "WebDashboard", description = "自定义数据看板布局与卡片数据 API")
 @RequestScoped

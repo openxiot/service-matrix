@@ -8,7 +8,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.List;
 
 /**
- * 批量取数的请求体（{@code POST /matrix/v1/dashboard/render/{spaceId}}）。
+ * 批量取数的请求体（{@code POST /matrix/v1/dashboard/web/render/{spaceId}}）。
  *
  * <p><b>{@code widgets} 可以不传</b>：不传 = 用**已存布局**（正式渲染），传了 = 用这份
  * 尚未保存的草稿（编辑器预览）。这个设计让编辑器不必先保存再预览，也让「预览」与

@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 保存布局的请求体（{@code PUT /matrix/v1/dashboard/layout/{spaceId}}）。
+ * 保存布局的请求体（{@code PUT /matrix/v1/dashboard/web/layout/{spaceId}}）。
  *
  * <p><b>为什么不直接绑实体</b>：实体上还有 {@code spaceId} / {@code creator} / {@code updater}
  * 这些只能由服务端定的字段，让客户端提交它们既是多余的攻击面，也容易写出「前端传了别人的 spaceId」

@@ -109,7 +109,7 @@ class DashboardResourceTest {
         when(layoutService.load(any())).thenReturn(Uni.createFrom().item(WebDashboardPresetLayouts.build(SPACE_ID)));
 
         given()
-                .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.spaceId", equalTo(SPACE_ID))
@@ -130,7 +130,7 @@ class DashboardResourceTest {
                 .thenReturn(Uni.createFrom().item(WebDashboardPresetLayouts.build(SPACE_ID)));
 
         given()
-                .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.widgets.size()", equalTo(8));
@@ -144,7 +144,7 @@ class DashboardResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
 
         given()
-                .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
@@ -158,7 +158,7 @@ class DashboardResourceTest {
         spaceNotFound();
 
         given()
-                .when().get("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", equalTo("No access to this space"));
@@ -180,7 +180,7 @@ class DashboardResourceTest {
                 .thenReturn(Uni.createFrom().item(WebDashboardCatalogCodec.encode(List.of(), List.of())));
 
         given()
-                .when().get("/matrix/v1/dashboard/catalog/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/catalog/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 // 两个键恒在：编辑器据此显示「没有可选项」，而不是把级联画成坏掉的样子
@@ -196,7 +196,7 @@ class DashboardResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
 
         given()
-                .when().get("/matrix/v1/dashboard/catalog/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/catalog/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
@@ -217,7 +217,7 @@ class DashboardResourceTest {
         });
 
         given().contentType("application/json").body(saveBody(0L, statWidget()))
-                .when().put("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().put("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.version", equalTo(1));
@@ -237,7 +237,7 @@ class DashboardResourceTest {
         denySpaceAdmin();
 
         given().contentType("application/json").body(saveBody(0L, statWidget()))
-                .when().put("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().put("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
@@ -255,7 +255,7 @@ class DashboardResourceTest {
                         "widgets[0]: config.metric must be one of [devices.total]")));
 
         given().contentType("application/json").body(saveBody(0L, statWidget()))
-                .when().put("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().put("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", equalTo("widgets[0]: config.metric must be one of [devices.total]"));
@@ -272,7 +272,7 @@ class DashboardResourceTest {
                 .failure(new IllegalArgumentException("layout has been modified by someone else, please reload")));
 
         given().contentType("application/json").body(saveBody(3L, statWidget()))
-                .when().put("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().put("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", equalTo("layout has been modified by someone else, please reload"));
@@ -294,7 +294,7 @@ class DashboardResourceTest {
         when(layoutService.preset(any())).thenReturn(WebDashboardPresetLayouts.build(SPACE_ID));
 
         given()
-                .when().get("/matrix/v1/dashboard/layout/{spaceId}/preset", SPACE_ID)
+                .when().get("/matrix/v1/dashboard/web/layout/{spaceId}/preset", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.version", equalTo(0))
@@ -313,7 +313,7 @@ class DashboardResourceTest {
         allowSpaceAdmin();
 
         given()
-                .when().delete("/matrix/v1/dashboard/layout/{spaceId}", SPACE_ID)
+                .when().delete("/matrix/v1/dashboard/web/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(405);
     }
 
@@ -332,7 +332,7 @@ class DashboardResourceTest {
         when(widgetDataService.render(any(), anyList())).thenReturn(Uni.createFrom().item(widgetData()));
 
         given().contentType("application/json").body(new JsonObject().encode())
-                .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
+                .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.widgets[0].success", equalTo(true));
@@ -357,7 +357,7 @@ class DashboardResourceTest {
         when(widgetDataService.render(any(), anyList())).thenReturn(Uni.createFrom().item(widgetData()));
 
         given().contentType("application/json").body(new JsonObject().encode())
-                .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
+                .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true));
     }
@@ -373,7 +373,7 @@ class DashboardResourceTest {
         when(widgetDataService.render(any(), anyList())).thenReturn(Uni.createFrom().item(widgetData()));
 
         given().contentType("application/json").body(saveBody(null, statWidget()))
-                .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
+                .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true));
 
@@ -398,7 +398,7 @@ class DashboardResourceTest {
         }
 
         given().contentType("application/json").body(saveBody(null, tooMany.toArray(new WebDashboardWidget[0])))
-                .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
+                .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", equalTo("too many widgets: at most " + WebDashboardWidgetStructureValidator.MAX_WIDGETS));
@@ -414,7 +414,7 @@ class DashboardResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
 
         given().contentType("application/json").body(new JsonObject().encode())
-                .when().post("/matrix/v1/dashboard/render/{spaceId}", SPACE_ID)
+                .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
