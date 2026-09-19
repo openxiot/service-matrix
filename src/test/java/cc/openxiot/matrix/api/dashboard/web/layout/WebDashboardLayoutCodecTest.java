@@ -10,7 +10,7 @@ import java.util.Map;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -86,7 +86,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_userTitleWins() {
-        WebDashboardWidget w = widget();
+        DashboardWidget w = widget();
         w.title = "东区温度";
         w.titleKey = "设备总量";
         JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
@@ -98,7 +98,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_omitsUnsetOptionals() {
-        WebDashboardWidget w = widget();
+        DashboardWidget w = widget();
         JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
         assertFalse(o.containsKey("title"));
         assertFalse(o.containsKey("titleKey"));
@@ -115,7 +115,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_positionIsEmitted() {
-        WebDashboardWidget w = widget();
+        DashboardWidget w = widget();
         w.x = 6;
         w.y = 4;
         JsonObject o = WebDashboardLayoutCodec.encodeWidget(w);
@@ -126,7 +126,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_configNeverNull() {
-        WebDashboardWidget w = widget();
+        DashboardWidget w = widget();
         w.config = null;
         // config 是必填的，但 codec 不替校验器兜底：这里给空对象而不是 null，
         // 是为了让前端少一个判空分支（缺 config 的卡片在到达 codec 之前就被拒了）
@@ -135,7 +135,7 @@ class DashboardLayoutCodecTest {
 
     @Test
     void encodeWidget_configPassesThroughNestedStructures() {
-        WebDashboardWidget w = widget();
+        DashboardWidget w = widget();
         w.config = new LinkedHashMap<>(Map.of(
                 "metric", "alarms.today",
                 "window", Map.of("kind", "last", "hours", 24),
@@ -166,8 +166,8 @@ class DashboardLayoutCodecTest {
 
     // ===== helpers =====
 
-    private static WebDashboardWidget widget() {
-        WebDashboardWidget w = new WebDashboardWidget();
+    private static DashboardWidget widget() {
+        DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "W6H200";

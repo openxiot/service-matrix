@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.web.params;
 
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -16,7 +16,7 @@ import java.util.List;
  * 而那时候用户看到的「预览」就不再是承诺。</p>
  *
  * <p>草稿是**成员可用的**（§6.2）：{@code render} 只读，且归属校验照做
- * （{@code WebDashboardWidgetOwnershipValidator}），所以成员预览不了别人的卡片，这不构成漏洞。</p>
+ * （{@code DashboardWidgetOwnershipValidator}），所以成员预览不了别人的卡片，这不构成漏洞。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -24,5 +24,5 @@ import java.util.List;
 public class WebDashboardRenderRequest {
 
     @Schema(description = "尚未保存的卡片草稿（编辑器预览用）；不传则渲染已保存的布局")
-    public List<WebDashboardWidget> widgets;
+    public List<DashboardWidget> widgets;
 }

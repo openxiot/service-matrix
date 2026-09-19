@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard.web.widget;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
@@ -63,7 +63,7 @@ class WidgetOwnershipValidatorTest {
     DeviceRepository deviceRepo;
 
     @Inject
-    WebDashboardWidgetOwnershipValidator validator;
+    DashboardWidgetOwnershipValidator validator;
 
     /** 默认：根空间 + 一个子空间；两个库都查不到东西。要测什么的用例各自再 stub。 */
     @BeforeEach
@@ -242,7 +242,7 @@ class WidgetOwnershipValidatorTest {
 
     // ===== helpers =====
 
-    private Map<String, String> errors(WebDashboardWidget... widgets) {
+    private Map<String, String> errors(DashboardWidget... widgets) {
         return validator.errorsByWidget(root(), List.of(widgets)).await().indefinitely();
     }
 
@@ -307,17 +307,17 @@ class WidgetOwnershipValidatorTest {
         return fn;
     }
 
-    private static WebDashboardWidget device(String id, String did) {
+    private static DashboardWidget device(String id, String did) {
         return widget(id, "device", config("did", did, "pid", "p1"));
     }
 
-    private static WebDashboardWidget serviceWithField(String id, String serviceId, int functionIndex, String field) {
+    private static DashboardWidget serviceWithField(String id, String serviceId, int functionIndex, String field) {
         return widget(id, "service", config("serviceId", serviceId,
                 "functionIndex", functionIndex, "fields", List.of(field)));
     }
 
-    private static WebDashboardWidget widget(String id, String type, Map<String, Object> config) {
-        WebDashboardWidget w = new WebDashboardWidget();
+    private static DashboardWidget widget(String id, String type, Map<String, Object> config) {
+        DashboardWidget w = new DashboardWidget();
         w.id = id;
         w.type = type;
         w.size = "W12H200";

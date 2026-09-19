@@ -11,10 +11,10 @@ import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutValidator;
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardRenderRequest;
 import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
-import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataCodec;
-import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataService;
+import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataCodec;
+import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -67,7 +67,7 @@ public class WebDashboardResource extends AbstractResource {
     WebDashboardLayoutValidator layoutValidator;
 
     @Inject
-    WebDashboardWidgetDataService widgetDataService;
+    DashboardWidgetDataService widgetDataService;
 
     @Inject
     WebDashboardCatalogService catalogService;
@@ -125,7 +125,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/render/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> render(@PathParam("spaceId") String spaceId, WebDashboardRenderRequest body) {
-        List<WebDashboardWidget> draft = body == null ? null : body.widgets;
+        List<DashboardWidget> draft = body == null ? null : body.widgets;
         return requireSpaceMember(spaceId)
                 .chain(space -> draft == null
                         ? renderStored(space)
@@ -133,7 +133,7 @@ public class WebDashboardResource extends AbstractResource {
                         // 报第一处错比逐张标红更好定位（归属错误则相反，逐张隔离，见 build）
                         : failFast(WebDashboardWidgetStructureValidator.validateWidgets(draft))
                         .chain(ignored -> widgetDataService.render(space, draft)))
-                .map(data -> OxResponse.ok(WebDashboardWidgetDataCodec.encode(data)))
+                .map(data -> OxResponse.ok(DashboardWidgetDataCodec.encode(data)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -160,7 +160,7 @@ public class WebDashboardResource extends AbstractResource {
      * 前端手里那份可能是几分钟前 GET 的，而「看板自己刷新」应该取当前布局
      * （否则管理员刚改完，别人的页面上还是旧卡片）。
      */
-    private Uni<WebDashboardWidgetDataService.WidgetData> renderStored(SpaceEntity space) {
+    private Uni<DashboardWidgetDataService.WidgetData> renderStored(SpaceEntity space) {
         return layoutService.load(space)
                 .chain(layout -> widgetDataService.render(space, layout.widgets));
     }

@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
-import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetOwnershipValidator;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetOwnershipValidator;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ import org.mockito.quality.Strictness;
 class DashboardLayoutValidatorTest {
 
     @Mock
-    WebDashboardWidgetOwnershipValidator ownershipValidator;
+    DashboardWidgetOwnershipValidator ownershipValidator;
 
     @InjectMocks
     WebDashboardLayoutValidator validator;
@@ -98,7 +98,7 @@ class DashboardLayoutValidatorTest {
         return space;
     }
 
-    private static WebDashboardLayoutDto body(Long version, List<WebDashboardWidget> widgets) {
+    private static WebDashboardLayoutDto body(Long version, List<DashboardWidget> widgets) {
         WebDashboardLayoutDto body = new WebDashboardLayoutDto();
         body.version = version;
         body.widgets = widgets;
@@ -110,8 +110,8 @@ class DashboardLayoutValidatorTest {
      * 用一张必然过结构校验的卡才不至于让结构规则的变化把编排用例带红 —— 结构规则自己有
      * {@code WidgetStructureValidatorTest} 几十条用例管着。
      */
-    private static WebDashboardWidget validWidget() {
-        WebDashboardWidget widget = new WebDashboardWidget();
+    private static DashboardWidget validWidget() {
+        DashboardWidget widget = new DashboardWidget();
         widget.id = "w1";
         widget.type = "stat";
         widget.size = "W6H92";

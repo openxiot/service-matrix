@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.dashboard.web.widget;
+package cc.openxiot.matrix.db.dashboard;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -51,7 +51,7 @@ import java.util.Map;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "看板上的一张卡片")
-public class WebDashboardWidget {
+public class DashboardWidget {
 
     @Schema(description = "卡片 ID：前端生成的短串，同一布局内唯一（渲染结果按它对应）",
             examples = {"w_7f3a"}, required = true)

@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.db.dashboard.web;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -42,7 +42,7 @@ public class WebDashboardLayoutEntity extends ReactivePanacheMongoEntity {
     @Schema(description = "卡片列表：**数组顺序是阅读顺序**（窄屏折成一列时的上下次序），"
             + "位置的真值是每张卡自己的 `x` / `y`；服务端不排序、不补位，原样收存",
             required = true)
-    public List<WebDashboardWidget> widgets = new ArrayList<>();
+    public List<DashboardWidget> widgets = new ArrayList<>();
 
     @Schema(description = "乐观锁版本号，每次保存 +1；无文档（预置布局）时为 0",
             examples = {"0"}, required = true)

@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard.web.widget;
+package cc.openxiot.matrix.api.dashboard.widget;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,7 +13,7 @@ import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link WebDashboardWidgetDataCodec} 的线上形状。**纯 JUnit，不连库**。
+ * {@link DashboardWidgetDataCodec} 的线上形状。**纯 JUnit，不连库**。
  *
  * <p>重点在「什么都不补」这条约定：{@code from}/{@code to} 没给就是没给（空看板没有窗口可言），
  * 一律<b>不出现在 JSON 里</b>。补成 0 会让「没有窗口」和「窗口从 1970 年开始」再也分不开。</p>
@@ -26,11 +26,11 @@ class WidgetDataCodecTest {
     @Test
     void encodeData_successCarriesDataOnly() {
         JsonObject payload = new JsonObject().put("value", 12);
-        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
+        DashboardWidgetDataService.WidgetData data = new DashboardWidgetDataService.WidgetData(
                 "space-1", new Date(1_000L), new Date(2_000L),
                 List.of(ok("w1", payload)));
 
-        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
+        JsonObject o = DashboardWidgetDataCodec.encode(data);
         assertEquals("space-1", o.getString("spaceId"));
         assertEquals(1_000L, o.getLong("from").longValue());
         assertEquals(2_000L, o.getLong("to").longValue());
@@ -44,10 +44,10 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_failureCarriesMessageOnly() {
-        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
+        DashboardWidgetDataService.WidgetData data = new DashboardWidgetDataService.WidgetData(
                 "space-1", null, null, List.of(failed("w2", "widget type is not supported yet: device")));
 
-        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
+        JsonObject o = DashboardWidgetDataCodec.encode(data);
         JsonObject item = o.getJsonArray("widgets").getJsonObject(0);
         assertFalse(item.getBoolean("success"));
         assertFalse(item.containsKey("data"));
@@ -60,13 +60,13 @@ class WidgetDataCodecTest {
      */
     @Test
     void encodeData_preservesOrderAndMixedOutcomes() {
-        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData(
+        DashboardWidgetDataService.WidgetData data = new DashboardWidgetDataService.WidgetData(
                 "space-1", new Date(1L), new Date(2L),
                 List.of(ok("a", new JsonObject().put("value", 1)),
                         failed("b", "boom"),
                         ok("c", new JsonObject().put("value", 3))));
 
-        JsonArray widgets = WebDashboardWidgetDataCodec.encode(data).getJsonArray("widgets");
+        JsonArray widgets = DashboardWidgetDataCodec.encode(data).getJsonArray("widgets");
         assertEquals(3, widgets.size());
         assertEquals("a", widgets.getJsonObject(0).getString("id"));
         assertEquals("b", widgets.getJsonObject(1).getString("id"));
@@ -77,8 +77,8 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_emptyWidgetsStillHasArray() {
-        WebDashboardWidgetDataService.WidgetData data = new WebDashboardWidgetDataService.WidgetData("space-1", null, null, List.of());
-        JsonObject o = WebDashboardWidgetDataCodec.encode(data);
+        DashboardWidgetDataService.WidgetData data = new DashboardWidgetDataService.WidgetData("space-1", null, null, List.of());
+        JsonObject o = DashboardWidgetDataCodec.encode(data);
         assertTrue(o.containsKey("widgets"));
         assertEquals(0, o.getJsonArray("widgets").size());
         // from/to 为 null 时不下发（空看板没有窗口可言）
@@ -88,17 +88,17 @@ class WidgetDataCodecTest {
 
     @Test
     void encodeData_nullIsEmptyObject() {
-        assertEquals(0, WebDashboardWidgetDataCodec.encode(null).size());
-        assertNull(WebDashboardWidgetDataCodec.encode(null).getJsonArray("widgets"));
+        assertEquals(0, DashboardWidgetDataCodec.encode(null).size());
+        assertNull(DashboardWidgetDataCodec.encode(null).getJsonArray("widgets"));
     }
 
     // ===== helpers =====
 
-    private static WebDashboardWidgetDataService.Item ok(String id, JsonObject data) {
-        return new WebDashboardWidgetDataService.Item(id, true, data, null);
+    private static DashboardWidgetDataService.Item ok(String id, JsonObject data) {
+        return new DashboardWidgetDataService.Item(id, true, data, null);
     }
 
-    private static WebDashboardWidgetDataService.Item failed(String id, String message) {
-        return new WebDashboardWidgetDataService.Item(id, false, null, message);
+    private static DashboardWidgetDataService.Item failed(String id, String message) {
+        return new DashboardWidgetDataService.Item(id, false, null, message);
     }
 }

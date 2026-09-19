@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutRepository;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -25,7 +25,7 @@ import java.util.List;
  * <p><b>布局按根空间存</b>：路径上给的 {@code spaceId} 可能是子空间，而布局是「项目一份」，
  * 所以落库与查询一律用 {@code space.rootSpaceId()}。这样管理员在
  * 子空间页面和项目页面看到的是同一份布局，也不会因为换了子空间就多出一份空布局。
- * 判定归属（{@code WebDashboardWidgetOwnershipValidator}）与取数（{@code WebDashboardWidgetDataService}）用的都是
+ * 判定归属（{@code DashboardWidgetOwnershipValidator}）与取数（{@code DashboardWidgetDataService}）用的都是
  * 同一个基准 —— 三处必须一致，否则会出现「存得下但渲染是空的」这种最难查的不一致。</p>
  */
 @ApplicationScoped
@@ -145,7 +145,7 @@ public class WebDashboardLayoutService {
      * （{@code window} 缺省即不适用、{@code chart} 缺省即饼图），补空值会让「没设」和
      * 「设成了空」再也分不开（与 {@code WebDashboardLayoutCodec} 不补空值同口径）。</p>
      */
-    private static List<WebDashboardWidget> normalized(List<WebDashboardWidget> widgets) {
+    private static List<DashboardWidget> normalized(List<DashboardWidget> widgets) {
         return widgets == null ? List.of() : widgets;
     }
 

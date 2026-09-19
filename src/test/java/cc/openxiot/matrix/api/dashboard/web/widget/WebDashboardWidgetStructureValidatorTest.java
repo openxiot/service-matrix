@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 import org.junit.jupiter.api.Test;
 
 /**
  * 卡片配置的结构性校验。**纯 JUnit，不连库**（这正是把纯校验从查库的
- * {@code WebDashboardWidgetOwnershipValidator} 里切出来的原因）：{@code @QuarkusTest} 会拉起整个应用。
+ * {@code DashboardWidgetOwnershipValidator} 里切出来的原因）：{@code @QuarkusTest} 会拉起整个应用。
  *
  * <p>覆盖的重点不是「每条规则各有一句代码」，而是两类容易写错的地方：</p>
  * <ul>
@@ -67,7 +67,7 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validate_widgetsRequired() {
-        assertTrue(WebDashboardWidgetStructureValidator.validate(body(0L, (List<WebDashboardWidget>) null))
+        assertTrue(WebDashboardWidgetStructureValidator.validate(body(0L, (List<DashboardWidget>) null))
                 .contains("widgets is required"));
     }
 
@@ -79,7 +79,7 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validate_tooManyWidgets() {
-        List<WebDashboardWidget> widgets = new ArrayList<>();
+        List<DashboardWidget> widgets = new ArrayList<>();
         for (int i = 0; i <= WebDashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
             widgets.add(widget("stat", config("metric", "devices.total")));
         }
@@ -89,8 +89,8 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validate_duplicatedId() {
-        WebDashboardWidget a = widget("stat", config("metric", "devices.total"));
-        WebDashboardWidget b = widget("stat", config("metric", "services.total"));
+        DashboardWidget a = widget("stat", config("metric", "devices.total"));
+        DashboardWidget b = widget("stat", config("metric", "services.total"));
         b.id = a.id;
         // 渲染结果按 id 对应卡片，id 重了就会出现「两张卡显示同一个数」
         assertTrue(WebDashboardWidgetStructureValidator.validate(body(0L, List.of(a, b))).contains("duplicated widget id"));
@@ -101,8 +101,8 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void validate_errorCarriesWidgetIndex() {
-        WebDashboardWidget ok = widget("stat", config("metric", "devices.total"));
-        WebDashboardWidget bad = widget("stat", config("metric", "devices.total"));
+        DashboardWidget ok = widget("stat", config("metric", "devices.total"));
+        DashboardWidget bad = widget("stat", config("metric", "devices.total"));
         bad.type = "pie";
         String err = WebDashboardWidgetStructureValidator.validate(body(0L, List.of(ok, bad)));
         assertNotNull(err);
@@ -113,21 +113,21 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validateWidget_idRequired() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.id = "  ";
         assertInvalid("id is required", w);
     }
 
     @Test
     void validateWidget_idTooLong() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.id = "x".repeat(65);
         assertInvalid("id is too long", w);
     }
 
     @Test
     void validateWidget_typeRequired() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.type = null;
         assertInvalid("type must be one of", w);
     }
@@ -139,21 +139,21 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validateWidget_titleTooLong() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.title = "标".repeat(129);
         assertInvalid("title is too long", w);
     }
 
     @Test
     void validateWidget_titleKeyTooLong() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.titleKey = "k".repeat(129);
         assertInvalid("titleKey is too long", w);
     }
 
     @Test
     void validateWidget_sizeRequired() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = null;
         assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
@@ -161,14 +161,14 @@ class WidgetStructureValidatorTest {
     @Test
     void validateWidget_sizeCaseSensitive() {
         // 档位名大小写不符按「不认识」处理（WebDashboardWidgetSize.of 是全等比较），不悄悄接受 "m"
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = "m";
         assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
 
     @Test
     void validateWidget_configRequired() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.config = null;
         assertInvalid("config is required", w);
     }
@@ -191,19 +191,19 @@ class WidgetStructureValidatorTest {
     @Test
     void validateWidget_positionIsOptionalButBoundedWhenGiven() {
         // 不给坐标：老文档（改造前的卡片没有坐标），前端会按数组顺序铺一遍
-        WebDashboardWidget legacy = widget("stat", config("metric", "devices.total"));
+        DashboardWidget legacy = widget("stat", config("metric", "devices.total"));
         assertValid(legacy);
 
         // 给了就是一对其中的合法值。0 与 23 是边界，都得是合法的
         for (int x : List.of(0, 6, 23)) {
-            WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+            DashboardWidget w = widget("stat", config("metric", "devices.total"));
             w.x = x;
             w.y = 0;
             assertValid(w);
         }
 
         // y 上不封顶：屏幕多高由卡片堆出来，没有「最下面一行」
-        WebDashboardWidget tall = widget("stat", config("metric", "devices.total"));
+        DashboardWidget tall = widget("stat", config("metric", "devices.total"));
         tall.x = 0;
         tall.y = 999;
         assertValid(tall);
@@ -211,29 +211,29 @@ class WidgetStructureValidatorTest {
 
     @Test
     void validateWidget_positionMustBeGivenTogether() {
-        WebDashboardWidget onlyX = widget("stat", config("metric", "devices.total"));
+        DashboardWidget onlyX = widget("stat", config("metric", "devices.total"));
         onlyX.x = 6;
         assertInvalid("x and y must be given together", onlyX);
 
-        WebDashboardWidget onlyY = widget("stat", config("metric", "devices.total"));
+        DashboardWidget onlyY = widget("stat", config("metric", "devices.total"));
         onlyY.y = 4;
         assertInvalid("x and y must be given together", onlyY);
     }
 
     @Test
     void validateWidget_positionMustBeInBounds() {
-        WebDashboardWidget negativeX = widget("stat", config("metric", "devices.total"));
+        DashboardWidget negativeX = widget("stat", config("metric", "devices.total"));
         negativeX.x = -1;
         negativeX.y = 0;
         assertInvalid("x must be between 0 and 23", negativeX);
 
         // 24 是「第一格越界」，不是「最后一格」
-        WebDashboardWidget pastRight = widget("stat", config("metric", "devices.total"));
+        DashboardWidget pastRight = widget("stat", config("metric", "devices.total"));
         pastRight.x = 24;
         pastRight.y = 0;
         assertInvalid("x must be between 0 and 23", pastRight);
 
-        WebDashboardWidget negativeY = widget("stat", config("metric", "devices.total"));
+        DashboardWidget negativeY = widget("stat", config("metric", "devices.total"));
         negativeY.x = 0;
         negativeY.y = -1;
         assertInvalid("y must not be negative", negativeY);
@@ -243,7 +243,7 @@ class WidgetStructureValidatorTest {
     @Test
     void validateWidget_sizeIsTierNameOnly() {
         for (WebDashboardWidgetSize size : WebDashboardWidgetSize.values()) {
-            WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+            DashboardWidget w = widget("stat", config("metric", "devices.total"));
             w.size = size.name();
             assertValid(w);
         }
@@ -256,7 +256,7 @@ class WidgetStructureValidatorTest {
     @Test
     void validateWidget_legacySizeNamesAreStillAccepted() {
         for (String legacy : List.of("S1", "M1", "S", "M", "L", "XL")) {
-            WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+            DashboardWidget w = widget("stat", config("metric", "devices.total"));
             w.size = legacy;
             assertValid(w);
         }
@@ -270,7 +270,7 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void validateWidget_unknownSizeErrorListsEveryTier() {
-        WebDashboardWidget w = widget("stat", config("metric", "devices.total"));
+        DashboardWidget w = widget("stat", config("metric", "devices.total"));
         w.size = "XXL";
         assertInvalid("size must be one of " + SIZE_NAMES, w);
     }
@@ -570,19 +570,19 @@ class WidgetStructureValidatorTest {
 
     // ===== helpers =====
 
-    private static WebDashboardLayoutDto body(Long version, WebDashboardWidget widget) {
+    private static WebDashboardLayoutDto body(Long version, DashboardWidget widget) {
         return body(version, new ArrayList<>(List.of(widget)));
     }
 
-    private static WebDashboardLayoutDto body(Long version, List<WebDashboardWidget> widgets) {
+    private static WebDashboardLayoutDto body(Long version, List<DashboardWidget> widgets) {
         WebDashboardLayoutDto dto = new WebDashboardLayoutDto();
         dto.version = version;
         dto.widgets = widgets;
         return dto;
     }
 
-    private static WebDashboardWidget widget(String type, Map<String, Object> config) {
-        WebDashboardWidget w = new WebDashboardWidget();
+    private static DashboardWidget widget(String type, Map<String, Object> config) {
+        DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = type;
         w.size = "W6H200";
@@ -607,12 +607,12 @@ class WidgetStructureValidatorTest {
         return config("kind", "last", "hours", hours);
     }
 
-    private static void assertValid(WebDashboardWidget widget) {
+    private static void assertValid(DashboardWidget widget) {
         String err = WebDashboardWidgetStructureValidator.validate(body(0L, widget));
         assertNull(err, () -> "expected valid but got: " + err);
     }
 
-    private static void assertInvalid(String expected, WebDashboardWidget widget) {
+    private static void assertInvalid(String expected, DashboardWidget widget) {
         String err = WebDashboardWidgetStructureValidator.validate(body(0L, widget));
         assertNotNull(err, () -> "expected an error containing <" + expected + ">");
         assertTrue(err.contains(expected), () -> "expected <" + expected + "> but was <" + err + ">");

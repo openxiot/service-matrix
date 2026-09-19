@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 
 import java.util.LinkedHashMap;
@@ -87,7 +87,7 @@ public final class WebDashboardPresetLayouts {
         return layout;
     }
 
-    private static WebDashboardWidget stat(String id, String titleKey,
+    private static DashboardWidget stat(String id, String titleKey,
                                        String metric, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("metric", metric);
@@ -98,7 +98,7 @@ public final class WebDashboardPresetLayouts {
         return widget(id, "stat", titleKey, WebDashboardWidgetSize.W6H92, config);
     }
 
-    private static WebDashboardWidget distribution(String id, String titleKey,
+    private static DashboardWidget distribution(String id, String titleKey,
                                                 String dimension, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("dimension", dimension);
@@ -109,7 +109,7 @@ public final class WebDashboardPresetLayouts {
         return widget(id, "distribution", titleKey, WebDashboardWidgetSize.W12H308, config);
     }
 
-    private static WebDashboardWidget alarmLine(String id, String titleKey) {
+    private static DashboardWidget alarmLine(String id, String titleKey) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("source", "alarmCount");
         config.put("window", window(24));
@@ -121,8 +121,8 @@ public final class WebDashboardPresetLayouts {
      * 最近 N 小时的窗口。**存语义，不存绝对时刻** —— 预置布局要是写成绝对毫秒，
      * 它在下发的那一刻就固化了，用户第二天打开看到的还是昨天的区间。
      *
-     * <p>{@code {kind: "last", hours: N}} 由 {@code WebDashboardWidgetDataService} 在**取数时**按服务端的
-     * 「现在」解析成绝对区间（见 {@code WebDashboardWidgetDataService.windowOf}），前端不需要在调 render 前
+     * <p>{@code {kind: "last", hours: N}} 由 {@code DashboardWidgetDataService} 在**取数时**按服务端的
+     * 「现在」解析成绝对区间（见 {@code DashboardWidgetDataService.windowOf}），前端不需要在调 render 前
      * 做换算；前端读这个字段只是为了显示「最近 24 小时」这类窗口标签。
      * 另一种形态 {@code {kind: "range", from, to}} 才是编辑器里手动选了绝对区间的情形，
      * 那种由前端算成 epoch 毫秒。</p>
@@ -131,9 +131,9 @@ public final class WebDashboardPresetLayouts {
         return Map.of("kind", "last", "hours", hours);
     }
 
-    private static WebDashboardWidget widget(String id, String type, String titleKey,
+    private static DashboardWidget widget(String id, String type, String titleKey,
                                           WebDashboardWidgetSize size, Map<String, Object> config) {
-        WebDashboardWidget widget = new WebDashboardWidget();
+        DashboardWidget widget = new DashboardWidget();
         widget.id = id;
         widget.type = type;
         // titleKey 而不是 title：见类注释

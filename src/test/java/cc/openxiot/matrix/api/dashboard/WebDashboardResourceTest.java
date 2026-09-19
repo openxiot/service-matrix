@@ -26,10 +26,10 @@ import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutService;
 import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutValidator;
 import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardPresetLayouts;
 import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
-import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetDataService;
+import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
@@ -68,7 +68,7 @@ class DashboardResourceTest {
     WebDashboardLayoutValidator layoutValidator;
 
     @InjectMock
-    WebDashboardWidgetDataService widgetDataService;
+    DashboardWidgetDataService widgetDataService;
 
     @InjectMock
     WebDashboardCatalogService catalogService;
@@ -337,7 +337,7 @@ class DashboardResourceTest {
                 .body("success", equalTo(true))
                 .body("data.widgets[0].success", equalTo(true));
 
-        ArgumentCaptor<List<WebDashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<DashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
         verify(widgetDataService).render(any(), widgets.capture());
         assertEquals(8, widgets.getValue().size());
     }
@@ -384,20 +384,20 @@ class DashboardResourceTest {
 
     /**
      * 草稿的**结构性**错误整份拒绝：body 不成形时连「有哪些卡片」都无从谈起。
-     * （归属错误则相反 —— 逐张隔离，见 {@code WebDashboardWidgetDataService}。）
+     * （归属错误则相反 —— 逐张隔离，见 {@code DashboardWidgetDataService}。）
      */
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_draftTooManyWidgets_isRejected() {
         allowSpaceMember();
-        List<WebDashboardWidget> tooMany = new ArrayList<>();
+        List<DashboardWidget> tooMany = new ArrayList<>();
         for (int i = 0; i <= WebDashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
-            WebDashboardWidget w = statWidget();
+            DashboardWidget w = statWidget();
             w.id = "w" + i;
             tooMany.add(w);
         }
 
-        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new WebDashboardWidget[0])))
+        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new DashboardWidget[0])))
                 .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
@@ -423,13 +423,13 @@ class DashboardResourceTest {
 
     // ===== helpers =====
 
-    private static WebDashboardWidgetDataService.WidgetData widgetData() {
-        return new WebDashboardWidgetDataService.WidgetData("space-1", new Date(1L), new Date(2L),
-                List.of(new WebDashboardWidgetDataService.Item("w1", true, new JsonObject().put("value", 10), null)));
+    private static DashboardWidgetDataService.WidgetData widgetData() {
+        return new DashboardWidgetDataService.WidgetData("space-1", new Date(1L), new Date(2L),
+                List.of(new DashboardWidgetDataService.Item("w1", true, new JsonObject().put("value", 10), null)));
     }
 
-    private static WebDashboardWidget statWidget() {
-        WebDashboardWidget w = new WebDashboardWidget();
+    private static DashboardWidget statWidget() {
+        DashboardWidget w = new DashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "W6H200";
@@ -438,12 +438,12 @@ class DashboardResourceTest {
     }
 
     /** 保存请求体：{@code version} 可以为 null（那是「漏传」的情形，不在这里测）。 */
-    private static String saveBody(Long version, WebDashboardWidget... widgets) {
+    private static String saveBody(Long version, DashboardWidget... widgets) {
         JsonObject body = new JsonObject().put("widgets", new JsonArray());
         if (version != null) {
             body.put("version", version);
         }
-        for (WebDashboardWidget widget : widgets) {
+        for (DashboardWidget widget : widgets) {
             body.getJsonArray("widgets").add(WebDashboardLayoutCodec.encodeWidget(widget));
         }
         return body.encode();
