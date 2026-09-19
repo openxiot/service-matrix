@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.dashboard;
+package cc.openxiot.matrix.api.dashboard.web;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -50,7 +50,7 @@ import org.mockito.ArgumentCaptor;
  * 这里只钉「谁被允许做什么」和「请求体有没有被正确地转给服务」。</p>
  */
 @QuarkusTest
-class DashboardResourceTest {
+class WebDashboardResourceTest {
 
     private static final String SPACE_ID = "6512f3a4b5c6d7e8f9a0b1c3";
     private static final String ORG = "org1";

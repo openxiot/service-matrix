@@ -180,7 +180,7 @@ class ModbusServiceAlarmRepositoryTest {
     }
 
     private static MongoWriteException write(int code) {
-        return new MongoWriteException(new WriteError(code, "write failed", new BsonDocument()), ADDRESS);
+        return new MongoWriteException(new WriteError(code, "write failed", new BsonDocument()), ADDRESS, List.of());
     }
 
     private static MongoCommandException command(int code) {
