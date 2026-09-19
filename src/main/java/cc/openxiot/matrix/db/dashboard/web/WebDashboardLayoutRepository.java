@@ -1,8 +1,6 @@
 package cc.openxiot.matrix.db.dashboard.web;
 
-import com.mongodb.MongoCommandException;
-import com.mongodb.MongoWriteException;
-import com.mongodb.WriteConcernException;
+import cc.openxiot.matrix.db.mongo.DuplicateKey;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
@@ -19,8 +17,6 @@ import jakarta.enterprise.context.ApplicationScoped;
  */
 @ApplicationScoped
 public class WebDashboardLayoutRepository implements ReactivePanacheMongoRepository<WebDashboardLayoutEntity> {
-
-    private static final int DUPLICATE_KEY = 11000;
 
     private ReactiveMongoCollection<WebDashboardLayoutEntity> collection() {
         return mongoCollection();
@@ -71,30 +67,11 @@ public class WebDashboardLayoutRepository implements ReactivePanacheMongoReposit
      * 是不是「重复键」失败（MongoDB 11000）。用于把「两个管理员同时创建第一份布局」
      * 这条竞态翻译成正常的版本冲突提示，而不是一个 500。
      *
-     * <p><b>这是第二份拷贝</b>：更完整的说明（为什么必须按错误码而不是按异常类型判、
-     * 以及三种异常形状）在 {@code ModbusServiceAlarmRepository.isDuplicateKey}。
-     * 没有把它提到共用位置，是因为「搬动既有代码」不属于本功能的范围（与
-     * {@code requireSpaceMember} 那 9 份拷贝同一取舍）；真要收敛，正确的做法是给它一个
-     * 独立的家，而不是让看板去依赖告警那个类。</p>
+     * <p>这是 Web/Mobile 布局仓库共用的判法，实现在 {@code db.mongo.DuplicateKey}，这里只作转发：
+     * Mobile 布局仓库直接用同一个 {@code DuplicateKey.is}。判法为什么按错误码、以及三种异常形状，
+     * 见那边。</p>
      */
     public static boolean isDuplicateKey(Throwable failure) {
-        Throwable current = failure;
-        for (int depth = 0; current != null && depth < 16; depth++) {
-            if (current instanceof MongoWriteException write
-                    && write.getError().getCode() == DUPLICATE_KEY) {
-                return true;
-            }
-            if (current instanceof MongoCommandException command
-                    && command.getErrorCode() == DUPLICATE_KEY) {
-                return true;
-            }
-            if (current instanceof WriteConcernException concern
-                    && concern.getErrorCode() == DUPLICATE_KEY) {
-                return true;
-            }
-            Throwable cause = current.getCause();
-            current = cause == current ? null : cause;
-        }
-        return false;
+        return DuplicateKey.is(failure);
     }
 }

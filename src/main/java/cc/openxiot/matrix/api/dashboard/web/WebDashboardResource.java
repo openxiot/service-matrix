@@ -4,6 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.dashboard.DashboardAccess;
 import cc.openxiot.matrix.api.dashboard.web.catalog.WebDashboardCatalogService;
 import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutCodec;
 import cc.openxiot.matrix.api.dashboard.web.layout.WebDashboardLayoutService;
@@ -13,10 +14,8 @@ import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardRenderRequest;
 import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataCodec;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
-import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
-import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
@@ -44,9 +43,10 @@ import java.util.List;
  * <p>{@code render} 是成员可用的，包括请求体里带**未保存草稿**的那种（编辑器预览）：
  * 它只读，且归属校验照做，所以成员预览不了别人的卡片（§6.2）。</p>
  *
- * <p>鉴权是本类的两个私有 helper，「卡片配置本身合不合法」是
- * {@link WebDashboardWidgetStructureValidator} / {@link WebDashboardLayoutValidator} 的事 —— 两者分开，
- * 校验器才能被成员可用的 {@code render} 复用。</p>
+ * <p>鉴权（空间成员读、管理员写）共用 {@link DashboardAccess} —— 与移动端看板
+ * {@code MobileDashboardResource} 同一个 helper，两种看板的权限口径不可能分叉。
+ * 「卡片配置本身合不合法」是 {@link WebDashboardWidgetStructureValidator} /
+ * {@link WebDashboardLayoutValidator} 的事 —— 两者分开，校验器才能被成员可用的 {@code render} 复用。</p>
  */
 @Path("/matrix/v1/dashboard/web")
 @Produces(MediaType.APPLICATION_JSON)
@@ -55,10 +55,7 @@ import java.util.List;
 public class WebDashboardResource extends AbstractResource {
 
     @Inject
-    SpaceService spaceService;
-
-    @Inject
-    OrgAccessService orgAccessService;
+    DashboardAccess access;
 
     @Inject
     WebDashboardLayoutService layoutService;
@@ -76,7 +73,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/layout/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> layout(@PathParam("spaceId") String spaceId) {
-        return requireSpaceMember(spaceId)
+        return access.spaceMember(spaceId)
                 // 没有文档时返回内存生成的预置布局（§6.5），不报 404、不落库
                 .chain(space -> layoutService.load(space))
                 .map(layout -> OxResponse.ok(WebDashboardLayoutCodec.encode(layout)))
@@ -91,7 +88,7 @@ public class WebDashboardResource extends AbstractResource {
         // 与 ModbusServiceResource.createOne 一样在链外取：链上的回调可能已经不在请求线程上，
         // 那时安全上下文（当前用户）不一定还在
         Person who = currentUser();
-        return requireSpaceAdmin(spaceId)
+        return access.spaceAdmin(spaceId)
                 // 校验要拿到 space（归属判定按根空间），所以校验完把 space 继续往下传
                 .chain(space -> layoutValidator.validate(space, body).map(ignored -> space))
                 .chain(space -> layoutService.save(space, body, who))
@@ -115,7 +112,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/layout/{spaceId}/preset")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> preset(@PathParam("spaceId") String spaceId) {
-        return requireSpaceMember(spaceId)
+        return access.spaceMember(spaceId)
                 .map(space -> OxResponse.ok(WebDashboardLayoutCodec.encode(layoutService.preset(space))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -126,7 +123,7 @@ public class WebDashboardResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> render(@PathParam("spaceId") String spaceId, WebDashboardRenderRequest body) {
         List<DashboardWidget> draft = body == null ? null : body.widgets;
-        return requireSpaceMember(spaceId)
+        return access.spaceMember(spaceId)
                 .chain(space -> draft == null
                         ? renderStored(space)
                         // 草稿的**结构**错误整份拒绝：body 不成形时连「有哪些卡片」都无从谈起，
@@ -148,7 +145,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/catalog/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> catalog(@PathParam("spaceId") String spaceId) {
-        return requireSpaceMember(spaceId)
+        return access.spaceMember(spaceId)
                 .chain(catalogService::catalog)
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
@@ -169,31 +166,5 @@ public class WebDashboardResource extends AbstractResource {
         return error == null
                 ? Uni.createFrom().voidItem()
                 : Uni.createFrom().failure(new IllegalArgumentException(error));
-    }
-
-    // -- helper methods --
-
-    /** 空间成员（读布局、取数）。空间不存在按「无权限」处理，不区分 404（与 DeviceResource 同口径）。 */
-    private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
-        return spaceService.getById(spaceId)
-                .chain(space -> {
-                    if (space == null) {
-                        throw new IllegalArgumentException("No access to this space");
-                    }
-                    return orgAccessService.checkSpaceMember(space, getUserId())
-                            .map(ignored -> space);
-                });
-    }
-
-    /** 空间管理员（保存布局）：改布局影响所有成员，所以比读严一档。 */
-    private Uni<SpaceEntity> requireSpaceAdmin(String spaceId) {
-        return spaceService.getById(spaceId)
-                .chain(space -> {
-                    if (space == null) {
-                        throw new IllegalArgumentException("No access to this space");
-                    }
-                    return orgAccessService.checkSpaceAdmin(space, getUserId())
-                            .map(ignored -> space);
-                });
     }
 }
