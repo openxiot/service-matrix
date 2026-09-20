@@ -23,11 +23,13 @@ import cc.openxiot.matrix.api.dashboard.mobile.layout.MobileDashboardLayoutCodec
 import cc.openxiot.matrix.api.dashboard.mobile.layout.MobileDashboardLayoutService;
 import cc.openxiot.matrix.api.dashboard.mobile.layout.MobileDashboardLayoutValidator;
 import cc.openxiot.matrix.api.dashboard.mobile.layout.MobileDashboardPresetLayouts;
+import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSide;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
@@ -128,6 +130,45 @@ class MobileDashboardResourceTest {
                 .body("data.widgets[0].containsKey(\"y\")", equalTo(false));
     }
 
+    /**
+     * 缺省的半格由**服务端**推出来再下发：预置那两张 HALF 没写 side，读出来就是 {@code LEFT}/{@code RIGHT}
+     * （并排的老样子）。客户端因此不必自己推 —— 自己推就会在拖走一张后把同伴横着翻面。
+     */
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void layout_derivesMissingSide() {
+        allowSpaceMember();
+        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(MobileDashboardPresetLayouts.build(SPACE_ID)));
+
+        given()
+                .when().get("/matrix/v1/dashboard/mobile/layout/{spaceId}", SPACE_ID)
+                .then().statusCode(200)
+                .body("data.widgets[0].side", equalTo("LEFT"))
+                .body("data.widgets[1].side", equalTo("RIGHT"))
+                // 整宽卡没有半格：键都不出现
+                .body("data.widgets[4].containsKey(\"side\")", equalTo(false));
+    }
+
+    /** 存了显式 side 的布局读回来原样下发、不被重推：单独一张 {@code RIGHT} = 右半格有卡、左半格空着。 */
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void layout_keepsExplicitSide() {
+        allowSpaceMember();
+        MobileDashboardLayoutEntity stored = new MobileDashboardLayoutEntity();
+        stored.spaceId = SPACE_ID;
+        stored.version = 3L;
+        MobileDashboardWidget only = statWidget();
+        only.side = "RIGHT";
+        stored.widgets = List.of(only);
+        when(layoutService.load(any())).thenReturn(Uni.createFrom().item(stored));
+
+        given()
+                .when().get("/matrix/v1/dashboard/mobile/layout/{spaceId}", SPACE_ID)
+                .then().statusCode(200)
+                .body("data.version", equalTo(3))
+                .body("data.widgets[0].side", equalTo("RIGHT"));
+    }
+
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void layout_notMember_returnsError() {
@@ -180,6 +221,33 @@ class MobileDashboardResourceTest {
         ArgumentCaptor<Person> who = ArgumentCaptor.forClass(Person.class);
         verify(layoutService).save(any(), any(), who.capture());
         assertEquals("tester", who.getValue().id);
+    }
+
+    /**
+     * 请求体里的 {@code side} 必须真的绑进 DTO —— 实体上多一个没人绑的字段，
+     * 症状是「客户端拖好半格、保存、刷新全回到左边」，而且不报任何错。
+     */
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void save_bindsSideFromRequestBody() {
+        allowSpaceAdmin();
+        when(layoutValidator.validate(any(), any())).thenReturn(Uni.createFrom().voidItem());
+        when(layoutService.save(any(), any(), any()))
+                .thenReturn(Uni.createFrom().item(MobileDashboardPresetLayouts.build(SPACE_ID)));
+
+        MobileDashboardWidget half = statWidget();
+        half.side = "RIGHT";
+        JsonObject body = new JsonObject().put("version", 0)
+                .put("widgets", new JsonArray().add(MobileDashboardLayoutCodec.encodeWidget(half, MobileDashboardWidgetSide.RIGHT)));
+
+        given().contentType("application/json").body(body.encode())
+                .when().put("/matrix/v1/dashboard/mobile/layout/{spaceId}", SPACE_ID)
+                .then().statusCode(200)
+                .body("success", equalTo(true));
+
+        ArgumentCaptor<MobileDashboardLayoutDto> dto = ArgumentCaptor.forClass(MobileDashboardLayoutDto.class);
+        verify(layoutService).save(any(), dto.capture(), any());
+        assertEquals("RIGHT", dto.getValue().widgets.get(0).side);
     }
 
     @Test

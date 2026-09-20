@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.dashboard.mobile.widget;
 import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSide;
 import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSize;
 
 import java.util.Arrays;
@@ -12,12 +13,14 @@ import java.util.stream.Collectors;
 /**
  * 移动端卡片配置的**结构性**校验外壳：纯函数、无状态、不碰数据库 —— 返回 {@code null} 表示通过，
  * 否则返回给前端看的错误文案。与 Web 的 {@code WebDashboardWidgetStructureValidator} 是同一套骨架，
- * 差别只在 Web 那半边特有的两样（档位与坐标）换成了移动端这一样（{@code FULL/HALF} 档位、无坐标）。
+ * 差别只在 Web 那半边特有的两样（档位与坐标）换成了移动端这两样（{@code FULL/HALF} 档位、
+ * 半宽卡占哪半格 {@code side}）。
  *
  * <p><b>身份与 config 的规则全在共享核心</b>（{@link DashboardWidgetStructureValidator}），Web /
- * Mobile 一套口径一套文案；本类只补移动端特有的<b>档位</b>（{@link MobileDashboardWidgetSize}），
- * 并按「身份 → 尺寸 → config」插在各阶段之间。移动端<b>没有坐标</b>：卡片不带 {@code x}/{@code y}
- * （竖排堆叠，数组顺序即阅读顺序），也就没有坐标这一道校验。</p>
+ * Mobile 一套口径一套文案；本类只补移动端特有的<b>档位</b>（{@link MobileDashboardWidgetSize}）
+ * 与<b>半格</b>（{@link MobileDashboardWidgetSide}），并按「身份 → 尺寸 → 半格 → config」
+ * 插在各阶段之间。移动端<b>没有坐标</b>：卡片不带 {@code x}/{@code y}（竖排堆叠，数组顺序即
+ * 阅读顺序），也就没有坐标这一道校验。</p>
  *
  * <p>错误文案一律带 {@code widgets[i]} 前缀（i 是卡片在数组里的下标）。</p>
  */
@@ -29,6 +32,10 @@ public final class MobileDashboardWidgetStructureValidator {
      */
     private static final String SIZE_NAMES =
             Arrays.stream(MobileDashboardWidgetSize.values()).map(Enum::name).collect(Collectors.joining("/"));
+
+    /** 半格名单文案，同样从枚举生成 —— 抄一遍迟早会说错话。 */
+    private static final String SIDE_NAMES =
+            Arrays.stream(MobileDashboardWidgetSide.values()).map(Enum::name).collect(Collectors.joining("/"));
 
     private MobileDashboardWidgetStructureValidator() {
     }
@@ -56,7 +63,7 @@ public final class MobileDashboardWidgetStructureValidator {
                 widgets, MobileDashboardWidgetStructureValidator::validateWidget);
     }
 
-    /** 单张卡：身份 → 尺寸 → config。尺寸是移动端特有的，身份与 config 走共享核心。 */
+    /** 单张卡：身份 → 尺寸 → 半格 → config。尺寸与半格是移动端特有的，身份与 config 走共享核心。 */
     private static String validateWidget(MobileDashboardWidget widget) {
         String identity = DashboardWidgetStructureValidator.identityError(widget);
         if (identity != null) {
@@ -70,6 +77,15 @@ public final class MobileDashboardWidgetStructureValidator {
         // 存进去也只是渲染时退化，不如保存时就说清楚
         if (size == MobileDashboardWidgetSize.HALF && !"stat".equals(widget.type)) {
             return "size HALF is only valid for stat cards";
+        }
+        // 半格只有 HALF 卡有：**给了就必须是 LEFT/RIGHT**（认不出来就报错，别让它悄悄按缺省推；
+        // 编辑器笔下「我以为它靠左、其实靠右」是最难查的一类）。反过来，**FULL 卡带着 side 不报错**、
+        // 下游一律忽略：render 也用这套校验校验编辑器里那份未保存的草稿，而编辑页的实时预览会
+        // 吞掉 render 失败（MobileDashboardViewModel 里那处 onFailure），硬拒会让预览无声冻住；
+        // 而「FULL 带 side」在下游无害 —— codec 不发、排布不看。
+        if (size == MobileDashboardWidgetSize.HALF && widget.side != null
+                && MobileDashboardWidgetSide.of(widget.side) == null) {
+            return "side must be one of " + SIDE_NAMES;
         }
         return DashboardWidgetStructureValidator.configError(widget);
     }

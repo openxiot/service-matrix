@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.mobile.layout;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -10,6 +11,7 @@ import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.mobile.widget.MobileDashboardWidgetStructureValidator;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
+import io.vertx.core.json.JsonArray;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -66,5 +68,27 @@ class MobileDashboardPresetLayoutsTest {
         dto.widgets = MobileDashboardPresetLayouts.build("s1").widgets;
         assertNull(MobileDashboardWidgetStructureValidator.validate(dto),
                 "preset layout must be structurally valid");
+    }
+
+    /**
+     * 预置那四张 HALF 统计卡<b>不写 side</b>，靠推导就是 {@code L,R,L,R}（两行并排）——
+     * 与改造前「连续两张 HALF 并排」的长相逐格一致。所以预置布局这一份一个字都不用改。
+     */
+    @Test
+    void preset_derivesTwoSideBySideRows() {
+        MobileDashboardLayoutEntity preset = MobileDashboardPresetLayouts.build("s1");
+
+        JsonArray widgets = MobileDashboardLayoutCodec.encode(preset).getJsonArray("widgets");
+        assertEquals("LEFT", sideOf(widgets, 0));
+        assertEquals("RIGHT", sideOf(widgets, 1));
+        assertEquals("LEFT", sideOf(widgets, 2));
+        assertEquals("RIGHT", sideOf(widgets, 3));
+        // 整宽的两张：没有半格这回事，键都不出现
+        assertFalse(widgets.getJsonObject(4).containsKey("side"));
+        assertFalse(widgets.getJsonObject(5).containsKey("side"));
+    }
+
+    private static String sideOf(JsonArray widgets, int index) {
+        return widgets.getJsonObject(index).getString("side");
     }
 }

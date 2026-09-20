@@ -18,6 +18,12 @@ import java.util.Map;
  * 身份与 config 的校验在 {@code DashboardWidgetStructureValidator} 等处，它们只依赖
  * {@link DashboardWidgetView} 这个只读视图（这就是它存在的原因）。</p>
  *
+ * <p><b>{@code side} 与 Web 的 {@code x}/{@code y} 不是一回事</b>：Web 的坐标是「摆在网格的哪儿」
+ * （用户摆的，两个数），移动端的 {@code side} 只是「半宽卡占这一行的哪半格」
+ * （{@code LEFT}/{@code RIGHT}，只有 {@code HALF} 卡有）。排布规则见
+ * {@link cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSide}，
+ * 缺省值的推导见 {@code MobileDashboardWidgetSides.effective}。</p>
+ *
  * <p>{@code widgets} 的<b>数组顺序是阅读顺序</b>，也就是上下次序；服务端<b>不排序、不补位</b>：
  * 重排是客户端的活，这里原样收、原样存（见 {@code MobileDashboardLayoutService.normalized}）。</p>
  *
@@ -69,6 +75,11 @@ public class MobileDashboardWidget implements DashboardWidgetView {
             + "**占几列几行不在卡片上** —— 位置真值就是数组顺序，宽幅只有这两档",
             examples = {"HALF"}, required = true)
     public String size;
+
+    @Schema(description = "半宽卡占这一行的哪半格：LEFT 左 / RIGHT 右。**只有 HALF 卡有**"
+            + "（FULL 卡带了也被忽略），没写就按数组顺序推导（全没写 = 两张并排的老样子）",
+            examples = {"LEFT"})
+    public String side;
 
     @Schema(description = "按 type 而异构的配置（见方案 §5 各卡片一节），落库不做结构化")
     public Map<String, Object> config = new LinkedHashMap<>();

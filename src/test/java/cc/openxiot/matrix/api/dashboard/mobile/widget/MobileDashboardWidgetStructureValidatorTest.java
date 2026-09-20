@@ -18,9 +18,9 @@ import org.junit.jupiter.api.Test;
  * 移动端卡片配置的结构性校验。**纯 JUnit，不连库**（这正是把纯校验从查库的
  * {@code DashboardWidgetOwnershipValidator} 里切出来的原因）。
  *
- * <p>覆盖的重点是移动端外壳相对共享核心<b>多出来的那两条</b>：{@code FULL/HALF} 档位、
- * 以及 {@code HALF} 只对 stat 卡开放。身份与 config 的规则全在共享核心（Web 同款），
- * 这里只挑几条代表，证明「委托到共享核心」这条链路是通的，不逐条重抄 Web 那份测试。</p>
+ * <p>覆盖的重点是移动端外壳相对共享核心<b>多出来的那几条</b>：{@code FULL/HALF} 档位、
+ * {@code HALF} 只对 stat 卡开放、半宽卡占哪半格（{@code side}）。身份与 config 的规则全在共享核心
+ * （Web 同款），这里只挑几条代表，证明「委托到共享核心」这条链路是通的，不逐条重抄 Web 那份测试。</p>
  */
 class MobileDashboardWidgetStructureValidatorTest {
 
@@ -108,6 +108,58 @@ class MobileDashboardWidgetStructureValidatorTest {
             w.size = "HALF";
             assertInvalid("size HALF is only valid for stat cards", w);
         }
+    }
+
+    // ===== 半格：只有 HALF 卡有（移动端特有的又一条） =====
+
+    @Test
+    void side_leftAndRightAreValid() {
+        MobileDashboardWidget left = stat("devices.total");
+        left.side = "LEFT";
+        assertValid(left);
+
+        MobileDashboardWidget right = stat("devices.total");
+        right.side = "RIGHT";
+        assertValid(right);
+    }
+
+    /** 不写 side 也合法：服务端按数组顺序推（全没写 = 两张并排的老样子）。 */
+    @Test
+    void side_omittedIsValid() {
+        assertValid(stat("devices.total"));
+    }
+
+    @Test
+    void side_unknownValueRejected() {
+        MobileDashboardWidget w = stat("devices.total");
+        w.side = "middle";
+        assertInvalid("side must be one of LEFT/RIGHT", w);
+    }
+
+    @Test
+    void side_caseSensitive() {
+        MobileDashboardWidget w = stat("devices.total");
+        w.side = "left";
+        assertInvalid("side must be one of LEFT/RIGHT", w);
+    }
+
+    /**
+     * FULL 卡带着 side <b>不报错</b>，下游一律忽略（codec 不发、排布不看）。这不是漏网：
+     * {@code render} 也用这套校验校验编辑器里那份未保存的草稿，而编辑页的实时预览<b>吞掉</b>
+     * render 失败 —— 硬拒会让预览无声冻住，比「一个没人看的字符串躺在实体上」糟得多。
+     */
+    @Test
+    void side_onFullCardIsIgnoredNotRejected() {
+        MobileDashboardWidget full = stat("devices.total");
+        full.size = "FULL";
+        full.side = "LEFT";
+        assertValid(full);
+
+        // 连值都不认识也放过去：这张卡根本没有半格，它身上那个字符串谁也不读
+        MobileDashboardWidget garbage = stat("devices.total");
+        garbage.size = "FULL";
+        garbage.side = "middle";
+        assertValid(garbage);
     }
 
     // ===== 委托到共享核心（挑几条代表） =====
