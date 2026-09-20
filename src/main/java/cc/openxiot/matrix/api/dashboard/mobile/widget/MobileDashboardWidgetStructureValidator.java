@@ -8,6 +8,7 @@ import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSize;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -36,6 +37,15 @@ public final class MobileDashboardWidgetStructureValidator {
     /** 半格名单文案，同样从枚举生成 —— 抄一遍迟早会说错话。 */
     private static final String SIDE_NAMES =
             Arrays.stream(MobileDashboardWidgetSide.values()).map(Enum::name).collect(Collectors.joining("/"));
+
+    /**
+     * 开放半宽的类型：统计卡（两块小数字并列很常见）与服务卡（一行「字段名 + 值」，半宽放得下）。
+     *
+     * <p>曲线与分布图半宽画不开 —— 存进去也只是渲染时退化，不如保存时就说清楚。设备卡也没开：
+     * 它同样是一行，但没人要过，开不开是产品口径，不是渲染能力问题（想开就在这行加 {@code "device"}，
+     * 文案跟着改）。</p>
+     */
+    private static final Set<String> HALF_TYPES = Set.of("stat", "service");
 
     private MobileDashboardWidgetStructureValidator() {
     }
@@ -73,10 +83,9 @@ public final class MobileDashboardWidgetStructureValidator {
         if (size == null) {
             return "size must be one of " + SIZE_NAMES;
         }
-        // HALF 只对 stat 卡开放：两块小数字并列很常见；曲线/分布图半宽画不开，
-        // 存进去也只是渲染时退化，不如保存时就说清楚
-        if (size == MobileDashboardWidgetSize.HALF && !"stat".equals(widget.type)) {
-            return "size HALF is only valid for stat cards";
+        // HALF 只对 HALF_TYPES 里的类型开放（stat / service，理由见那个常量）
+        if (size == MobileDashboardWidgetSize.HALF && !HALF_TYPES.contains(widget.type)) {
+            return "size HALF is only valid for stat and service cards";
         }
         // 半格只有 HALF 卡有：**给了就必须是 LEFT/RIGHT**（认不出来就报错，别让它悄悄按缺省推；
         // 编辑器笔下「我以为它靠左、其实靠右」是最难查的一类）。反过来，**FULL 卡带着 side 不报错**、

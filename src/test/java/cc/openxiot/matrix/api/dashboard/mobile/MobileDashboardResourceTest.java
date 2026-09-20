@@ -271,13 +271,13 @@ class MobileDashboardResourceTest {
         allowSpaceAdmin();
         when(layoutValidator.validate(any(), any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException(
-                        "widgets[0]: size HALF is only valid for stat cards")));
+                        "widgets[0]: size HALF is only valid for stat and service cards")));
 
         given().contentType("application/json").body(saveBody(0L, statWidget()))
                 .when().put("/matrix/v1/dashboard/mobile/layout/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
-                .body("message", equalTo("widgets[0]: size HALF is only valid for stat cards"));
+                .body("message", equalTo("widgets[0]: size HALF is only valid for stat and service cards"));
 
         verify(layoutService, never()).save(any(), any(), any());
     }

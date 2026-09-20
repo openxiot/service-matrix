@@ -71,7 +71,7 @@ public class MobileDashboardWidget implements DashboardWidgetView {
             + "`title` 存在时以 `title` 为准", examples = {"设备总量"})
     public String titleKey;
 
-    @Schema(description = "尺寸档位：FULL 整宽 / HALF 半宽（可与另一张 HALF 并排，仅 stat 卡开放）。"
+    @Schema(description = "尺寸档位：FULL 整宽 / HALF 半宽（可与另一张 HALF 并排，仅 stat / service 卡开放）。"
             + "**占几列几行不在卡片上** —— 位置真值就是数组顺序，宽幅只有这两档",
             examples = {"HALF"}, required = true)
     public String size;

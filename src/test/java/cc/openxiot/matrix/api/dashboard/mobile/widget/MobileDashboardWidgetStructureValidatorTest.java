@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * {@code DashboardWidgetOwnershipValidator} 里切出来的原因）。
  *
  * <p>覆盖的重点是移动端外壳相对共享核心<b>多出来的那几条</b>：{@code FULL/HALF} 档位、
- * {@code HALF} 只对 stat 卡开放、半宽卡占哪半格（{@code side}）。身份与 config 的规则全在共享核心
+ * {@code HALF} 只对 stat / service 卡开放、半宽卡占哪半格（{@code side}）。身份与 config 的规则全在共享核心
  * （Web 同款），这里只挑几条代表，证明「委托到共享核心」这条链路是通的，不逐条重抄 Web 那份测试。</p>
  */
 class MobileDashboardWidgetStructureValidatorTest {
@@ -77,6 +77,9 @@ class MobileDashboardWidgetStructureValidatorTest {
         MobileDashboardWidget half = stat("devices.total");
         half.size = "HALF";
         assertValid(half);
+        MobileDashboardWidget halfService = service();
+        halfService.size = "HALF";
+        assertValid(halfService);
     }
 
     @Test
@@ -100,13 +103,17 @@ class MobileDashboardWidgetStructureValidatorTest {
         assertInvalid("size must be one of FULL/HALF", w);
     }
 
-    /** HALF 只对 stat 开放：曲线/分布图半宽画不开，存进去也只是渲染时退化，不如保存时就说清楚。 */
+    /**
+     * HALF 只对 stat / service 开放：曲线/分布图半宽画不开，存进去也只是渲染时退化，
+     * 不如保存时就说清楚。设备卡也是一行、半宽放得下，但开不开是产品口径 —— 这条测试钉的是
+     * **当前**口径，改口径时要连着它一起改（不是碰巧漏了 device）。
+     */
     @Test
-    void sizeHalfIsStatOnly() {
-        for (String type : List.of("line", "distribution", "device", "service")) {
+    void sizeHalfIsOnlyForStatAndService() {
+        for (String type : List.of("line", "distribution", "device")) {
             MobileDashboardWidget w = typed(type);
             w.size = "HALF";
-            assertInvalid("size HALF is only valid for stat cards", w);
+            assertInvalid("size HALF is only valid for stat and service cards", w);
         }
     }
 
@@ -210,6 +217,13 @@ class MobileDashboardWidgetStructureValidatorTest {
     private static MobileDashboardWidget stat(String metric) {
         MobileDashboardWidget w = typed("stat");
         w.config = config("metric", metric);
+        return w;
+    }
+
+    /** 一张 config 齐全的服务卡（身份 / 档位 / 半格之外，config 那层也过得去）。 */
+    private static MobileDashboardWidget service() {
+        MobileDashboardWidget w = typed("service");
+        w.config = config("serviceId", "0x01", "functionIndex", 1, "fields", List.of("temperature"));
         return w;
     }
 
