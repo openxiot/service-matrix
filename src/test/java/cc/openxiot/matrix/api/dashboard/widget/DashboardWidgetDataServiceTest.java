@@ -24,7 +24,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -892,14 +892,14 @@ class WidgetDataServiceTest {
     // ===== helpers =====
 
     /** 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。 */
-    private static DashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
+    private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
                 "functionIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
     }
 
-    private static DashboardWidget curve(String id, Map<String, Object> window) {
+    private static WebDashboardWidget curve(String id, Map<String, Object> window) {
         return curve(id, window, Map.of());
     }
 
@@ -914,7 +914,7 @@ class WidgetDataServiceTest {
     }
 
 
-    private DashboardWidgetDataService.WidgetData render(DashboardWidget... widgets) {
+    private DashboardWidgetDataService.WidgetData render(WebDashboardWidget... widgets) {
         return service.render(space(), List.of(widgets)).await().indefinitely();
     }
 
@@ -946,11 +946,11 @@ class WidgetDataServiceTest {
                         .item(overview(invocation.getArgument(1), invocation.getArgument(2))));
     }
 
-    private static DashboardWidget[] widgets() {
-        return new DashboardWidget[0];
+    private static WebDashboardWidget[] widgets() {
+        return new WebDashboardWidget[0];
     }
 
-    private static DashboardWidget stat(String id, String metric, Map<String, Object> window) {
+    private static WebDashboardWidget stat(String id, String metric, Map<String, Object> window) {
         Map<String, Object> config = config("metric", metric);
         if (window != null) {
             config.put("window", window);
@@ -958,7 +958,7 @@ class WidgetDataServiceTest {
         return widget(id, "stat", "W6H92", config);
     }
 
-    private static DashboardWidget distribution(String id, String dimension, Map<String, Object> window) {
+    private static WebDashboardWidget distribution(String id, String dimension, Map<String, Object> window) {
         Map<String, Object> config = config("dimension", dimension);
         if (window != null) {
             config.put("window", window);
@@ -966,11 +966,11 @@ class WidgetDataServiceTest {
         return widget(id, "distribution", "W12H200", config);
     }
 
-    private static DashboardWidget line(String id, Map<String, Object> window) {
+    private static WebDashboardWidget line(String id, Map<String, Object> window) {
         return widget(id, "line", "W12H200", config("source", "alarmCount", "window", window));
     }
 
-    private static DashboardWidget device(String id, String did, String pid) {
+    private static WebDashboardWidget device(String id, String did, String pid) {
         return widget(id, "device", "W12H200", config("did", did, "pid", pid));
     }
 
@@ -1002,7 +1002,7 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList())).thenReturn(Uni.createFrom().item(array));
     }
 
-    private static DashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
+    private static WebDashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
         return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
                 "functionIndex", functionIndex, "fields", fields));
     }
@@ -1092,8 +1092,8 @@ class WidgetDataServiceTest {
         return f;
     }
 
-    private static DashboardWidget widget(String id, String type, String size, Map<String, Object> config) {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget widget(String id, String type, String size, Map<String, Object> config) {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = id;
         w.type = type;
         w.size = size;

@@ -1,7 +1,6 @@
 package cc.openxiot.matrix.db.dashboard.web;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -11,9 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Web数据看板: 用于浏览器和Pad
- * Mobile数据看板：用于移动端（iPhone & Android）
- * 自定义数据看板的布局：**一个空间一份**，空间内共享（读写权限不对称，见
+ * Web 数据看板（浏览器与 Pad）的布局：**一个空间一份**，空间内共享（读写权限不对称，见
  * {@code WebDashboardResource}：读是空间成员、写是空间管理员）。
  *
  * <p><b>为什么整个布局是一个文档、widgets 内嵌</b>：一屏卡片是一个整体，改一张会牵动一片
@@ -42,7 +39,7 @@ public class WebDashboardLayoutEntity extends ReactivePanacheMongoEntity {
     @Schema(description = "卡片列表：**数组顺序是阅读顺序**（窄屏折成一列时的上下次序），"
             + "位置的真值是每张卡自己的 `x` / `y`；服务端不排序、不补位，原样收存",
             required = true)
-    public List<DashboardWidget> widgets = new ArrayList<>();
+    public List<WebDashboardWidget> widgets = new ArrayList<>();
 
     @Schema(description = "乐观锁版本号，每次保存 +1；无文档（预置布局）时为 0",
             examples = {"0"}, required = true)

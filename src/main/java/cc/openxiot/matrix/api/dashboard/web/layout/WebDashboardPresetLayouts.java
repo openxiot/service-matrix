@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.layout;
 
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 
 import java.util.LinkedHashMap;
@@ -87,7 +87,7 @@ public final class WebDashboardPresetLayouts {
         return layout;
     }
 
-    private static DashboardWidget stat(String id, String titleKey,
+    private static WebDashboardWidget stat(String id, String titleKey,
                                        String metric, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("metric", metric);
@@ -98,7 +98,7 @@ public final class WebDashboardPresetLayouts {
         return widget(id, "stat", titleKey, WebDashboardWidgetSize.W6H92, config);
     }
 
-    private static DashboardWidget distribution(String id, String titleKey,
+    private static WebDashboardWidget distribution(String id, String titleKey,
                                                 String dimension, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("dimension", dimension);
@@ -109,7 +109,7 @@ public final class WebDashboardPresetLayouts {
         return widget(id, "distribution", titleKey, WebDashboardWidgetSize.W12H308, config);
     }
 
-    private static DashboardWidget alarmLine(String id, String titleKey) {
+    private static WebDashboardWidget alarmLine(String id, String titleKey) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("source", "alarmCount");
         config.put("window", window(24));
@@ -131,9 +131,9 @@ public final class WebDashboardPresetLayouts {
         return Map.of("kind", "last", "hours", hours);
     }
 
-    private static DashboardWidget widget(String id, String type, String titleKey,
+    private static WebDashboardWidget widget(String id, String type, String titleKey,
                                           WebDashboardWidgetSize size, Map<String, Object> config) {
-        DashboardWidget widget = new DashboardWidget();
+        WebDashboardWidget widget = new WebDashboardWidget();
         widget.id = id;
         widget.type = type;
         // titleKey 而不是 title：见类注释

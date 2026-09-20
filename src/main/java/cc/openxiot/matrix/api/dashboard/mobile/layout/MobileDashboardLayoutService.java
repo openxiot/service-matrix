@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.mobile.layout;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -113,7 +113,7 @@ public class MobileDashboardLayoutService {
     }
 
     /** 落库前的规范化：把 {@code null} 的清单当成空清单。顺序（阅读顺序）原样保留，不排序不补位。 */
-    private static List<DashboardWidget> normalized(List<DashboardWidget> widgets) {
+    private static List<MobileDashboardWidget> normalized(List<MobileDashboardWidget> widgets) {
         return widgets == null ? List.of() : widgets;
     }
 

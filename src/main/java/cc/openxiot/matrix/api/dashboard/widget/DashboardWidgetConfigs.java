@@ -7,7 +7,8 @@ import java.util.List;
  * 读卡片 {@code config} 的一小组防御性取值器，供两个校验器共用。
  *
  * <p><b>为什么要单独一个类</b>：{@code config} 是 {@code Map<String, Object>}
- * （见 {@code DashboardWidget} 的说明），每个字段都要先判类型再取值，而两个校验器都要做这件事。
+ * （见 {@code WebDashboardWidget} / {@code MobileDashboardWidget} 的说明），
+ * 每个字段都要先判类型再取值，而两个校验器都要做这件事。
  * 更要紧的是「什么算『给了』」这个约定必须只有一处定义 —— {@link #str} 把空串与空白串
  * 一律当作没给（编辑器把输入框清空后提交的就是空串），这个约定若在两处各写一遍，
  * 迟早出现「保存时说必填、渲染时说可选」这类自相矛盾的报错。</p>

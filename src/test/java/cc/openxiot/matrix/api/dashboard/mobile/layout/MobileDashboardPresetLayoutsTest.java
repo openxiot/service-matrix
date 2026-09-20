@@ -8,7 +8,7 @@ import java.util.List;
 
 import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.mobile.widget.MobileDashboardWidgetStructureValidator;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +26,7 @@ class MobileDashboardPresetLayoutsTest {
         assertEquals("s1", preset.spaceId);
         assertEquals(MobileDashboardPresetLayouts.PRESET_VERSION, preset.version);
 
-        List<DashboardWidget> ws = preset.widgets;
+        List<MobileDashboardWidget> ws = preset.widgets;
         assertEquals(6, ws.size());
 
         // 前四张是 HALF 统计卡；两张一个小数字行
@@ -52,7 +52,7 @@ class MobileDashboardPresetLayoutsTest {
     /** 预置用 i18n key（titleKey）而不是用户数据（title）：预置是服务端造的，标题必须能翻译。 */
     @Test
     void preset_usesTitleKeysNotUserTitles() {
-        for (DashboardWidget w : MobileDashboardPresetLayouts.build("s1").widgets) {
+        for (MobileDashboardWidget w : MobileDashboardPresetLayouts.build("s1").widgets) {
             assertNull(w.title, "preset must not hardcode user data in title");
             assertNotNull(w.titleKey, "preset must carry an i18n key: " + w.id);
         }

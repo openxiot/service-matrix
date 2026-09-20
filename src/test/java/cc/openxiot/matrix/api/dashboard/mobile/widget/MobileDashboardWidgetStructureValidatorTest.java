@@ -11,7 +11,7 @@ import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -39,7 +39,7 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     @Test
     void validate_tooManyWidgets() {
-        List<DashboardWidget> widgets = new ArrayList<>();
+        List<MobileDashboardWidget> widgets = new ArrayList<>();
         for (int i = 0; i <= DashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
             widgets.add(stat("devices.total"));
         }
@@ -49,8 +49,8 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     @Test
     void validate_duplicatedId() {
-        DashboardWidget a = stat("devices.total");
-        DashboardWidget b = stat("services.total");
+        MobileDashboardWidget a = stat("devices.total");
+        MobileDashboardWidget b = stat("services.total");
         b.id = a.id;
         assertTrue(MobileDashboardWidgetStructureValidator.validate(body(0L, List.of(a, b)))
                 .contains("duplicated widget id"));
@@ -58,8 +58,8 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     @Test
     void validate_errorCarriesWidgetIndex() {
-        DashboardWidget ok = stat("devices.total");
-        DashboardWidget bad = stat("devices.total");
+        MobileDashboardWidget ok = stat("devices.total");
+        MobileDashboardWidget bad = stat("devices.total");
         bad.type = "pie";
         String err = MobileDashboardWidgetStructureValidator.validate(body(0L, List.of(ok, bad)));
         assertNotNull(err);
@@ -71,31 +71,31 @@ class MobileDashboardWidgetStructureValidatorTest {
     @Test
     void size_fullAndHalfAreValid() {
         assertValid(stat("devices.total"));            // 缺省就设为 FULL 也行
-        DashboardWidget full = stat("devices.total");
+        MobileDashboardWidget full = stat("devices.total");
         full.size = "FULL";
         assertValid(full);
-        DashboardWidget half = stat("devices.total");
+        MobileDashboardWidget half = stat("devices.total");
         half.size = "HALF";
         assertValid(half);
     }
 
     @Test
     void sizeRequired() {
-        DashboardWidget w = stat("devices.total");
+        MobileDashboardWidget w = stat("devices.total");
         w.size = null;
         assertInvalid("size must be one of FULL/HALF", w);
     }
 
     @Test
     void sizeCaseSensitive() {
-        DashboardWidget w = stat("devices.total");
+        MobileDashboardWidget w = stat("devices.total");
         w.size = "full";
         assertInvalid("size must be one of FULL/HALF", w);
     }
 
     @Test
     void sizeUnknown() {
-        DashboardWidget w = stat("devices.total");
+        MobileDashboardWidget w = stat("devices.total");
         w.size = "W6H200";            // Web 的档位名，移动端不认
         assertInvalid("size must be one of FULL/HALF", w);
     }
@@ -104,21 +104,10 @@ class MobileDashboardWidgetStructureValidatorTest {
     @Test
     void sizeHalfIsStatOnly() {
         for (String type : List.of("line", "distribution", "device", "service")) {
-            DashboardWidget w = typed(type);
+            MobileDashboardWidget w = typed(type);
             w.size = "HALF";
             assertInvalid("size HALF is only valid for stat cards", w);
         }
-    }
-
-    // ===== 移动端没有坐标 =====
-
-    /** 手机是竖排堆叠，位置真值就是数组顺序 —— 坐标不是移动端的字段，验不验都放行（codec 也不下发）。 */
-    @Test
-    void coordinatesAreNotAThingOnMobile() {
-        DashboardWidget w = stat("devices.total");
-        w.x = 6;
-        w.y = 3;
-        assertValid(w);
     }
 
     // ===== 委托到共享核心（挑几条代表） =====
@@ -135,7 +124,7 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     @Test
     void line_serviceFieldTripleRequired() {
-        DashboardWidget line = new DashboardWidget();
+        MobileDashboardWidget line = new MobileDashboardWidget();
         line.id = "w1";
         line.type = "line";
         line.size = "FULL";
@@ -145,7 +134,7 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     @Test
     void service_fieldsMustNotBeEmpty() {
-        DashboardWidget svc = new DashboardWidget();
+        MobileDashboardWidget svc = new MobileDashboardWidget();
         svc.id = "w1";
         svc.type = "service";
         svc.size = "FULL";
@@ -155,25 +144,25 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     // ===== helpers =====
 
-    private static MobileDashboardLayoutDto body(Long version, DashboardWidget widget) {
+    private static MobileDashboardLayoutDto body(Long version, MobileDashboardWidget widget) {
         return body(version, new ArrayList<>(List.of(widget)));
     }
 
-    private static MobileDashboardLayoutDto body(Long version, List<DashboardWidget> widgets) {
+    private static MobileDashboardLayoutDto body(Long version, List<MobileDashboardWidget> widgets) {
         MobileDashboardLayoutDto dto = new MobileDashboardLayoutDto();
         dto.version = version;
         dto.widgets = widgets;
         return dto;
     }
 
-    private static DashboardWidget stat(String metric) {
-        DashboardWidget w = typed("stat");
+    private static MobileDashboardWidget stat(String metric) {
+        MobileDashboardWidget w = typed("stat");
         w.config = config("metric", metric);
         return w;
     }
 
-    private static DashboardWidget typed(String type) {
-        DashboardWidget w = new DashboardWidget();
+    private static MobileDashboardWidget typed(String type) {
+        MobileDashboardWidget w = new MobileDashboardWidget();
         w.id = "w1";
         w.type = type;
         w.size = type.equals("stat") ? "HALF" : "FULL";
@@ -193,12 +182,12 @@ class MobileDashboardWidgetStructureValidatorTest {
         return config("kind", "last", "hours", hours);
     }
 
-    private static void assertValid(DashboardWidget widget) {
+    private static void assertValid(MobileDashboardWidget widget) {
         String err = MobileDashboardWidgetStructureValidator.validate(body(0L, widget));
         assertNull(err, () -> "expected valid but got: " + err);
     }
 
-    private static void assertInvalid(String expected, DashboardWidget widget) {
+    private static void assertInvalid(String expected, MobileDashboardWidget widget) {
         String err = MobileDashboardWidgetStructureValidator.validate(body(0L, widget));
         assertNotNull(err, () -> "expected an error containing <" + expected + ">");
         assertTrue(err.contains(expected), () -> "expected <" + expected + "> but was <" + err + ">");

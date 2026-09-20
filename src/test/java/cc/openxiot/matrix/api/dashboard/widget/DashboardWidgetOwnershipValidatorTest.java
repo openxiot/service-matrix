@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
@@ -242,7 +242,7 @@ class WidgetOwnershipValidatorTest {
 
     // ===== helpers =====
 
-    private Map<String, String> errors(DashboardWidget... widgets) {
+    private Map<String, String> errors(WebDashboardWidget... widgets) {
         return validator.errorsByWidget(root(), List.of(widgets)).await().indefinitely();
     }
 
@@ -307,17 +307,17 @@ class WidgetOwnershipValidatorTest {
         return fn;
     }
 
-    private static DashboardWidget device(String id, String did) {
+    private static WebDashboardWidget device(String id, String did) {
         return widget(id, "device", config("did", did, "pid", "p1"));
     }
 
-    private static DashboardWidget serviceWithField(String id, String serviceId, int functionIndex, String field) {
+    private static WebDashboardWidget serviceWithField(String id, String serviceId, int functionIndex, String field) {
         return widget(id, "service", config("serviceId", serviceId,
                 "functionIndex", functionIndex, "fields", List.of(field)));
     }
 
-    private static DashboardWidget widget(String id, String type, Map<String, Object> config) {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget widget(String id, String type, Map<String, Object> config) {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = id;
         w.type = type;
         w.size = "W12H200";

@@ -1,7 +1,9 @@
 package cc.openxiot.matrix.db.mongo;
 
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -152,12 +154,12 @@ class ObjectPropertyCodecProviderTest {
      * （{@code window} 是文档、{@code fields} 是数组），值还有 Integer / Long / Boolean。
      *
      * <p>比 {@link #shadowFieldsRoundTrip} 深一层：那张卡上的每个值都是标量，而看板卡片的值
-     * **本身就是容器**。{@code DashboardWidget} 的「config 异构、不做结构化」这个设计
+     * **本身就是容器**。{@code WebDashboardWidget} 的「config 异构、不做结构化」这个设计
      * 整个压在「能原样读回」上 —— 读回来若变成了字符串或丢了一层，校验器与取数都会静默失灵。</p>
      */
     @Test
     void dashboardWidgetConfigRoundTrips() {
-        DashboardWidget widget = new DashboardWidget();
+        WebDashboardWidget widget = new WebDashboardWidget();
         widget.id = "w1";
         widget.type = "stat";
         widget.size = "W6H200";
@@ -186,7 +188,7 @@ class ObjectPropertyCodecProviderTest {
         assertEquals(3L, read.version);
         assertEquals("acc-1", read.creator.id);
         assertEquals(1, read.widgets.size());
-        DashboardWidget readWidget = read.widgets.get(0);
+        WebDashboardWidget readWidget = read.widgets.get(0);
         assertEquals("w1", readWidget.id);
         // title 没设就是不落键：读回来是 null，而不是空串（读侧靠这个区分「没设」与「设成了空」）
         assertNull(readWidget.title);
@@ -201,10 +203,56 @@ class ObjectPropertyCodecProviderTest {
     }
 
     /**
+     * 移动端那张卡也走一遍同一条路：**两个看板各有一个实体**，所以上面那条 web 往返绿了
+     * <b>不蕴含</b>这条也绿 —— 它们是两个类、两套字段，注册表只是碰巧同一张。
+     *
+     * <p>顺带钉住「不落 {@code _t}」：看板文档上<b>故意没有</b> {@code @BsonDiscriminator}
+     * （{@code DeviceEntity} / {@code SpaceEntity} 有，看板这两个没有），POJO codec 因此从不写类名 ——
+     * 这正是「拆实体不需要迁移脚本」的那块地基。一旦有人顺手给实体加上那个注解，新写的文档就会带上
+     * {@code _t}，而库里已有的文档没有它。{@link #legacyLayoutKeyIsIgnored} 从读的一侧钉同一件事。</p>
+     */
+    @Test
+    void mobileDashboardWidgetConfigRoundTrips() {
+        MobileDashboardWidget widget = new MobileDashboardWidget();
+        widget.id = "m1";
+        widget.type = "service";
+        widget.size = "HALF";
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("serviceId", "6aa759bb4e45b0b6122d2ed5");
+        config.put("functionIndex", 1);
+        config.put("fields", List.of("temp", "status.bit0"));
+        config.put("showUnit", Boolean.TRUE);
+        widget.config = config;
+
+        MobileDashboardLayoutEntity layout = new MobileDashboardLayoutEntity();
+        layout.id = new ObjectId();
+        layout.spaceId = "space-1";
+        layout.version = 1L;
+        layout.widgets = List.of(widget);
+        layout.creator = Person.of("acc-1", "张三");
+
+        MobileDashboardLayoutEntity read = decode(MobileDashboardLayoutEntity.class, encode(layout));
+
+        assertEquals("space-1", read.spaceId);
+        assertEquals(1L, read.version);
+        assertEquals(1, read.widgets.size());
+        MobileDashboardWidget readWidget = read.widgets.get(0);
+        assertEquals("m1", readWidget.id);
+        assertEquals("service", readWidget.type);
+        assertEquals("HALF", readWidget.size);
+        assertNull(readWidget.title);
+        assertEquals(config, readWidget.config);
+        // 数组读回来是 List：读 config 的一方一律按 Map / List 取值，不假设具体实现类
+        assertInstanceOf(List.class, readWidget.config.get("fields"));
+        assertTrue(!encode(read).getArray("widgets").get(0).asDocument().containsKey("_t"),
+                "没有 @BsonDiscriminator 就不该写类名：老文档里没有它，写了就读不回去");
+    }
+
+    /**
      * <b>老文档里的 {@code widgets[].layout} 被跳过</b> —— 这是「顺序进线格式不需要迁移」
      * 那条论证的证据。
      *
-     * <p>改造之前每张卡片都带一个 {@code layout: {x, y, w, h}}。现在 {@code DashboardWidget}
+     * <p>改造之前每张卡片都带一个 {@code layout: {x, y, w, h}}。现在 {@code WebDashboardWidget}
      * 上没有这个字段了，而<b>现网库里存着的文档还带着它</b>。这里手工造一份那种老文档
      * （{@code BsonDocument} 直接写，绕过实体），按 {@code WebDashboardLayoutEntity} 解码：
      * 只要 POJO codec 遇到类上没有的键是<b>跳过</b>而不是报错，老布局就读得出来，
@@ -249,7 +297,7 @@ class ObjectPropertyCodecProviderTest {
         assertEquals("space-1", read.spaceId);
         assertEquals(2L, read.version);
         assertEquals(1, read.widgets.size());
-        DashboardWidget readWidget = read.widgets.get(0);
+        WebDashboardWidget readWidget = read.widgets.get(0);
         assertEquals("w1", readWidget.id);
         assertEquals("stat", readWidget.type);
         assertEquals("devices.total", readWidget.config.get("metric"));

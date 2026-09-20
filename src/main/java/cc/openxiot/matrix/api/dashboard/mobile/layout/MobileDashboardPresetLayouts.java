@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.mobile.layout;
 
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSize;
 
@@ -58,7 +58,7 @@ public final class MobileDashboardPresetLayouts {
         return layout;
     }
 
-    private static DashboardWidget stat(String id, String titleKey,
+    private static MobileDashboardWidget stat(String id, String titleKey,
                                         String metric, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("metric", metric);
@@ -69,7 +69,7 @@ public final class MobileDashboardPresetLayouts {
         return widget(id, "stat", titleKey, MobileDashboardWidgetSize.HALF, config);
     }
 
-    private static DashboardWidget distribution(String id, String titleKey,
+    private static MobileDashboardWidget distribution(String id, String titleKey,
                                                 String dimension, Map<String, Object> window) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("dimension", dimension);
@@ -80,7 +80,7 @@ public final class MobileDashboardPresetLayouts {
         return widget(id, "distribution", titleKey, MobileDashboardWidgetSize.FULL, config);
     }
 
-    private static DashboardWidget alarmLine(String id, String titleKey) {
+    private static MobileDashboardWidget alarmLine(String id, String titleKey) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("source", "alarmCount");
         config.put("window", window(24));
@@ -93,9 +93,9 @@ public final class MobileDashboardPresetLayouts {
         return Map.of("kind", "last", "hours", hours);
     }
 
-    private static DashboardWidget widget(String id, String type, String titleKey,
+    private static MobileDashboardWidget widget(String id, String type, String titleKey,
                                           MobileDashboardWidgetSize size, Map<String, Object> config) {
-        DashboardWidget widget = new DashboardWidget();
+        MobileDashboardWidget widget = new MobileDashboardWidget();
         widget.id = id;
         widget.type = type;
         widget.titleKey = titleKey;

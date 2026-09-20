@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.web.widget;
 
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 
 import java.util.Arrays;
@@ -76,12 +76,12 @@ public final class WebDashboardWidgetStructureValidator {
      * 只校验卡片列表。{@code render} 用它校验请求体里那份**未保存的草稿** ——
      * 草稿没有 {@code version}，所以不能直接走 {@link #validate}。
      */
-    public static String validateWidgets(List<DashboardWidget> widgets) {
+    public static String validateWidgets(List<WebDashboardWidget> widgets) {
         return DashboardWidgetStructureValidator.validateWidgets(widgets, WebDashboardWidgetStructureValidator::validateWidget);
     }
 
     /** 单张卡：身份 → 尺寸 → 位置 → config。尺寸与坐标是 Web 特有的，身份与 config 走共享核心。 */
-    private static String validateWidget(DashboardWidget widget) {
+    private static String validateWidget(WebDashboardWidget widget) {
         String identity = DashboardWidgetStructureValidator.identityError(widget);
         if (identity != null) {
             return identity;
@@ -107,7 +107,7 @@ public final class WebDashboardWidgetStructureValidator {
      * （铺法复刻改造前的流式排布，所以老布局长相不变）。所以这里「都没有」放行、「只给一个」拒绝
      * —— 后者只可能是脏数据，放进去就是一张位置来路不明的卡。</p>
      */
-    private static String validatePosition(DashboardWidget widget) {
+    private static String validatePosition(WebDashboardWidget widget) {
         if (widget.x == null && widget.y == null) {
             return null;
         }

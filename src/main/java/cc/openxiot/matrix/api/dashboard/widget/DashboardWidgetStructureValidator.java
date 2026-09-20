@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -13,7 +13,7 @@ import java.util.function.Function;
  * 卡片配置的**结构性**校验 —— Web 与 Mobile 看板共享的那一半：卡片身份与 config 的纯函数校验。
  *
  * <p>这是从 {@code WebDashboardWidgetStructureValidator} 抽出来的共享核心。卡片在两种看板上
- * 是同一种东西（同一个 {@link DashboardWidget} 实体、同一份 config 语义），所以：
+ * 是同一类东西（{@link DashboardWidgetView} 那五个字段、同一份 config 语义；实体各是各的），所以：
  * <ul>
  *   <li><b>身份 + config 归这里</b>（id/type/title/titleKey、config 必填、五种类型的 config 规则、窗口），
  *       Web 与 Mobile 共用，一套口径一套文案；</li>
@@ -76,7 +76,7 @@ public final class DashboardWidgetStructureValidator {
      * 以便把自己的尺寸/位置检查插进「身份 → 尺寸 → 位置 → config」的中间。返回 {@code null} 表示通过，
      * 否则返回带 {@code widgets[i]} 前缀的错误。
      */
-    public static String validateWidgets(List<DashboardWidget> widgets, Function<DashboardWidget, String> perCard) {
+    public static <T extends DashboardWidgetView> String validateWidgets(List<T> widgets, Function<T, String> perCard) {
         if (widgets == null) {
             return "widgets is required";
         }
@@ -85,20 +85,20 @@ public final class DashboardWidgetStructureValidator {
         }
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < widgets.size(); i++) {
-            DashboardWidget widget = widgets.get(i);
+            T widget = widgets.get(i);
             String err = perCard.apply(widget);
             if (err != null) {
                 return "widgets[" + i + "]: " + err;
             }
-            if (!ids.add(widget.id)) {
-                return "widgets[" + i + "]: duplicated widget id: " + widget.id;
+            if (!ids.add(widget.id())) {
+                return "widgets[" + i + "]: duplicated widget id: " + widget.id();
             }
         }
         return null;
     }
 
     /** 身份 + config（不含尺寸/位置）。不加尺寸/位置的场景（如纯 session 校验）可以直接用它当 perCard。 */
-    public static String validateConfig(DashboardWidget widget) {
+    public static String validateConfig(DashboardWidgetView widget) {
         String identity = identityError(widget);
         return identity != null ? identity : configError(widget);
     }
@@ -107,41 +107,41 @@ public final class DashboardWidgetStructureValidator {
      * 卡片身份：id / type / title / titleKey。本类两个校验的**第一段**，各壳要在它的后面、
      * config 的前面插入自己的尺寸/位置检查。
      */
-    public static String identityError(DashboardWidget widget) {
+    public static String identityError(DashboardWidgetView widget) {
         if (widget == null) {
             return "widget is required";
         }
-        if (widget.id == null || widget.id.isBlank()) {
+        if (widget.id() == null || widget.id().isBlank()) {
             return "id is required";
         }
-        if (widget.id.length() > 64) {
+        if (widget.id().length() > 64) {
             return "id is too long";
         }
-        if (widget.type == null || !TYPES.contains(widget.type)) {
+        if (widget.type() == null || !TYPES.contains(widget.type())) {
             return "type must be one of " + TYPES;
         }
-        if (widget.title != null && widget.title.length() > 128) {
+        if (widget.title() != null && widget.title().length() > 128) {
             return "title is too long";
         }
         // titleKey 只由服务端的预置布局填写（§6.5），客户端提交它没有意义但也不致害；
         // 卡长度是为了不让一条超长 key 变成字典里查不到的垃圾数据。
-        if (widget.titleKey != null && widget.titleKey.length() > 128) {
+        if (widget.titleKey() != null && widget.titleKey().length() > 128) {
             return "titleKey is too long";
         }
         return null;
     }
 
     /** 卡片 config：必填 + 按类型的规则。调用方要先跑 {@link #identityError} 保证 type 合法。 */
-    public static String configError(DashboardWidget widget) {
+    public static String configError(DashboardWidgetView widget) {
         // 防御：configError 独立可调用，type 非法（null 也会让下面 switch 抛 NPE）先在这里挡一刀
-        if (widget.type == null || !TYPES.contains(widget.type)) {
+        if (widget.type() == null || !TYPES.contains(widget.type())) {
             return "type must be one of " + TYPES;
         }
-        Map<String, Object> config = widget.config;
+        Map<String, Object> config = widget.config();
         if (config == null) {
             return "config is required";
         }
-        return switch (widget.type) {
+        return switch (widget.type()) {
             case "stat" -> validateStat(config);
             case "line" -> validateLine(config);
             case "distribution" -> validateDistribution(config);

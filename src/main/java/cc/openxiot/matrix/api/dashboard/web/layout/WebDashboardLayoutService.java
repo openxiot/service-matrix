@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutRepository;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -145,7 +145,7 @@ public class WebDashboardLayoutService {
      * （{@code window} 缺省即不适用、{@code chart} 缺省即饼图），补空值会让「没设」和
      * 「设成了空」再也分不开（与 {@code WebDashboardLayoutCodec} 不补空值同口径）。</p>
      */
-    private static List<DashboardWidget> normalized(List<DashboardWidget> widgets) {
+    private static List<WebDashboardWidget> normalized(List<WebDashboardWidget> widgets) {
         return widgets == null ? List.of() : widgets;
     }
 

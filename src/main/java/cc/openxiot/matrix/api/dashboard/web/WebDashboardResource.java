@@ -14,7 +14,7 @@ import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardRenderRequest;
 import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureValidator;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataCodec;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -122,7 +122,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/render/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> render(@PathParam("spaceId") String spaceId, WebDashboardRenderRequest body) {
-        List<DashboardWidget> draft = body == null ? null : body.widgets;
+        List<WebDashboardWidget> draft = body == null ? null : body.widgets;
         return access.spaceMember(spaceId)
                 .chain(space -> draft == null
                         ? renderStored(space)

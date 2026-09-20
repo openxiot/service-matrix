@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.web.params;
 
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -20,7 +20,7 @@ import java.util.List;
  * 首次保存的正常姿势。若用基本类型，漏传会被静默当成 0，把一个客户端 bug 变成一次
  * 「恰好成功」的覆盖写。</p>
  *
- * <p>widgets 直接复用实体的 {@link DashboardWidget}，不另建一套 DTO：它的形状就是线上形状
+ * <p>widgets 直接复用实体的 {@link WebDashboardWidget}，不另建一套 DTO：它的形状就是线上形状
  * （config 是 {@code Map<String,Object>}，没有需要屏蔽的内部字段）。</p>
  */
 @RegisterForReflection
@@ -33,5 +33,5 @@ public class WebDashboardLayoutDto {
     public Long version;
 
     @Schema(description = "卡片列表（整体替换，不是增量）", required = true)
-    public List<DashboardWidget> widgets = new ArrayList<>();
+    public List<WebDashboardWidget> widgets = new ArrayList<>();
 }

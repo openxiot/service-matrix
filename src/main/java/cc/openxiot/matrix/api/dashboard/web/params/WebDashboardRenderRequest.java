@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.dashboard.web.params;
 
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -24,5 +24,5 @@ import java.util.List;
 public class WebDashboardRenderRequest {
 
     @Schema(description = "尚未保存的卡片草稿（编辑器预览用）；不传则渲染已保存的布局")
-    public List<DashboardWidget> widgets;
+    public List<WebDashboardWidget> widgets;
 }

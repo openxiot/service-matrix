@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -92,7 +92,7 @@ public class DashboardWidgetOwnershipValidator {
      * 不重复结构校验 —— 该报的错由调用方先跑一遍
      * {@link WebDashboardWidgetStructureValidator} 负责。这里是「假定形状合法，只判归属」。</p>
      */
-    public Uni<Map<String, String>> errorsByWidget(SpaceEntity space, List<DashboardWidget> widgets) {
+    public Uni<Map<String, String>> errorsByWidget(SpaceEntity space, List<? extends DashboardWidgetView> widgets) {
         Map<String, String> errors = new LinkedHashMap<>();
         // 归属判定的基准：根空间（项目）。与布局的持久化、取数共用同一个
         // SpaceEntity.rootSpaceId()，三处必须一致
@@ -172,16 +172,16 @@ public class DashboardWidgetOwnershipValidator {
      * 收集需要查库的引用。同一个 serviceId / did 只查一次（去重交给 {@code loadXxx}
      * 的入参 List 由调用方保证，这里用 seen 集合保证）。
      */
-    private static void collect(List<DashboardWidget> widgets,
+    private static void collect(List<? extends DashboardWidgetView> widgets,
                                List<ServiceRef> serviceRefs, List<String> serviceIds,
                                Map<String, DeviceRef> deviceRefs, List<String> dids) {
         for (int i = 0; i < widgets.size(); i++) {
-            DashboardWidget widget = widgets.get(i);
-            if (widget == null || widget.id == null || widget.config == null) {
+            DashboardWidgetView widget = widgets.get(i);
+            if (widget == null || widget.id() == null || widget.config() == null) {
                 continue;
             }
-            Map<String, Object> config = widget.config;
-            switch (widget.type == null ? "" : widget.type) {
+            Map<String, Object> config = widget.config();
+            switch (widget.type() == null ? "" : widget.type()) {
                 case "service" -> {
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
                     Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
@@ -190,7 +190,7 @@ public class DashboardWidgetOwnershipValidator {
                     }
                     addServiceId(serviceIds, serviceId);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        serviceRefs.add(new ServiceRef(i, widget.id, serviceId, functionIndex, field));
+                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, functionIndex, field));
                     }
                 }
                 case "line" -> {
@@ -204,14 +204,14 @@ public class DashboardWidgetOwnershipValidator {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
-                    serviceRefs.add(new ServiceRef(i, widget.id, serviceId, functionIndex, field));
+                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, functionIndex, field));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
-                    if (did == null || deviceRefs.containsKey(widget.id)) {
+                    if (did == null || deviceRefs.containsKey(widget.id())) {
                         continue;
                     }
-                    deviceRefs.put(widget.id, new DeviceRef(i, widget.id, did));
+                    deviceRefs.put(widget.id(), new DeviceRef(i, widget.id(), did));
                     if (!dids.contains(did)) {
                         dids.add(did);
                     }

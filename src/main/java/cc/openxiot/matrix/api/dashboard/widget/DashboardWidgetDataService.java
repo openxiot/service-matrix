@@ -4,7 +4,7 @@ import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -131,7 +131,7 @@ public class DashboardWidgetDataService {
      * 取一屏数据。{@code widgets} 由调用方决定来源：已存布局，或请求体里**尚未保存的草稿**
      * （编辑器预览用；成员可用，见 §6.2）。
      */
-    public Uni<WidgetData> render(SpaceEntity space, List<DashboardWidget> widgets) {
+    public Uni<WidgetData> render(SpaceEntity space, List<? extends DashboardWidgetView> widgets) {
         String spaceId = space.rootSpaceId();
         // 整份请求共用一个「现在」：各卡片的窗口若各取各的 now，`last 24h` 之间会差几毫秒，
         // 于是本该共用一次查询的卡片被拆成多次
@@ -149,19 +149,19 @@ public class DashboardWidgetDataService {
         List<String> dids = new ArrayList<>();
         Map<String, CurveQuery> curves = new LinkedHashMap<>();
         Map<String, FailureQuery> failures = new LinkedHashMap<>();
-        for (DashboardWidget widget : widgets) {
+        for (DashboardWidgetView widget : widgets) {
             Source source = sourceOf(widget);
             if (source == Source.OVERVIEW) {
                 Window window = windowOf(widget, now, fallbackFrom);
                 windows.computeIfAbsent(window.key(), ignored -> window);
             } else if (source == Source.SERVICE) {
-                collect(configString(widget.config, "serviceId"), serviceIds);
+                collect(configString(widget.config(), "serviceId"), serviceIds);
             } else if (source == Source.DEVICE) {
-                collect(configString(widget.config, "did"), dids);
+                collect(configString(widget.config(), "did"), dids);
             } else if (source == Source.FIELD) {
                 // 服务定义与服务卡共用同一批取数（曲线的 unit / step 就来自定义）：
                 // 同一个服务在本屏只读一次定义，代价是只画曲线的服务也顺带取了它的影子
-                collect(configString(widget.config, "serviceId"), serviceIds);
+                collect(configString(widget.config(), "serviceId"), serviceIds);
                 Window window = windowOf(widget, now, fallbackFrom);
                 CurveQuery curve = CurveQuery.of(widget, window);
                 if (curve != null) {
@@ -223,14 +223,14 @@ public class DashboardWidgetDataService {
      * 更能指出是哪儿写坏了。保存时 {@code WebDashboardWidgetStructureValidator} 已经拦过一道，
      * 但服务端加过一个取值又删掉时，老布局就会带着它躺在库里。</p>
      */
-    private static Source sourceOf(DashboardWidget widget) {
-        if (widget == null || widget.type == null) {
+    private static Source sourceOf(DashboardWidgetView widget) {
+        if (widget == null || widget.type() == null) {
             return Source.NONE;
         }
-        return switch (widget.type) {
+        return switch (widget.type()) {
             case "stat", "distribution" -> Source.OVERVIEW;
             case "line" -> {
-                String source = configString(widget.config, "source");
+                String source = configString(widget.config(), "source");
                 if ("alarmCount".equals(source)) {
                     yield Source.OVERVIEW;
                 }
@@ -249,8 +249,8 @@ public class DashboardWidgetDataService {
      * <p>兜底窗口由调用方算好传进来，而不是在这里各自 {@code now - 1h}：否则两张无窗口的卡片
      * 会得到相差几毫秒的两个窗口，白白多查一次。</p>
      */
-    private static Window windowOf(DashboardWidget widget, Date now, Date fallbackFrom) {
-        Object raw = widget == null || widget.config == null ? null : widget.config.get("window");
+    private static Window windowOf(DashboardWidgetView widget, Date now, Date fallbackFrom) {
+        Object raw = widget == null || widget.config() == null ? null : widget.config().get("window");
         if (raw instanceof Map<?, ?> window) {
             String kind = DashboardWidgetConfigs.str(window.get("kind"));
             if ("last".equals(kind)) {
@@ -471,13 +471,13 @@ public class DashboardWidgetDataService {
     }
 
     /** 逐卡片成数据。顺序与请求一致。 */
-    private static WidgetData build(String spaceId, List<DashboardWidget> widgets, Sources sources,
+    private static WidgetData build(String spaceId, List<? extends DashboardWidgetView> widgets, Sources sources,
                                     Map<String, String> ownershipErrors, Date fallbackFrom, Date now) {
         List<Item> items = new ArrayList<>();
         Date from = null;
         Date to = null;
-        for (DashboardWidget widget : widgets) {
-            String id = widget == null || widget.id == null ? "" : widget.id;
+        for (DashboardWidgetView widget : widgets) {
+            String id = widget == null || widget.id() == null ? "" : widget.id();
             // 归属错误优先于「暂不支持」：引用了不存在或不属于本空间的东西，比「这个版本还没做」
             // 更值得先说 —— 它可能是真的配错了
             String ownershipError = ownershipErrors.get(id);
@@ -510,16 +510,16 @@ public class DashboardWidgetDataService {
      * {@link #unsupportedDetail} 的文案 —— 这样「类型支持但某个取值不支持」（比如
      * {@code line} 的数据源写坏了）仍然说得清楚，而不是含混的一句「取数失败」。</p>
      */
-    private static Item item(DashboardWidget widget, String id, Window window, Sources sources) {
+    private static Item item(DashboardWidgetView widget, String id, Window window, Sources sources) {
         if (sourceOf(widget) == Source.SERVICE) {
-            ServiceFetched service = sources.services().get(configString(widget.config, "serviceId"));
+            ServiceFetched service = sources.services().get(configString(widget.config(), "serviceId"));
             if (service == null) {
                 return Item.failed(id, "no data");
             }
             if (service.error() != null) {
                 return Item.failed(id, service.error());
             }
-            JsonObject payload = serviceData(widget.config, service);
+            JsonObject payload = serviceData(widget.config(), service);
             return payload == null ? Item.failed(id, unsupportedDetail(widget)) : Item.ok(id, payload);
         }
         if (sourceOf(widget) == Source.DEVICE) {
@@ -527,7 +527,7 @@ public class DashboardWidgetDataService {
             if (sources.devices().error() != null) {
                 return Item.failed(id, sources.devices().error());
             }
-            JsonObject payload = deviceData(widget.config, sources.devices());
+            JsonObject payload = deviceData(widget.config(), sources.devices());
             return payload == null ? Item.failed(id, unsupportedDetail(widget)) : Item.ok(id, payload);
         }
         if (sourceOf(widget) == Source.FIELD) {
@@ -565,32 +565,32 @@ public class DashboardWidgetDataService {
     }
 
     /** 还没接数据源的卡片：说清楚是「还没做」，而不是「配置错了」。 */
-    private static String unsupported(DashboardWidget widget) {
-        if (widget == null || widget.type == null) {
+    private static String unsupported(DashboardWidgetView widget) {
+        if (widget == null || widget.type() == null) {
             return "widget type is required";
         }
-        return switch (widget.type) {
+        return switch (widget.type()) {
             case "stat", "line", "distribution", "service", "device" -> null;
-            default -> UNSUPPORTED_TYPE + widget.type;
+            default -> UNSUPPORTED_TYPE + widget.type();
         };
     }
 
-    private static String unsupportedDetail(DashboardWidget widget) {
-        if ("line".equals(widget.type)) {
-            return UNSUPPORTED_TYPE + "line(" + configString(widget.config, "source") + ")";
+    private static String unsupportedDetail(DashboardWidgetView widget) {
+        if ("line".equals(widget.type())) {
+            return UNSUPPORTED_TYPE + "line(" + configString(widget.config(), "source") + ")";
         }
-        if ("distribution".equals(widget.type)) {
-            return UNSUPPORTED_DIMENSION + configString(widget.config, "dimension");
+        if ("distribution".equals(widget.type())) {
+            return UNSUPPORTED_DIMENSION + configString(widget.config(), "dimension");
         }
-        return UNSUPPORTED_TYPE + widget.type;
+        return UNSUPPORTED_TYPE + widget.type();
     }
 
     /** 按卡片类型成 data；返回 {@code null} 表示这一格的组合在 P1 还没有数据源。 */
-    private static JsonObject payload(DashboardWidget widget, StatisticsQueryService.Overview overview) {
-        return switch (widget.type) {
-            case "stat" -> statData(widget.config, overview);
-            case "distribution" -> distributionData(widget.config, overview);
-            case "line" -> lineData(widget.config, overview);
+    private static JsonObject payload(DashboardWidgetView widget, StatisticsQueryService.Overview overview) {
+        return switch (widget.type()) {
+            case "stat" -> statData(widget.config(), overview);
+            case "distribution" -> distributionData(widget.config(), overview);
+            case "line" -> lineData(widget.config(), overview);
             default -> null;
         };
     }
@@ -939,8 +939,8 @@ public class DashboardWidgetDataService {
          * 从卡片配置里读。三元组缺一就给 {@code null}（{@code WebDashboardWidgetStructureValidator} 已经拦过，
          * 这里是兜底：服务端加过一个必填项又撤掉时，老布局会带着不完整的配置躺在库里）。
          */
-        static CurveQuery of(DashboardWidget widget, Window window) {
-            Map<String, Object> config = widget.config;
+        static CurveQuery of(DashboardWidgetView widget, Window window) {
+            Map<String, Object> config = widget.config();
             String serviceId = configString(config, "serviceId");
             Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
             String field = configString(config, "field");
@@ -972,9 +972,9 @@ public class DashboardWidgetDataService {
         }
 
         /** 从卡片配置里读（方法序号缺了就给 {@code null}：没有它也无从查失败）。 */
-        static FailureQuery of(DashboardWidget widget, Window window) {
-            String serviceId = configString(widget.config, "serviceId");
-            Integer functionIndex = DashboardWidgetConfigs.intVal(widget.config.get("functionIndex"));
+        static FailureQuery of(DashboardWidgetView widget, Window window) {
+            String serviceId = configString(widget.config(), "serviceId");
+            Integer functionIndex = DashboardWidgetConfigs.intVal(widget.config().get("functionIndex"));
             return serviceId == null || functionIndex == null
                     ? null : new FailureQuery(serviceId, functionIndex, window);
         }

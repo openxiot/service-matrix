@@ -26,7 +26,7 @@ import cc.openxiot.matrix.api.dashboard.mobile.layout.MobileDashboardPresetLayou
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -274,7 +274,7 @@ class MobileDashboardResourceTest {
                 .body("success", equalTo(true))
                 .body("data.widgets[0].success", equalTo(true));
 
-        ArgumentCaptor<List<DashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<MobileDashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
         verify(widgetDataService).render(any(), widgets.capture());
         assertEquals(6, widgets.getValue().size());
     }
@@ -314,14 +314,14 @@ class MobileDashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_draftTooManyWidgets_isRejected() {
         allowSpaceMember();
-        List<DashboardWidget> tooMany = new ArrayList<>();
+        List<MobileDashboardWidget> tooMany = new ArrayList<>();
         for (int i = 0; i <= DashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
-            DashboardWidget w = statWidget();
+            MobileDashboardWidget w = statWidget();
             w.id = "mw" + i;
             tooMany.add(w);
         }
 
-        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new DashboardWidget[0])))
+        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new MobileDashboardWidget[0])))
                 .when().post("/matrix/v1/dashboard/mobile/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
@@ -354,8 +354,8 @@ class MobileDashboardResourceTest {
     }
 
     /** 移动端统计卡用半宽档位。 */
-    private static DashboardWidget statWidget() {
-        DashboardWidget w = new DashboardWidget();
+    private static MobileDashboardWidget statWidget() {
+        MobileDashboardWidget w = new MobileDashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "HALF";
@@ -363,12 +363,12 @@ class MobileDashboardResourceTest {
         return w;
     }
 
-    private static String saveBody(Long version, DashboardWidget... widgets) {
+    private static String saveBody(Long version, MobileDashboardWidget... widgets) {
         JsonObject body = new JsonObject().put("widgets", new JsonArray());
         if (version != null) {
             body.put("version", version);
         }
-        for (DashboardWidget widget : widgets) {
+        for (MobileDashboardWidget widget : widgets) {
             body.getJsonArray("widgets").add(MobileDashboardLayoutCodec.encodeWidget(widget));
         }
         return body.encode();

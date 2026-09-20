@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.mobile.widget;
 
 import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardLayoutDto;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.widget.MobileDashboardWidgetSize;
 
 import java.util.Arrays;
@@ -51,13 +51,13 @@ public final class MobileDashboardWidgetStructureValidator {
      * 只校验卡片列表。{@code render} 用它校验请求体里那份**未保存的草稿** ——
      * 草稿没有 {@code version}，所以不能直接走 {@link #validate}。
      */
-    public static String validateWidgets(List<DashboardWidget> widgets) {
+    public static String validateWidgets(List<MobileDashboardWidget> widgets) {
         return DashboardWidgetStructureValidator.validateWidgets(
                 widgets, MobileDashboardWidgetStructureValidator::validateWidget);
     }
 
     /** 单张卡：身份 → 尺寸 → config。尺寸是移动端特有的，身份与 config 走共享核心。 */
-    private static String validateWidget(DashboardWidget widget) {
+    private static String validateWidget(MobileDashboardWidget widget) {
         String identity = DashboardWidgetStructureValidator.identityError(widget);
         if (identity != null) {
             return identity;

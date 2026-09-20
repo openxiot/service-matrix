@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -16,8 +16,9 @@ import org.junit.jupiter.api.Test;
 /**
  * 移动端布局 codec：编码的外壳 + 卡片逐帧。**纯 JUnit**。
  *
- * <p>与 Web codec 的唯一差异在 {@code encodeWidget}：移动端<b>不下发 x/y</b>
- * （位置真值就是数组顺序）。外壳字段（spaceId/version/creator/updater）与 Web 相同。</p>
+ * <p>与 Web codec 的差异在 {@code encodeWidget} 取的实体不同：移动端卡片<b>没有坐标这回事</b>
+ * （位置真值就是数组顺序；半宽卡占哪半格是 {@code side}，见下一步）。外壳字段
+ * （spaceId/version/creator/updater）与 Web 相同。</p>
  */
 class MobileDashboardLayoutCodecTest {
 
@@ -32,7 +33,7 @@ class MobileDashboardLayoutCodecTest {
         layout.version = 42L;
         layout.creator = who;
         layout.updater = who;
-        layout.widgets = List.of(card("w1", "stat", "FULL", config("metric", "devices.total"), 6, 3));
+        layout.widgets = List.of(card("w1", "stat", "FULL", config("metric", "devices.total")));
 
         JsonObject json = MobileDashboardLayoutCodec.encode(layout);
         assertEquals("s1", json.getString("spaceId"));
@@ -41,30 +42,12 @@ class MobileDashboardLayoutCodecTest {
         assertEquals("october", json.getJsonObject("updater").getString("name"));
     }
 
-    /** 移动端卡片不下发坐标：就算实体里躺着 x/y（比如 Web 侧同 widget 曾存过），codec 也要把它丢掉。 */
-    @Test
-    void encode_widgetOmitsCoordinates() {
-        MobileDashboardLayoutEntity layout = new MobileDashboardLayoutEntity();
-        layout.spaceId = "s1";
-        layout.version = 0L;
-        layout.widgets = List.of(card("w1", "stat", "HALF", config("metric", "services.total"), 7, 4));
-
-        JsonObject json = MobileDashboardLayoutCodec.encode(layout);
-        JsonObject w = json.getJsonArray("widgets").getJsonObject(0);
-        assertEquals("w1", w.getString("id"));
-        assertEquals("stat", w.getString("type"));
-        assertEquals("HALF", w.getString("size"));
-        // config 内容非本类关注点（共享引擎的事）；这里只验外壳与坐标的有无
-        assertFalse(w.containsKey("x"), "mobile widget must not carry x");
-        assertFalse(w.containsKey("y"), "mobile widget must not carry y");
-    }
-
     @Test
     void encode_identityFieldsPresent() {
         MobileDashboardLayoutEntity layout = new MobileDashboardLayoutEntity();
         layout.spaceId = "s1";
         layout.version = 0L;
-        DashboardWidget w = card("w1", "service", "FULL", config("serviceId", "s1"), null, null);
+        MobileDashboardWidget w = card("w1", "service", "FULL", config("serviceId", "s1"));
         w.title = "我的服务";
         w.titleKey = "dashboard.service.title";
         layout.widgets = List.of(w);
@@ -101,15 +84,13 @@ class MobileDashboardLayoutCodecTest {
         assertFalse(json.containsKey("updater"));
     }
 
-    private static DashboardWidget card(String id, String type, String size,
-                                        Map<String, Object> config, Integer x, Integer y) {
-        DashboardWidget w = new DashboardWidget();
+    private static MobileDashboardWidget card(String id, String type, String size,
+                                              Map<String, Object> config) {
+        MobileDashboardWidget w = new MobileDashboardWidget();
         w.id = id;
         w.type = type;
         w.size = size;
         w.config = config;
-        w.x = x;
-        w.y = y;
         return w;
     }
 

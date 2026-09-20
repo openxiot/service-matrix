@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.mobile.layout;
 
 import cc.openxiot.common.person.codec.PersonCodec;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -14,7 +14,7 @@ import java.util.Map;
  * {@code MobileDashboardLayoutDto}，这一层只管把读出来的东西写出去。形状与
  * {@code WebDashboardLayoutCodec} 一致，唯一差别是<b>不编坐标</b> —— 移动端卡片没有
  * {@code x}/{@code y}（竖排堆叠，数组顺序即阅读顺序）。即使实体上意外带着坐标（共享
- * {@link DashboardWidget} 的字段还在），这里也一律不下发，免得移动端 app 以为能寻址。
+ * {@link MobileDashboardWidget} 的字段还在），这里也一律不下发，免得移动端 app 以为能寻址。
  *
  * <p><b>预置布局与已存布局走同一个方法</b>：预置布局是一个 {@code id == null} 的
  * {@link MobileDashboardLayoutEntity}（服务层在内存里造的），所以不需要第二套编码路径，
@@ -48,12 +48,12 @@ public final class MobileDashboardLayoutCodec {
         return o;
     }
 
-    public static JsonArray encodeWidgets(List<DashboardWidget> widgets) {
+    public static JsonArray encodeWidgets(List<MobileDashboardWidget> widgets) {
         JsonArray arr = new JsonArray();
         if (widgets == null) {
             return arr;
         }
-        for (DashboardWidget widget : widgets) {
+        for (MobileDashboardWidget widget : widgets) {
             arr.add(encodeWidget(widget));
         }
         return arr;
@@ -63,7 +63,7 @@ public final class MobileDashboardLayoutCodec {
      * 一张卡片。缺省项**不补空值**（{@code title} 没设就是不出现，前端据此走「用默认标题」），
      * 与 Web 同口径。**不出坐标**：移动端没有位置真值，就算实体里带 {@code x}/{@code y} 也不发。
      */
-    public static JsonObject encodeWidget(DashboardWidget widget) {
+    public static JsonObject encodeWidget(MobileDashboardWidget widget) {
         JsonObject o = new JsonObject();
         if (widget == null) {
             return o;

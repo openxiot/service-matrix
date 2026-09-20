@@ -29,7 +29,7 @@ import cc.openxiot.matrix.api.dashboard.web.widget.WebDashboardWidgetStructureVa
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
@@ -337,7 +337,7 @@ class WebDashboardResourceTest {
                 .body("success", equalTo(true))
                 .body("data.widgets[0].success", equalTo(true));
 
-        ArgumentCaptor<List<DashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<WebDashboardWidget>> widgets = ArgumentCaptor.forClass(List.class);
         verify(widgetDataService).render(any(), widgets.capture());
         assertEquals(8, widgets.getValue().size());
     }
@@ -390,14 +390,14 @@ class WebDashboardResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void render_draftTooManyWidgets_isRejected() {
         allowSpaceMember();
-        List<DashboardWidget> tooMany = new ArrayList<>();
+        List<WebDashboardWidget> tooMany = new ArrayList<>();
         for (int i = 0; i <= WebDashboardWidgetStructureValidator.MAX_WIDGETS; i++) {
-            DashboardWidget w = statWidget();
+            WebDashboardWidget w = statWidget();
             w.id = "w" + i;
             tooMany.add(w);
         }
 
-        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new DashboardWidget[0])))
+        given().contentType("application/json").body(saveBody(null, tooMany.toArray(new WebDashboardWidget[0])))
                 .when().post("/matrix/v1/dashboard/web/render/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false))
@@ -428,8 +428,8 @@ class WebDashboardResourceTest {
                 List.of(new DashboardWidgetDataService.Item("w1", true, new JsonObject().put("value", 10), null)));
     }
 
-    private static DashboardWidget statWidget() {
-        DashboardWidget w = new DashboardWidget();
+    private static WebDashboardWidget statWidget() {
+        WebDashboardWidget w = new WebDashboardWidget();
         w.id = "w1";
         w.type = "stat";
         w.size = "W6H200";
@@ -438,12 +438,12 @@ class WebDashboardResourceTest {
     }
 
     /** 保存请求体：{@code version} 可以为 null（那是「漏传」的情形，不在这里测）。 */
-    private static String saveBody(Long version, DashboardWidget... widgets) {
+    private static String saveBody(Long version, WebDashboardWidget... widgets) {
         JsonObject body = new JsonObject().put("widgets", new JsonArray());
         if (version != null) {
             body.put("version", version);
         }
-        for (DashboardWidget widget : widgets) {
+        for (WebDashboardWidget widget : widgets) {
             body.getJsonArray("widgets").add(WebDashboardLayoutCodec.encodeWidget(widget));
         }
         return body.encode();

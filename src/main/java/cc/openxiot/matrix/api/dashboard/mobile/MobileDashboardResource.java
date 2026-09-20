@@ -13,7 +13,7 @@ import cc.openxiot.matrix.api.dashboard.mobile.params.MobileDashboardRenderReque
 import cc.openxiot.matrix.api.dashboard.mobile.widget.MobileDashboardWidgetStructureValidator;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataCodec;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetDataService;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.RolesAllowed;
@@ -39,7 +39,7 @@ import java.util.List;
  *   <li><b>读写不对称，与 Web 逐字一致</b>：布局是**项目共享一份**，读是空间成员（只读看板人人可见），
  *       写是空间管理员。鉴权共用 {@link DashboardAccess}（同一个 helper，两种看板不可能分叉）。</li>
  *   <li><b>取数走同一个共享引擎</b> {@link DashboardWidgetDataService}：移动端卡片与 Web 卡片是同一种
- *       东西（同一 {@link DashboardWidget} 实体、同一 config 语义），取数结果也复用同一份
+ *       东西（同一 {@link MobileDashboardWidget} 实体、同一 config 语义），取数结果也复用同一份
  *       {@link DashboardWidgetDataCodec}。移动端布局只是另一种实体（竖排堆叠、{@code FULL/HALF} 档位、
  *       无坐标），喂给同一个引擎。</li>
  * </ul>
@@ -107,7 +107,7 @@ public class MobileDashboardResource extends AbstractResource {
     @Path("/render/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> render(@PathParam("spaceId") String spaceId, MobileDashboardRenderRequest body) {
-        List<DashboardWidget> draft = body == null ? null : body.widgets;
+        List<MobileDashboardWidget> draft = body == null ? null : body.widgets;
         return access.spaceMember(spaceId)
                 .chain(space -> draft == null
                         ? renderStored(space)

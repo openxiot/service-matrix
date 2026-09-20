@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.dashboard.web.layout;
 
 import cc.openxiot.common.person.codec.PersonCodec;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
-import cc.openxiot.matrix.db.dashboard.DashboardWidget;
+import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -53,12 +53,12 @@ public final class WebDashboardLayoutCodec {
         return o;
     }
 
-    public static JsonArray encodeWidgets(List<DashboardWidget> widgets) {
+    public static JsonArray encodeWidgets(List<WebDashboardWidget> widgets) {
         JsonArray arr = new JsonArray();
         if (widgets == null) {
             return arr;
         }
-        for (DashboardWidget widget : widgets) {
+        for (WebDashboardWidget widget : widgets) {
             arr.add(encodeWidget(widget));
         }
         return arr;
@@ -69,7 +69,7 @@ public final class WebDashboardLayoutCodec {
      * 与 {@code ModbusServiceFieldCodec} 对 {@code value-list} / {@code bit-list} 的处理同口径
      * —— 补成空串会让「没设」和「设成了空」再也分不开。
      */
-    public static JsonObject encodeWidget(DashboardWidget widget) {
+    public static JsonObject encodeWidget(WebDashboardWidget widget) {
         JsonObject o = new JsonObject();
         if (widget == null) {
             return o;
