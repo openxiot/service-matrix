@@ -25,8 +25,10 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -96,7 +98,7 @@ class ModbusServiceServiceTest {
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
-        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely();
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
 
         assertEquals(100, values.getInteger("进水温度"));
         verify(history).record(any(), any(), eq(values));
@@ -111,7 +113,7 @@ class ModbusServiceServiceTest {
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
 
-        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely();
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
 
         InOrder order = inOrder(history, alarms);
         order.verify(history).record(any(), any(), any());
@@ -129,7 +131,7 @@ class ModbusServiceServiceTest {
         when(alarms.evaluate(any(), any(), any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("alarm table is down")));
 
-        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely();
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
 
         assertEquals(100, values.getInteger("进水温度"));
         // 也不许把这次失败改写成一条故障记录：故障是「采到没采到」，告警是「值对不对」，两回事
@@ -144,7 +146,7 @@ class ModbusServiceServiceTest {
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely());
 
         // 定义不全：这是平台侧的问题，一个请求都不该发出去
         assertEquals(ModbusFailureType.CONFIG_ERROR, thrown.type());
@@ -161,7 +163,7 @@ class ModbusServiceServiceTest {
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely());
 
         assertEquals(ModbusFailureType.TRANSPORT_ERROR, thrown.type());
         assertEquals("connection refused", thrown.getMessage());   // 链路异常的原文照旧带下去
@@ -179,7 +181,7 @@ class ModbusServiceServiceTest {
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely());
 
         assertEquals(ModbusFailureType.DEVICE_ERROR, thrown.type());
         assertEquals(Status.TIMEOUT, thrown.remoteCode());
@@ -198,7 +200,7 @@ class ModbusServiceServiceTest {
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely());
 
         assertEquals(ModbusFailureType.NO_RESPONSE, thrown.type());
         assertEquals(ModbusFailureType.NO_RESPONSE, recordedFailure().type());
@@ -212,7 +214,7 @@ class ModbusServiceServiceTest {
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         assertEquals(ModbusFailureType.CRC_MISMATCH, assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely()).type());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely()).type());
         assertEquals(ModbusFailureType.CRC_MISMATCH, recordedFailure().type());
     }
 
@@ -225,7 +227,7 @@ class ModbusServiceServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("db down")));
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely());
 
         assertEquals("device timeout", thrown.getMessage());
         assertEquals(Status.TIMEOUT, thrown.remoteCode());
@@ -237,7 +239,7 @@ class ModbusServiceServiceTest {
         givenService(modbusService(), function());
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
-                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, 99).await().indefinitely());
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, 99, null).await().indefinitely());
 
         assertEquals("modbus service function not found: index=99", thrown.getMessage());
         verify(history, never()).recordFailure(any(), any(), any());
@@ -245,16 +247,76 @@ class ModbusServiceServiceTest {
     }
 
     @Test
-    void writeMethodReturnsEmptyAndRecordsNothing() {
-        // 写方法（response 为空）：应答是请求回显，没有读值 —— 返回空对象，不是失败
-        ModbusServiceFunction write = function();
-        write.response = null;
+    void writeMethodSendsTheWriteFrameAndReturnsEmpty() {
+        // 写方法（fc 06）：帧按字段 + invoke 给的值**现组**，应答是请求回显 —— 返回空对象。
+        // 回显写入值会被 ModbusHistoryService 当成一次采集样本灌进历史曲线（它的口径是
+        // 「values 非空即为一次采样」），所以这里必须是空的。
+        ModbusFunction write = writeFunction(null);
         givenService(modbusService(), write);
-        givenParentResult(parentResult(Status.COMPLETED, null, "010600010064D9E1"));
+        givenParentResult(parentResult(Status.COMPLETED, null, "0106000100C8D99C"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
-        assertEquals(0, service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX).await().indefinitely().size());
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("写入值", 200))
+                .await().indefinitely();
+
+        assertEquals(0, values.size());
+        assertEquals("0106000100C8D99C", sentFrame());   // values 顶掉了定义里的缺省值 100
         verify(history).record(any(), any(), any());
+        verify(history, never()).recordFailure(any(), any(), any());
+    }
+
+    @Test
+    void writeMethodFallsBackToTheDefaultValue() {
+        // 没给值的字段回落定义里的缺省值：那 138 条带死值的点表写命令才能开箱即用
+        ModbusFunction write = writeFunction(100);
+        givenService(modbusService(), write);
+        givenParentResult(parentResult(Status.COMPLETED, null, "010600010064D9E1"));
+        when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
+
+        service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
+
+        assertEquals("010600010064D9E1", sentFrame());
+    }
+
+    @Test
+    void missingValueIsNotAFailureRecord() {
+        // 漏传一个没有缺省值的字段：与「function not found」同类，是调用方请求写错了 ——
+        // 一个请求都不该发出去，也不该进 service-failures（那是设备故障记录）
+        givenService(modbusService(), writeFunction(null));
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of()).await().indefinitely());
+
+        assertEquals("values.写入值 is required (this field has no default)", thrown.getMessage());
+        verify(history, never()).recordFailure(any(), any(), any());
+        verifyNoInteractions(manipulation);
+    }
+
+    @Test
+    void unknownValueKeyIsNotAFailureRecord() {
+        // 给了未声明的字段名：静默忽略会让调用方以为生效了，报错才是对的 —— 同样不进故障记录
+        givenService(modbusService(), writeFunction(100));
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("运行模式", 1))
+                        .await().indefinitely());
+
+        assertEquals("invalid values.运行模式: not a field of this function", thrown.getMessage());
+        verify(history, never()).recordFailure(any(), any(), any());
+        verifyNoInteractions(manipulation);
+    }
+
+    @Test
+    void readMethodRejectsValues() {
+        givenService(modbusService(), function());
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("进水温度", 1))
+                        .await().indefinitely());
+
+        assertEquals("invalid values: a read function (fc 03) takes no values", thrown.getMessage());
+        verify(history, never()).recordFailure(any(), any(), any());
+        verifyNoInteractions(manipulation);
     }
 
     // ===== 轮询入口（内存基准，见 Modbus-Service-Poller.md 第四节） =====
@@ -337,7 +399,7 @@ class ModbusServiceServiceTest {
 
     // ===== 夹具 =====
 
-    private void givenService(ModbusService value, ModbusServiceFunction function) {
+    private void givenService(ModbusService value, ModbusFunction function) {
         value.functions = List.of(function);
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(value));
     }
@@ -384,20 +446,38 @@ class ModbusServiceServiceTest {
         return shadow;
     }
 
-    private static ModbusServiceFunction function() {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function() {
+        ModbusFunction function = new ModbusFunction();
         function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = "010300000001840A";
+        function.request = ModbusFunctionRequests.holding();
 
-        ModbusServiceField field = new ModbusServiceField();
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = List.of(field);
+        function.response = ModbusFunctionResponses.of(field);
         return function;
+    }
+
+    /** 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。 */
+    private static ModbusFunction writeFunction(Integer defaultValue) {
+        ModbusFunction write = function();
+        write.request = ModbusFunctionRequests.write("06", 1,
+                ModbusFunctionRequests.field(1, "写入值", "uint16", defaultValue));
+        write.response = null;
+        return write;
+    }
+
+    /** 从交给父设备的那份请求体里读回**现组**的帧（帧只在这里落地，别处看不到）。 */
+    private String sentFrame() {
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(manipulation).invokeActions(eq(ROOT_SPACE_ID), body.capture());
+        // 请求体就是 QUERY 编出来的那个数组，用同一套 codec 解回来（设备 argument 是 1）
+        ActionOperation action = ActionOperationCodec.QUERY.decode(new JsonArray(body.getValue())).getFirst();
+        return String.valueOf(action.in().get(1).values().get(0));
     }
 
     private ModbusInvokeException recordedFailure() {

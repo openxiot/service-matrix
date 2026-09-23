@@ -2,10 +2,10 @@ package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -38,7 +38,7 @@ import java.util.TreeSet;
  *
  * <h2>判据只有一条：新定义里还有没有「这条开行所依据的那条规则」</h2>
  *
- * <p>即：该出值（{@code response[].field}，或 {@code response[].bitList[].field} —— 位是独立的结果键）
+ * <p>即：该出值（{@code response.fields[].field}，或 {@code response.fields[].bitList[].field} —— 位是独立的结果键）
  * 上，还有没有一条**启用着的、{@code id} 等于这行 {@code ruleId}** 的规则。字段改名、方法序号变了、
  * 字段被删、那条规则被删、规则被停用 —— 都表现为「这条规则在新定义里找不到」，一视同仁。</p>
  *
@@ -83,25 +83,23 @@ public final class ModbusAlarmPlan {
         if (service == null || service.functions == null) {
             return byIndex;
         }
-        for (ModbusServiceFunction function : service.functions) {
+        for (ModbusFunction function : service.functions) {
             if (function == null || function.index == null) {
                 continue;
             }
             Map<String, Set<String>> keys = new HashMap<>();
-            if (function.response != null) {
-                for (ModbusServiceField field : function.response) {
-                    if (field == null) {
-                        continue;
-                    }
-                    // 位与字段进的是同一个结果对象，所以两种键平级收进来（与 parser 同口径）
-                    addRuleIds(keys, field.field, field.alarms);
-                    if (field.bitList == null) {
-                        continue;
-                    }
-                    for (ModbusServiceFieldBit bit : field.bitList) {
-                        if (bit != null) {
-                            addRuleIds(keys, bit.field, bit.alarms);
-                        }
+            for (ModbusFunctionResponseField field : ModbusFunction.responseFields(function)) {
+                if (field == null) {
+                    continue;
+                }
+                // 位与字段进的是同一个结果对象，所以两种键平级收进来（与 parser 同口径）
+                addRuleIds(keys, field.field, field.alarms);
+                if (field.bitList == null) {
+                    continue;
+                }
+                for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+                    if (bit != null) {
+                        addRuleIds(keys, bit.field, bit.alarms);
                     }
                 }
             }
@@ -112,11 +110,11 @@ public final class ModbusAlarmPlan {
 
     /** 把一个出值上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
     private static void addRuleIds(Map<String, Set<String>> keys, String field,
-                                   List<ModbusServiceFieldAlarm> alarms) {
+                                   List<ModbusFunctionResponseFieldAlarm> alarms) {
         if (field == null || alarms == null) {
             return;
         }
-        for (ModbusServiceFieldAlarm alarm : alarms) {
+        for (ModbusFunctionResponseFieldAlarm alarm : alarms) {
             if (ModbusAlarmPolicy.isEnabled(alarm) && alarm.id != null) {
                 keys.computeIfAbsent(field, ignored -> new HashSet<>()).add(alarm.id);
             }

@@ -29,10 +29,10 @@
 > 这一步的「一个出值一条规则」已被**第 4.5 步**改成「一个出值**一组**规则」；
 > 下面的记录保持当时的样子，现行口径看第 4.5 步与 `Modbus-Alarm.md`。
 
-- [x] `ModbusServiceFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
-- [x] 挂在**两处**：`ModbusServiceField.alarm` 与 `ModbusServiceFieldBit.alarm`
+- [x] `ModbusFunctionResponseFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
+- [x] 挂在**两处**：`ModbusFunctionResponseField.alarm` 与 `ModbusFunctionResponseFieldBit.alarm`
       —— 位是独立的结果键（parser 逐位 `values.put(bit.field, …)`），只挂字段够不着「位 = 1 告警」。
-- [x] `ModbusServiceFieldAlarmCodec` + 接进 `ModbusServiceFieldCodec` / `ModbusServiceFieldBitCodec`；
+- [x] `ModbusFunctionResponseFieldAlarmCodec` + 接进 `ModbusFunctionResponseFieldCodec` / `ModbusFunctionResponseFieldBitCodec`；
       守「null 不出键」，空对象读作「没配」。
 - [x] `ModbusAlarmPolicy`：`OPERATORS` / `LEVELS` 白名单（唯一一份）、`hasEnabledAlarm`（免费闸门）、
       `hit`（三态 `HIT`/`MISS`/`SKIP`）、`decide`（开 / 按值关 / 按定义关）。
@@ -154,7 +154,7 @@
 
 代码在 `webapp-matrix`，0.9.2 → 0.9.6（`7973e80` `5602cea` `813f65e` `66809e3` `6d7307f`）。
 
-- [x] 类型与编解码镜像：`ModbusServiceFieldAlarm` + 两处 `alarm?` + `ModbusServiceFieldAlarmCodec`；
+- [x] 类型与编解码镜像：`ModbusFunctionResponseFieldAlarm` + 两处 `alarm?` + `ModbusFunctionResponseFieldAlarmCodec`；
       `ModbusAlarm.ts`（含 `MODBUS_ALARM_LEVELS` / `MODBUS_ALARM_LEVEL_LABELS` /
       `MODBUS_ALARM_OPERATOR_LABELS` / `modbusAlarmCondition(alarm, translate)` /
       `modbusAlarmOperatorLabel` / `modbusAlarmLevelLabel`，**translate 由调用方传入**，
@@ -196,7 +196,7 @@
 集合一行没落过、也没有存量配置带过 `alarm` 键，所以这是零成本窗口期的最后一刻。
 完整口径见 `Modbus-Alarm.md` 第十三节第一条，这里只列交付物。
 
-- [x] `ModbusServiceFieldAlarm` 加 `id`（前端生成、后端校验：非空 / ≤64 / 同出值内唯一；
+- [x] `ModbusFunctionResponseFieldAlarm` 加 `id`（前端生成、后端校验：非空 / ≤64 / 同出值内唯一；
       **只在 `enabled == true` 时校验**，照抄「半配置合法」）。**条数上限 8 条/出值**。
 - [x] `alarm` → `alarms` 两处（字段与位），两个父 Codec 跟着改；空数组 / 「元素全是空对象」
       都读作**没配**，库里不留 `alarms: []` 也不留空壳规则。
@@ -216,8 +216,8 @@
 
 **前端**（`webapp-matrix`，0.9.7 → 0.9.8：`5331d5a` 代码、`f66e74a` 词典）：
 
-- [x] `ModbusServiceFieldAlarm` 加 `id`；两处 `alarm` → `alarms`；
-      `ModbusServiceFieldAlarmCodec` 的单对象 `decode`/`encode` 变成一组的
+- [x] `ModbusFunctionResponseFieldAlarm` 加 `id`；两处 `alarm` → `alarms`；
+      `ModbusFunctionResponseFieldAlarmCodec` 的单对象 `decode`/`encode` 变成一组的
       `decodeList`/`encodeList`（空数组与「元素全是空壳」都读作没配、`!= null` 判值 ——
       两条都与后端同口径，过一趟前端不会把服务定义改了形）。
 - [x] 编辑器展开区的**行单位从「出值」变成「出值 + 规则」**：组内一条规则一行，出值名与类型

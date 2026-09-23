@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -79,7 +79,7 @@ public class ModbusAlarmService {
      * @param values 本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）；写方法为空对象
      * @return 完成信号；**失败照常往上抛**，由调用方决定记日志还是咽下去
      */
-    public Uni<Void> evaluate(ModbusService service, ModbusServiceFunction function, JsonObject values) {
+    public Uni<Void> evaluate(ModbusService service, ModbusFunction function, JsonObject values) {
         // 第一层闸门：没配告警的服务（也就是绝大多数）在这里返回，**一次数据库操作都不做**
         if (service == null || service.id == null || function == null || function.index == null
                 || !ModbusAlarmPolicy.hasEnabledAlarm(function)) {
@@ -150,7 +150,7 @@ public class ModbusAlarmService {
      *
      * <p>其它动作之间确实互不依赖（开落在不同出值上，四类关闭按出值互斥），并发是对的。</p>
      */
-    private Uni<Void> apply(String serviceId, ModbusServiceFunction function, Map<String, Object> sample,
+    private Uni<Void> apply(String serviceId, ModbusFunction function, Map<String, Object> sample,
                             Map<String, OpenAlarmRule> open, Date now) {
         ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(function, sample, open);
         reportSkips(serviceId, function, decision.skips());
@@ -209,7 +209,7 @@ public class ModbusAlarmService {
      * <p>不静默的理由：判不了意味着**这条告警配置当前不工作** —— 而「配了却不工作、还没有任何声音」
      * 正是这个特性要消灭的失效模式。日志带上定义与当时的值，够定位是定义漂移还是设备应答不符。</p>
      */
-    private void reportSkips(String serviceId, ModbusServiceFunction function, List<ModbusAlarmPolicy.Skip> skips) {
+    private void reportSkips(String serviceId, ModbusFunction function, List<ModbusAlarmPolicy.Skip> skips) {
         for (ModbusAlarmPolicy.Skip skip : skips) {
             // 去重键细到**规则**：一个出值可以配一组规则，只报「这个出值判不了」的话，
             // 同一个出值里的第二条坏规则永远不会被报出来（字段改了名算新的，理由同前）

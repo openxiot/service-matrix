@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <h3>为什么要有这个接口（而不是让编辑器复用别的清单）</h3>
  * <p>编辑器的三级级联（服务 → 方法 → 字段）要的是**服务定义本身**
- * （{@code functions[].response[]} 里的 {@code format} / {@code unit} / {@code valueList} /
+ * （{@code functions[].response.fields[]} 里的 {@code format} / {@code unit} / {@code valueList} /
  * {@code bitList}），设备卡要的是设备型号。这些都在实体上，而前端拿不到实体 ——
  * 没有这个接口，编辑器只能让用户手抄 serviceId，或者把一个空的卡片存下去。</p>
  *

@@ -540,7 +540,7 @@ class WidgetStructureValidatorTest {
     }
 
     /**
-     * 位名也是合法的字段名：位是**独立的点**（有自己的轮询与历史，见 {@code ModbusServiceFieldBit}），
+     * 位名也是合法的字段名：位是**独立的点**（有自己的轮询与历史，见 {@code ModbusFunctionResponseFieldBit}），
      * 所以位区字段要连位一起展开之后填进来，不该被结构校验拦掉。
      */
     @Test

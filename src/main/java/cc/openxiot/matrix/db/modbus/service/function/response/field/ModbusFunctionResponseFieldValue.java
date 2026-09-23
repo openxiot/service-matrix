@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.service;
+package cc.openxiot.matrix.db.modbus.service.function.response.field;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -10,7 +10,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "取值表条目")
-public class ModbusServiceFieldValue {
+public class ModbusFunctionResponseFieldValue {
 
     @Schema(description = "原始值（按字段 format 解出的值，未应用 scale）", examples = {"0"}, required = true)
     public Long value;

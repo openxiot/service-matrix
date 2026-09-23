@@ -140,7 +140,7 @@ ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message /
   失败不动它：它和 `fields` 一起表示「最后已知值，以及它有多旧」。
 * `lastError` 为 null 表示最后一次调用成功；`errorAt` 是当前这条故障**首次**出现的时刻，
   同一故障持续期间不刷新 —— 它到下一行成功样本的间隔就是故障持续了多久。
-* 失败记录里的 `type` **存字符串、不存枚举值**（`SpaceEntity.type`、`ModbusServiceField.format` 同口径）：
+* 失败记录里的 `type` **存字符串、不存枚举值**（`SpaceEntity.type`、`ModbusFunctionResponseField.format` 同口径）：
   枚举增删时老文档还读得出来。`remoteCode` 只有 `SLAVE_EXCEPTION`（异常码）与
   `DEVICE_ERROR`（父设备状态码）有值，其余为 null —— 前端按 `type` 聚合后靠它下钻。
 
@@ -313,7 +313,7 @@ staging / prod 跑的是 **Azure DocumentDB**（原 Cosmos DB for MongoDB vCore�
 | `modbus.history.retention-days` | `90` | 明细保留天数；`> 0` 建 `at` 上的 TTL 索引，`<= 0` = 关（并删掉已有的索引）。**缺省即生效**，只作用于 `service-histories` |
 | `modbus.index.enabled` | `true` | 建索引开关，与点表/服务共用；关掉时保留策略也不建 |
 
-**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusServiceField` 上加字段，
+**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusFunctionResponseField` 上加字段，
 现阶段先用全局缺省。
 
 ## 九、变更记录

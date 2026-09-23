@@ -1,5 +1,6 @@
-package cc.openxiot.matrix.db.modbus.service;
+package cc.openxiot.matrix.db.modbus.service.function.response.field;
 
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -7,7 +8,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 /**
  * 一个出值的一条阈值告警规则：值越限时产生一条告警（规则见 Modbus-Alarm.md）。
  *
- * <p>挂在两个地方：{@link ModbusServiceField#alarms}（普通字段）与 {@link ModbusServiceFieldBit#alarms}
+ * <p>挂在两个地方：{@link ModbusFunctionResponseField#alarms}（普通字段）与 {@link ModbusFunctionResponseFieldBit#alarms}
  * （01/02 位区里具名位的那个 0/1 取值）。位必须能单独配 ——
  * {@code ModbusResponseParser} 把每个位按它自己的 {@code field} 单独放进结果对象，
  * 位的值不在父字段那份整段掩码上，只挂父字段的话「位 = 1 告警」根本够不着。</p>
@@ -20,12 +21,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * 「超过 / 达到 / 低于」那些<b>词</b>是页面自己的文案，由前端翻译；符号本身不翻译。</p>
  *
  * <p>{@link #enabled} 缺省 / false 都不产生告警，但配置原样留着 ——
- * 与 {@link ModbusServiceFunction#polling} 同一条规矩（关掉不等于丢掉配置，随时可再开）。</p>
+ * 与 {@link ModbusFunction#polling} 同一条规矩（关掉不等于丢掉配置，随时可再开）。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "出值的一条阈值告警规则")
-public class ModbusServiceFieldAlarm {
+public class ModbusFunctionResponseFieldAlarm {
 
     @Schema(description = "规则标识：**前端生成**（如 m3k9x2a1b），同一出值内唯一、长度 ≤ 64。"
             + "它是「这条开着的告警是哪条规则开的」的唯一依据，故**改阈值不动它** —— "

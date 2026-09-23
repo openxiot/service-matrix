@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.db.modbus.service.codec;
+package cc.openxiot.matrix.db.modbus.service.function.response.field.codec;
 
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldValue;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -8,14 +8,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@link ModbusServiceFieldValue}（应答字段的取值表条目）与 JSON 的互转。
+ * {@link ModbusFunctionResponseFieldValue}（应答字段的取值表条目）与 JSON 的互转。
  */
-public final class ModbusServiceFieldValueCodec {
+public final class ModbusFunctionResponseFieldValueCodec {
 
-    private ModbusServiceFieldValueCodec() {
+    private ModbusFunctionResponseFieldValueCodec() {
     }
 
-    public static JsonObject encode(ModbusServiceFieldValue entry) {
+    public static JsonObject encode(ModbusFunctionResponseFieldValue entry) {
         JsonObject o = new JsonObject();
         if (entry == null) {
             return o;
@@ -29,31 +29,31 @@ public final class ModbusServiceFieldValueCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusServiceFieldValue> entries) {
+    public static JsonArray encode(List<ModbusFunctionResponseFieldValue> entries) {
         JsonArray arr = new JsonArray();
         if (entries != null) {
-            for (ModbusServiceFieldValue entry : entries) {
+            for (ModbusFunctionResponseFieldValue entry : entries) {
                 arr.add(encode(entry));
             }
         }
         return arr;
     }
 
-    public static ModbusServiceFieldValue decode(JsonObject o) {
+    public static ModbusFunctionResponseFieldValue decode(JsonObject o) {
         if (o == null) {
             return null;
         }
-        ModbusServiceFieldValue entry = new ModbusServiceFieldValue();
+        ModbusFunctionResponseFieldValue entry = new ModbusFunctionResponseFieldValue();
         entry.value = o.getLong("value");
         entry.description = o.getString("description");
         return entry;
     }
 
-    public static List<ModbusServiceFieldValue> decode(JsonArray arr) {
+    public static List<ModbusFunctionResponseFieldValue> decode(JsonArray arr) {
         if (arr == null) {
             return null;
         }
-        List<ModbusServiceFieldValue> entries = new ArrayList<>(arr.size());
+        List<ModbusFunctionResponseFieldValue> entries = new ArrayList<>(arr.size());
         for (int i = 0; i < arr.size(); i++) {
             entries.add(decode(arr.getJsonObject(i)));
         }

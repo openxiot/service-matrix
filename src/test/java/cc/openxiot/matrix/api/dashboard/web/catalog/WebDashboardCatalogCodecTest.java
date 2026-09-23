@@ -9,9 +9,10 @@ import java.util.List;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -77,7 +78,7 @@ class DashboardCatalogCodecTest {
         assertEquals("1 号冷水机组", service.getString("name"));
 
         JsonObject field = service.getJsonArray("functions").getJsonObject(0)
-                .getJsonArray("response").getJsonObject(0);
+                .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         // 编辑器判「是不是数值」靠 format、「几位小数/单位」靠 unit，两者都必须在
         assertEquals("温度", field.getString("field"));
         assertEquals("int16", field.getString("format"));
@@ -99,21 +100,21 @@ class DashboardCatalogCodecTest {
     }
 
     private static ModbusService service() {
-        ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
+        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
 
-        ModbusServiceField field = new ModbusServiceField();
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.index = 1;
         field.field = "温度";
         field.format = "int16";
         field.unit = "℃";
         field.bitList = List.of(bit);
 
-        ModbusServiceFunction function = new ModbusServiceFunction();
+        ModbusFunction function = new ModbusFunction();
         function.index = 1;
         function.name = "读温度";
-        function.response = List.of(field);
+        function.response = ModbusFunctionResponses.of(field);
 
         ModbusService service = new ModbusService();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");

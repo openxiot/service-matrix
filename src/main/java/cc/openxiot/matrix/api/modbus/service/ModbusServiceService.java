@@ -14,10 +14,12 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
 import cn.geekcity.xiot.spec.operation.ArgumentOperation;
@@ -32,24 +34,22 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Modbus 服务的业务逻辑：定义维护（增删改查）+ 方法调用。
  *
- * <p>调用只读一次 {@link ModbusServiceRepository}：拿到的文档里已经有「父设备调用坐标 + 请求帧 +
- * 应答解析规则」，据此组装成父设备的 {@code ActionOperation} 交给 manipulation 服务执行
+ * <p>调用只读一次 {@link ModbusServiceRepository}：拿到的文档里已经有「父设备调用坐标 + 请求定义 +
+ * 应答解析规则」，据此**现组请求帧**、组装成父设备的 {@code ActionOperation} 交给 manipulation 服务执行
  * （DTU 的“发送”方法把帧透传到 RS485），再把回传的应答帧按 response 规则解成「字段 → 值」。</p>
  *
- * <p>调用只经 manipulation 服务、不读别的库：定义的「坐标 + 请求帧 + 应答规则」在创建时已展开落库，
+ * <p>调用只经 manipulation 服务、不读别的库：定义的「坐标 + 请求定义 + 应答规则」在创建时已展开落库，
  * 故调用不碰点表配置，也不需要产品实例定义。</p>
  *
  * <p>定义内容的校验不在这里，见 {@link ModbusServiceValidator}。</p>
  */
 @ApplicationScoped
 public class ModbusServiceService {
-
-    /** 定义格式版本号：当前只认 1（function 内部结构演进时递增）。 */
-    private static final int VERSION = 1;
 
     @Inject
     ModbusServiceRepository repo;
@@ -98,7 +98,7 @@ public class ModbusServiceService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         if (service.version == null) {
-            service.version = VERSION;
+            service.version = ModbusService.VERSION;
         }
         // id 不在此生成：主键由 Panache/Mongo 在落库时生成（见 ModbusService extends ReactivePanacheMongoEntity）
         return repo.insert(service)
@@ -257,16 +257,22 @@ public class ModbusServiceService {
     /**
      * 调用一个方法：读一次服务定义 → 组装父设备调用 → 按 response 规则解应答。
      *
-     * <p>返回「字段 → 值」；写方法（response 为空）应答是请求回显、没有读值，返回空对象。
-     * 父设备报错、帧非法、CRC 不符、异常码等一律以 {@link IllegalArgumentException} 抛出，
+     * <p>返回「字段 → 值」；写方法（response 为空）应答是请求回显、没有读值，返回空对象
+     * —— 回显的写入值**不能**当读值返回：{@link ModbusHistoryService#record} 把非空的 values
+     * 当采集样本落库，回显会把写回声灌进采集历史曲线。调用方知道自己发了什么，成功即 200。</p>
+     *
+     * <p>父设备报错、帧非法、CRC 不符、异常码等一律以 {@link IllegalArgumentException} 抛出，
      * 由 Resource 转成失败响应 —— **记录失败不改变这个响应**，见 {@link #recordFailure}。</p>
      *
      * <p>{@code ownerId} 只往下传给 manipulation（设备归属，是**设备所在根空间 id**，见
      * {@link cc.openxiot.matrix.api.device.manipulation.ManipulationService}），取服务本身不按 org 约束：
      * 鉴权（该空间的成员）已在资源层判过。</p>
+     *
+     * @param values 写方法的写入值（字段名 → 原始值），可为 null；读方法必须为 null
      */
-    public Uni<JsonObject> invoke(String ownerId, String serviceId, Integer functionIndex) {
-        return invoke(ownerId, serviceId, functionIndex, null);
+    public Uni<JsonObject> invoke(String ownerId, String serviceId, Integer functionIndex,
+                                  Map<String, Object> values) {
+        return invoke(ownerId, serviceId, functionIndex, values, null);
     }
 
     /**
@@ -276,14 +282,17 @@ public class ModbusServiceService {
      *
      * <p>写成一个可空参数而不是另起一条路径：两种调用的差别**只有这一处**，
      * 分成两套反而会让「轮询采到的值」和「手动点一下采到的值」落库口径慢慢分叉。</p>
+     *
+     * <p>没有 {@code values}：轮询只有读方法（写方法一律不许开轮询，见
+     * {@link ModbusServiceValidator}），写请求没有可轮询的东西。</p>
      */
     public Uni<JsonObject> invokePolled(String ownerId, String serviceId, Integer functionIndex,
                                         ModbusPollBaselines baselines) {
-        return invoke(ownerId, serviceId, functionIndex, baselines);
+        return invoke(ownerId, serviceId, functionIndex, null, baselines);
     }
 
     private Uni<JsonObject> invoke(String ownerId, String serviceId, Integer functionIndex,
-                                   ModbusPollBaselines baselines) {
+                                   Map<String, Object> values, ModbusPollBaselines baselines) {
         String err = checkId(serviceId);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -295,18 +304,25 @@ public class ModbusServiceService {
         return repo.findById(serviceId).onItem()
                 .transformToUni(service -> service == null
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + serviceId))
-                        : invokeFunction(ownerId, service, functionIndex, baselines));
+                        : invokeFunction(ownerId, service, functionIndex, values, baselines));
     }
 
     private Uni<JsonObject> invokeFunction(String ownerId, ModbusService service, int functionIndex,
-                                           ModbusPollBaselines baselines) {
-        ModbusServiceFunction function = findFunction(service, functionIndex);
+                                           Map<String, Object> values, ModbusPollBaselines baselines) {
+        ModbusFunction function = findFunction(service, functionIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
             return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + functionIndex));
         }
 
-        return execute(ownerId, service, function, baselines)
+        // 入参对账同样在这里做（execute 之前）：缺值 / 未知字段名 / 给读方法传值都是**调用方的请求错误**，
+        // 与「function not found」同类 —— 归一进 service-failures 会把「请求写错了」记成设备故障
+        String valuesErr = ModbusServiceValidator.validateInvoke(function, values);
+        if (valuesErr != null) {
+            return Uni.createFrom().failure(new IllegalArgumentException(valuesErr));
+        }
+
+        return execute(ownerId, service, function, values, baselines)
                 .onFailure().call(error -> recordFailure(service, function, error, baselines));
     }
 
@@ -320,15 +336,16 @@ public class ModbusServiceService {
      * <p>每个失败点都抛带分类的 {@link ModbusInvokeException}：分类只有在这里定得准
      * （是链路失败、父设备报错还是无应答，各自的排查方向完全不同），见 {@link ModbusFailureType}。</p>
      */
-    private Uni<JsonObject> execute(String ownerId, ModbusService service, ModbusServiceFunction function,
-                                    ModbusPollBaselines baselines) {
+    private Uni<JsonObject> execute(String ownerId, ModbusService service, ModbusFunction function,
+                                    Map<String, Object> values, ModbusPollBaselines baselines) {
         String coordinateErr = ModbusServiceValidator.checkDevice(service.device);
         if (coordinateErr != null) {
             return Uni.createFrom().failure(
                     ModbusInvokeException.of(ModbusFailureType.CONFIG_ERROR, coordinateErr));
         }
 
-        return Uni.createFrom().item(() -> requestFrame(service, function))
+        return Uni.createFrom().item(() -> requestFrame(service, function, values))
+                .onFailure(IllegalArgumentException.class).transform(ModbusServiceService::frameFailure)
                 .chain(body -> manipulationService.invokeActions(ownerId, body)
                         .onFailure().transform(ModbusServiceService::transportFailure))
                 .map(ActionOperationCodec.RESULT::decode)
@@ -336,9 +353,9 @@ public class ModbusServiceService {
                 .map(result -> decodeFields(function, result))
                 // 两件并列的副作用：先记历史、再评告警。串起来只是为了让顺序确定（历史是「采到什么」，
                 // 告警是「值对不对」，出问题时先看前者），两者互不依赖、也各有各的失败重试
-                .chain(values -> recordHistory(service, function, values, baselines)
-                        .chain(ignored -> evaluateAlarms(service, function, values))
-                        .replaceWith(values));
+                .chain(read -> recordHistory(service, function, read, baselines)
+                        .chain(ignored -> evaluateAlarms(service, function, read))
+                        .replaceWith(read));
     }
 
     /**
@@ -358,12 +375,32 @@ public class ModbusServiceService {
                 cause);
     }
 
-    /** 一次调用一帧：依赖设备的动作只有一个入参，请求帧原样填进去。 */
-    private static String requestFrame(ModbusService service, ModbusServiceFunction function) {
+    /**
+     * 一次调用一帧：依赖设备的动作只有一个入参，请求帧填进去。
+     *
+     * <p>帧在这里现组（含 CRC16）—— 读方法按 {@code start/quantity}，写方法按字段与
+     * {@code values}（缺省回落字段的缺省值）。读写两条路走同一个
+     * {@link ModbusFrameCodec#encodeRequest(ModbusFunctionRequest, Map)}，不再需要前端算好一整串帧。</p>
+     */
+    private static String requestFrame(ModbusService service, ModbusFunction function,
+                                       Map<String, Object> values) {
         DeviceOn device = service.device;
         ActionOperation action = new ActionOperation(new ActionID(device.did, device.siid, device.aiid));
-        action.in().put(device.argument, new ArgumentOperation(device.argument, function.request));
+        String frame = ModbusFrameCodec.encodeRequest(function.request, values);
+        action.in().put(device.argument, new ArgumentOperation(device.argument, frame));
         return ActionOperationCodec.QUERY.encode(List.of(action)).toString();
+    }
+
+    /**
+     * 组帧失败：定义期已经校验过一轮，走到这里说明定义与实际取值之间还有一处对不上
+     * （字段缺值、类型不符、格式不认识）—— 归 {@code CONFIG_ERROR}（查定义），
+     * 不能让它以无分类的 {@link IllegalArgumentException} 冒出去，否则这次失败不进故障记录。
+     */
+    private static ModbusInvokeException frameFailure(Throwable cause) {
+        return cause instanceof ModbusInvokeException e
+                ? e
+                : ModbusInvokeException.of(ModbusFailureType.CONFIG_ERROR,
+                        "cannot build modbus request frame: " + cause.getMessage(), cause);
     }
 
     /**
@@ -380,7 +417,7 @@ public class ModbusServiceService {
      * <p>单副本前提下才这么省：api 副本（N 个）上这个缓存永远是空的，所以手动 invoke 自然就是每次读库，
      * 不需要额外判断「我在哪个副本上」。</p>
      */
-    private Uni<Void> recordHistory(ModbusService service, ModbusServiceFunction function, JsonObject values,
+    private Uni<Void> recordHistory(ModbusService service, ModbusFunction function, JsonObject values,
                                     ModbusPollBaselines baselines) {
         ModbusPollKey key = baselines == null
                 ? null
@@ -414,7 +451,7 @@ public class ModbusServiceService {
      * <p>没有内存基准、也不扩影子：判定需要的「哪些出值开着」只能从告警表读，
      * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
      */
-    private Uni<Void> evaluateAlarms(ModbusService service, ModbusServiceFunction function, JsonObject values) {
+    private Uni<Void> evaluateAlarms(ModbusService service, ModbusFunction function, JsonObject values) {
         return alarmService.evaluate(service, function, values)
                 .onFailure().invoke(e -> logger.warnv(
                         "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
@@ -432,7 +469,7 @@ public class ModbusServiceService {
      * 缓存的 {@code lastError} 可能已经被 api 副本上的手动调用清掉了，拿它当基准会把一次新的同类故障
      * 并进上一次的账上（见 {@code ModbusPollBaselines.usable}）。</p>
      */
-    private Uni<Void> recordFailure(ModbusService service, ModbusServiceFunction function, Throwable error,
+    private Uni<Void> recordFailure(ModbusService service, ModbusFunction function, Throwable error,
                                     ModbusPollBaselines baselines) {
         ModbusPollKey key = baselines == null
                 ? null
@@ -487,7 +524,7 @@ public class ModbusServiceService {
     }
 
     /** 父设备应答 → 方法返回值。 */
-    private static JsonObject decodeFields(ModbusServiceFunction function, ActionOperation result) {
+    private static JsonObject decodeFields(ModbusFunction function, ActionOperation result) {
         if (result == null) {
             throw ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "no response from parent device");
         }
@@ -499,8 +536,8 @@ public class ModbusServiceService {
                             : result.description());
         }
 
-        List<ModbusServiceField> fields = function.response;
-        if (fields == null || fields.isEmpty()) {
+        List<ModbusFunctionResponseField> fields = ModbusFunction.responseFields(function);
+        if (fields.isEmpty()) {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();
         }
@@ -520,7 +557,7 @@ public class ModbusServiceService {
                 "no frame in parent device response, status=" + result.status());
     }
 
-    private static ModbusServiceFunction findFunction(ModbusService service, int index) {
+    private static ModbusFunction findFunction(ModbusService service, int index) {
         if (service.functions == null) {
             return null;
         }

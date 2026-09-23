@@ -3,9 +3,10 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
@@ -276,29 +277,29 @@ class ModbusAlarmReconcilerTest {
         return service;
     }
 
-    private static ModbusService service(String serviceId, ModbusServiceFunction... functions) {
+    private static ModbusService service(String serviceId, ModbusFunction... functions) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(serviceId);
         service.functions = List.of(functions);
         return service;
     }
 
-    private static ModbusServiceFunction function(ModbusServiceField... fields) {
+    private static ModbusFunction function(ModbusFunctionResponseField... fields) {
         return function(1, fields);
     }
 
-    private static ModbusServiceFunction function(int index, ModbusServiceField... fields) {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function(int index, ModbusFunctionResponseField... fields) {
+        ModbusFunction function = new ModbusFunction();
         function.index = index;
-        function.response = List.of(fields);
+        function.response = ModbusFunctionResponses.of(fields);
         return function;
     }
 
-    private static ModbusServiceField field(String name, boolean alarmEnabled) {
-        ModbusServiceField field = new ModbusServiceField();
+    private static ModbusFunctionResponseField field(String name, boolean alarmEnabled) {
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.field = name;
         if (alarmEnabled) {
-            ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+            ModbusFunctionResponseFieldAlarm alarm = new ModbusFunctionResponseFieldAlarm();
             alarm.id = RULE_ID;
             alarm.enabled = true;
             alarm.compare = ">";

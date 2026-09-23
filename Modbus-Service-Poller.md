@@ -60,7 +60,7 @@ service-matrix 管的 `modbus.services` 里。独立服务要么直接读同一�
 
 **不合并帧，且写死**：把同一设备的多个方法合并成一帧 fc 03 在**当前数据模型下做不到** ——
 `request` 是前端编好的整帧，而后端手里只有「怎么切分应答」的信息
-（`ModbusServiceField` 里的 `bytes` / `format` / `scale` / `value-list` / `bit-list`），
+（`ModbusFunctionResponseField` 里的 `bytes` / `format` / `scale` / `value-list` / `bit-list`），
 **没有寄存器地址与数量**。要合并只能把点表信息也存进服务，那是另一个量级的改动。
 写在这里是为了省得以后有人往上撞。
 

@@ -21,7 +21,7 @@ import java.util.List;
  * 也是回退链的第三级）。前端拿 {@code DeviceDisplayService} 补名字，与设备列表页同一个口径。</p>
  *
  * <h3>服务为什么整份下发</h3>
- * <p>编辑器要的就是 {@code functions[].response[]} 里的 {@code format}（判是不是数值）、
+ * <p>编辑器要的就是 {@code functions[].response.fields[]} 里的 {@code format}（判是不是数值）、
  * {@code unit}、{@code valueList}（枚举）、{@code bitList}（位），以及 {@code function.name}。
  * 做投影裁剪能省些体积，但换来的是「卡片侧将来要别的字段又得改接口」——
  * 这是**编辑时的一次性取数**（进编辑态取一次），不是每次刷新都拉的，不值得为此收窄契约。

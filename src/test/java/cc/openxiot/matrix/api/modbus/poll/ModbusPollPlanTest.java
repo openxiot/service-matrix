@@ -2,7 +2,9 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -27,74 +29,71 @@ class ModbusPollPlanTest {
     private static final long NOW = 1_700_000_000_000L;
 
     /** 读保持寄存器（fc 03）。 */
-    private static final String READ_FRAME = "010300000001840A";
+    private static final ModbusFunctionRequest READ_REQUEST = ModbusFunctionRequests.holding();
 
     /** 写单寄存器（fc 06）。 */
-    private static final String WRITE_FRAME = "0106000100C864";
+    private static final ModbusFunctionRequest WRITE_REQUEST = ModbusFunctionRequests.write("06", 1);
 
     @Test
     void pollingTrueWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_FRAME, 10, Boolean.TRUE)));
+        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, Boolean.TRUE)));
     }
 
     /** 三态里的 null：配了周期就是要跑，不必再显式写一个 true。 */
     @Test
     void defaultPollingWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_FRAME, 10, null)));
+        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, null)));
     }
 
     /** 留着周期先不跑：定义不动，只把开关关掉。 */
     @Test
     void pollingFalseIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_FRAME, 10, Boolean.FALSE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, Boolean.FALSE)));
     }
 
     @Test
     void withoutIntervalIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_FRAME, null, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_FRAME, 0, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, null, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 0, Boolean.TRUE)));
     }
 
     /** 写方法即便被人手工塞了 interval 也不入表（fc 05 / 06 / 0F / 10 逐个过一遍）。 */
     @Test
     void writeFunctionsAreNotPolledEvenWithAnInterval() {
-        String[] writeFrames = {
-                "01050001FF00",   // fc 05
-                WRITE_FRAME,      // fc 06
-                "010F0001000801",   // fc 0F
-                "01100001000102",   // fc 10
-        };
-        for (String frame : writeFrames) {
-            assertTrue(!ModbusPollPlan.shouldPoll(function(1, frame, 10, Boolean.TRUE)),
-                    "write frame must not be polled: " + frame);
+        for (String fc : List.of("05", "06", "0F", "10")) {
+            ModbusFunctionRequest request = ModbusFunctionRequests.write(fc, 1);
+            assertTrue(!ModbusPollPlan.shouldPoll(function(1, request, 10, Boolean.TRUE)),
+                    "write function must not be polled: fc " + fc);
         }
     }
 
-    /** 运行期数据不能假定已过校验：解析不出来的帧一律不入表，而不是把对账带崩。 */
+    /**
+     * 运行期数据不能假定已过校验：{@code request} 缺失（老数据）、或 {@code fc} 缺失（手工改库），
+     * 一律不入表，而不是把对账带崩。
+     */
     @Test
-    void unparsableRequestsAreNotPolled() {
+    void requestsWithoutFunctionCodeAreNotPolled() {
         assertNull(ModbusPollPlan.functionFc(null));
-        assertNull(ModbusPollPlan.functionFc(""));
-        assertNull(ModbusPollPlan.functionFc("01"));        // 只有一个字节
-        assertNull(ModbusPollPlan.functionFc("ZZZZ"));      // 不是 16 进制
-        assertNull(ModbusPollPlan.functionFc("010"));       // 奇数长度
+        assertNull(ModbusPollPlan.functionFc(new ModbusFunctionRequest()));
         assertTrue(!ModbusPollPlan.shouldPoll(function(1, null, 10, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, "01", 10, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, "ZZZZ", 10, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(function(1, new ModbusFunctionRequest(), 10, Boolean.TRUE)));
     }
 
     @Test
-    void functionFcReadsTheSecondByte() {
-        assertEquals("03", ModbusPollPlan.functionFc(READ_FRAME));
-        assertEquals("06", ModbusPollPlan.functionFc(WRITE_FRAME));
-        assertEquals("03", ModbusPollPlan.functionFc("01 03 00 00"));   // 空白不影响
-        assertEquals("03", ModbusPollPlan.functionFc("0103"));          // 短帧也认
+    void functionFcReadsTheRequestFunctionCode() {
+        // functionFc 原样返回（大小写不在这里归一，判定读写的 isRead 自己归一）
+        assertEquals("03", ModbusPollPlan.functionFc(READ_REQUEST));
+        assertEquals("06", ModbusPollPlan.functionFc(WRITE_REQUEST));
+        assertEquals("0f", ModbusPollPlan.functionFc(ModbusFunctionRequests.write("0f", 0)));
+        // 小写 fc 照样算写方法
+        assertTrue(!ModbusPollPlan.shouldPoll(
+                function(1, ModbusFunctionRequests.write("0f", 1), 10, Boolean.TRUE)));
     }
 
     /** 缺 index 的方法没有键，进不了表。 */
     @Test
     void withoutIndexIsNotPolled() {
-        ModbusServiceFunction function = function(null, READ_FRAME, 10, Boolean.TRUE);
+        ModbusFunction function = function(null, READ_REQUEST, 10, Boolean.TRUE);
         assertTrue(!ModbusPollPlan.shouldPoll(function));
         assertTrue(!ModbusPollPlan.shouldPoll(null));
     }
@@ -169,8 +168,9 @@ class ModbusPollPlanTest {
 
     // -- helpers --
 
-    private static ModbusServiceFunction function(Integer index, String request, Integer interval, Boolean polling) {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function(Integer index, ModbusFunctionRequest request, Integer interval,
+                                                   Boolean polling) {
+        ModbusFunction function = new ModbusFunction();
         function.index = index;
         function.request = request;
         function.interval = interval;
@@ -185,7 +185,7 @@ class ModbusPollPlanTest {
         service.name = "svc";
         service.functions = new ArrayList<>();
         for (int index : indexes) {
-            service.functions.add(function(index, READ_FRAME, null, null));
+            service.functions.add(function(index, READ_REQUEST, null, null));
         }
         return service;
     }

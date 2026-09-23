@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.service;
+package cc.openxiot.matrix.db.modbus.service.function.response.field;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -20,7 +20,7 @@ import java.util.List;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "应答字段解析规则")
-public class ModbusServiceField {
+public class ModbusFunctionResponseField {
 
     @Schema(description = "字段序号（1 起自然数，同一应答内唯一）：决定该字段在数据区里的先后位置",
             examples = {"1"}, required = true)
@@ -49,15 +49,15 @@ public class ModbusServiceField {
     @Schema(description = "取值表：原始值命中 value 时，直接以对应 description 作为字段值（不再应用 scale）")
     @BsonProperty("value-list")
     @JsonProperty("value-list")
-    public List<ModbusServiceFieldValue> valueList;
+    public List<ModbusFunctionResponseFieldValue> valueList;
 
     @Schema(description = "位清单（01/02 位区）：把本字段覆盖的位区里的若干位各自作为一个 0/1 取值输出，"
             + "取值的 key 即各位的 field；本字段自身的值仍是整段位掩码")
     @BsonProperty("bit-list")
     @JsonProperty("bit-list")
-    public List<ModbusServiceFieldBit> bitList;
+    public List<ModbusFunctionResponseFieldBit> bitList;
 
     @Schema(description = "本字段的一组阈值告警规则：值越限时产生一条告警，一次采样只留最严重的那条。"
             + "只对读方法（fc 01/02/03/04）有效；位区的各个位另有自己的一组（见 bit-list）")
-    public List<ModbusServiceFieldAlarm> alarms;
+    public List<ModbusFunctionResponseFieldAlarm> alarms;
 }

@@ -18,9 +18,10 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -192,13 +193,13 @@ class WidgetOwnershipValidatorTest {
                 errors(serviceWithField("w1", SERVICE_ID, 1, "湿度")).get("w1"));
     }
 
-    /** 位是独立点位：名字写在 {@code response[].bitList[].field} 上，也得认。 */
+    /** 位是独立点位：名字写在 {@code response.fields[].bitList[].field} 上，也得认。 */
     @Test
     void service_bitField_belongs() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀", "出水阀"))));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "进水阀")).isEmpty(),
-                "位名应当被认作合法字段（见 ModbusServiceFieldBit）");
+                "位名应当被认作合法字段（见 ModbusFunctionResponseFieldBit）");
     }
 
     // ===== 编排：什么时候查库、错误之间互不牵连 =====
@@ -275,7 +276,7 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    private static ModbusService service(String id, String spaceId, ModbusServiceFunction... functions) {
+    private static ModbusService service(String id, String spaceId, ModbusFunction... functions) {
         ModbusService s = new ModbusService();
         s.id = new ObjectId(id);
         s.name = "1 号冷水机组";
@@ -285,25 +286,25 @@ class WidgetOwnershipValidatorTest {
         return s;
     }
 
-    private static ModbusServiceFunction function(int index, String field, List<String> bits) {
-        ModbusServiceField f = new ModbusServiceField();
+    private static ModbusFunction function(int index, String field, List<String> bits) {
+        ModbusFunctionResponseField f = new ModbusFunctionResponseField();
         f.field = field;
         f.unit = "℃";
         if (bits != null) {
-            List<ModbusServiceFieldBit> bitList = new ArrayList<>();
+            List<ModbusFunctionResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusServiceFieldBit b = new ModbusServiceFieldBit();
+                ModbusFunctionResponseFieldBit b = new ModbusFunctionResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);
             }
             f.bitList = bitList;
         }
-        ModbusServiceFunction fn = new ModbusServiceFunction();
+        ModbusFunction fn = new ModbusFunction();
         fn.index = index;
         fn.name = field;
-        fn.response = List.of(f);
+        fn.response = ModbusFunctionResponses.of(f);
         return fn;
     }
 

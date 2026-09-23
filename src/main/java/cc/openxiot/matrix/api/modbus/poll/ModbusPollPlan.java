@@ -3,7 +3,8 @@ package cc.openxiot.matrix.api.modbus.poll;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -27,7 +28,9 @@ import java.util.random.RandomGenerator;
  * 都能让一份写方法带着 {@code interval} 出现在库里 —— 而让服务端定时往寄存器里写值是危险动作，
  * 判定的最后一道闸必须在执行侧，不能只在写入侧。</p>
  *
- * <p>所以这里对 {@code request} 一律走 try/catch：运行期数据不能假定已经过校验。</p>
+ * <p>所以这里对 {@code request} 一律空值安全：运行期数据不能假定已经过校验
+ * （以前要 {@code parseHex} 取帧的第二字节、还得包一层 try/catch，结构化之后只是读一个字段，
+ * 但「可能为 null」这条仍然成立 —— 直属改库、旧口径的文档都可能留在这里）。</p>
  */
 public final class ModbusPollPlan {
 
@@ -35,7 +38,7 @@ public final class ModbusPollPlan {
     }
 
     /** 该不该入表：三条口径见类注释。 */
-    public static boolean shouldPoll(ModbusServiceFunction function) {
+    public static boolean shouldPoll(ModbusFunction function) {
         if (function == null || function.index == null) {
             return false;
         }
@@ -45,26 +48,12 @@ public final class ModbusPollPlan {
         if (Boolean.FALSE.equals(function.polling)) {
             return false;
         }
-        String fc = functionFc(function.request);
-        return fc != null && ModbusFrameCodec.isRead(fc);
+        return ModbusFrameCodec.isRead(functionFc(function.request));
     }
 
-    /**
-     * 请求帧的功能码（大写 16 进制两位）；解析不出来返回 {@code null}。
-     *
-     * <p>{@code request} 是库里的运行期数据，可能为空、非法、甚至只有一个字节 ——
-     * 直接取第二个字节会抛数组越界，那会让整个对账（连同调度循环）停摆。</p>
-     */
-    public static String functionFc(String request) {
-        try {
-            byte[] frame = ModbusFrameCodec.parseHex(request);
-            if (frame.length < 2) {
-                return null;
-            }
-            return ModbusFrameCodec.toHex(new byte[]{frame[1]});
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+    /** 请求定义的功能码（{@code request} 缺失时返回 {@code null}，{@code isRead} 认它作非读）。 */
+    public static String functionFc(ModbusFunctionRequest request) {
+        return request == null ? null : request.fc;
     }
 
     /**
@@ -89,7 +78,7 @@ public final class ModbusPollPlan {
             return tasks;
         }
         String serviceId = service.id.toHexString();
-        for (ModbusServiceFunction function : service.functions) {
+        for (ModbusFunction function : service.functions) {
             if (!shouldPoll(function)) {
                 continue;
             }

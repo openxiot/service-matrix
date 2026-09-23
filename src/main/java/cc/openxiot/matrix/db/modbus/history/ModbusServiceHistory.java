@@ -26,7 +26,7 @@ public class ModbusServiceHistory extends ReactivePanacheMongoEntity {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusServiceFunction.index）", examples = {"1"}, required = true)
+    @Schema(description = "方法序号（ModbusFunction.index）", examples = {"1"}, required = true)
     public Integer functionIndex;
 
     @Schema(description = "字段名：response 里解析出来的出值名（含 bit-list 展开的位名）", required = true)

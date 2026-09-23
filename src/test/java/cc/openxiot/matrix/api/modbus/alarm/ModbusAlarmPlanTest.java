@@ -3,10 +3,12 @@ package cc.openxiot.matrix.api.modbus.alarm;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPlan.Close;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -46,11 +48,11 @@ class ModbusAlarmPlanTest {
     @Test
     void bitKeysAreJudgedOnTheBit() {
         // 位是独立的结果键：配在位上，就按位判。父字段有没有告警与它无关
-        ModbusServiceField bits = bits("进水阀位", "进水阀", alarm(true));
+        ModbusFunctionResponseField bits = bits("进水阀位", "进水阀", alarm(true));
         assertTrue(plan(service(function(bits)), open(1, "进水阀")).isEmpty());
 
         // 反过来：位上的告警被关掉 ⇒ 位那个键不再被覆盖（哪怕父字段还配着）
-        ModbusServiceField off = bits("进水阀位", "进水阀", alarm(false));
+        ModbusFunctionResponseField off = bits("进水阀位", "进水阀", alarm(false));
         assertEquals(List.of("进水阀"), fields(plan(service(function(off)), open(1, "进水阀"))));
     }
 
@@ -74,7 +76,7 @@ class ModbusAlarmPlanTest {
         // 同一出值上**还有别的启用规则**，但这条开行不是它们开的（ruleId 对不上）：
         // 新定义里已经没有能判定它的规则了，关掉。判据停在出值级就会漏掉这一条 ——
         // 而那条行会一直挂着，因为没有任何规则能再改变它的状态
-        ModbusServiceField field = field("进水温度", alarm("r2", true));
+        ModbusFunctionResponseField field = field("进水温度", alarm("r2", true));
         assertEquals(List.of("进水温度"), fields(plan(service(function(field)), open(1, "进水温度"))));
     }
 
@@ -111,9 +113,9 @@ class ModbusAlarmPlanTest {
     @Test
     void writeMethodClosesEverything() {
         // 写方法的应答是请求回显、没有读值，告警只许配在读方法上 —— 它上面任何开行都是残留
-        ModbusServiceFunction write = new ModbusServiceFunction();
+        ModbusFunction write = new ModbusFunction();
         write.index = 1;
-        write.request = "010600000001";
+        write.request = ModbusFunctionRequests.write("06", 0, ModbusFunctionRequests.field(1, "写入值", "uint16", 1));
         assertEquals(List.of("进水温度"), fields(plan(service(write), open(1, "进水温度"))));
     }
 
@@ -224,55 +226,55 @@ class ModbusAlarmPlanTest {
         return row;
     }
 
-    private static ModbusService service(ModbusServiceFunction... functions) {
+    private static ModbusService service(ModbusFunction... functions) {
         return service(SID, functions);
     }
 
-    private static ModbusService service(String serviceId, ModbusServiceFunction... functions) {
+    private static ModbusService service(String serviceId, ModbusFunction... functions) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(serviceId);
         service.functions = new ArrayList<>(List.of(functions));
         return service;
     }
 
-    private static ModbusServiceFunction function(ModbusServiceField... fields) {
+    private static ModbusFunction function(ModbusFunctionResponseField... fields) {
         return function(1, fields);
     }
 
-    private static ModbusServiceFunction function(int index, ModbusServiceField... fields) {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function(int index, ModbusFunctionResponseField... fields) {
+        ModbusFunction function = new ModbusFunction();
         function.index = index;
-        function.request = "010300000001840A";
-        function.response = new ArrayList<>(List.of(fields));
+        function.request = ModbusFunctionRequests.holding();
+        function.response = ModbusFunctionResponses.of(fields);
         return function;
     }
 
-    private static ModbusServiceField field(String name, ModbusServiceFieldAlarm... alarms) {
-        ModbusServiceField field = new ModbusServiceField();
+    private static ModbusFunctionResponseField field(String name, ModbusFunctionResponseFieldAlarm... alarms) {
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.field = name;
         field.alarms = new ArrayList<>(List.of(alarms));
         return field;
     }
 
-    private static ModbusServiceField bits(String name, String bitName, ModbusServiceFieldAlarm... alarms) {
-        ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
+    private static ModbusFunctionResponseField bits(String name, String bitName, ModbusFunctionResponseFieldAlarm... alarms) {
+        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
         bit.offset = 0;
         bit.field = bitName;
         bit.alarms = new ArrayList<>(List.of(alarms));
 
-        ModbusServiceField field = new ModbusServiceField();
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.field = name;
         field.bitList = new ArrayList<>(List.of(bit));
         return field;
     }
 
     /** 一条规则：id 就是 {@link #RULE_ID}，与夹具 {@link #row} 上那个对得上（= 「还是这条规则」）。 */
-    private static ModbusServiceFieldAlarm alarm(boolean enabled) {
+    private static ModbusFunctionResponseFieldAlarm alarm(boolean enabled) {
         return alarm(RULE_ID, enabled);
     }
 
-    private static ModbusServiceFieldAlarm alarm(String id, boolean enabled) {
-        ModbusServiceFieldAlarm alarm = new ModbusServiceFieldAlarm();
+    private static ModbusFunctionResponseFieldAlarm alarm(String id, boolean enabled) {
+        ModbusFunctionResponseFieldAlarm alarm = new ModbusFunctionResponseFieldAlarm();
         alarm.id = id;
         alarm.enabled = enabled;
         alarm.compare = ">";

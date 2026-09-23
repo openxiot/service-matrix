@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.db.modbus.service;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -23,10 +24,21 @@ import java.util.List;
 @Schema(description = "Modbus 服务（将点表映射成可调用的方法集合）")
 public class ModbusService extends ReactivePanacheMongoEntity {
 
+    /**
+     * 定义格式版本号：当前只认 2。
+     *
+     * <p>1 → 2 是 function 内部结构的演进：{@code request} 从「一整串 Modbus RTU 帧的 16 进制字符串」
+     * 改成了结构化定义（{@link cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest}），
+     * 写方法另外多出「写入字段 + 缺省值」。校验层按本常量**硬拒旧版本**：
+     * 让旧口径的定义响亮地失败，而不是被读成 null 之后报一句含糊的「request is required」。</p>
+     */
+    public static final int VERSION = 2;
+
     @Schema(description = "服务名称（展示用，如 1 号冷水机组）", required = true)
     public String name;
 
-    @Schema(description = "定义格式版本号：function 内部结构后续若演进，按它区分口径", examples = {"1"}, required = true)
+    @Schema(description = "定义格式版本号：function 内部结构后续若演进，按它区分口径（当前为 2）",
+            examples = {"2"}, required = true)
     public Integer version;
 
     @Schema(description = "源点表配置 ID（溯源用：本服务由哪条点表映射而来）")
@@ -36,7 +48,7 @@ public class ModbusService extends ReactivePanacheMongoEntity {
     public DeviceOn device = new DeviceOn();
 
     @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写）", required = true)
-    public List<ModbusServiceFunction> functions;
+    public List<ModbusFunction> functions;
 
     @Schema(description = "创建者/创建时间")
     public Person creator;

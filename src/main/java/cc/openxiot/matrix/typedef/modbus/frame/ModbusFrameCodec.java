@@ -1,11 +1,16 @@
 package cc.openxiot.matrix.typedef.modbus.frame;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequestField;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -191,13 +196,242 @@ public final class ModbusFrameCodec {
         return frame;
     }
 
+    // ===== 请求帧（服务定义）=====
+
+    /**
+     * 按服务的请求定义组帧：一次调用的请求帧在 invoke 时现组，前端不再需要算 CRC16。
+     *
+     * <p>读（01–04）只用 {@code start/quantity}；写（05–10）的数据区由 {@code request.fields} 按
+     * {@code index} 升序拼出，每个字段的取值优先取 {@code values} 里同名的那个、缺省回落
+     * {@code field.value}。算式与点表那条线（{@link #encodeRequest(Integer, ModbusCommand)}）完全重合，
+     * 只是数据来源从「一条命令一个 dataType」换成了「每个字段各带 format」。</p>
+     *
+     * @param values invoke 传入的「字段名 → 原始值」；读方法传 null
+     * @throws IllegalArgumentException 定义不成立（方向与字段/数量不匹配、取值缺失或类型不符）
+     */
+    public static String encodeRequest(ModbusFunctionRequest request, Map<String, Object> values) {
+        if (request == null) {
+            throw new IllegalArgumentException("modbus service request is not set");
+        }
+        int slave = request.slaveId == null ? DEFAULT_SLAVE_ID : request.slaveId;
+        String fc = normalizeFc(request.fc);
+        int start = require(request.start, "start");
+
+        byte[] body = switch (fc) {
+            case "01", "02", "03", "04" -> readBody(slave, fc, start, require(request.quantity, "quantity"));
+            case "05" -> writeSingleCoilBody(slave, start, request.fields, values);
+            case "06" -> writeSingleRegisterBody(slave, start, request.fields, values);
+            case "0F" -> writeMultipleCoilsBody(slave, start, request.fields, values);
+            case "10" -> writeMultipleRegistersBody(slave, start, request.fields, values);
+            default -> throw new IllegalArgumentException("unsupported modbus function code: " + request.fc);
+        };
+
+        return toHex(withCrc(body));
+    }
+
+    /** 读请求帧：{@code quantity} 已是帧里的字面值（01/02 为位数、03/04 为寄存器数）。 */
+    private static byte[] readBody(int slave, String fc, int start, int quantity) {
+        return new byte[]{
+                (byte) slave, (byte) Integer.parseInt(fc, 16),
+                hi(start), lo(start),
+                hi(quantity), lo(quantity)
+        };
+    }
+
+    private static byte[] writeSingleCoilBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+                                              Map<String, Object> values) {
+        ModbusFunctionRequestField field = singleField(fields, "05");
+        boolean on = toBit(resolveValue(field, values), field.field);
+        return new byte[]{
+                (byte) slave, (byte) 0x05,
+                hi(start), lo(start),
+                (byte) (on ? 0xFF : 0x00), (byte) 0x00
+        };
+    }
+
+    private static byte[] writeSingleRegisterBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+                                                  Map<String, Object> values) {
+        ModbusFunctionRequestField field = singleField(fields, "06");
+        String format = requireFormat(field);
+        if (registerWidth(format, field.field) != 2) {
+            // fc 06 只有一个寄存器：int32/float32 这类 4 字节格式在这里会被静默截掉一半
+            throw new IllegalArgumentException("modbus fc 06 writes one register, not " + format
+                    + ": field=" + field.field);
+        }
+        int value = (int) toInteger(resolveValue(field, values), field.field) & 0xFFFF;
+        return new byte[]{
+                (byte) slave, (byte) 0x06,
+                hi(start), lo(start),
+                hi(value), lo(value)
+        };
+    }
+
+    private static byte[] writeMultipleCoilsBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+                                                 Map<String, Object> values) {
+        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+        int quantity = ordered.size();
+        int byteCount = (quantity + 7) / 8;
+        byte[] bits = new byte[byteCount];
+
+        int position = 0;
+        for (ModbusFunctionRequestField field : ordered) {
+            // offset 必须与排列位置一致：0F 的帧只有「起始地址 + 个数 + 紧凑位区」，不留空洞
+            if (field.offset != null && field.offset != position) {
+                throw new IllegalArgumentException("modbus coil offset out of order: " + field.offset
+                        + " (expected " + position + "), field=" + field.field);
+            }
+            if (toBit(resolveValue(field, values), field.field)) {
+                bits[position / 8] |= (byte) (1 << (position % 8));
+            }
+            position++;
+        }
+
+        byte[] frame = new byte[7 + byteCount];
+        frame[0] = (byte) slave;
+        frame[1] = (byte) 0x0F;
+        frame[2] = hi(start);
+        frame[3] = lo(start);
+        frame[4] = hi(quantity);
+        frame[5] = lo(quantity);
+        frame[6] = (byte) byteCount;
+        System.arraycopy(bits, 0, frame, 7, byteCount);
+        return frame;
+    }
+
+    private static byte[] writeMultipleRegistersBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+                                                     Map<String, Object> values) {
+        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+
+        int byteCount = 0;
+        for (ModbusFunctionRequestField field : ordered) {
+            byteCount += registerWidth(requireFormat(field), field.field);
+        }
+
+        byte[] data = new byte[byteCount];
+        int position = 0;   // 以寄存器计的写入位置
+        for (ModbusFunctionRequestField field : ordered) {
+            String format = requireFormat(field);
+            int width = registerWidth(format, field.field);
+            // 同 0F：10 的帧也没有空洞，每个字段紧接上一个
+            if (field.offset != null && field.offset != position) {
+                throw new IllegalArgumentException("modbus register offset out of order: " + field.offset
+                        + " (expected " + position + "), field=" + field.field);
+            }
+            long bits = "float32".equals(format)
+                    ? Float.floatToIntBits(toFloat(resolveValue(field, values), field.field))
+                    : toInteger(resolveValue(field, values), field.field);
+            byte[] value = toBytes(bits, width, field.byteOrder);
+            System.arraycopy(value, 0, data, position * 2, width);
+            position += width / 2;
+        }
+
+        byte[] frame = new byte[7 + byteCount];
+        frame[0] = (byte) slave;
+        frame[1] = (byte) 0x10;
+        frame[2] = hi(start);
+        frame[3] = lo(start);
+        // 数量是寄存器个数而非字段行数：int32/uint32/float32 一个字段占两个寄存器
+        int quantity = byteCount / 2;
+        frame[4] = hi(quantity);
+        frame[5] = lo(quantity);
+        frame[6] = (byte) byteCount;
+        System.arraycopy(data, 0, frame, 7, byteCount);
+        return frame;
+    }
+
+    /** 05/06 的写请求只有一个字段（帧里没有「第几个」可言，offset 也不该填）。 */
+    private static ModbusFunctionRequestField singleField(List<ModbusFunctionRequestField> fields, String fc) {
+        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+        if (ordered.size() != 1) {
+            throw new IllegalArgumentException("modbus fc " + fc + " writes one field, got " + ordered.size());
+        }
+        if (ordered.getFirst().offset != null) {
+            throw new IllegalArgumentException("modbus fc " + fc + " has no field offset: field="
+                    + ordered.getFirst().field);
+        }
+        return ordered.getFirst();
+    }
+
+    /** 字段按 {@code index} 升序 —— 与应答侧 {@code ModbusResponseParser} 同一口径，决定数据区排列。 */
+    private static List<ModbusFunctionRequestField> orderedFields(List<ModbusFunctionRequestField> fields) {
+        if (fields == null || fields.isEmpty()) {
+            throw new IllegalArgumentException("modbus write request has no fields");
+        }
+        List<ModbusFunctionRequestField> ordered = new ArrayList<>(fields);
+        ordered.sort(Comparator.comparingInt(field -> field.index == null ? 0 : field.index));
+        return ordered;
+    }
+
+    /** 写字段的取值：invoke 给了就用给的，否则回落字段缺省值；两者都没有则报错。 */
+    private static Object resolveValue(ModbusFunctionRequestField field, Map<String, Object> values) {
+        if (values != null && values.get(field.field) != null) {
+            return values.get(field.field);
+        }
+        if (field.value != null) {
+            return field.value;
+        }
+        throw new IllegalArgumentException("modbus write field has no value: " + field.field);
+    }
+
+    private static String requireFormat(ModbusFunctionRequestField field) {
+        if (field.format == null || field.format.isBlank()) {
+            throw new IllegalArgumentException("modbus write field format is not set: " + field.field);
+        }
+        return field.format.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** 写字段占用的寄存器字节数；不认识的数据格式直接报错，不退回默认宽度。 */
+    private static int registerWidth(String format, String name) {
+        return switch (format) {
+            case "int16", "uint16" -> 2;
+            case "int32", "uint32", "float32" -> 4;
+            default -> throw new IllegalArgumentException("unsupported modbus write data format: " + format
+                    + ", field=" + name);
+        };
+    }
+
+    private static boolean toBit(Object value, String name) {
+        if (value instanceof Boolean bit) {
+            return bit;
+        }
+        if (value instanceof Number number) {
+            return number.intValue() != 0;
+        }
+        throw new IllegalArgumentException("modbus write field is not a bit: " + name + "=" + value);
+    }
+
+    /**
+     * 整数格式的取值：{@code 2} 过 Jackson 后可能是 {@code Integer} 也可能是 {@code Double}，
+     * 判定按「值本身是不是整数」而不是按 Java 类型，非整数直接报错（不静默截断）。
+     */
+    private static long toInteger(Object value, String name) {
+        if (!(value instanceof Number number)) {
+            throw new IllegalArgumentException("modbus write field is not a number: " + name + "=" + value);
+        }
+        if (number instanceof Double || number instanceof Float) {
+            double d = number.doubleValue();
+            if (d != Math.rint(d)) {
+                throw new IllegalArgumentException("modbus write field is not an integer: " + name + "=" + value);
+            }
+            return (long) d;
+        }
+        return number.longValue();
+    }
+
+    private static float toFloat(Object value, String name) {
+        if (value instanceof Number number) {
+            return number.floatValue();
+        }
+        throw new IllegalArgumentException("modbus write field is not a number: " + name + "=" + value);
+    }
+
     // ===== 应答帧 =====
 
     /**
      * 把应答帧解回读值（写命令的应答是回显请求帧，没有读值，返回 null）。
      *
      * <p>只解数据区的**首个值**：数量改为「值的个数」后一次读可能有多个值，多值读的调用链
-     * 走 {@code ModbusResponseParser}（按服务定义的 response[] 逐个字段解），本方法只服务于
+     * 走 {@code ModbusResponseParser}（按服务定义的 response.fields[] 逐个字段解），本方法只服务于
      * 旧的点位式口径与存量单测。</p>
      *
      * @param frameHex DTU 回传的应答帧（16 进制字符串，大小写与空白不敏感）

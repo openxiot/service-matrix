@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.db.modbus.service.codec;
+package cc.openxiot.matrix.db.modbus.service.function.response.field.codec;
 
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -8,17 +8,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@link ModbusServiceField}（应答字段解析规则）与 JSON 的互转。
+ * {@link ModbusFunctionResponseField}（应答字段解析规则）与 JSON 的互转。
  *
  * <p>带连字符的 {@code value-list} / {@code bit-list} 在实体里叫 {@code valueList} / {@code bitList}，
  * 编解码按示例文件的口径写回原名。</p>
  */
-public final class ModbusServiceFieldCodec {
+public final class ModbusFunctionResponseFieldCodec {
 
-    private ModbusServiceFieldCodec() {
+    private ModbusFunctionResponseFieldCodec() {
     }
 
-    public static JsonObject encode(ModbusServiceField field) {
+    public static JsonObject encode(ModbusFunctionResponseField field) {
         JsonObject o = new JsonObject();
         if (field == null) {
             return o;
@@ -45,34 +45,34 @@ public final class ModbusServiceFieldCodec {
             o.put("unit", field.unit);
         }
         if (field.valueList != null) {
-            o.put("value-list", ModbusServiceFieldValueCodec.encode(field.valueList));
+            o.put("value-list", ModbusFunctionResponseFieldValueCodec.encode(field.valueList));
         }
         if (field.bitList != null) {
-            o.put("bit-list", ModbusServiceFieldBitCodec.encode(field.bitList));
+            o.put("bit-list", ModbusFunctionResponseFieldBitCodec.encode(field.bitList));
         }
         // 空数组与「元素全是空壳」都不出键：库里不会留下 `alarms: []` 这种噪音，
         // 与 decode 把空数组读成 null 是同一件事的两面
         if (field.alarms != null && !field.alarms.isEmpty()) {
-            o.put("alarms", ModbusServiceFieldAlarmCodec.encode(field.alarms));
+            o.put("alarms", ModbusFunctionResponseFieldAlarmCodec.encode(field.alarms));
         }
         return o;
     }
 
-    public static JsonArray encode(List<ModbusServiceField> fields) {
+    public static JsonArray encode(List<ModbusFunctionResponseField> fields) {
         JsonArray arr = new JsonArray();
         if (fields != null) {
-            for (ModbusServiceField field : fields) {
+            for (ModbusFunctionResponseField field : fields) {
                 arr.add(encode(field));
             }
         }
         return arr;
     }
 
-    public static ModbusServiceField decode(JsonObject o) {
+    public static ModbusFunctionResponseField decode(JsonObject o) {
         if (o == null) {
             return null;
         }
-        ModbusServiceField field = new ModbusServiceField();
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.index = o.getInteger("index");
         field.field = o.getString("field");
         field.bytes = o.getInteger("bytes");
@@ -80,17 +80,17 @@ public final class ModbusServiceFieldCodec {
         field.byteOrder = o.getString("byteOrder");
         field.scale = o.getDouble("scale");
         field.unit = o.getString("unit");
-        field.valueList = ModbusServiceFieldValueCodec.decode(o.getJsonArray("value-list"));
-        field.bitList = ModbusServiceFieldBitCodec.decode(o.getJsonArray("bit-list"));
-        field.alarms = ModbusServiceFieldAlarmCodec.decode(o.getJsonArray("alarms"));
+        field.valueList = ModbusFunctionResponseFieldValueCodec.decode(o.getJsonArray("value-list"));
+        field.bitList = ModbusFunctionResponseFieldBitCodec.decode(o.getJsonArray("bit-list"));
+        field.alarms = ModbusFunctionResponseFieldAlarmCodec.decode(o.getJsonArray("alarms"));
         return field;
     }
 
-    public static List<ModbusServiceField> decode(JsonArray arr) {
+    public static List<ModbusFunctionResponseField> decode(JsonArray arr) {
         if (arr == null) {
             return null;
         }
-        List<ModbusServiceField> fields = new ArrayList<>(arr.size());
+        List<ModbusFunctionResponseField> fields = new ArrayList<>(arr.size());
         for (int i = 0; i < arr.size(); i++) {
             fields.add(decode(arr.getJsonObject(i)));
         }

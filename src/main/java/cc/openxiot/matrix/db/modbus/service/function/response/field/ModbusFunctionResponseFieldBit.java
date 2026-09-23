@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.service;
+package cc.openxiot.matrix.db.modbus.service.function.response.field;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
@@ -17,7 +17,7 @@ import java.util.List;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "位区里的具名位")
-public class ModbusServiceFieldBit {
+public class ModbusFunctionResponseFieldBit {
 
     @Schema(description = "位偏移（0 基，从位区起点算起；帧内 LSB-first：第 offset/8 字节的第 offset%8 位）",
             examples = {"0"}, required = true)
@@ -28,5 +28,5 @@ public class ModbusServiceFieldBit {
 
     @Schema(description = "本位的一组阈值告警规则：值恒为 0/1，故只能用「等于」比 0 或 1，"
             + "如「进水阀 = 1 告警」；配在位上而不是父字段上，因为位是独立的结果键")
-    public List<ModbusServiceFieldAlarm> alarms;
+    public List<ModbusFunctionResponseFieldAlarm> alarms;
 }

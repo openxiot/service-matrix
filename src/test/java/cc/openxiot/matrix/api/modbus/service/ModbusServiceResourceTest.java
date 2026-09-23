@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -228,7 +229,7 @@ class ModbusServiceResourceTest {
     void invoke_spaceMember_succeeds() {
         allowSpaceMember();
         // 归属传的是根空间 id：SPACE_ID 是根空间，根就是它自己
-        when(service.invoke(eq(SPACE_ID), eq(SID), eq(1)))
+        when(service.invoke(eq(SPACE_ID), eq(SID), eq(1), isNull()))
                 .thenReturn(Uni.createFrom().item(new JsonObject().put("进水温度", 61.5)));
 
         given().contentType("application/json")
@@ -250,6 +251,6 @@ class ModbusServiceResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
-        verify(service, never()).invoke(anyString(), anyString(), any());
+        verify(service, never()).invoke(anyString(), anyString(), any(), any());
     }
 }

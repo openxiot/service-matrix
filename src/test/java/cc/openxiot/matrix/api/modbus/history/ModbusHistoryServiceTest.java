@@ -9,7 +9,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -505,11 +506,11 @@ class ModbusHistoryServiceTest {
         return service;
     }
 
-    private static ModbusServiceFunction function() {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function() {
+        ModbusFunction function = new ModbusFunction();
         function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = "010300000001840A";
+        function.request = ModbusFunctionRequests.holding();
         return function;
     }
 

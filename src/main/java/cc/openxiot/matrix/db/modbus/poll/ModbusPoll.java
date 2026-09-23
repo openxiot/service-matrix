@@ -33,7 +33,7 @@ public class ModbusPoll extends ReactivePanacheMongoEntity {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusServiceFunction.index）", examples = {"1"}, required = true)
+    @Schema(description = "方法序号（ModbusFunction.index）", examples = {"1"}, required = true)
     public Integer functionIndex;
 
     /** 冗余一份：调度要按设备分组（同一条 RS485 串行），不必每次回查服务定义；它同时是分片键的候选。 */
@@ -41,7 +41,7 @@ public class ModbusPoll extends ReactivePanacheMongoEntity {
     public String did;
 
     /** 冗余一份：调度循环不必每次都持有定义文档。 */
-    @Schema(description = "调用周期（秒），来自 ModbusServiceFunction.interval", examples = {"10"}, required = true)
+    @Schema(description = "调用周期（秒），来自 ModbusFunction.interval", examples = {"10"}, required = true)
     public Integer interval;
 
     @Schema(description = "下一次该跑的时刻（epoch 毫秒，UTC）。落库是必须的：否则一次滚动发布会把所有任务挤到同一秒爆发")

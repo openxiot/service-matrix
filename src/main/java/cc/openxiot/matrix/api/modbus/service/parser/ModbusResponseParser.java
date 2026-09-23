@@ -3,9 +3,9 @@ package cc.openxiot.matrix.api.modbus.service.parser;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldValue;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldValue;
 import io.vertx.core.json.JsonObject;
 
 import java.nio.charset.StandardCharsets;
@@ -15,14 +15,14 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 按 {@link ModbusServiceField} 把父设备回传的应答帧解成「字段 → 值」。
+ * 按 {@link ModbusFunctionResponseField} 把父设备回传的应答帧解成「字段 → 值」。
  *
  * <pre>
  * 应答帧: [slave][fc][byteCount][data...][crcLo][crcHi]
- *                              └─ 按 response[].index 升序、以 bytes 依次累加偏移切分 ─┘
+ *                              └─ 按 response.fields[].index 升序、以 bytes 依次累加偏移切分 ─┘
  * </pre>
  *
- * <p>帧的合法性（长度 / 异常码 / CRC16）与 {@code ModbusServiceFunction#request} 同口径，
+ * <p>帧的合法性（长度 / 异常码 / CRC16）与 {@code ModbusFunction#request} 同口径，
  * 复用 {@link ModbusFrameCodec} 的字节序与 CRC 原语，不再另写一套。</p>
  *
  * <p>取值：原始值命中 {@code value-list} 时输出其 description（不再应用 scale）；否则输出
@@ -59,7 +59,7 @@ public final class ModbusResponseParser {
      * @param frameHex 父设备回传的应答帧（16 进制字符串，大小写与空白不敏感）
      * @throws ModbusInvokeException 帧非法、CRC 不符、从站返回异常码，或字段声明与帧长对不上
      */
-    public static JsonObject parse(List<ModbusServiceField> fields, String frameHex) {
+    public static JsonObject parse(List<ModbusFunctionResponseField> fields, String frameHex) {
         try {
             return parseFrame(fields, frameHex);
         } catch (ModbusInvokeException e) {
@@ -71,7 +71,7 @@ public final class ModbusResponseParser {
         }
     }
 
-    private static JsonObject parseFrame(List<ModbusServiceField> fields, String frameHex) {
+    private static JsonObject parseFrame(List<ModbusFunctionResponseField> fields, String frameHex) {
         byte[] frame = ModbusFrameCodec.parseHex(frameHex);
         if (frame.length < MIN_FRAME_SIZE) {
             throw ModbusInvokeException.of(ModbusFailureType.INVALID_FRAME,
@@ -89,9 +89,9 @@ public final class ModbusResponseParser {
                     "modbus response crc mismatch: " + frameHex);
         }
 
-        List<ModbusServiceField> ordered = sorted(fields);
+        List<ModbusFunctionResponseField> ordered = sorted(fields);
         int expected = 0;
-        for (ModbusServiceField field : ordered) {
+        for (ModbusFunctionResponseField field : ordered) {
             expected += field.bytes;
         }
 
@@ -109,7 +109,7 @@ public final class ModbusResponseParser {
         boolean bitRegion = fc == FC_READ_COILS || fc == FC_READ_DISCRETE_INPUTS;
         JsonObject values = new JsonObject();
         int offset = HEADER_SIZE;
-        for (ModbusServiceField field : ordered) {
+        for (ModbusFunctionResponseField field : ordered) {
             byte[] data = Arrays.copyOfRange(frame, offset, offset + field.bytes);
             values.put(field.field, decodeValue(field, data, bitRegion));
             putBits(values, field, data);
@@ -122,11 +122,11 @@ public final class ModbusResponseParser {
      * 位清单：把字段覆盖的位区里的若干位各自作为一个 0/1 取值补进结果（key 即该位的 field）。
      * 取位与功能码无关、只按该字段自己的数据字节 LSB-first 算：第 offset 位 = 第 offset/8 字节的第 offset%8 位。
      */
-    private static void putBits(JsonObject values, ModbusServiceField field, byte[] data) {
+    private static void putBits(JsonObject values, ModbusFunctionResponseField field, byte[] data) {
         if (field.bitList == null) {
             return;
         }
-        for (ModbusServiceFieldBit bit : field.bitList) {
+        for (ModbusFunctionResponseFieldBit bit : field.bitList) {
             if (bit == null || bit.offset == null || bit.field == null || bit.offset < 0
                     || bit.offset / 8 >= data.length) {
                 throw ModbusInvokeException.of(ModbusFailureType.FIELD_DEFINITION_ERROR,
@@ -138,7 +138,7 @@ public final class ModbusResponseParser {
     }
 
     /** 按字段定义解出该段的最终取值（原始值 → value-list / scale）。 */
-    private static Object decodeValue(ModbusServiceField field, byte[] data, boolean bitRegion) {
+    private static Object decodeValue(ModbusFunctionResponseField field, byte[] data, boolean bitRegion) {
         String format = field.format == null ? "" : field.format.trim().toLowerCase();
         Object raw = switch (format) {
             case "string" -> text(data);
@@ -165,7 +165,7 @@ public final class ModbusResponseParser {
      * <p>位区（01/02）按位数组读：字节低位在前（第 i 位 = 第 i/8 字节的第 i%8 位），故按小端拼装，
      * 掩码里的第 i 位就是第 i 个线圈；其余字段按声明的字节序拼装（单字节无需排布，多字节缺省 ABCD = 大端）。</p>
      */
-    private static long bits(byte[] data, ModbusServiceField field, boolean bitRegion) {
+    private static long bits(byte[] data, ModbusFunctionResponseField field, boolean bitRegion) {
         if (bitRegion) {
             long little = 0;
             for (int i = data.length - 1; i >= 0; i--) {
@@ -204,11 +204,11 @@ public final class ModbusResponseParser {
     }
 
     /** 命中取值表则返回其 description，否则 null。 */
-    private static String descriptionOf(ModbusServiceField field, Object raw) {
+    private static String descriptionOf(ModbusFunctionResponseField field, Object raw) {
         if (!(raw instanceof Number value) || field.valueList == null) {
             return null;
         }
-        for (ModbusServiceFieldValue entry : field.valueList) {
+        for (ModbusFunctionResponseFieldValue entry : field.valueList) {
             if (entry != null && entry.value != null && entry.value == value.longValue()) {
                 return entry.description;
             }
@@ -216,8 +216,8 @@ public final class ModbusResponseParser {
         return null;
     }
 
-    private static List<ModbusServiceField> sorted(List<ModbusServiceField> fields) {
-        List<ModbusServiceField> ordered = new ArrayList<>(fields);
+    private static List<ModbusFunctionResponseField> sorted(List<ModbusFunctionResponseField> fields) {
+        List<ModbusFunctionResponseField> ordered = new ArrayList<>(fields);
         ordered.sort(Comparator.comparingInt(field -> field.index == null ? 0 : field.index));
         return ordered;
     }

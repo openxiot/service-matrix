@@ -2,9 +2,11 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +63,7 @@ class ModbusShadowPlanTest {
     /** 位展开的名字与字段名放在同一个结果对象里，所以两者都算「定义里有的」。 */
     @Test
     void bitNamesCountAsDefinedFields() {
-        ModbusServiceField word = field("status");
+        ModbusFunctionResponseField word = field("status");
         word.bitList = List.of(bit(0, "running"), bit(1, "fault"));
         ModbusService service = service(function(1, word));
         ModbusServiceShadow shadow = shadow(SERVICE_ID, 1,
@@ -153,7 +155,7 @@ class ModbusShadowPlanTest {
     /** 取名字时把空名与空元素都滤掉：它们进不了影子，也就不该出现在「定义里有」这一侧。 */
     @Test
     void definedFieldsReadsFieldAndBitNames() {
-        ModbusServiceField word = field("status");
+        ModbusFunctionResponseField word = field("status");
         word.bitList = List.of(bit(0, "running"), bit(1, null));
 
         assertEquals(Set.of("status", "running"),
@@ -163,38 +165,38 @@ class ModbusShadowPlanTest {
 
     // -- helpers --
 
-    private static ModbusServiceFunction function(Integer index, ModbusServiceField... response) {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction function(Integer index, ModbusFunctionResponseField... response) {
+        ModbusFunction function = new ModbusFunction();
         function.index = index;
-        function.request = "010300000001840A";
-        function.response = response.length == 0 ? null : new ArrayList<>(List.of(response));
+        function.request = ModbusFunctionRequests.holding();
+        function.response = response.length == 0 ? null : ModbusFunctionResponses.of(response);
         return function;
     }
 
     /** 写方法（fc 06）：请求帧是写，{@code response} 为空 —— 它不会产出一个字段。 */
-    private static ModbusServiceFunction writeFunction(Integer index) {
-        ModbusServiceFunction function = new ModbusServiceFunction();
+    private static ModbusFunction writeFunction(Integer index) {
+        ModbusFunction function = new ModbusFunction();
         function.index = index;
-        function.request = "0106000100C864";
+        function.request = ModbusFunctionRequests.write("06", 1, ModbusFunctionRequests.field(1, "写入值", "uint16", 200));
         function.response = null;
         return function;
     }
 
-    private static ModbusServiceField field(String name) {
-        ModbusServiceField field = new ModbusServiceField();
+    private static ModbusFunctionResponseField field(String name) {
+        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
         field.field = name;
         return field;
     }
 
-    private static ModbusServiceFieldBit bit(int offset, String name) {
-        ModbusServiceFieldBit bit = new ModbusServiceFieldBit();
+    private static ModbusFunctionResponseFieldBit bit(int offset, String name) {
+        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
         bit.offset = offset;
         bit.field = name;
         return bit;
     }
 
     /** 定义与影子必须指同一个服务（对账按服务做），所以 id 从 {@link #SERVICE_ID} 还原。 */
-    private static ModbusService service(ModbusServiceFunction... functions) {
+    private static ModbusService service(ModbusFunction... functions) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(SERVICE_ID);
         service.name = "svc";

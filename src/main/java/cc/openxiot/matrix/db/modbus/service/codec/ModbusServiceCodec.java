@@ -2,6 +2,7 @@ package cc.openxiot.matrix.db.modbus.service.codec;
 
 import cc.openxiot.common.person.codec.PersonCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.service.function.codec.ModbusFunctionCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -44,7 +45,7 @@ public final class ModbusServiceCodec {
             o.put("configId", service.configId);
         }
         o.put("device", DeviceOnCodec.encode(service.device));
-        o.put("functions", ModbusServiceFunctionCodec.encode(service.functions));
+        o.put("functions", ModbusFunctionCodec.encode(service.functions));
         if (service.creator != null) {
             o.put("creator", PersonCodec.encode(service.creator));
         }
@@ -114,7 +115,7 @@ public final class ModbusServiceCodec {
         service.version = o.getInteger("version");
         service.configId = o.getString("configId");
         service.device = DeviceOnCodec.decode(o.getJsonObject("device"));
-        service.functions = ModbusServiceFunctionCodec.decode(o.getJsonArray("functions"));
+        service.functions = ModbusFunctionCodec.decode(o.getJsonArray("functions"));
         return service;
     }
 }

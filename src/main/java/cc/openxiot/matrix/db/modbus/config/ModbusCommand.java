@@ -44,7 +44,7 @@ public class ModbusCommand {
     public Integer quantity;
 
     @Schema(description = "应答字段名称（03/04 读寄存器；个数即应答字段数：非 string 为 quantity 个、string 为 1 个）。"
-            + "生成服务时逐个填进 method.response[].field，缺省或某项为空时由生成方按功能名称兜底；"
+            + "生成服务时逐个填进 method.response.fields[].field，缺省或某项为空时由生成方按功能名称兜底；"
             + "01/02 读位请用 bitNames，写操作无应答字段，不填",
             examples = {"[\"第一个温度值\",\"第二个温度值\"]"})
     public List<String> fieldNames;

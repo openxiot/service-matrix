@@ -1,7 +1,7 @@
 {
   "id": "xxxx",
-  "name": "xxx",
-  "version": 1,
+  "name": "1 号冷水机组",
+  "version": 2,
   "configId": "Modbus配置ID",
   "device": {
     "did": "xxx",
@@ -16,100 +16,236 @@
   "functions": [
     {
       "index": 1,
-      "name": "方法名称",
-      "request": "请求帧: 16进制字符串",
+      "name": "读进水温度",
+      "request": {
+        "slaveId": 1,
+        "fc": "03",
+        "start": 0,
+        "quantity": 1
+      },
+      "response": {
+        "fields": [
+          {
+            "index": 1,
+            "field": "进水温度",
+            "bytes": 2,
+            "format": "uint16",
+            "byteOrder": "ABCD",
+            "scale": 0.1,
+            "unit": "℃",
+            "alarms": [
+              {
+                "id": "a1",
+                "enabled": true,
+                "compare": ">",
+                "threshold": 80,
+                "level": "WARN",
+                "text": "进水温度过高"
+              }
+            ]
+          }
+        ]
+      },
       "interval": 5,
-      "polling": true,
-      "response": [
-        {
-          "index": 1,
-          "field": "字段名称",
-          "bytes": 2,
-          "format": "uint16",
-          "byteOrder": "ABCD",
-          "scale": 0.1,
-          "unit": "℃"
-        }
-      ]
+      "polling": true
     },
     {
       "index": 2,
       "name": "读开关状态",
-      "request": "请求帧: 16进制字符串",
-      "response": [
-        {
-          "index": 1,
-          "field": "开关状态",
-          "bytes": 1,
-          "format": "uint8",
-          "scale": 1,
-          "value-list": [
-            {
-              "value": 0,
-              "description": "ON"
-            },
-            {
-              "value": 1,
-              "description": "OFF"
-            }
-          ]
-        }
-      ]
+      "request": {
+        "slaveId": 1,
+        "fc": "03",
+        "start": 1,
+        "quantity": 1
+      },
+      "response": {
+        "fields": [
+          {
+            "index": 1,
+            "field": "开关状态",
+            "bytes": 2,
+            "format": "uint16",
+            "byteOrder": "ABCD",
+            "scale": 1,
+            "value-list": [
+              {
+                "value": 0,
+                "description": "ON"
+              },
+              {
+                "value": 1,
+                "description": "OFF"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "index": 3,
       "name": "读8个开关量",
-      "request": "请求帧: 16进制字符串",
-      "response": [
-        {
-          "index": 1,
-          "field": "线圈状态",
-          "bytes": 1,
-          "format": "uint8",
-          "scale": 1,
-          "bit-list": [
-            {
-              "offset": 0,
-              "field": "进水阀"
-            },
-            {
-              "offset": 3,
-              "field": "报警"
-            }
-          ]
-        }
-      ]
+      "request": {
+        "slaveId": 1,
+        "fc": "01",
+        "start": 0,
+        "quantity": 8
+      },
+      "response": {
+        "fields": [
+          {
+            "index": 1,
+            "field": "线圈状态",
+            "bytes": 1,
+            "format": "uint8",
+            "scale": 1,
+            "bit-list": [
+              {
+                "offset": 0,
+                "field": "进水阀",
+                "alarms": [
+                  {
+                    "id": "b1",
+                    "enabled": true,
+                    "compare": "=",
+                    "threshold": 1,
+                    "level": "CRITICAL",
+                    "text": "进水阀未关闭"
+                  }
+                ]
+              },
+              {
+                "offset": 3,
+                "field": "报警"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "index": 4,
       "name": "读多个温度值",
-      "request": "请求帧: 16进制字符串",
-      "response": [
-        {
-          "index": 1,
-          "field": "第一个温度值",
-          "bytes": 2,
-          "format": "uint16",
-          "scale": 0.1,
-          "unit": "摄氏度"
-        },
-        {
-          "index": 2,
-          "field": "第二个温度值",
-          "bytes": 2,
-          "format": "uint16",
-          "scale": 0.1,
-          "unit": "摄氏度"
-        },
-        {
-          "index": 3,
-          "field": "第三个温度值",
-          "bytes": 2,
-          "format": "uint16",
-          "scale": 0.1,
-          "unit": "摄氏度"
-        }
-      ]
+      "request": {
+        "slaveId": 1,
+        "fc": "03",
+        "start": 100,
+        "quantity": 3
+      },
+      "response": {
+        "fields": [
+          {
+            "index": 1,
+            "field": "第一个温度值",
+            "bytes": 2,
+            "format": "uint16",
+            "byteOrder": "ABCD",
+            "scale": 0.1,
+            "unit": "摄氏度"
+          },
+          {
+            "index": 2,
+            "field": "第二个温度值",
+            "bytes": 2,
+            "format": "uint16",
+            "byteOrder": "ABCD",
+            "scale": 0.1,
+            "unit": "摄氏度"
+          },
+          {
+            "index": 3,
+            "field": "第三个温度值",
+            "bytes": 2,
+            "format": "uint16",
+            "byteOrder": "ABCD",
+            "scale": 0.1,
+            "unit": "摄氏度"
+          }
+        ]
+      }
+    },
+    {
+      "index": 5,
+      "name": "开机",
+      "request": {
+        "slaveId": 1,
+        "fc": "05",
+        "start": 0,
+        "fields": [
+          {
+            "index": 1,
+            "field": "开机",
+            "format": "bit",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "index": 6,
+      "name": "写设定温度",
+      "request": {
+        "slaveId": 1,
+        "fc": "06",
+        "start": 1,
+        "fields": [
+          {
+            "index": 1,
+            "field": "设定温度",
+            "format": "int16",
+            "value": 70
+          }
+        ]
+      }
+    },
+    {
+      "index": 7,
+      "name": "写一组开关量",
+      "request": {
+        "slaveId": 1,
+        "fc": "0F",
+        "start": 0,
+        "fields": [
+          {
+            "index": 1,
+            "field": "进水阀",
+            "offset": 0,
+            "format": "bit",
+            "value": true
+          },
+          {
+            "index": 2,
+            "field": "报警复位",
+            "offset": 1,
+            "format": "bit"
+          }
+        ]
+      }
+    },
+    {
+      "index": 8,
+      "name": "写运行参数",
+      "request": {
+        "slaveId": 1,
+        "fc": "10",
+        "start": 10,
+        "fields": [
+          {
+            "index": 1,
+            "field": "运行模式",
+            "offset": 0,
+            "format": "uint16",
+            "value": 1
+          },
+          {
+            "index": 2,
+            "field": "设定温度",
+            "offset": 1,
+            "format": "float32",
+            "byteOrder": "ABCD",
+            "value": 7.5
+          }
+        ]
+      }
     }
   ]
 }

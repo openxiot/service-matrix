@@ -5,7 +5,8 @@ import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -173,11 +174,11 @@ class ModbusPollReconcilerTest {
         space.rootId = SPACE_ID;
         device.space = space;
         service.device = device;
-        ModbusServiceFunction function = new ModbusServiceFunction();
+        ModbusFunction function = new ModbusFunction();
         function.index = 1;
         function.interval = 30;
         function.polling = Boolean.TRUE;
-        function.request = "010300000001840A";
+        function.request = ModbusFunctionRequests.holding();
         service.functions = List.of(function);
         return service;
     }

@@ -168,8 +168,13 @@ public class ModbusServiceResource extends AbstractResource {
     }
 
     /**
-     * 调用一个方法：body {@code {"service": "<服务 id>", "function": <方法序号>}}。
+     * 调用一个方法：body
+     * {@code {"service": "<服务 id>", "function": <方法序号>, "values": {...}}}。
      * 返回该方法的「字段 → 值」（写方法为空对象）。
+     *
+     * <p>{@code values}（字段名 → 原始值）只有写方法用得上：未给值的字段回落其定义的缺省值，
+     * 给了未声明的字段名会被拒。读方法传了 values 一样会被拒 —— 静默忽略一个用户以为生效了的载荷，
+     * 比报错糟得多。</p>
      *
      * <p>传给 manipulation 的归属用**根空间 id**（不是调用方所在的组织）：设备归属是按根空间记的，
      * 见 {@link cc.openxiot.matrix.api.device.manipulation.ManipulationService}。这里的 spaceId 可以
@@ -186,10 +191,10 @@ public class ModbusServiceResource extends AbstractResource {
         if (req == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
-        logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}",
-                spaceId, req.service, req.function);
+        logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}, values: {3}",
+                spaceId, req.service, req.function, req.values == null ? "-" : req.values.keySet());
         return requireSpaceMember(spaceId)
-                .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.function))
+                .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.function, req.values))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

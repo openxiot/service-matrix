@@ -31,9 +31,10 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceField;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFieldBit;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
+import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
@@ -1057,15 +1058,15 @@ class WidgetDataServiceTest {
      */
     private static ModbusService serviceDef(int functionIndex, String primary, String unit, String second,
                                             String... bits) {
-        List<ModbusServiceField> response = new ArrayList<>();
-        response.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
+        List<ModbusFunctionResponseField> fields = new ArrayList<>();
+        fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
-            response.add(field(second, "％", null));
+            fields.add(field(second, "％", null));
         }
-        ModbusServiceFunction function = new ModbusServiceFunction();
+        ModbusFunction function = new ModbusFunction();
         function.index = functionIndex;
         function.name = primary;
-        function.response = response;
+        function.response = ModbusFunctionResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
@@ -1074,15 +1075,15 @@ class WidgetDataServiceTest {
         return definition;
     }
 
-    private static ModbusServiceField field(String name, String unit, List<String> bits) {
-        ModbusServiceField f = new ModbusServiceField();
+    private static ModbusFunctionResponseField field(String name, String unit, List<String> bits) {
+        ModbusFunctionResponseField f = new ModbusFunctionResponseField();
         f.field = name;
         f.unit = unit;
         if (bits != null) {
-            List<ModbusServiceFieldBit> bitList = new ArrayList<>();
+            List<ModbusFunctionResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusServiceFieldBit b = new ModbusServiceFieldBit();
+                ModbusFunctionResponseFieldBit b = new ModbusFunctionResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);
