@@ -23,6 +23,7 @@ import org.mockito.ArgumentCaptor;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -46,7 +47,7 @@ class ModbusConfigResourceTest {
     private ModbusConfig sample() {
         ModbusConfig cfg = new ModbusConfig();
         cfg.id = CID;
-        cfg.orgId = "org1";
+        cfg.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         cfg.slave.manufacturer = "开利";
         cfg.slave.model = "19XRV";
         cfg.slave.slaveId = 1;
@@ -71,22 +72,22 @@ class ModbusConfigResourceTest {
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void missingOrgHeaderFails() {
+    void missingOrgIdFails() {
         given().when().get("/matrix/v1/modbus/config/many")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
-                .body("message", containsString("X-Org-Id"));
+                .body("message", containsString("orgId is required"));
     }
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void createOkOverridesOrgFromHeader() {
+    void createOkWithOrgOwner() {
         allowMember();
         when(service.create(any(ModbusConfig.class))).thenReturn(Uni.createFrom().item(sample()));
 
-        given().header("X-Org-Id", "org1")
-                .contentType(ContentType.JSON)
-                .body("{\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},"
+        given().contentType(ContentType.JSON)
+                .body("{\"owner\":{\"id\":\"org1\",\"type\":\"organization\"},"
+                        + "\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},"
                         + "\"visibility\":\"private\",\"commands\":[]}")
                 .when().post("/matrix/v1/modbus/config/one")
                 .then().statusCode(200)
@@ -102,11 +103,47 @@ class ModbusConfigResourceTest {
         ArgumentCaptor<ModbusConfig> captor = ArgumentCaptor.forClass(ModbusConfig.class);
         verify(service).create(captor.capture());
         ModbusConfig sent = captor.getValue();
-        // orgId 被请求头覆盖；creator 取当前登录人（TestSecurity 无 username claim → name 为 null）
-        assertEquals("org1", sent.orgId);
+        // owner 取自请求体（组织归属 → 校验成员）；creator 取当前登录人（TestSecurity 无 username claim → name 为 null）
+        assertEquals("org1", sent.owner.id);
+        assertEquals("organization", sent.owner.type);
         assertEquals("开利", sent.slave.manufacturer);
         assertEquals("tester", sent.creator.id);
         assertNotNull(sent.creator.timestamp);
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void createWithUserOwnerNotAnotherUser() {
+        // user 归属：body 的 owner.id 必须是当前登录人，替他人建个人点表被拒
+        when(service.create(any(ModbusConfig.class))).thenReturn(Uni.createFrom().item(sample()));
+
+        given().contentType(ContentType.JSON)
+                .body("{\"owner\":{\"id\":\"someone-else\",\"type\":\"user\"},"
+                        + "\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},"
+                        + "\"visibility\":\"private\",\"commands\":[]}")
+                .when().post("/matrix/v1/modbus/config/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("cannot create personal config for another user"));
+        verify(service, never()).create(any(ModbusConfig.class));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void createWithOrgOwnerRequiresMembership() {
+        // 组织归属：当前账号必须是该组织成员（以 body 的 owner.id 为锚），否则拒
+        when(orgAccessService.checkMember(eq("other-org"), anyString()))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the organization")));
+
+        given().contentType(ContentType.JSON)
+                .body("{\"owner\":{\"id\":\"other-org\",\"type\":\"organization\"},"
+                        + "\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},"
+                        + "\"visibility\":\"private\",\"commands\":[]}")
+                .when().post("/matrix/v1/modbus/config/one")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("Not a member"));
+        verify(service, never()).create(any(ModbusConfig.class));
     }
 
     @Test
@@ -131,7 +168,7 @@ class ModbusConfigResourceTest {
         allowMember();
         when(service.listByOrg(anyString())).thenReturn(Uni.createFrom().item(List.of(sample())));
 
-        given().header("X-Org-Id", "org1")
+        given().queryParam("orgId", "org1")
                 .when().get("/matrix/v1/modbus/config/many")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -146,9 +183,9 @@ class ModbusConfigResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void visibleOk() {
         allowMember();
-        when(service.listVisible("org1")).thenReturn(Uni.createFrom().item(List.of(sample())));
+        when(service.listVisible(anyString(), eq("org1"))).thenReturn(Uni.createFrom().item(List.of(sample())));
 
-        given().header("X-Org-Id", "org1")
+        given().queryParam("orgId", "org1")
                 .when().get("/matrix/v1/modbus/config/visible")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -159,10 +196,10 @@ class ModbusConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void visibleWithoutOrgNeedsNoMembership() {
-        // 未带组织头：不校验组织成员，直接回公开集（设备映射页在没有组织时也要读得到点表）
+        // 未带组织参数：不校验组织成员，直接回「公开 + 本人」（设备映射页在没有组织时也要读得到点表）
         ModbusConfig pub = sample();
         pub.visibility = "public";
-        when(service.listVisible(isNull())).thenReturn(Uni.createFrom().item(List.of(pub)));
+        when(service.listVisible(anyString(), isNull())).thenReturn(Uni.createFrom().item(List.of(pub)));
 
         given().when().get("/matrix/v1/modbus/config/visible")
                 .then().statusCode(200)
@@ -171,6 +208,67 @@ class ModbusConfigResourceTest {
                 .body("data[0].visibility", equalTo("public"));
 
         verify(orgAccessService, never()).checkMember(anyString(), anyString());
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void listByUserOk() {
+        // /many/user：本人私有，不查组织、不校验成员
+        when(service.listByUser(anyString())).thenReturn(Uni.createFrom().item(List.of(sample())));
+
+        given().when().get("/matrix/v1/modbus/config/many/user")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data", hasSize(1))
+                .body("data[0].visibility", equalTo("private"));
+
+        verify(service).listByUser(anyString());
+        verify(orgAccessService, never()).checkMember(anyString(), anyString());
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void getVisibleByUserOk() {
+        // /visible/user：公开 + 本人，无组织个人访问，不校验成员
+        ModbusConfig pub = sample();
+        pub.visibility = "public";
+        when(service.listVisible(anyString(), isNull())).thenReturn(Uni.createFrom().item(List.of(pub)));
+
+        given().when().get("/matrix/v1/modbus/config/visible/user")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data", hasSize(1))
+                .body("data[0].visibility", equalTo("public"));
+
+        verify(orgAccessService, never()).checkMember(anyString(), anyString());
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void getVisibleByOrgOk() {
+        // /visible/org：公开 + 该组织私有（精确口径，不含本人），须成员校验
+        when(orgAccessService.checkMember(eq("org1"), anyString())).thenReturn(Uni.createFrom().voidItem());
+        when(service.listVisibleByOrg(eq("org1"))).thenReturn(Uni.createFrom().item(List.of(sample())));
+
+        given().queryParam("orgId", "org1")
+                .when().get("/matrix/v1/modbus/config/visible/org")
+                .then().statusCode(200)
+                .body("success", equalTo(true))
+                .body("data", hasSize(1))
+                .body("data[0].visibility", equalTo("private"));
+
+        verify(orgAccessService).checkMember(eq("org1"), anyString());
+        verify(service).listVisibleByOrg(eq("org1"));
+    }
+
+    @Test
+    @TestSecurity(user = "tester", roles = {OxRole.USER})
+    void getVisibleByOrgMissingOrgIdFails() {
+        given().when().get("/matrix/v1/modbus/config/visible/org")
+                .then().statusCode(200)
+                .body("success", equalTo(false))
+                .body("message", containsString("orgId is required"));
+        verify(service, never()).listVisibleByOrg(anyString());
     }
 
     @Test
@@ -190,12 +288,10 @@ class ModbusConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void getNotFound() {
-        allowMember();
-        when(service.get("org1", "nope"))
+        when(service.get(anyString(), eq("nope")))
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: nope")));
 
-        given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/config/one/nope")
+        given().when().get("/matrix/v1/modbus/config/one/nope")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", containsString("not found"));
@@ -206,9 +302,9 @@ class ModbusConfigResourceTest {
     void getOneWithoutOrgReadsPublic() {
         ModbusConfig pub = sample();
         pub.visibility = "public";
-        when(service.getPublic("c1")).thenReturn(Uni.createFrom().item(pub));
+        // 无组织浏览：归属鉴权在 service 按 owner 判（公开 → 直接可读），Resource 不强求 X-Org-Id
+        when(service.get(anyString(), eq("c1"))).thenReturn(Uni.createFrom().item(pub));
 
-        // 未带 X-Org-Id（未选组织浏览）：仍可读公开配置详情，无需成员校验
         given().when().get("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -219,29 +315,25 @@ class ModbusConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void getOneWithOrgReadsCrossOrgPublic() {
-        allowMember();
         ModbusConfig pub = sample();
-        pub.orgId = "org2"; // 他组织公开
+        pub.owner = ModbusConfigOwner.ofOrg("org2", "第二个组织"); // 他组织公开
         pub.visibility = "public";
-        when(service.get("org1", "c1")).thenReturn(Uni.createFrom().item(pub));
+        when(service.get(anyString(), eq("c1"))).thenReturn(Uni.createFrom().item(pub));
 
-        given().header("X-Org-Id", "org1")
-                .when().get("/matrix/v1/modbus/config/one/c1")
+        given().when().get("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.orgId", equalTo("org2"))
+                .body("data.owner.id", equalTo("org2"))
                 .body("data.visibility", equalTo("public"));
     }
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void updateOk() {
-        allowMember();
         when(service.update(anyString(), anyString(), any(ModbusConfig.class)))
                 .thenReturn(Uni.createFrom().item(sample()));
 
-        given().header("X-Org-Id", "org1")
-                .contentType(ContentType.JSON)
+        given().contentType(ContentType.JSON)
                 .body("{\"slave\":{\"manufacturer\":\"开利\",\"model\":\"19XRV\",\"slaveId\":1},\"visibility\":\"private\",\"commands\":[]}")
                 .when().put("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
@@ -253,11 +345,9 @@ class ModbusConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void deleteOk() {
-        allowMember();
-        when(service.delete("org1", "c1")).thenReturn(Uni.createFrom().item(1L));
+        when(service.delete(anyString(), eq("c1"))).thenReturn(Uni.createFrom().item(1L));
 
-        given().header("X-Org-Id", "org1")
-                .when().delete("/matrix/v1/modbus/config/one/c1")
+        given().when().delete("/matrix/v1/modbus/config/one/c1")
                 .then().statusCode(200)
                 .body("success", equalTo(true));
     }
@@ -265,29 +355,25 @@ class ModbusConfigResourceTest {
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void changeLifecycleOk() {
-        allowMember();
         ModbusConfig preview = sample();
         preview.lifecycle = "preview";
-        when(service.changeLifecycle(eq("org1"), eq("c1"), eq("preview"), any(Person.class)))
+        when(service.changeLifecycle(anyString(), eq("c1"), eq("preview"), any(Person.class)))
                 .thenReturn(Uni.createFrom().item(preview));
 
-        given().header("X-Org-Id", "org1")
-                .when().put("/matrix/v1/modbus/config/one/c1/lifecycle/preview")
+        given().when().put("/matrix/v1/modbus/config/one/c1/lifecycle/preview")
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.lifecycle", equalTo("preview"));
-        verify(service).changeLifecycle(eq("org1"), eq("c1"), eq("preview"), any(Person.class));
+        verify(service).changeLifecycle(anyString(), eq("c1"), eq("preview"), any(Person.class));
     }
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void changeLifecycleInvalidValueIsHttp200() {
-        allowMember();
         when(service.changeLifecycle(anyString(), anyString(), anyString(), any(Person.class)))
-                .thenThrow(new IllegalArgumentException("invalid lifecycle: archive"));
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("invalid lifecycle: archive")));
 
-        given().header("X-Org-Id", "org1")
-                .when().put("/matrix/v1/modbus/config/one/c1/lifecycle/archive")
+        given().when().put("/matrix/v1/modbus/config/one/c1/lifecycle/archive")
                 .then().statusCode(200)
                 .body("success", equalTo(false))
                 .body("message", containsString("invalid lifecycle"));
@@ -295,10 +381,16 @@ class ModbusConfigResourceTest {
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void changeLifecycleMissingOrgFails() {
+    void changeLifecycleWithoutOrgAllowed() {
+        // 无组织个人访问：流转归 owner 判权（service 内部按 owner），Resource 不强求 X-Org-Id
+        ModbusConfig preview = sample();
+        preview.lifecycle = "preview";
+        when(service.changeLifecycle(anyString(), eq("c1"), eq("preview"), any(Person.class)))
+                .thenReturn(Uni.createFrom().item(preview));
+
         given().when().put("/matrix/v1/modbus/config/one/c1/lifecycle/preview")
                 .then().statusCode(200)
-                .body("success", equalTo(false))
-                .body("message", containsString("X-Org-Id"));
+                .body("success", equalTo(true))
+                .body("data.lifecycle", equalTo("preview"));
     }
 }

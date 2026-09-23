@@ -3,7 +3,9 @@ package cc.openxiot.matrix.api.modbus.config;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,6 +31,7 @@ public class ModbusConfigService {
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
     private static final Set<String> COIL_STATES = Set.of("on", "off");
     private static final Set<String> VISIBILITIES = Set.of("private", "public");
+    private static final Set<String> OWNER_TYPES = Set.of(ModbusConfigOwner.TYPE_ORGANIZATION, ModbusConfigOwner.TYPE_USER);
     /** 生命周期门禁用（与 xiot-spec Lifecycle 存储串一致）。 */
     private static final String LIFECYCLE_DEVELOPMENT = "development";
     private static final String LIFECYCLE_PREVIEW = "preview";
@@ -45,11 +48,14 @@ public class ModbusConfigService {
     @Inject
     ModbusConfigRepository repo;
 
+    @Inject
+    OrgAccessService orgAccess;
+
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
     /**
-     * 启动只做建索引（{@code orgId} 唯一口径）。历史结构迁移已随存量数据一并清除：各环境均为全新库，
+     * 启动只做建索引（owner 口径）。历史结构迁移已随存量数据一并清除：各环境均为全新库，
      * 旧 points[] / 扁平 slave / 字符串 type / 缺 index / 缺 lifecycle / 字符串主键的文档不再存在，
      * 无需启动期兜底改写。
      */
@@ -72,16 +78,9 @@ public class ModbusConfigService {
         return repo.insert(cfg).replaceWith(cfg);
     }
 
-    public Uni<ModbusConfig> update(String orgId, String id, ModbusConfig patch) {
-        String err = checkId(orgId, id);
-        if (err != null) {
-            return Uni.createFrom().failure(new IllegalArgumentException(err));
-        }
-        return repo.findByIdAndOrg(id, orgId)
+    public Uni<ModbusConfig> update(String userId, String id, ModbusConfig patch) {
+        return authorizeOwnerById(userId, id)
                 .onItem().transformToUni(existing -> {
-                    if (existing == null) {
-                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
-                    }
                     // 生命周期门禁：仅「开发」态配置允许修改（仿 service-product，released/preview 拒绝）。
                     String lifecycleErr = lifecycleEditError(existing);
                     if (lifecycleErr != null) {
@@ -107,22 +106,12 @@ public class ModbusConfigService {
     }
 
     /**
-     * 读单条（orgId 必填，调用方需已校验该组织成员身份）：
-     * 返回「当前组织配置（任意可见度）」或「任意组织的公开配置」，与 /visible 列表口径一致；
+     * 读单条：返回「当前账号可读」的配置 —— 任意公开配置，或归属当前账号/当前账号所在组织的
+     * 非公开配置（与 /visible 列表口径一致），与 /visible 列表口径一致；
      * 他组织非公开配置一律视为 not found。
      */
-    public Uni<ModbusConfig> get(String orgId, String id) {
-        String err = checkId(orgId, id);
-        if (err != null) {
-            return Uni.createFrom().failure(new IllegalArgumentException(err));
-        }
-        return repo.findVisibleById(id, orgId)
-                .onItem().transformToUni(existing -> {
-                    if (existing == null) {
-                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
-                    }
-                    return Uni.createFrom().item(existing);
-                });
+    public Uni<ModbusConfig> get(String userId, String id) {
+        return authorizeReadById(userId, id);
     }
 
     /**
@@ -149,38 +138,42 @@ public class ModbusConfigService {
         return repo.listByOrg(orgId);
     }
 
+    /** 列出当前账号的私有配置（owner.type=user 且 owner.id=当前账号），不查组织。 */
+    public Uni<List<ModbusConfig>> listByUser(String userId) {
+        return repo.listByUser(userId);
+    }
+
     public Uni<List<ModbusConfig>> listPublic() {
         return repo.listPublic();
     }
 
     /**
-     * 可见点表：公开的 + 本组织的私有（口径同 {@link ModbusConfigRepository#listVisible}）。
-     * {@code orgId} 可空：没有组织上下文时退化成公开集（同 {@link #listPublic}），
-     * 让设备映射页在「未选组织 / 无组织」时也读得到点表。
+     * 可见点表：公开的 + 本组织的私有（owner.type=organization + owner.id=orgId）+ 本人的私有
+     * （owner.type=user + owner.id=userId），口径同 {@link ModbusConfigRepository#listVisible}。
+     * {@code orgId} 可空：没有组织上下文时只见「公开 + 本人」，让设备映射页在「未选组织 / 无组织」
+     * 时也能读到公开点表与其个人私有点表。
      */
-    public Uni<List<ModbusConfig>> listVisible(String orgId) {
-        if (orgId == null || orgId.isBlank()) {
-            return repo.listPublic();
-        }
-        return repo.listVisible(orgId);
+    public Uni<List<ModbusConfig>> listVisible(String userId, String orgId) {
+        return repo.listVisible(userId, orgId);
     }
 
-    public Uni<Long> delete(String orgId, String id) {
-        String err = checkId(orgId, id);
-        if (err != null) {
-            return Uni.createFrom().failure(new IllegalArgumentException(err));
-        }
-        return repo.findByIdAndOrg(id, orgId)
+    /**
+     * 组织内可见（精确口径，不含调用者个人私有）：公开的 + 该组织的私有（owner.type=organization +
+     * owner.id=orgId）。供 getVisibleByOrg 用；成员校验在 Resource 端做完再进这里。
+     */
+    public Uni<List<ModbusConfig>> listVisibleByOrg(String orgId) {
+        return repo.listVisibleByOrg(orgId);
+    }
+
+    public Uni<Long> delete(String userId, String id) {
+        return authorizeOwnerById(userId, id)
                 .onItem().transformToUni(existing -> {
-                    if (existing == null) {
-                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
-                    }
                     // 删除同为修改：仅「开发」态配置可删除（released/preview 拒绝）。
                     String lifecycleErr = lifecycleEditError(existing);
                     if (lifecycleErr != null) {
                         return Uni.createFrom().failure(new IllegalArgumentException(lifecycleErr));
                     }
-                    return repo.deleteByIdAndOrg(id, orgId)
+                    return repo.deleteById(id)
                             .onItem().transformToUni(count -> {
                                 if (count == null || count == 0L) {
                                     return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
@@ -198,25 +191,76 @@ public class ModbusConfigService {
      * development→preview（预览）、preview→released（发布）、released/preview→development（下线）都允许，
      * 与 service-product ProductBasicService.update(productId, lifecycle) 口径一致。
      */
-    public Uni<ModbusConfig> changeLifecycle(String orgId, String id, String lifecycle, Person updater) {
-        String err = checkId(orgId, id);
-        if (err != null) {
-            return Uni.createFrom().failure(new IllegalArgumentException(err));
-        }
+    public Uni<ModbusConfig> changeLifecycle(String userId, String id, String lifecycle, Person updater) {
         if (lifecycle == null || !LIFECYCLES.contains(lifecycle)) {
             return Uni.createFrom().failure(new IllegalArgumentException("invalid lifecycle: " + lifecycle));
         }
-        return repo.findByIdAndOrg(id, orgId)
+        return authorizeOwnerById(userId, id)
                 .onItem().transformToUni(existing -> {
-                    if (existing == null) {
-                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
-                    }
                     existing.lifecycle = lifecycle;
                     if (updater != null) {
                         existing.updater = updater;
                     }
                     return repo.replace(existing).replaceWith(existing);
                 });
+    }
+
+    // ===== 归属鉴权 =====
+
+    /**
+     * 按 id 取文档并判「当前账号是归属者」：user 归属 → owner.id 必须等于当前账号；
+     * organization 归属 → 当前账号必须是该组织成员（以 owner.id 为锚，不信请求头 X-Org-Id）。
+     * 组织成员的校验经 {@link OrgAccessService#checkMember}，防「拿任意组织 id 操作他人组织点击表」。
+     * 文档不存在 / owner 缺失或类型非法 / 无权限，一律回 not found。
+     */
+    private Uni<ModbusConfig> authorizeOwnerById(String userId, String id) {
+        String err = checkId(id);
+        if (err != null) {
+            return Uni.createFrom().failure(new IllegalArgumentException(err));
+        }
+        return repo.findById(id)
+                .onItem().transformToUni(doc -> authorizeOwner(userId, doc));
+    }
+
+    /**
+     * 取文档并判「当前账号可读」：任意公开配置可读；非公开的须是归属者（见
+     * {@link #authorizeOwner}）。供 GET /one 详情用，口径同 /visible 列表。
+     */
+    private Uni<ModbusConfig> authorizeReadById(String userId, String id) {
+        String err = checkId(id);
+        if (err != null) {
+            return Uni.createFrom().failure(new IllegalArgumentException(err));
+        }
+        return repo.findById(id)
+                .onItem().transformToUni(doc -> {
+                    if (doc == null) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found: " + id));
+                    }
+                    if ("public".equals(doc.visibility)) {
+                        return Uni.createFrom().item(doc);
+                    }
+                    return authorizeOwner(userId, doc);
+                });
+    }
+
+    private Uni<ModbusConfig> authorizeOwner(String userId, ModbusConfig doc) {
+        if (doc == null || doc.owner == null) {
+            return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found"));
+        }
+        if (ModbusConfigOwner.TYPE_USER.equals(doc.owner.type)) {
+            if (doc.owner.id == null || !doc.owner.id.equals(userId)) {
+                return Uni.createFrom().failure(new IllegalArgumentException("modbus device config not found"));
+            }
+            return Uni.createFrom().item(doc);
+        }
+        if (ModbusConfigOwner.TYPE_ORGANIZATION.equals(doc.owner.type)) {
+            // 组织成员校验以 owner.id 为锚（不信请求头）；非成员 / 组织不存在，一律回 not found，
+            // 不把 checkMember 的异常透出去（那会泄露「这条配置存在」）。
+            return orgAccess.checkMember(doc.owner.id, userId)
+                    .replaceWith(doc)
+                    .onFailure().transform(t -> new IllegalArgumentException("modbus device config not found"));
+        }
+        return Uni.createFrom().failure(new IllegalArgumentException("invalid owner type"));
     }
 
     /**
@@ -236,10 +280,7 @@ public class ModbusConfigService {
 
     // ===== 校验 =====
 
-    private String checkId(String orgId, String id) {
-        if (orgId == null || orgId.isBlank()) {
-            return "orgId is required";
-        }
+    private String checkId(String id) {
         if (id == null || id.isBlank()) {
             return "id is required";
         }
@@ -250,8 +291,11 @@ public class ModbusConfigService {
         if (cfg == null) {
             return "body is required";
         }
-        if (cfg.orgId == null || cfg.orgId.isBlank()) {
-            return "orgId is required";
+        if (cfg.owner == null || cfg.owner.id == null || cfg.owner.id.isBlank()) {
+            return "owner.id is required";
+        }
+        if (cfg.owner.type == null || !OWNER_TYPES.contains(cfg.owner.type)) {
+            return "invalid owner.type: " + cfg.owner.type;
         }
         return validateContent(cfg);
     }

@@ -23,8 +23,8 @@ public class ModbusConfig extends ReactivePanacheMongoEntity {
     // 主键 id（ObjectId）继承自 ReactivePanacheMongoEntity：落库时由 Panache 生成，
     // 不在此声明字段，避免 @BsonId 重复映射。
 
-    @Schema(description = "所属组织 ID", required = true)
-    public String orgId;
+    @Schema(description = "归属主体（id + type organization/user + name 快照）", required = true)
+    public ModbusConfigOwner owner;
 
     @Schema(description = "可见度：private 私有 / public 公开", examples = {"private"}, required = true)
     public String visibility;

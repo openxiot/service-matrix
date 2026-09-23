@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.modbus.config;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusCommandCodec;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
@@ -30,15 +31,22 @@ class ModbusConfigCodecTest {
         JsonObject o = ModbusConfigCodec.encode(config);
         // 主键对外一律十六进制字符串（URL 路径参数、服务 configId 同口径）
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
-        assertEquals("org-1", o.getString("orgId"));
         assertEquals("public", o.getString("visibility"));
         assertEquals("development", o.getString("lifecycle"));
+
+        // owner 对象打包为 {id, type, name}
+        JsonObject owner = o.getJsonObject("owner");
+        assertEquals("org-1", owner.getString("id"));
+        assertEquals("organization", owner.getString("type"));
+        assertEquals("第一个组织", owner.getString("name"));
 
         JsonObject slave = o.getJsonObject("slave");
         assertEquals("特灵", slave.getString("manufacturer"));
         assertEquals("19XRV", slave.getString("model"));
         assertEquals(1, slave.getInteger("slaveId").intValue());
         assertEquals("离心机", slave.getString("description"));
+        // 设备类型（可选）有值才出
+        assertEquals("离心式冷水机组", slave.getString("type"));
 
         JsonObject read = o.getJsonArray("commands").getJsonObject(0);
         assertEquals("读进水温度", read.getString("name"));
@@ -109,7 +117,7 @@ class ModbusConfigCodecTest {
     private static ModbusConfig config() {
         ModbusConfig config = new ModbusConfig();
         config.id = new ObjectId("65f0c0ffee0123456789abcd");
-        config.orgId = "org-1";
+        config.owner = ModbusConfigOwner.ofOrg("org-1", "第一个组织");
         config.visibility = "public";
         config.lifecycle = "development";
 
@@ -117,6 +125,7 @@ class ModbusConfigCodecTest {
         slave.manufacturer = "特灵";
         slave.model = "19XRV";
         slave.slaveId = 1;
+        slave.type = "离心式冷水机组";
         slave.description = "离心机";
         config.slave = slave;
 

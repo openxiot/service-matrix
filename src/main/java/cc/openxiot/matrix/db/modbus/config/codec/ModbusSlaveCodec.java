@@ -25,6 +25,9 @@ public final class ModbusSlaveCodec {
         if (s.slaveId != null) {
             o.put("slaveId", s.slaveId);
         }
+        if (s.type != null) {
+            o.put("type", s.type);
+        }
         if (s.description != null) {
             o.put("description", s.description);
         }

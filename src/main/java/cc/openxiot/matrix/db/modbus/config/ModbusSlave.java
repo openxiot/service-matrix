@@ -24,6 +24,9 @@ public class ModbusSlave {
     @Schema(description = "Modbus 从站地址 0-247", examples = {"1"}, required = true)
     public Integer slaveId;
 
+    @Schema(description = "设备类型（可选，自由字符串，如 冷水机组/风机盘管）", required = false)
+    public String type;
+
     @Schema(description = "描述（可选）", required = false)
     public String description;
 }

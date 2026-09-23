@@ -21,7 +21,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 
@@ -33,9 +35,14 @@ class ModbusConfigServiceTest {
      * 所以下面桩里那些 "c1" / "nope" 只是 mock 的入参 key，与实体 id 类型无关。
      */
     private static final ObjectId CID = new ObjectId("6512f3a4b5c6d7e8f9a0b1c2");
+    /** 测试用的当前账号（userId，authorize* 的第一个入参）。 */
+    private static final String USER = "u1";
 
     @Mock
     ModbusConfigRepository repo;
+
+    @Mock
+    OrgAccessService orgAccess;
 
     @InjectMocks
     ModbusConfigService service;
@@ -45,7 +52,7 @@ class ModbusConfigServiceTest {
     @BeforeEach
     void setUp() {
         cfg = new ModbusConfig();
-        cfg.orgId = "org1";
+        cfg.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         cfg.slave.manufacturer = "开利";
         cfg.slave.model = "19XRV";
         cfg.slave.slaveId = 1;
@@ -93,6 +100,11 @@ class ModbusConfigServiceTest {
         });
     }
 
+    /** 桩：当前账号 {@link #USER} 在 org1 是成员（authorizeOwner 的组织归属鉴权路径）。 */
+    private void authOrgOk() {
+        when(orgAccess.checkMember("org1", USER)).thenReturn(Uni.createFrom().voidItem());
+    }
+
     @Test
     void createInsertsAndKeepsGeneratedId() {
         cfg.creator = Person.of("acc1", "小明");
@@ -119,10 +131,27 @@ class ModbusConfigServiceTest {
     }
 
     @Test
-    void createWithBlankOrgFails() {
-        cfg.orgId = " ";
-        assertThrows(IllegalArgumentException.class,
+    void createWithBlankOwnerIdFails() {
+        cfg.owner.id = " ";
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
+        assertEquals("owner.id is required", ex.getMessage());
+    }
+
+    @Test
+    void createWithInvalidOwnerTypeFails() {
+        cfg.owner.type = "department";
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid owner.type: department", ex.getMessage());
+    }
+
+    @Test
+    void createWithUserOwnerAllowed() {
+        cfg.owner = ModbusConfigOwner.ofUser(USER, "小明");
+        cfg.commands = List.of(readHolding());
+        insertOk();
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
     }
 
     @Test
@@ -582,31 +611,32 @@ class ModbusConfigServiceTest {
 
     @Test
     void updateNotFoundFails() {
-        when(repo.findByIdAndOrg("nope", "org1")).thenReturn(Uni.createFrom().nullItem());
+        when(repo.findById("nope")).thenReturn(Uni.createFrom().nullItem());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.update("org1", "nope", cfg).await().indefinitely());
-        assertEquals("modbus device config not found: nope", ex.getMessage());
+                () -> service.update(USER, "nope", cfg).await().indefinitely());
+        assertEquals("modbus device config not found", ex.getMessage());
     }
 
     @Test
     void updateMergesEditableFields() {
         ModbusConfig existing = new ModbusConfig();
         existing.id = CID;
-        existing.orgId = "org1";
+        existing.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         existing.slave.manufacturer = "old";
         existing.slave.model = "old-model";
         existing.slave.slaveId = 5;
         existing.visibility = "public";
         existing.creator = Person.of("acc1", "小明");
         existing.updater = Person.of("acc1", "小明");
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         cfg.slave.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of(readHolding());
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update(USER, "c1", cfg).await().indefinitely();
 
         assertEquals("new", updated.slave.manufacturer);
         assertEquals("19XRV", updated.slave.model);
@@ -625,19 +655,20 @@ class ModbusConfigServiceTest {
     void updateWithCommandsAbsentKeepsExistingCommands() {
         ModbusConfig existing = new ModbusConfig();
         existing.id = CID;
-        existing.orgId = "org1";
+        existing.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         existing.slave.manufacturer = "m";
         existing.slave.model = "mm";
         existing.visibility = "private";
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 只改设备信息：patch.commands 为 null（请求体未带 commands 字段）
         cfg.slave.manufacturer = "new-m";
         cfg.updater = Person.of("acc2", "小红");
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update(USER, "c1", cfg).await().indefinitely();
 
         assertEquals("new-m", updated.slave.manufacturer);
         // 既有功能码不被整体清空
@@ -649,19 +680,20 @@ class ModbusConfigServiceTest {
     void updateWithEmptyCommandsClearsAll() {
         ModbusConfig existing = new ModbusConfig();
         existing.id = CID;
-        existing.orgId = "org1";
+        existing.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         existing.slave.manufacturer = "m";
         existing.slave.model = "mm";
         existing.visibility = "private";
         existing.commands = List.of(readHolding());
         existing.creator = Person.of("acc1", "小明");
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         // 显式传空数组才算清空全部功能码
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of();
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update(USER, "c1", cfg).await().indefinitely();
 
         assertEquals(0, updated.commands.size());
     }
@@ -670,34 +702,76 @@ class ModbusConfigServiceTest {
     void updateWithBlankModelFails() {
         ModbusConfig existing = new ModbusConfig();
         existing.id = CID;
-        existing.orgId = "org1";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        existing.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
 
         cfg.slave.model = "";
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.update("org1", "c1", cfg).await().indefinitely());
+                () -> service.update(USER, "c1", cfg).await().indefinitely());
         assertEquals("model is required", ex.getMessage());
     }
 
     @Test
-    void getNotFoundFails() {
-        when(repo.findVisibleById("ghost", "org1")).thenReturn(Uni.createFrom().nullItem());
-        assertThrows(IllegalArgumentException.class,
-                () -> service.get("org1", "ghost").await().indefinitely());
+    void updateCrossOrgOwnerForbiddenAsNotFound() {
+        ModbusConfig existing = new ModbusConfig();
+        existing.id = CID;
+        existing.owner = ModbusConfigOwner.ofOrg("org2", "第二个组织"); // 他组织
+        existing.slave.manufacturer = "m";
+        existing.slave.model = "mm";
+        existing.visibility = "private";
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
+        // 非本组织成员：ORG2 成员校验失败 → 一律回 not found（不透出「Not a member」）
+        when(orgAccess.checkMember("org2", USER))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the organization")));
+
+        cfg.slave.manufacturer = "new";
+        cfg.updater = Person.of("acc2", "小红");
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.update(USER, "c1", cfg).await().indefinitely());
+        assertEquals("modbus device config not found", ex.getMessage());
     }
 
     @Test
-    void getBlankOrgFails() {
+    void updateUserOwnerPassesWithoutOrgCheck() {
+        ModbusConfig existing = new ModbusConfig();
+        existing.id = CID;
+        existing.owner = ModbusConfigOwner.ofUser(USER, "小明");
+        existing.slave.manufacturer = "old";
+        existing.slave.model = "mm";
+        existing.visibility = "private";
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
+
+        cfg.slave.manufacturer = "new";
+        cfg.updater = Person.of("acc2", "小红");
+        cfg.commands = List.of(readHolding());
+        ModbusConfig updated = service.update(USER, "c1", cfg).await().indefinitely();
+        assertEquals("new", updated.slave.manufacturer);
+        // user 归属只认本人，不查组织成员（无组织个人访问）
+        verify(orgAccess, org.mockito.Mockito.times(0)).checkMember(eq(existing.owner.id), eq(USER));
+    }
+
+    @Test
+    void getNotFoundFails() {
+        when(repo.findById("ghost")).thenReturn(Uni.createFrom().nullItem());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.get(USER, "ghost").await().indefinitely());
+    }
+
+    @Test
+    void getBlankIdFails() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.get(" ", "c1").await().indefinitely());
-        assertEquals("orgId is required", ex.getMessage());
+                () -> service.get(USER, " ").await().indefinitely());
+        assertEquals("id is required", ex.getMessage());
     }
 
     @Test
     void getDelegatesToVisibleLookup() {
         cfg.id = CID;
-        when(repo.findVisibleById("c1", "org1")).thenReturn(Uni.createFrom().item(cfg));
-        ModbusConfig found = service.get("org1", "c1").await().indefinitely();
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(cfg));
+        ModbusConfig found = service.get(USER, "c1").await().indefinitely();
         assertEquals(CID, found.id);
     }
 
@@ -705,19 +779,32 @@ class ModbusConfigServiceTest {
     void getCrossOrgPublicReadable() {
         ModbusConfig pub = new ModbusConfig();
         pub.id = CID;
-        pub.orgId = "org2"; // 他组织
+        pub.owner = ModbusConfigOwner.ofOrg("org2", "第二个组织"); // 他组织
         pub.visibility = "public";
-        when(repo.findVisibleById("c2", "org1")).thenReturn(Uni.createFrom().item(pub));
-        ModbusConfig found = service.get("org1", "c2").await().indefinitely();
+        when(repo.findById("c2")).thenReturn(Uni.createFrom().item(pub));
+        ModbusConfig found = service.get(USER, "c2").await().indefinitely();
         assertEquals("public", found.visibility);
-        assertEquals("org2", found.orgId);
+        assertEquals("org2", found.owner.id);
+    }
+
+    @Test
+    void getCrossOrgPrivateNotReadable() {
+        ModbusConfig priv = new ModbusConfig();
+        priv.id = CID;
+        priv.owner = ModbusConfigOwner.ofOrg("org2", "第二个组织"); // 他组织私有
+        priv.visibility = "private";
+        when(repo.findById("c2")).thenReturn(Uni.createFrom().item(priv));
+        when(orgAccess.checkMember("org2", USER))
+                .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the organization")));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.get(USER, "c2").await().indefinitely());
     }
 
     @Test
     void getPublicReadable() {
         ModbusConfig pub = new ModbusConfig();
         pub.id = CID;
-        pub.orgId = "org2";
+        pub.owner = ModbusConfigOwner.ofOrg("org2", "第二个组织");
         pub.visibility = "public";
         when(repo.findPublicById("c2")).thenReturn(Uni.createFrom().item(pub));
         ModbusConfig found = service.getPublic("c2").await().indefinitely();
@@ -759,35 +846,51 @@ class ModbusConfigServiceTest {
 
     @Test
     void listVisibleDelegates() {
-        when(repo.listVisible("org1")).thenReturn(Uni.createFrom().item(List.of(cfg)));
-        assertEquals(1, service.listVisible("org1").await().indefinitely().size());
+        when(repo.listVisible(USER, "org1")).thenReturn(Uni.createFrom().item(List.of(cfg)));
+        assertEquals(1, service.listVisible(USER, "org1").await().indefinitely().size());
     }
 
     @Test
-    void listVisibleBlankOrgFallsBackToPublic() {
-        // 没有组织上下文：退化成公开集，而不是报错（设备映射页要能读到点表）
-        when(repo.listPublic()).thenReturn(Uni.createFrom().item(List.of(cfg)));
-        assertEquals(1, service.listVisible(" ").await().indefinitely().size());
-        verify(repo).listPublic();
+    void listVisibleWithNullOrgDelegates() {
+        // 没有组织上下文：透传给仓储（仓储内部退化为「公开 + 本人」），服务层不拦截
+        when(repo.listVisible(USER, " ")).thenReturn(Uni.createFrom().item(List.of(cfg)));
+        assertEquals(1, service.listVisible(USER, " ").await().indefinitely().size());
+        verify(repo).listVisible(USER, " ");
+    }
+
+    @Test
+    void listByUserDelegates() {
+        when(repo.listByUser(USER)).thenReturn(Uni.createFrom().item(List.of(cfg)));
+        assertEquals(1, service.listByUser(USER).await().indefinitely().size());
+        verify(repo).listByUser(USER);
+    }
+
+    @Test
+    void listVisibleByOrgDelegates() {
+        when(repo.listVisibleByOrg("org1")).thenReturn(Uni.createFrom().item(List.of(cfg)));
+        assertEquals(1, service.listVisibleByOrg("org1").await().indefinitely().size());
+        verify(repo).listVisibleByOrg("org1");
     }
 
     @Test
     void deleteZeroFailsAsNotFound() {
-        // 生命周期门禁先按 id 读原档：开发态才放行到删除
+        // 鉴权（按 owner）先按 id 读原档：开发态才放行到删除
         ModbusConfig existing = devConfig();
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.deleteByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(0L));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.deleteById("c1")).thenReturn(Uni.createFrom().item(0L));
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.delete("org1", "c1").await().indefinitely());
+                () -> service.delete(USER, "c1").await().indefinitely());
         assertEquals("modbus device config not found: c1", ex.getMessage());
     }
 
     @Test
     void deleteDelegates() {
         ModbusConfig existing = devConfig();
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
-        when(repo.deleteByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(1L));
-        assertEquals(1L, service.delete("org1", "c1").await().indefinitely());
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
+        when(repo.deleteById("c1")).thenReturn(Uni.createFrom().item(1L));
+        assertEquals(1L, service.delete(USER, "c1").await().indefinitely());
     }
 
     // ===== 生命周期：仅开发态可修改/删除 =====
@@ -796,7 +899,7 @@ class ModbusConfigServiceTest {
     private ModbusConfig devConfig() {
         ModbusConfig existing = new ModbusConfig();
         existing.id = CID;
-        existing.orgId = "org1";
+        existing.owner = ModbusConfigOwner.ofOrg("org1", "第一个组织");
         existing.lifecycle = "development";
         existing.visibility = "private";
         existing.slave.manufacturer = "m";
@@ -824,13 +927,14 @@ class ModbusConfigServiceTest {
     @Test
     void updateDevelopmentConfigAllowed() {
         ModbusConfig existing = devConfig();
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         cfg.slave.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         cfg.commands = List.of(readHolding());
-        ModbusConfig updated = service.update("org1", "c1", cfg).await().indefinitely();
+        ModbusConfig updated = service.update(USER, "c1", cfg).await().indefinitely();
         assertEquals("new", updated.slave.manufacturer);
         // 生命周期不随普通更新流转，仍停留在开发态
         assertEquals("development", updated.lifecycle);
@@ -840,12 +944,13 @@ class ModbusConfigServiceTest {
     void updateReleasedConfigFails() {
         ModbusConfig existing = devConfig();
         existing.lifecycle = "released";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
 
         cfg.slave.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.update("org1", "c1", cfg).await().indefinitely());
+                () -> service.update(USER, "c1", cfg).await().indefinitely());
         assertEquals("modbus device config is released, only development config can be modified: " + CID.toHexString(),
                 ex.getMessage());
     }
@@ -854,12 +959,13 @@ class ModbusConfigServiceTest {
     void updatePreviewConfigFails() {
         ModbusConfig existing = devConfig();
         existing.lifecycle = "preview";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
 
         cfg.slave.manufacturer = "new";
         cfg.updater = Person.of("acc2", "小红");
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.update("org1", "c1", cfg).await().indefinitely());
+                () -> service.update(USER, "c1", cfg).await().indefinitely());
         assertEquals("modbus device config is preview, only development config can be modified: " + CID.toHexString(),
                 ex.getMessage());
     }
@@ -868,10 +974,11 @@ class ModbusConfigServiceTest {
     void deleteReleasedConfigFails() {
         ModbusConfig existing = devConfig();
         existing.lifecycle = "released";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.delete("org1", "c1").await().indefinitely());
+                () -> service.delete(USER, "c1").await().indefinitely());
         assertEquals("modbus device config is released, only development config can be modified: " + CID.toHexString(),
                 ex.getMessage());
     }
@@ -879,33 +986,34 @@ class ModbusConfigServiceTest {
     @Test
     void changeLifecycleInvalidValueFails() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.changeLifecycle("org1", "c1", "archive", null).await().indefinitely());
+                () -> service.changeLifecycle(USER, "c1", "archive", null).await().indefinitely());
         assertEquals("invalid lifecycle: archive", ex.getMessage());
     }
 
     @Test
     void changeLifecycleNullValueFails() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.changeLifecycle("org1", "c1", null, null).await().indefinitely());
+                () -> service.changeLifecycle(USER, "c1", null, null).await().indefinitely());
         assertEquals("invalid lifecycle: null", ex.getMessage());
     }
 
     @Test
     void changeLifecycleNotFoundFails() {
-        when(repo.findByIdAndOrg("ghost", "org1")).thenReturn(Uni.createFrom().nullItem());
+        when(repo.findById("ghost")).thenReturn(Uni.createFrom().nullItem());
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.changeLifecycle("org1", "ghost", "preview", null).await().indefinitely());
-        assertEquals("modbus device config not found: ghost", ex.getMessage());
+                () -> service.changeLifecycle(USER, "ghost", "preview", null).await().indefinitely());
+        assertEquals("modbus device config not found", ex.getMessage());
     }
 
     @Test
     void changeLifecycleDevelopmentToPreviewUpdates() {
         ModbusConfig existing = devConfig();
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
         Person who = Person.of("acc2", "小红");
-        ModbusConfig updated = service.changeLifecycle("org1", "c1", "preview", who).await().indefinitely();
+        ModbusConfig updated = service.changeLifecycle(USER, "c1", "preview", who).await().indefinitely();
         assertEquals("preview", updated.lifecycle);
         assertEquals(who, updated.updater);
         verify(repo).replace(eq(existing));
@@ -915,10 +1023,11 @@ class ModbusConfigServiceTest {
     void changeLifecyclePreviewToReleasedAllowed() {
         ModbusConfig existing = devConfig();
         existing.lifecycle = "preview";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
-        ModbusConfig updated = service.changeLifecycle("org1", "c1", "released", null).await().indefinitely();
+        ModbusConfig updated = service.changeLifecycle(USER, "c1", "released", null).await().indefinitely();
         assertEquals("released", updated.lifecycle);
     }
 
@@ -926,10 +1035,11 @@ class ModbusConfigServiceTest {
     void changeLifecycleReleasedToDevelopmentUpdates() {
         ModbusConfig existing = devConfig();
         existing.lifecycle = "released";
-        when(repo.findByIdAndOrg("c1", "org1")).thenReturn(Uni.createFrom().item(existing));
+        authOrgOk();
+        when(repo.findById("c1")).thenReturn(Uni.createFrom().item(existing));
         when(repo.replace(any(ModbusConfig.class))).thenReturn(Uni.createFrom().voidItem());
 
-        ModbusConfig updated = service.changeLifecycle("org1", "c1", "development", null).await().indefinitely();
+        ModbusConfig updated = service.changeLifecycle(USER, "c1", "development", null).await().indefinitely();
         assertEquals("development", updated.lifecycle);
     }
 }

@@ -12,7 +12,7 @@ import java.util.List;
  * 拆到实体的 codec 子包，子结构逐个委派给各自的 Codec）。
  *
  * <p>只有 {@link #encode}：请求体由 Jackson 直接绑成实体（{@code ModbusConfigResource.createOne}
- * 的形参），服务端字段（id / orgId / lifecycle / 人员）的收口在 Service 里做，不在这里解。</p>
+ * 的形参），服务端字段（id / owner / lifecycle / 人员）的收口在 Service 里做，不在这里解。</p>
  */
 public final class ModbusConfigCodec {
 
@@ -28,8 +28,18 @@ public final class ModbusConfigCodec {
             // 落库主键是 ObjectId，对外一律十六进制字符串（URL 路径参数、服务 configId 同口径）
             o.put("id", c.id.toHexString());
         }
-        if (c.orgId != null) {
-            o.put("orgId", c.orgId);
+        if (c.owner != null) {
+            JsonObject owner = new JsonObject();
+            if (c.owner.id != null) {
+                owner.put("id", c.owner.id);
+            }
+            if (c.owner.type != null) {
+                owner.put("type", c.owner.type);
+            }
+            if (c.owner.name != null) {
+                owner.put("name", c.owner.name);
+            }
+            o.put("owner", owner);
         }
         o.put("slave", ModbusSlaveCodec.encode(c.slave));
         if (c.visibility != null) {
