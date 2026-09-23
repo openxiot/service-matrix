@@ -2,6 +2,7 @@ package cc.openxiot.matrix.db.modbus.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import org.bson.codecs.pojo.annotations.BsonProperty;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
@@ -22,6 +23,10 @@ public class ModbusConfigOwner {
     /** 主体类型：个人。 */
     public static final String TYPE_USER = "user";
 
+    // 说明见 SpaceAccess.id：嵌入式 POJO 里叫 id 的字段，Mongo POJO codec 会当成保留的 _id 去
+    // 子文档里找 _id 而不是字面 id，导致读不回。documents 里存的是字面 "id"，必须 @BsonProperty("id")
+    // 显式绑定（否则 owner.id 恒为 null，前端「拥有者」列全显示 -）。
+    @BsonProperty("id")
     @Schema(description = "主体 ID（组织编码 或 账号 ID）", required = true)
     public String id;
 
