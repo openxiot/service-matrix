@@ -13,7 +13,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.37.0</quarkus.platform.version>
+        <quarkus.platform.version>3.40.1</quarkus.platform.version>
         <openxiot.core>0.1.3</openxiot.core>
         <bouncycastle.version>1.84</bouncycastle.version>
         <skipITs>true</skipITs>
@@ -98,7 +98,6 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>${bouncycastle.version}</version>
         </dependency>
 
         <dependency>

@@ -38,7 +38,7 @@ Matrix 负责：校验调用者的空间 / 组织权限 → 以 `appId + ownerId
 | 设备 | `/matrix/v1/device` |
 | 统计 | `/matrix/v1/statistics` |
 
-> 部署说明：在公网网关（如 `site.openxiot.cn`）之后，`/matrix` 前缀可能由网关剥离，对外暴露为 `/v1/space/**`、`/v1/device/**`（与 webapp-matrix 前端调用一致）。以实际部署的网关转发规则为准。
+> 部署说明：在公网网关（如 `matrix.openxiot.cn`）之后，`/matrix` 前缀可能由网关剥离，对外暴露为 `/v1/space/**`、`/v1/device/**`（与 webapp-matrix 前端调用一致）。以实际部署的网关转发规则为准。
 
 ### 2.2 认证与鉴权
 
@@ -145,7 +145,7 @@ Base Path：`/matrix/v1/space`
 - **请求示例**（创建根空间）：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/space/one' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/space/one' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -155,7 +155,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/space/one' \
 - **请求示例**（创建子空间）：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/space/one' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/space/one' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -172,7 +172,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/space/one' \
 - **请求示例**：
 
 ```bash
-curl -X PUT 'https://site.openxiot.cn/matrix/v1/space/one' \
+curl -X PUT 'https://matrix.openxiot.cn/matrix/v1/space/one' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -188,7 +188,7 @@ curl -X PUT 'https://site.openxiot.cn/matrix/v1/space/one' \
 - **请求示例**：
 
 ```bash
-curl -X DELETE 'https://site.openxiot.cn/matrix/v1/space/one/66f2...0002' \
+curl -X DELETE 'https://matrix.openxiot.cn/matrix/v1/space/one/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -201,7 +201,7 @@ curl -X DELETE 'https://site.openxiot.cn/matrix/v1/space/one/66f2...0002' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/space/one/66f2...0001' \
+curl 'https://matrix.openxiot.cn/matrix/v1/space/one/66f2...0001' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -214,7 +214,7 @@ curl 'https://site.openxiot.cn/matrix/v1/space/one/66f2...0001' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/space/all' \
+curl 'https://matrix.openxiot.cn/matrix/v1/space/all' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -228,7 +228,7 @@ curl 'https://site.openxiot.cn/matrix/v1/space/all' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/space/tree/66f2...0001' \
+curl 'https://matrix.openxiot.cn/matrix/v1/space/tree/66f2...0001' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -253,7 +253,7 @@ curl 'https://site.openxiot.cn/matrix/v1/space/tree/66f2...0001' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/space/graph/66f2...0001' \
+curl 'https://matrix.openxiot.cn/matrix/v1/space/graph/66f2...0001' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -298,7 +298,7 @@ Base Path：`/matrix/v1/device`
 - **请求示例**：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/device/one/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -314,7 +314,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002' \
 - **请求示例**：
 
 ```bash
-curl -X DELETE 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
+curl -X DELETE 'https://matrix.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -328,7 +328,7 @@ curl -X DELETE 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
+curl 'https://matrix.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -350,7 +350,7 @@ curl 'https://site.openxiot.cn/matrix/v1/device/one/66f2...0002/abc' \
 - **请求示例**：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/device/many/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -365,7 +365,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002' \
 - **Query 参数**：`did`（可重复，至少 1 个）
 
 ```bash
-curl -X DELETE 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002?did=abc&did=def' \
+curl -X DELETE 'https://matrix.openxiot.cn/matrix/v1/device/many/66f2...0002?did=abc&did=def' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -389,7 +389,7 @@ curl -X DELETE 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002?did=a
 - **请求示例**：
 
 ```bash
-curl -X PUT 'https://site.openxiot.cn/matrix/v1/device/many/space' \
+curl -X PUT 'https://matrix.openxiot.cn/matrix/v1/device/many/space' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -404,7 +404,7 @@ curl -X PUT 'https://site.openxiot.cn/matrix/v1/device/many/space' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002' \
+curl 'https://matrix.openxiot.cn/matrix/v1/device/many/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -423,7 +423,7 @@ curl 'https://site.openxiot.cn/matrix/v1/device/many/66f2...0002' \
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/device/shadows/66f2...0002?did=abc&did=def' \
+curl 'https://matrix.openxiot.cn/matrix/v1/device/shadows/66f2...0002?did=abc&did=def' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -448,7 +448,7 @@ curl 'https://site.openxiot.cn/matrix/v1/device/shadows/66f2...0002?did=abc&did=
 - **请求示例**：
 
 ```bash
-curl 'https://site.openxiot.cn/matrix/v1/device/properties/66f2...0002?pid=abc.1.1&pid=abc.1.2' \
+curl 'https://matrix.openxiot.cn/matrix/v1/device/properties/66f2...0002?pid=abc.1.1&pid=abc.1.2' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot'
 ```
@@ -471,7 +471,7 @@ curl 'https://site.openxiot.cn/matrix/v1/device/properties/66f2...0002?pid=abc.1
 - **请求示例**：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/device/properties/66f2...0002' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/device/properties/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -516,7 +516,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/properties/66f2...0002' 
 - **请求示例**：
 
 ```bash
-curl -X POST 'https://site.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
+curl -X POST 'https://matrix.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
   -H 'Authorization: Bearer <jwt>' \
   -H 'X-Org-Id: openxiot' \
   -H 'Content-Type: application/json' \
@@ -633,7 +633,7 @@ curl -X POST 'https://site.openxiot.cn/matrix/v1/device/actions/66f2...0002' \
 一个典型的「扫码添加设备 → 读取设备影子 → 写属性 → 调用方法」流程：
 
 ```bash
-BASE='https://site.openxiot.cn/matrix/v1'
+BASE='https://matrix.openxiot.cn/matrix/v1'
 TOKEN='<service-account 签发的 JWT>'
 ORG='openxiot'
 

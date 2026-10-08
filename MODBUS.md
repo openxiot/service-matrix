@@ -392,6 +392,22 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   * **迁移必须在新后端部署之后**：旧后端把 `request` 当字符串解，结构化 request 的 PUT 必然失败
     （自检：GET 回来的 `version` 已经是 2 就说明部署好了；已迁移的服务脚本会跳过）。
     staging 上当时只有 2 条服务、都是单条读方法（`硬拓PT100-1` / `11`），**截至本次提交尚未迁移**。
+  * 整库迁移走库、不经 HTTP（因此不需要空间管理员 JWT）：`docs/migrations/modbus-service-request-v2.js`，
+  默认**只读演练**、`APPLY=1` 才落库。与上面那个 shell 脚本同一套反解口径，两处不同：
+  其一，**0F/10 也还原**（0F 逐位、10 逐寄存器）—— 帧逐字节不变，代价是「保帧不保语义」，
+  原来一条 int32 占两个寄存器会拆成两个 uint16 字段、界面上看到两行；
+  其二，写库前把还原出来的 request 用一份 JS 组帧算式重新组帧，与库里原帧**逐字节比对**，
+  不一致就连同它所在的那条服务一起拒绝迁移（原帧 CRC 不匹配只告警：那是原帧本来就发的坏帧）。
+  * **staging 试迁过一次、已按备份还原**：`硬拓PT100-1`（`6aa7e7959ce0a89b9445c8ba`）与 `11`
+    （`6aa9d1d7eb0e3568f2dc24aa`）两条升到 `version: 2` 后，轮询任务立刻开始失败 ——
+    部署在 `matrix.openxiot.cn` 的后端**仍是 v1**（报错里的 `ModbusServiceFunction` 是 v1 的类名），
+    读到结构化 `request` 直接解码失败：`readString can only be called when CurrentBSONType is
+    STRING, not when CurrentBSONType is OBJECT`。还原后轮询即恢复（`polls.lastStatus` 回到 `OK`）。
+    **顺序是硬约束：先部署 v2 后端，再跑库迁移**（HTTP 那条路相反 —— 它要求后端先新，
+    因为 PUT 由新后端校验）。v2 上线后直接 `APPLY=1` 重跑本脚本即可（幂等）。
+    迁移本身的正确性已独立验证过三件事：反解出的 request 经后端 `ModbusFrameCodec.encodeRequest`
+    重编后与库里的原帧逐字节相同（8 种功能码 15 个帧全过）、过 `ModbusServiceValidator.validate`、
+    以及除 `version` 与 `request`/`response` 的形状外一个字段都没动。
 
 ### 2026-09-16
 
