@@ -7,7 +7,7 @@
 
 | 步骤 | 内容 | 状态 |
 |---|---|---|
-| 1 | 配置模型（`ModbusFunctionResponseFieldAlarm` + 两处 `alarms` + Codec） | **已落地**（见第二、三节） |
+| 1 | 配置模型（`ModbusPollingResponseFieldAlarm` + 两处 `alarms` + Codec） | **已落地**（见第二、三节） |
 | 2 | 判定口径 `ModbusAlarmPolicy`（纯函数） | **已落地**（见第四、五节） |
 | 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **已落地：成立**（2026-09-14 staging 冒烟，见第七节） |
@@ -728,9 +728,9 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 
 ### 2026-09-14
 
-* **模型返工：一个出值一组规则，同时只留最严重的一条**（第一~六节、第八~十一节随之改写）。
+* **模型返工：一个出值一组规则，同时只留最严重的一条**（第一 ~六节、第八~十一节随之改写）。
   起因是「一个出值只能配一条规则」表达不了分级的真实需求（温度：低于 20 告警 / 超过 26 提示 /
-  超过 28 警告 / 超过 30 严重）。改动落在 `ModbusFunctionResponseFieldAlarm`（加 `id`）、两处 `alarm` →
+  超过 28 警告 / 超过 30 严重）。改动落在 `ModbusPollingResponseFieldAlarm`（加 `id`）、两处 `alarm` →
   `alarms` 数组、`ModbusAlarmPolicy`（选举 + `LEVEL_ORDER`）、`ModbusAlarmService`（`ruleId` +
   写序）、`ModbusAlarmPlan`（判据细到规则）、`ModbusServiceAlarm`（`ruleId` + `CLOSE_SUPERSEDED`）。
   几处值得记下的口径：
@@ -869,8 +869,8 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     `WriteConcernException` 而非 `MongoWriteException`（容易想当然漏掉）。
   * 单测：`ModbusAlarmCodecTest`（9）+ `ModbusServiceAlarmRepositoryTest`（8，纯静态）。
     全量 449 例中 448 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
-* **第一步落地：配置模型与校验**（`ModbusFunctionResponseFieldAlarm` + 两处 `alarm` 字段 +
-  `ModbusFunctionResponseFieldAlarmCodec` + `ModbusAlarmPolicy` + `ModbusServiceValidator.validateAlarm`）。
+* **第一步落地：配置模型与校验**（`ModbusPollingResponseFieldAlarm` + 两处 `alarm` 字段 +
+  `ModbusPollingResponseFieldAlarmCodec` + `ModbusAlarmPolicy` + `ModbusServiceValidator.validateAlarm`）。
   零 IO、可独立验证；没配告警的服务在采集热路径上一分钱都不多花。同时写下判定口径与落库口径
   （本文件第二至六节、第八至十节），后者待第七节那个冒烟结论门控。
 * 从 `validateInterval` 抽出共用的 `isReadFunction`：周期与告警都只允许配在读方法上，

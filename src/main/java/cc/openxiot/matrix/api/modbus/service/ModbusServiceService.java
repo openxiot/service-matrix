@@ -14,9 +14,9 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
@@ -309,7 +309,7 @@ public class ModbusServiceService {
 
     private Uni<JsonObject> invokeFunction(String ownerId, ModbusService service, int functionIndex,
                                            Map<String, Object> values, ModbusPollBaselines baselines) {
-        ModbusFunction function = findFunction(service, functionIndex);
+        ModbusPolling function = findFunction(service, functionIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
             return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + functionIndex));
@@ -336,7 +336,7 @@ public class ModbusServiceService {
      * <p>每个失败点都抛带分类的 {@link ModbusInvokeException}：分类只有在这里定得准
      * （是链路失败、父设备报错还是无应答，各自的排查方向完全不同），见 {@link ModbusFailureType}。</p>
      */
-    private Uni<JsonObject> execute(String ownerId, ModbusService service, ModbusFunction function,
+    private Uni<JsonObject> execute(String ownerId, ModbusService service, ModbusPolling function,
                                     Map<String, Object> values, ModbusPollBaselines baselines) {
         String coordinateErr = ModbusServiceValidator.checkDevice(service.device);
         if (coordinateErr != null) {
@@ -380,9 +380,9 @@ public class ModbusServiceService {
      *
      * <p>帧在这里现组（含 CRC16）—— 读方法按 {@code start/quantity}，写方法按字段与
      * {@code values}（缺省回落字段的缺省值）。读写两条路走同一个
-     * {@link ModbusFrameCodec#encodeRequest(ModbusFunctionRequest, Map)}，不再需要前端算好一整串帧。</p>
+     * {@link ModbusFrameCodec#encodeRequest(ModbusPollingRequest, Map)}，不再需要前端算好一整串帧。</p>
      */
-    private static String requestFrame(ModbusService service, ModbusFunction function,
+    private static String requestFrame(ModbusService service, ModbusPolling function,
                                        Map<String, Object> values) {
         DeviceOn device = service.device;
         ActionOperation action = new ActionOperation(new ActionID(device.did, device.siid, device.aiid));
@@ -417,7 +417,7 @@ public class ModbusServiceService {
      * <p>单副本前提下才这么省：api 副本（N 个）上这个缓存永远是空的，所以手动 invoke 自然就是每次读库，
      * 不需要额外判断「我在哪个副本上」。</p>
      */
-    private Uni<Void> recordHistory(ModbusService service, ModbusFunction function, JsonObject values,
+    private Uni<Void> recordHistory(ModbusService service, ModbusPolling function, JsonObject values,
                                     ModbusPollBaselines baselines) {
         ModbusPollKey key = baselines == null
                 ? null
@@ -451,7 +451,7 @@ public class ModbusServiceService {
      * <p>没有内存基准、也不扩影子：判定需要的「哪些出值开着」只能从告警表读，
      * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
      */
-    private Uni<Void> evaluateAlarms(ModbusService service, ModbusFunction function, JsonObject values) {
+    private Uni<Void> evaluateAlarms(ModbusService service, ModbusPolling function, JsonObject values) {
         return alarmService.evaluate(service, function, values)
                 .onFailure().invoke(e -> logger.warnv(
                         "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
@@ -469,7 +469,7 @@ public class ModbusServiceService {
      * 缓存的 {@code lastError} 可能已经被 api 副本上的手动调用清掉了，拿它当基准会把一次新的同类故障
      * 并进上一次的账上（见 {@code ModbusPollBaselines.usable}）。</p>
      */
-    private Uni<Void> recordFailure(ModbusService service, ModbusFunction function, Throwable error,
+    private Uni<Void> recordFailure(ModbusService service, ModbusPolling function, Throwable error,
                                     ModbusPollBaselines baselines) {
         ModbusPollKey key = baselines == null
                 ? null
@@ -524,7 +524,7 @@ public class ModbusServiceService {
     }
 
     /** 父设备应答 → 方法返回值。 */
-    private static JsonObject decodeFields(ModbusFunction function, ActionOperation result) {
+    private static JsonObject decodeFields(ModbusPolling function, ActionOperation result) {
         if (result == null) {
             throw ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "no response from parent device");
         }
@@ -536,7 +536,7 @@ public class ModbusServiceService {
                             : result.description());
         }
 
-        List<ModbusFunctionResponseField> fields = ModbusFunction.responseFields(function);
+        List<ModbusPollingResponseField> fields = ModbusPolling.responseFields(function);
         if (fields.isEmpty()) {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();
@@ -557,12 +557,13 @@ public class ModbusServiceService {
                 "no frame in parent device response, status=" + result.status());
     }
 
-    private static ModbusFunction findFunction(ModbusService service, int index) {
+    private static ModbusPolling findFunction(ModbusService service, int index) {
         if (service.functions == null) {
             return null;
         }
         return service.functions.stream()
-                .filter(function -> function != null && function.index != null && function.index == index)
+                .filter(function -> function != null
+                        && function.index != null && function.index.equals(index))
                 .findFirst()
                 .orElse(null);
     }

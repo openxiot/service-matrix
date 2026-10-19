@@ -2,10 +2,10 @@ package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -83,12 +83,12 @@ public final class ModbusAlarmPlan {
         if (service == null || service.functions == null) {
             return byIndex;
         }
-        for (ModbusFunction function : service.functions) {
+        for (ModbusPolling function : service.functions) {
             if (function == null || function.index == null) {
                 continue;
             }
             Map<String, Set<String>> keys = new HashMap<>();
-            for (ModbusFunctionResponseField field : ModbusFunction.responseFields(function)) {
+            for (ModbusPollingResponseField field : ModbusPolling.responseFields(function)) {
                 if (field == null) {
                     continue;
                 }
@@ -97,7 +97,7 @@ public final class ModbusAlarmPlan {
                 if (field.bitList == null) {
                     continue;
                 }
-                for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+                for (ModbusPollingResponseFieldBit bit : field.bitList) {
                     if (bit != null) {
                         addRuleIds(keys, bit.field, bit.alarms);
                     }
@@ -110,11 +110,11 @@ public final class ModbusAlarmPlan {
 
     /** 把一个出值上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
     private static void addRuleIds(Map<String, Set<String>> keys, String field,
-                                   List<ModbusFunctionResponseFieldAlarm> alarms) {
+                                   List<ModbusPollingResponseFieldAlarm> alarms) {
         if (field == null || alarms == null) {
             return;
         }
-        for (ModbusFunctionResponseFieldAlarm alarm : alarms) {
+        for (ModbusPollingResponseFieldAlarm alarm : alarms) {
             if (ModbusAlarmPolicy.isEnabled(alarm) && alarm.id != null) {
                 keys.computeIfAbsent(field, ignored -> new HashSet<>()).add(alarm.id);
             }

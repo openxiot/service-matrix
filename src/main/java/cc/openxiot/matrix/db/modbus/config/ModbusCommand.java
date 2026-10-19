@@ -1,16 +1,19 @@
 package cc.openxiot.matrix.db.modbus.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.quarkus.runtime.annotations.RegisterForReflection;
+import org.bson.codecs.pojo.annotations.BsonProperty;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Modbus 设备点表中的一个“功能码动作”。
  *
- * <p>旧版以“点位”为中心（area/address/rw 一列一个点），现改为以功能码为中心：
- * 一行 = 一次读操作（01/02 读一个位区，逐位具名见 {@link #bitNames}；03/04 读 {@code quantity}
- * 个值，逐个具名见 {@link #fieldNames}），或一次写操作（05 单线圈、06 单寄存器、0F 多线圈、10 多寄存器）。
+ * <p>以功能码为中心：一行 = 一次读操作（01/02 读一个位区，逐位具名见 {@link #bitNames}；
+ * 03/04 读 {@code quantity} 个值，逐个具名见 {@link #fields}），或一次写操作
+ * （05 单线圈、06 单寄存器、0F 多线圈、10 多寄存器）。
  *
  * <p>读写方向与“寄存器区”均由功能码决定（01/05/0F=线圈、02=离散输入、03/06/10=保持寄存器、04=输入寄存器），
  * 因此不再存 area/rw。逻辑地址不落库，由前端按 {@code fc}+{@code start} 实时换算。
@@ -28,7 +31,7 @@ public class ModbusCommand {
     @Schema(description = "功能码：01/02/03/04/05/06/0F/10（十六进制大写）", examples = {"03"}, required = true)
     public String fc;
 
-    @Schema(description = "序号（1 起自然数）：功能码动作在点表内的顺序；前端排序依赖它，生成服务方法时 method 的 index = 该 index",
+    @Schema(description = "序号（1 起自然数）：功能码动作在点表内的顺序；前端排序依赖它",
             examples = {"1"}, required = true)
     public Integer index;
 
@@ -43,28 +46,65 @@ public class ModbusCommand {
             examples = {"1", "3"})
     public Integer quantity;
 
-    @Schema(description = "应答字段名称（03/04 读寄存器；个数即应答字段数：非 string 为 quantity 个、string 为 1 个）。"
-            + "生成服务时逐个填进 method.response.fields[].field，缺省或某项为空时由生成方按功能名称兜底；"
-            + "01/02 读位请用 bitNames，写操作无应答字段，不填",
-            examples = {"[\"第一个温度值\",\"第二个温度值\"]"})
-    public List<String> fieldNames;
+    @Schema(description = "应答字段（03/04 读寄存器；个数即应答字段数：非 string 为 quantity 个、string 为 1 个）。"
+            + "以寄存器为中心的命令每条字段自带 名称/缩放/单位，一次读多寄存器各字段缩放可独立；"
+            + "缺失或某项名称为空时由消费方按功能名称兜底；01/02 读位请用 bitNames，写操作无应答字段，不填")
+    public List<Field> fields;
 
-    @Schema(description = "位名称（01/02 读位）：给读回的位区里的若干位各自命名，生成服务时逐位填进应答字段的位清单"
-            + "（bit-list），取值 0/1；缺省表示只按整段位掩码出字段。offset 为位偏移（0 基，从起始地址起，与 0F 的 Coil.offset 同口径）",
+    // ===== 存量迁移（仅读，不出现在 JSON API） =====
+
+    /**
+     * 旧版点表（fieldNames→fields 对齐前）把 03/04 应答名存在 {@code fieldNames}（字符串数组）、
+     * 缩放/单位挂在命令级 {@code scale}/{@code unit}。这三项是<b>迁移专用</b>：
+     * 由 Mongo POJO codec 从存量文档解码（故配 {@link BsonProperty}），经
+     * {@link #upgradeLegacyFields} 归一成 {@link #fields} 后即清空，**不进入 JSON API**（配 {@link JsonIgnore}），
+     * 也不重复持久化。新建/新改一律直接写 {@link #fields}，这三项恒为 null。
+     */
+    @JsonIgnore
+    @BsonProperty("fieldNames")
+    public List<String> legacyFieldNames;
+
+    @JsonIgnore
+    @BsonProperty("scale")
+    public Double legacyScale;
+
+    @JsonIgnore
+    @BsonProperty("unit")
+    public String legacyUnit;
+
+    /**
+     * 把存量的 fieldNames/命令级 scale/unit 升级成 {@link #fields}（每字段独立 name + 复制命令级 scale/unit），
+     * 顺便清掉迁移字段，使读后不残留、后续 replace 只落新形状。幂等：`fields` 已存在或没有 legacy 名则不动。
+     */
+    public static void upgradeLegacyFields(ModbusCommand c) {
+        if (c == null || c.fields != null || c.legacyFieldNames == null || c.legacyFieldNames.isEmpty()) {
+            return;
+        }
+        List<Field> fields = new ArrayList<>(c.legacyFieldNames.size());
+        for (String name : c.legacyFieldNames) {
+            Field f = new Field();
+            f.name = name == null || name.isBlank() ? null : name;
+            f.scale = c.legacyScale;
+            // unit 为空串视作未配
+            f.unit = c.legacyUnit == null || c.legacyUnit.isBlank() ? null : c.legacyUnit;
+            fields.add(f);
+        }
+        c.fields = fields;
+        c.legacyFieldNames = null;
+        c.legacyScale = null;
+        c.legacyUnit = null;
+    }
+
+    @Schema(description = "位名称（01/02 读位）：给读回的位区里的若干位各自命名，取值 0/1；缺省表示只按整段位掩码出字段。"
+            + "offset 为位偏移（0 基，从起始地址起，与 0F 的 Coil.offset 同口径）",
             examples = {"[{\"offset\":0,\"name\":\"进水阀\"},{\"offset\":1,\"name\":\"出水阀\"}]"})
     public List<BitName> bitNames;
 
-    @Schema(description = "数据格式（03/04）：int16/uint16/int32/uint32/float32/string；01/02 固定为 位/布尔，无需填写", examples = {"float32"})
+    @Schema(description = "数据格式（03/04）：int16/uint16/int32/uint32/int64/uint64/float32/string；01/02 固定为 位/布尔，无需填写", examples = {"float32"})
     public String dataType;
 
     @Schema(description = "字节序（03/04，多寄存器值按 32 位四种排布）：ABCD 大端 / DCBA 小端 / BADC 字内字节交换 / CDAB 字交换", examples = {"ABCD"})
     public String byteOrder;
-
-    @Schema(description = "缩放系数（03/04 读值转工程量用）", examples = {"0.1"})
-    public Double scale;
-
-    @Schema(description = "单位（03/04 读值展示用），如 ℃ / °F / % / kPa", examples = {"℃"})
-    public String unit;
 
     // ===== 写操作 05/06/0F/10 =====
 
@@ -87,7 +127,7 @@ public class ModbusCommand {
         @Schema(description = "位偏移（从起始地址起，0 基，< 位/线圈个数）", examples = {"0"})
         public Integer offset;
 
-        @Schema(description = "位名称（生成服务时作为应答字段名，如 进水阀）", examples = {"进水阀"})
+        @Schema(description = "位名称（如 进水阀）", examples = {"进水阀"})
         public String name;
     }
 
@@ -102,6 +142,20 @@ public class ModbusCommand {
         public Boolean on;
     }
 
+    /** 03/04 读寄存器的单个应答字段（以寄存器为中心：名/缩放/单位，各字段可独立）。 */
+    @RegisterForReflection
+    @Schema(description = "03/04 读寄存器的单个应答字段")
+    public static class Field {
+        @Schema(description = "字段名（应答时作为值的 key/表头）", examples = {"A相电压"})
+        public String name;
+
+        @Schema(description = "该字段缩放系数（读值转工程量用；缺省视为 1）", examples = {"0.1"})
+        public Double scale;
+
+        @Schema(description = "该字段单位（读值展示用），如 ℃ / °F / % / kPa", examples = {"℃"})
+        public String unit;
+    }
+
     /** 10 写多寄存器的单个寄存器条目。 */
     @RegisterForReflection
     @Schema(description = "单个寄存器条目")
@@ -109,7 +163,7 @@ public class ModbusCommand {
         @Schema(description = "数据地址（0 基；须与上一条目按类型跨度连续）", examples = {"10"})
         public Integer address;
 
-        @Schema(description = "数据格式：int16/uint16/int32/uint32/float32", examples = {"uint16"})
+        @Schema(description = "数据格式：int16/uint16/int32/uint32/int64/uint64/float32", examples = {"uint16"})
         public String dataType;
 
         @Schema(description = "字节序：ABCD/DCBA/BADC/CDAB", examples = {"ABCD"})

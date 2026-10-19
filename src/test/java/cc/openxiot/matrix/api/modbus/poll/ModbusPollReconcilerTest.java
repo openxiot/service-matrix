@@ -1,12 +1,13 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -174,11 +175,14 @@ class ModbusPollReconcilerTest {
         space.rootId = SPACE_ID;
         device.space = space;
         service.device = device;
-        ModbusFunction function = new ModbusFunction();
-        function.index = 1;
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = 1;
+                    function.index = 1;
         function.interval = 30;
         function.polling = Boolean.TRUE;
-        function.request = ModbusFunctionRequests.holding();
+        function.request = ModbusPollingRequests.holding();
         service.functions = List.of(function);
         return service;
     }
@@ -194,7 +198,7 @@ class ModbusPollReconcilerTest {
         ModbusPoll row = new ModbusPoll();
         row.id = id;
         row.serviceId = SID;
-        row.functionIndex = 1;
+        row.pollingIndex = 1;
         row.did = DID;
         row.interval = 30;
         row.nextRunAt = new Date(NOW);

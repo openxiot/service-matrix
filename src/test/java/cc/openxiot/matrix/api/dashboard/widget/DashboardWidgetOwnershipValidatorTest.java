@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,10 +20,9 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -199,7 +200,7 @@ class WidgetOwnershipValidatorTest {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀", "出水阀"))));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "进水阀")).isEmpty(),
-                "位名应当被认作合法字段（见 ModbusFunctionResponseFieldBit）");
+                "位名应当被认作合法字段（见 ModbusPollingResponseFieldBit）");
     }
 
     // ===== 编排：什么时候查库、错误之间互不牵连 =====
@@ -276,7 +277,7 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    private static ModbusService service(String id, String spaceId, ModbusFunction... functions) {
+    private static ModbusService service(String id, String spaceId, ModbusPolling... functions) {
         ModbusService s = new ModbusService();
         s.id = new ObjectId(id);
         s.name = "1 号冷水机组";
@@ -286,25 +287,28 @@ class WidgetOwnershipValidatorTest {
         return s;
     }
 
-    private static ModbusFunction function(int index, String field, List<String> bits) {
-        ModbusFunctionResponseField f = new ModbusFunctionResponseField();
+    private static ModbusPolling function(int index, String field, List<String> bits) {
+        ModbusPollingResponseField f = new ModbusPollingResponseField();
         f.field = field;
         f.unit = "℃";
         if (bits != null) {
-            List<ModbusFunctionResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusPollingResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusFunctionResponseFieldBit b = new ModbusFunctionResponseFieldBit();
+                ModbusPollingResponseFieldBit b = new ModbusPollingResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);
             }
             f.bitList = bitList;
         }
-        ModbusFunction fn = new ModbusFunction();
-        fn.index = index;
+        ModbusPolling fn = new ModbusPolling();
+                    fn.from = new ModbusPollingFrom();
+                    fn.from.type = "command";
+                    fn.from.index = index;
+                    fn.index = index;
         fn.name = field;
-        fn.response = ModbusFunctionResponses.of(f);
+        fn.response = ModbusPollingResponses.of(f);
         return fn;
     }
 

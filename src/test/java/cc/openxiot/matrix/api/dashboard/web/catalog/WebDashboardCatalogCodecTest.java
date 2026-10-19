@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,10 +11,9 @@ import java.util.List;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -100,21 +101,24 @@ class DashboardCatalogCodecTest {
     }
 
     private static ModbusService service() {
-        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
+        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
 
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.index = 1;
         field.field = "温度";
         field.format = "int16";
         field.unit = "℃";
         field.bitList = List.of(bit);
 
-        ModbusFunction function = new ModbusFunction();
-        function.index = 1;
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = 1;
+                    function.index = 1;
         function.name = "读温度";
-        function.response = ModbusFunctionResponses.of(field);
+        function.response = ModbusPollingResponses.of(field);
 
         ModbusService service = new ModbusService();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");

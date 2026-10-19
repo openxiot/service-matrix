@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -128,63 +128,63 @@ class ModbusFrameCodecTest {
     void serviceRequestMatchesThePointTableCommand() {
         // 读：uint16 一个值 = 1 个寄存器；2 个 float32 值 = 4 个寄存器（服务这边直接写 4）
         assertEquals(pointTable(command("03", 0, 1, "uint16", null)),
-                serviceFrame(ModbusFunctionRequests.read("03", 0, 1)));
+                serviceFrame(ModbusPollingRequests.read("03", 0, 1)));
         assertEquals(pointTable(command("01", 5, 1, null, null)),
-                serviceFrame(ModbusFunctionRequests.read("01", 5, 1)));
+                serviceFrame(ModbusPollingRequests.read("01", 5, 1)));
         assertEquals(pointTable(command("04", 0, 2, "float32", "ABCD")),
-                serviceFrame(ModbusFunctionRequests.read("04", 0, 4)));
+                serviceFrame(ModbusPollingRequests.read("04", 0, 4)));
 
         // 写单线圈
         ModbusCommand singleCoil = command("05", 0, null, null, null);
         singleCoil.coilState = "on";
-        assertEquals(pointTable(singleCoil), serviceFrame(ModbusFunctionRequests.write("05", 0,
-                ModbusFunctionRequests.field(1, "开机", "bit", true))));
+        assertEquals(pointTable(singleCoil), serviceFrame(ModbusPollingRequests.write("05", 0,
+                ModbusPollingRequests.field(1, "开机", "bit", true))));
 
         // 写单寄存器
         ModbusCommand singleRegister = command("06", 1, null, null, null);
         singleRegister.registerValue = 100L;
-        assertEquals(pointTable(singleRegister), serviceFrame(ModbusFunctionRequests.write("06", 1,
-                ModbusFunctionRequests.field(1, "写入值", "uint16", 100))));
+        assertEquals(pointTable(singleRegister), serviceFrame(ModbusPollingRequests.write("06", 1,
+                ModbusPollingRequests.field(1, "写入值", "uint16", 100))));
 
         // 写多个线圈：位按各自的 offset 落进同一个位字节
         ModbusCommand coils = command("0F", 0, null, null, null);
         coils.coils = List.of(coil(0, true), coil(1, false), coil(2, true), coil(3, true));
-        assertEquals(pointTable(coils), serviceFrame(ModbusFunctionRequests.write("0F", 0,
-                ModbusFunctionRequests.field(1, "位1", 0, "bit", true),
-                ModbusFunctionRequests.field(2, "位2", 1, "bit", false),
-                ModbusFunctionRequests.field(3, "位3", 2, "bit", true),
-                ModbusFunctionRequests.field(4, "位4", 3, "bit", true))));
+        assertEquals(pointTable(coils), serviceFrame(ModbusPollingRequests.write("0F", 0,
+                ModbusPollingRequests.field(1, "位1", 0, "bit", true),
+                ModbusPollingRequests.field(2, "位2", 1, "bit", false),
+                ModbusPollingRequests.field(3, "位3", 2, "bit", true),
+                ModbusPollingRequests.field(4, "位4", 3, "bit", true))));
 
         // 写多个寄存器：int16 的 -1（补码）在两条线上同形
         ModbusCommand registers = command("10", 10, null, null, null);
         registers.registers = List.of(register(10, "uint16", "ABCD", 100L), register(11, "int16", "ABCD", -1L));
-        assertEquals(pointTable(registers), serviceFrame(ModbusFunctionRequests.write("10", 10,
-                ModbusFunctionRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
-                ModbusFunctionRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
+        assertEquals(pointTable(registers), serviceFrame(ModbusPollingRequests.write("10", 10,
+                ModbusPollingRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
+                ModbusPollingRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
 
         // float32 + CDAB：点表给的是位模式，服务这边给的是浮点值，落到帧上应当是同一串
         ModbusCommand floatRegisters = command("10", 0, null, null, null);
         floatRegisters.registers = List.of(register(0, "float32", "CDAB", 0x41CC0000L));
-        assertEquals(pointTable(floatRegisters), serviceFrame(ModbusFunctionRequests.write("10", 0,
-                ModbusFunctionRequests.field(1, "设定温度", 0, "float32", "CDAB", 25.5f))));
+        assertEquals(pointTable(floatRegisters), serviceFrame(ModbusPollingRequests.write("10", 0,
+                ModbusPollingRequests.field(1, "设定温度", 0, "float32", "CDAB", 25.5f))));
     }
 
     /** 定点回归：结构化的那条线也不能把既有帧组歪（这几个值别处在断言）。 */
     @Test
     void serviceRequestKeepsTheRegressionFrames() {
-        assertEquals("010300000001840A", serviceFrame(ModbusFunctionRequests.holding()));
-        assertEquals("01050000FF008C3A", serviceFrame(ModbusFunctionRequests.write("05", 0,
-                ModbusFunctionRequests.field(1, "开机", "bit", true))));
-        assertEquals("0110000A0002040064FFFF33BF", serviceFrame(ModbusFunctionRequests.write("10", 10,
-                ModbusFunctionRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
-                ModbusFunctionRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
+        assertEquals("010300000001840A", serviceFrame(ModbusPollingRequests.holding()));
+        assertEquals("01050000FF008C3A", serviceFrame(ModbusPollingRequests.write("05", 0,
+                ModbusPollingRequests.field(1, "开机", "bit", true))));
+        assertEquals("0110000A0002040064FFFF33BF", serviceFrame(ModbusPollingRequests.write("10", 10,
+                ModbusPollingRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
+                ModbusPollingRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
     }
 
     /** invoke 给的 values 顶掉定义里的缺省值：同一个定义、每次调用一个值。 */
     @Test
     void serviceRequestValuesOverrideTheDefaults() {
-        ModbusFunctionRequest write = ModbusFunctionRequests.write("06", 1,
-                ModbusFunctionRequests.field(1, "写入值", "uint16", 100));
+        ModbusPollingRequest write = ModbusPollingRequests.write("06", 1,
+                ModbusPollingRequests.field(1, "写入值", "uint16", 100));
 
         assertEquals("010600010064D9E1", ModbusFrameCodec.encodeRequest(write, Map.of("写入值", 100)));
         assertEquals("0106000100C8D99C", ModbusFrameCodec.encodeRequest(write, Map.of("写入值", 200)));
@@ -197,10 +197,10 @@ class ModbusFrameCodecTest {
     void serviceRequestRejectsUnbuildableFrames() {
         assertThrows(IllegalArgumentException.class, () -> serviceFrame(null));
         assertThrows(IllegalArgumentException.class,
-                () -> serviceFrame(ModbusFunctionRequests.read("07", 0, 1)));
+                () -> serviceFrame(ModbusPollingRequests.read("07", 0, 1)));
         assertThrows(IllegalArgumentException.class,
-                () -> ModbusFrameCodec.encodeRequest(ModbusFunctionRequests.write("06", 1,
-                        ModbusFunctionRequests.field(1, "写入值", "uint16", null)), Map.of()));
+                () -> ModbusFrameCodec.encodeRequest(ModbusPollingRequests.write("06", 1,
+                        ModbusPollingRequests.field(1, "写入值", "uint16", null)), Map.of()));
     }
 
     // ===== 应答帧 =====
@@ -216,7 +216,10 @@ class ModbusFrameCodecTest {
 
         // 123 原始值 × 0.5 缩放 → 61.5（用二进制可精确表示的系数，避免浮点比较误差）
         ModbusCommand scaled = command("03", 0, 1, "int16", null);
-        scaled.scale = 0.5;
+        ModbusCommand.Field f = new ModbusCommand.Field();
+        f.name = "x";
+        f.scale = 0.5;
+        scaled.fields = List.of(f);
         assertEquals(61.5, ModbusFrameCodec.decodeResponse(scaled, "010302007BF867"));
     }
 
@@ -268,7 +271,7 @@ class ModbusFrameCodecTest {
     }
 
     /** 服务定义那条线：这里的用例全都靠字段的缺省值，故 values 传 null。 */
-    private static String serviceFrame(ModbusFunctionRequest request) {
+    private static String serviceFrame(ModbusPollingRequest request) {
         return ModbusFrameCodec.encodeRequest(request, null);
     }
 

@@ -5,6 +5,7 @@ import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -15,6 +16,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @ApplicationScoped
@@ -22,16 +24,22 @@ public class ModbusConfigService {
 
     /** 功能码词表（十六进制大写字符串）。 */
     private static final Set<String> FCS = Set.of("01", "02", "03", "04", "05", "06", "0F", "10");
-    /** 读功能码：只有读操作有应答字段（{@link ModbusCommand#fieldNames}）。 */
+    /** 读功能码：只有读操作有应答字段（{@link ModbusCommand#fields}）。 */
     private static final Set<String> READ_FCS = Set.of("01", "02", "03", "04");
     /** 读位功能码（01/02）：数据区按位打包，逐位命名走 {@link ModbusCommand#bitNames}。 */
     private static final Set<String> READ_BIT_FCS = Set.of("01", "02");
-    private static final Set<String> REGISTER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "float32", "string");
-    private static final Set<String> WRITE_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "float32");
+    private static final Set<String> REGISTER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "string");
+    private static final Set<String> WRITE_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64", "float32");
+    /** 整型（允许挂 enumMap 枚举映射）——浮点/string 上挂枚举无意义。 */
+    private static final Set<String> INTEGER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64");
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
     private static final Set<String> COIL_STATES = Set.of("on", "off");
     private static final Set<String> VISIBILITIES = Set.of("private", "public");
     private static final Set<String> OWNER_TYPES = Set.of(ModbusConfigOwner.TYPE_ORGANIZATION, ModbusConfigOwner.TYPE_USER);
+    /** 寄存器区（{@link ModbusRegistry#area}）：holding 保持 / input 输入 / coil 线圈 / discrete 离散输入。 */
+    private static final Set<String> AREAS = Set.of("holding", "input", "coil", "discrete");
+    /** 读写方向（{@link ModbusRegistry#access}）：R 只读 / W 只写 / RW 读写。 */
+    private static final Set<String> ACCESSES = Set.of("R", "RW", "W");
     /** 生命周期门禁用（与 xiot-spec Lifecycle 存储串一致）。 */
     private static final String LIFECYCLE_DEVELOPMENT = "development";
     private static final String LIFECYCLE_PREVIEW = "preview";
@@ -67,6 +75,7 @@ public class ModbusConfigService {
     }
 
     public Uni<ModbusConfig> create(ModbusConfig cfg) {
+        normalizeLegacy(cfg); // 旧 fieldNames/命令级 scale-unit → fields（幂等）
         String err = validate(cfg);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -98,9 +107,15 @@ public class ModbusConfigService {
                     if (patch.commands != null) {
                         existing.commands = patch.commands;
                     }
+                    // registries 同一口径：缺省保留既有（存量配置没有该字段，读了只改设备信息不会把它凭空加上）。
+                    if (patch.registries != null) {
+                        existing.registries = patch.registries;
+                    }
                     if (patch.updater != null) {
                         existing.updater = patch.updater;
                     }
+                    // 存量命令（fieldNames→fields）在落库前归一，使 DB 迁到新形状、不残留迁移字段
+                    normalizeLegacy(existing);
                     return repo.replace(existing).replaceWith(existing);
                 });
     }
@@ -322,7 +337,113 @@ public class ModbusConfigService {
         if (!VISIBILITIES.contains(cfg.visibility)) {
             return "invalid visibility: " + cfg.visibility;
         }
+        String err = validateRegistries(cfg.registries);
+        if (err != null) {
+            return err;
+        }
         return validateCommands(cfg.commands);
+    }
+
+    /** 把存量命令的 fieldNames/命令级 scale-unit 归一成 fields（幂等；新建即使全新也调用无副作用）。 */
+    private void normalizeLegacy(ModbusConfig cfg) {
+        if (cfg == null || cfg.commands == null) {
+            return;
+        }
+        for (ModbusCommand c : cfg.commands) {
+            ModbusCommand.upgradeLegacyFields(c);
+        }
+    }
+
+    /**
+     * 校验寄存器/点位表（{@link ModbusRegistry}）。**允许整体缺省**：为空时点表行为与纯 commands
+     * 一致（双模式兼容、存量不迁移）。一旦给出，逐个校验：name/address/area/access 必填，
+     * address 非负、area 在四区内、dataType 按区取词表、byteOrder 仅 32/64 位必填、scale/unit 可选；
+     * 且同一（area, address）不得重复——一个物理位只出现一次。
+     */
+    private String validateRegistries(List<ModbusRegistry> registries) {
+        if (registries == null) {
+            return null;
+        }
+        // (area, address) 唯一：同区内同一地址重复会让隐式读对同一个物理位发两次读、两次命名
+        Set<String> seen = new HashSet<>();
+        // index 唯一：它是 ModbusPollingFrom.index 的引用来源、也是前后端对这条寄存器的稳定身份，
+        // 重复会让「由哪条寄存器展开」对不上号
+        Set<Integer> seenIndex = new HashSet<>();
+        for (int i = 0; i < registries.size(); i++) {
+            ModbusRegistry r = registries.get(i);
+            String base = "registries[" + i + "]";
+            if (r == null) {
+                return base + " is null";
+            }
+            // 序号（供 ModbusPollingFrom.index 引用）：必填、1 起、同表唯一
+            if (r.index == null) {
+                return base + ".index is required";
+            }
+            if (r.index < 1) {
+                return "invalid " + base + ".index: " + r.index + " (index must be a natural number, 1-based)";
+            }
+            if (!seenIndex.add(r.index)) {
+                return base + ".index is duplicated: " + r.index;
+            }
+            if (r.address == null) {
+                return base + ".address is required";
+            }
+            if (r.address < 0) {
+                return "invalid " + base + ".address: " + r.address;
+            }
+            if (r.area == null || r.area.isBlank()) {
+                return base + ".area is required";
+            }
+            if (!AREAS.contains(r.area)) {
+                return "invalid " + base + ".area: " + r.area;
+            }
+            if (!seen.add(r.area + ":" + r.address)) {
+                return "invalid " + base + ": duplicated (area " + r.area + ", address " + r.address + ")";
+            }
+            if (r.name == null || r.name.isBlank()) {
+                return base + ".name is required";
+            }
+            if (r.access == null || r.access.isBlank()) {
+                return base + ".access is required";
+            }
+            if (!ACCESSES.contains(r.access)) {
+                return "invalid " + base + ".access: " + r.access;
+            }
+            // 跨多寄存器值（32 位跨 2 个、64 位跨 4 个）解码必须知道字节序；16 位/string/线圈离散无需字节序
+            boolean multiRegister = "int32".equals(r.dataType) || "uint32".equals(r.dataType)
+                    || "float32".equals(r.dataType) || "int64".equals(r.dataType) || "uint64".equals(r.dataType);
+            if (multiRegister) {
+                if (r.byteOrder == null || r.byteOrder.isBlank()) {
+                    return base + ".byteOrder is required for dataType " + r.dataType;
+                }
+                if (!BYTE_ORDERS.contains(r.byteOrder)) {
+                    return "invalid " + base + ".byteOrder: " + r.byteOrder;
+                }
+            } else if (!isCoilOrDiscreteArea(r.area)) {
+                // 非线圈/离散区：16 位或 string，dataType 必填、须在寄存器词表内
+                if (r.dataType == null || r.dataType.isBlank()) {
+                    return base + ".dataType is required";
+                }
+                if (!REGISTER_DATA_TYPES.contains(r.dataType)) {
+                    return "invalid " + base + ".dataType: " + r.dataType;
+                }
+            }
+            // 枚举映射（enumMap，可选）：仅挂在整型数值类型上；位区/浮点/string 无意义，key/value 须非空
+            if (r.enumMap != null && !r.enumMap.isEmpty()) {
+                if (isCoilOrDiscreteArea(r.area)) {
+                    return base + ".enumMap is not allowed on bit area";
+                }
+                if (r.dataType == null || !INTEGER_DATA_TYPES.contains(r.dataType)) {
+                    return "invalid " + base + ".enumMap: dataType " + r.dataType + " is not an integer type";
+                }
+                for (Map.Entry<String, String> e : r.enumMap.entrySet()) {
+                    if (e.getKey() == null || e.getKey().isBlank() || e.getValue() == null || e.getValue().isBlank()) {
+                        return "invalid " + base + ".enumMap: keys and values must be non-empty";
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private String validateCommands(List<ModbusCommand> commands) {
@@ -364,8 +485,8 @@ public class ModbusConfigService {
             if (err != null) {
                 return err;
             }
-            if (!READ_FCS.contains(c.fc) && c.fieldNames != null && !c.fieldNames.isEmpty()) {
-                return base + ".fieldNames is not allowed: fc " + c.fc + " has no response fields";
+            if (!READ_FCS.contains(c.fc) && c.fields != null && !c.fields.isEmpty()) {
+                return base + ".fields is not allowed: fc " + c.fc + " has no response fields";
             }
             if (!READ_BIT_FCS.contains(c.fc) && c.bitNames != null && !c.bitNames.isEmpty()) {
                 return base + ".bitNames is not allowed: fc " + c.fc + " has no bit response";
@@ -382,8 +503,8 @@ public class ModbusConfigService {
                     yield err;
                 }
                 // 读位的应答数据区按位打包：字段恒为一个（整段位掩码），逐位命名走 bitNames
-                if (c.fieldNames != null && !c.fieldNames.isEmpty()) {
-                    yield base + ".fieldNames is not allowed: fc " + c.fc + " names each bit via bitNames";
+                if (c.fields != null && !c.fields.isEmpty()) {
+                    yield base + ".fields is not allowed: fc " + c.fc + " names each bit via bitNames";
                 }
                 yield validateBitNames(c, base, c.quantity);
             }
@@ -412,7 +533,7 @@ public class ModbusConfigService {
                     yield "invalid " + base + ".quantity: " + c.quantity
                             + " (dataType " + c.dataType + " reads " + registers + " registers)";
                 }
-                yield validateFieldNames(c, base, single ? 1 : c.quantity);
+                yield validateFields(c, base, single ? 1 : c.quantity);
             }
             case "05" -> {
                 if (c.coilState == null || c.coilState.isBlank()) {
@@ -439,24 +560,36 @@ public class ModbusConfigService {
     }
 
     /**
-     * 校验应答字段名称（{@link ModbusCommand#fieldNames}，03/04 读寄存器）：允许整体缺省（存量点表；
-     * 生成服务时按功能名称兜底），但一旦给出就必须与应答字段个数一致、逐项非空 ——
-     * 名称会直接成为 invoke 返回值的 key。
+     * 校验应答字段（{@link ModbusCommand#fields}，03/04 读寄存器）：允许整体缺省（存量点表；
+     * 生成服务时按功能名称兜底），但一旦给出则逐字段校验 —— 名称非空且不重复、
+     * 个数与应答字段数一致（string 恒为 1，其余为数量）；字段自带缩放系数须有限且 > 0。
      *
      * @param expected 该功能码的应答字段个数（string 恒为 1，其余为数量）
      */
-    private String validateFieldNames(ModbusCommand c, String base, int expected) {
-        List<String> names = c.fieldNames;
-        if (names == null || names.isEmpty()) {
+    private String validateFields(ModbusCommand c, String base, int expected) {
+        List<ModbusCommand.Field> fields = c.fields;
+        if (fields == null || fields.isEmpty()) {
             return null;
         }
-        if (names.size() != expected) {
-            return "invalid " + base + ".fieldNames: " + names.size()
+        if (fields.size() != expected) {
+            return "invalid " + base + ".fields: " + fields.size()
                     + " (fc " + c.fc + " needs " + expected + ")";
         }
-        for (int i = 0; i < names.size(); i++) {
-            if (names.get(i) == null || names.get(i).isBlank()) {
-                return "invalid " + base + ".fieldNames[" + i + "]: blank";
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < fields.size(); i++) {
+            ModbusCommand.Field f = fields.get(i);
+            String fbase = base + ".fields[" + i + "]";
+            if (f == null) {
+                return fbase + " is null";
+            }
+            if (f.name == null || f.name.isBlank()) {
+                return fbase + ".name is required";
+            }
+            if (!seen.add(f.name)) {
+                return "invalid " + fbase + ".name: " + f.name + " duplicated";
+            }
+            if (f.scale != null && (!Double.isFinite(f.scale) || f.scale == 0 || f.scale < 0)) {
+                return "invalid " + fbase + ".scale: " + f.scale + " (must be a positive finite number)";
             }
         }
         return null;
@@ -586,7 +719,7 @@ public class ModbusConfigService {
         };
     }
 
-    /** 类型占用寄存器数：16 位→1、32 位/float→2、string→不固定（null）。 */
+    /** 类型占用寄存器数：16 位→1、32 位/float→2、64 位→4、string→不固定（null）。 */
     private Integer registerSpan(String dataType) {
         if (dataType == null) {
             return null;
@@ -594,7 +727,13 @@ public class ModbusConfigService {
         return switch (dataType) {
             case "int16", "uint16" -> 1;
             case "int32", "uint32", "float32" -> 2;
+            case "int64", "uint64" -> 4;
             default -> null;
         };
+    }
+
+    /** 线圈/离散输入区（{@link ModbusRegistry#area}）：数据恒为布尔，无需 dataType。 */
+    private static boolean isCoilOrDiscreteArea(String area) {
+        return "coil".equals(area) || "discrete".equals(area);
     }
 }

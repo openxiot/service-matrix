@@ -3,18 +3,18 @@ package cc.openxiot.matrix.db.modbus.service.codec;
 import cc.openxiot.matrix.api.modbus.service.validator.ModbusServiceValidator;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.codec.ModbusFunctionCodec;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.codec.ModbusFunctionResponseFieldAlarmCodec;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.codec.ModbusFunctionResponseFieldCodec;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequestField;
-import cc.openxiot.matrix.db.modbus.service.function.request.codec.ModbusFunctionRequestCodec;
-import cc.openxiot.matrix.db.modbus.service.function.request.codec.ModbusFunctionRequestFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.polling.codec.ModbusPollingCodec;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.codec.ModbusPollingResponseFieldAlarmCodec;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.codec.ModbusPollingResponseFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequestField;
+import cc.openxiot.matrix.db.modbus.service.polling.request.codec.ModbusPollingRequestCodec;
+import cc.openxiot.matrix.db.modbus.service.polling.request.codec.ModbusPollingRequestFieldCodec;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -53,6 +53,7 @@ class ModbusServiceCodecTest {
               "functions": [
                 {
                   "index": 1,
+                  "from": { "type": "command", "index": 1 },
                   "name": "读进水温度",
                   "request": { "slaveId": 1, "fc": "03", "start": 0, "quantity": 1 },
                   "interval": 5,
@@ -70,6 +71,7 @@ class ModbusServiceCodecTest {
                 },
                 {
                   "index": 2,
+                  "from": { "type": "command", "index": 2 },
                   "name": "读开关状态",
                   "request": { "slaveId": 1, "fc": "03", "start": 1, "quantity": 1 },
                   "response": { "fields": [
@@ -85,6 +87,7 @@ class ModbusServiceCodecTest {
                 },
                 {
                   "index": 3,
+                  "from": { "type": "command", "index": 3 },
                   "name": "读8个线圈",
                   "request": { "slaveId": 1, "fc": "01", "start": 0, "quantity": 8 },
                   "response": { "fields": [
@@ -102,6 +105,7 @@ class ModbusServiceCodecTest {
                 },
                 {
                   "index": 4,
+                  "from": { "type": "command", "index": 4 },
                   "name": "写设定温度",
                   "request": {
                     "slaveId": 1, "fc": "06", "start": 1,
@@ -110,6 +114,7 @@ class ModbusServiceCodecTest {
                 },
                 {
                   "index": 5,
+                  "from": { "type": "command", "index": 5 },
                   "name": "写运行参数",
                   "request": {
                     "slaveId": 1, "fc": "10", "start": 10,
@@ -147,7 +152,7 @@ class ModbusServiceCodecTest {
         assertNull(ModbusServiceValidator.validate(service));
         assertEquals(ModbusService.VERSION, service.version.intValue());
         // 四种写方法（05 单线圈 / 06 单寄存器 / 0F 多位 / 10 多寄存器）各一个，读方法四个
-        assertEquals(4, service.functions.stream().filter(f -> ModbusFunction.responseFields(f).isEmpty()).count());
+        assertEquals(4, service.functions.stream().filter(f -> ModbusPolling.responseFields(f).isEmpty()).count());
     }
 
     @Test
@@ -165,8 +170,8 @@ class ModbusServiceCodecTest {
         assertEquals(1, service.device.argument.intValue());
 
         assertEquals(5, service.functions.size());
-        ModbusFunction first = service.functions.get(0);
-        assertEquals(1, first.index.intValue());
+        ModbusPolling first = service.functions.get(0);
+        assertEquals(1, first.index.intValue());   // 方法身份（modbus.polls.functionIndex 读它）
         assertEquals("读进水温度", first.name);
         assertEquals(5, first.interval.intValue());   // 服务端自动调用周期（秒）
         assertEquals(Boolean.TRUE, first.polling);    // 自动轮询开关
@@ -179,7 +184,7 @@ class ModbusServiceCodecTest {
         assertEquals(1, first.request.quantity.intValue());
         assertNull(first.request.fields);
 
-        ModbusFunctionResponseField field = first.response.fields.get(0);
+        ModbusPollingResponseField field = first.response.fields.get(0);
         assertEquals(1, field.index.intValue());
         assertEquals("进水温度", field.field);
         assertEquals(2, field.bytes.intValue());
@@ -204,7 +209,7 @@ class ModbusServiceCodecTest {
         assertEquals("CRITICAL", field.alarms.get(1).level);
         assertEquals("温度严重过高", field.alarms.get(1).text);
 
-        ModbusFunctionResponseField state = service.functions.get(1).response.fields.get(0);
+        ModbusPollingResponseField state = service.functions.get(1).response.fields.get(0);
         assertEquals("开关状态", state.field);
         assertEquals("ABCD", state.byteOrder);
         assertEquals(2, state.valueList.size());
@@ -216,7 +221,7 @@ class ModbusServiceCodecTest {
         assertNull(state.alarms);      // 没配告警的字段不该带一个空数组（更不该带一个空对象）
 
         // 01 读位：位清单落在字段上（字段自身出整段位掩码）
-        ModbusFunctionResponseField coils = service.functions.get(2).response.fields.get(0);
+        ModbusPollingResponseField coils = service.functions.get(2).response.fields.get(0);
         assertEquals("线圈状态", coils.field);
         assertEquals(2, coils.bitList.size());
         assertEquals(0, coils.bitList.get(0).offset.intValue());
@@ -234,7 +239,7 @@ class ModbusServiceCodecTest {
         assertNull(coils.bitList.get(1).alarms);
 
         // 写方法：数量由字段推出（quantity 不填），响应为空（写应答是请求回显）
-        ModbusFunctionRequest single = service.functions.get(3).request;
+        ModbusPollingRequest single = service.functions.get(3).request;
         assertEquals("06", single.fc);
         assertEquals(1, single.start.intValue());
         assertNull(single.quantity);
@@ -245,7 +250,7 @@ class ModbusServiceCodecTest {
         assertEquals(70, ((Number) single.fields.get(0).value).intValue());
         assertNull(service.functions.get(3).response);
 
-        ModbusFunctionRequest multiple = service.functions.get(4).request;
+        ModbusPollingRequest multiple = service.functions.get(4).request;
         assertEquals("10", multiple.fc);
         assertEquals(2, multiple.fields.size());
         assertEquals(0, multiple.fields.get(0).offset.intValue());
@@ -325,23 +330,23 @@ class ModbusServiceCodecTest {
     void emptyOrBogusAlarmArraysDoNotSurviveDecoding() {
         // 空数组、以及「元素全是空对象」的数组，都读作「没配」（null）——
         // 于是那一句「非空才出键」把 [] 原样消掉，库里不会留下这个键，也不会留下一串空壳规则
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = "进水温度";
-        field.alarms = ModbusFunctionResponseFieldAlarmCodec.decode(new JsonArray());
+        field.alarms = ModbusPollingResponseFieldAlarmCodec.decode(new JsonArray());
         assertNull(field.alarms);
 
         JsonArray shells = new JsonArray().add(new JsonObject()).add(new JsonObject());
-        assertNull(ModbusFunctionResponseFieldAlarmCodec.decode(shells));
+        assertNull(ModbusPollingResponseFieldAlarmCodec.decode(shells));
 
-        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
+        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
-        bit.alarms = ModbusFunctionResponseFieldAlarmCodec.decode(shells);
+        bit.alarms = ModbusPollingResponseFieldAlarmCodec.decode(shells);
         assertNull(bit.alarms);
 
         // 反过来：空壳规则（null 元素）编进数组时也不该落地
-        assertTrue(ModbusFunctionResponseFieldAlarmCodec.encode(
-                Arrays.asList((ModbusFunctionResponseFieldAlarm) null, null)).isEmpty());
+        assertTrue(ModbusPollingResponseFieldAlarmCodec.encode(
+                Arrays.asList((ModbusPollingResponseFieldAlarm) null, null)).isEmpty());
     }
 
     @Test
@@ -349,7 +354,7 @@ class ModbusServiceCodecTest {
         // 写方法（fc 05/06/0F/10）：应答是请求回显，没有读值 —— 整个 response 键不出现，
         // 而不是留下 `response: {}` 或 `fields: []` 这种空壳
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
-        service.functions.get(0).response = ModbusFunctionResponses.of();
+        service.functions.get(0).response = ModbusPollingResponses.of();
 
         JsonObject o = ModbusServiceCodec.encode(service);
         assertFalse(o.getJsonArray("functions").getJsonObject(0).containsKey("response"));
@@ -427,27 +432,27 @@ class ModbusServiceCodecTest {
         assertTrue(ModbusServiceCodec.encodeBrief((List<ModbusService>) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((ModbusService) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((List<ModbusService>) null).isEmpty());
-        assertTrue(ModbusFunctionCodec.encode((ModbusFunction) null).isEmpty());
-        assertTrue(ModbusFunctionCodec.encode((List<ModbusFunction>) null).isEmpty());
-        assertTrue(ModbusFunctionResponseFieldCodec.encode((ModbusFunctionResponseField) null).isEmpty());
-        assertTrue(ModbusFunctionResponseFieldCodec.encode((List<ModbusFunctionResponseField>) null).isEmpty());
-        assertTrue(ModbusFunctionRequestCodec.encode((ModbusFunctionRequest) null).isEmpty());
-        assertTrue(ModbusFunctionRequestFieldCodec.encode((ModbusFunctionRequestField) null).isEmpty());
+        assertTrue(ModbusPollingCodec.encode((ModbusPolling) null).isEmpty());
+        assertTrue(ModbusPollingCodec.encode((List<ModbusPolling>) null).isEmpty());
+        assertTrue(ModbusPollingResponseFieldCodec.encode((ModbusPollingResponseField) null).isEmpty());
+        assertTrue(ModbusPollingResponseFieldCodec.encode((List<ModbusPollingResponseField>) null).isEmpty());
+        assertTrue(ModbusPollingRequestCodec.encode((ModbusPollingRequest) null).isEmpty());
+        assertTrue(ModbusPollingRequestFieldCodec.encode((ModbusPollingRequestField) null).isEmpty());
         assertNull(ModbusServiceCodec.decode(null));
-        assertNull(ModbusFunctionCodec.decode((JsonObject) null));
-        assertNull(ModbusFunctionCodec.decode((JsonArray) null));
-        assertNull(ModbusFunctionResponseFieldCodec.decode((JsonObject) null));
-        assertNull(ModbusFunctionResponseFieldCodec.decode((JsonArray) null));
-        assertNull(ModbusFunctionRequestCodec.decode(null));
-        assertNull(ModbusFunctionRequestFieldCodec.decode((JsonObject) null));
-        assertNull(ModbusFunctionRequestFieldCodec.decode((JsonArray) null));
-        assertTrue(ModbusFunctionResponseFieldAlarmCodec.encode((ModbusFunctionResponseFieldAlarm) null).isEmpty());
-        assertTrue(ModbusFunctionResponseFieldAlarmCodec.encode((List<ModbusFunctionResponseFieldAlarm>) null).isEmpty());
+        assertNull(ModbusPollingCodec.decode((JsonObject) null));
+        assertNull(ModbusPollingCodec.decode((JsonArray) null));
+        assertNull(ModbusPollingResponseFieldCodec.decode((JsonObject) null));
+        assertNull(ModbusPollingResponseFieldCodec.decode((JsonArray) null));
+        assertNull(ModbusPollingRequestCodec.decode(null));
+        assertNull(ModbusPollingRequestFieldCodec.decode((JsonObject) null));
+        assertNull(ModbusPollingRequestFieldCodec.decode((JsonArray) null));
+        assertTrue(ModbusPollingResponseFieldAlarmCodec.encode((ModbusPollingResponseFieldAlarm) null).isEmpty());
+        assertTrue(ModbusPollingResponseFieldAlarmCodec.encode((List<ModbusPollingResponseFieldAlarm>) null).isEmpty());
         // 两个重载都要显式转型（decode(null) 本身是有歧义的）
-        assertNull(ModbusFunctionResponseFieldAlarmCodec.decode((JsonObject) null));
-        assertNull(ModbusFunctionResponseFieldAlarmCodec.decode((JsonArray) null));
+        assertNull(ModbusPollingResponseFieldAlarmCodec.decode((JsonObject) null));
+        assertNull(ModbusPollingResponseFieldAlarmCodec.decode((JsonArray) null));
         // 空对象 / 空数组都读作「没配」（而不是一个字段全空的实例 / 一个空列表），这样 encode 才会把键省掉
-        assertNull(ModbusFunctionResponseFieldAlarmCodec.decode(new JsonObject()));
-        assertNull(ModbusFunctionResponseFieldAlarmCodec.decode(new JsonArray()));
+        assertNull(ModbusPollingResponseFieldAlarmCodec.decode(new JsonObject()));
+        assertNull(ModbusPollingResponseFieldAlarmCodec.decode(new JsonArray()));
     }
 }

@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -31,10 +33,9 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
@@ -1058,15 +1059,18 @@ class WidgetDataServiceTest {
      */
     private static ModbusService serviceDef(int functionIndex, String primary, String unit, String second,
                                             String... bits) {
-        List<ModbusFunctionResponseField> fields = new ArrayList<>();
+        List<ModbusPollingResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
             fields.add(field(second, "％", null));
         }
-        ModbusFunction function = new ModbusFunction();
-        function.index = functionIndex;
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = functionIndex;
+                    function.index = functionIndex;
         function.name = primary;
-        function.response = ModbusFunctionResponses.of(fields);
+        function.response = ModbusPollingResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
@@ -1075,15 +1079,15 @@ class WidgetDataServiceTest {
         return definition;
     }
 
-    private static ModbusFunctionResponseField field(String name, String unit, List<String> bits) {
-        ModbusFunctionResponseField f = new ModbusFunctionResponseField();
+    private static ModbusPollingResponseField field(String name, String unit, List<String> bits) {
+        ModbusPollingResponseField f = new ModbusPollingResponseField();
         f.field = name;
         f.unit = unit;
         if (bits != null) {
-            List<ModbusFunctionResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusPollingResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusFunctionResponseFieldBit b = new ModbusFunctionResponseFieldBit();
+                ModbusPollingResponseFieldBit b = new ModbusPollingResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);

@@ -78,9 +78,9 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   一条命令只有一个 `dataType`（跨度统一，`readQuantity` 据此乘跨度）；服务里每个应答字段
   各带自己的 `format`/`bytes`，「值个数 × 单一跨度」根本算不出来，所以这里直接就是线上那个数。
   写方法的数量由 `fields[]` 推出，给了 `quantity` 反而报错。
-* `request.fields[]` = **写方法的写入字段**（`ModbusFunctionRequestField`：`index` / `field` /
+* `request.fields[]` = **写方法的写入字段**（`ModbusPollingRequestField`：`index` / `field` /
   `offset` / `format` / `byteOrder` / `value`），读方法必须为空。`field` 是字段名，
-  既是 `invoke` 请求体里取值用的 key，也是人看的名；`value` 是**缺省值**（原始值，不做
+  既是 `invoke` 请求体里取值用的 key，也是人看的名；`value` 是 **缺省值**（原始值，不做
   scale 换算）—— 没配缺省值的字段每次调用都必须给值，配了则可开箱即用、又能被 invoke 覆盖。
   点表展开出来的写命令（`运行模式 = 制冷`、`开机 = 1`）都带死值，缺省值就是为它们留的。
   `offset` 只对 fc 0F/10 有意义（位偏移 / 寄存器偏移，相对 `start`），05/06 写一个值，不许填。
@@ -93,21 +93,21 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   `ModbusPollPlan.shouldPoll` 在执行侧再堵一道。
   **执行侧的调度器尚未落地**（设计已定，见 `Modbus-Service-Poller.md`），这两个字段目前都只是定义。
 * `response` = **应答定义**（`ModbusFunctionResponse`），目前只有 `fields[]` 一张应答解析规则表
-  （`ModbusFunctionResponseField`），读方法必填、写方法整段不出现。包一层而不是直接把字段表挂在
+  （`ModbusPollingResponseField`），读方法必填、写方法整段不出现。包一层而不是直接把字段表挂在
   `function` 上：一是与 `request` 对称（帧的两侧都是对象，各有一处放自己的属性 ——
-  `request.fields[]` / `response.fields[]`），二是给**应答级**的设定留位子（异常码到文案的映射、
-  缺省字节序、期望帧长）。刻意**不**做成 `List<ModbusFunctionResponse>`：一帧请求只对一帧应答，
-  消费端（parser / 影子 / 告警）要的始终是「**一个**有序切片表覆盖**一个**数据区」，
+  `request.fields[]` / `response.fields[]`），二是给 **应答级**的设定留位子（异常码到文案的映射、
+  缺省字节序、期望帧长）。刻意 **不**做成 `List<ModbusFunctionResponse>`：一帧请求只对一帧应答，
+  消费端（parser / 影子 / 告警）要的始终是「 **一个**有序切片表覆盖 **一个**数据区」，
   套一层 List 之后那边只能 flatten 或取 `[0]`，外面那层永远只有一个元素，却给每条校验文案
   加一个恒定的 `[0]`。真要支持「一次调用读写多个不连续区段」，该加的是 `requests[]` /
   `responses[]` 这一对，那是另一个特性。
-  `version` 标记 functions 内部格式的口径，**当前是 `2`**（`request` 从 hex 字符串改成结构化定义
+  `version` 标记 functions 内部格式的口径， **当前是 `2`**（`request` 从 hex 字符串改成结构化定义
   那一版；`response` 从裸数组改成对象并入同一版 —— v2 尚未部署过，不必为此再抬一版），
-  后续演进时递增。校验器要求 `version == 2`：旧口径的定义会**响亮地失败**，而不是被
+  后续演进时递增。校验器要求 `version == 2`：旧口径的定义会 **响亮地失败**，而不是被
   `getJsonObject` 读成 null 后报一句与病因无关的「request.slaveId is required」。
-* `response.fields[].alarms[]` = 该出值的**一组阈值告警规则**（`ModbusFunctionResponseFieldAlarm`）：
-  `enabled` 为 `true` 且值越限时按级别**选出一条**开出告警（同一出值同时最多一条开着；
-  选举、关闭原因与状态见 `Modbus-Alarm.md`）。**只能配在读方法（fc 01/02/03/04）上**
+* `response.fields[].alarms[]` = 该出值的 **一组阈值告警规则**（`ModbusPollingResponseFieldAlarm`）：
+  `enabled` 为 `true` 且值越限时按级别 **选出一条**开出告警（同一出值同时最多一条开着；
+  选举、关闭原因与状态见 `Modbus-Alarm.md`）。 **只能配在读方法（fc 01/02/03/04）上**
   —— 写方法的应答是请求回显，没有「读到的值」可言。上限 **8 条/出值**。
 * **`alarms` 挂两处**：字段（`response.fields[].alarms`）与位（`response.fields[].bit-list[].alarms`），
   **各是一组、各自算**（含条数上限与 `id` 唯一性）。位的值是**独立的结果键**
@@ -330,10 +330,10 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
     （03/04 整寄存器地读，单字节只能来自位区）。
   * **写字段带缺省值**（`ModbusFunctionRequestField.value` 用 `Object` 而非 `Double` / `String`：
     位是布尔、寄存器是数值，压成 `Double` 会把「位」变成 0/1 数字，压成 `String` 是把协议语义
-    压成字符串匹配 —— 见 `ModbusFunctionResponseFieldAlarm` 那条注释）。点表展开出的写命令都带死值，
+    压成字符串匹配 —— 见 `ModbusPollingResponseFieldAlarm` 那条注释）。点表展开出的写命令都带死值，
     没有缺省值它们会退化成「每次调用都得手填 0」的哑方法，枚举语义全丢。`Object` 落 Mongo
     靠 `ObjectPropertyCodecProvider`（先例：`ModbusServiceHistory.value`），故不能换成接口或
-    泛型变量声明。本版写字段只收**原始值**，不做 `scale` 工程量换算（将来要「按 ℃ 输入」再加）。
+    泛型变量声明。本版写字段只收 **原始值**，不做 `scale` 工程量换算（将来要「按 ℃ 输入」再加）。
   * **组帧只有一条代码路径**：`ModbusFrameCodec.encodeRequest(ModbusFunctionRequest, Map)`，
     读写都在 invoke 时现组、复用现成的 CRC16 与字节序原语；与点表线
     `encodeRequest(slaveId, ModbusCommand)` 出**逐字节相同**的帧（有单测钉住，含
@@ -352,15 +352,15 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
     「request.slaveId is required」。
   * **function 这一族统一改名**：`ModbusServiceFunction` → `ModbusFunction`、
     `ModbusServiceRequest(Field)` → `ModbusFunctionRequest(Field)`、原 `ModbusServiceField` →
-    `ModbusFunctionResponseField`，连它的三个嵌套类一起走全名 ——
-    `ModbusFunctionResponseFieldValue` / `…Bit` / `…Alarm`。两条理由：
+    `ModbusPollingResponseField`，连它的三个嵌套类一起走全名 ——
+    `ModbusPollingResponseFieldValue` / `…Bit` / `…Alarm`。两条理由：
     同一个 `ModbusService` 的子结构不必各自再背一遍 `Service` 前缀；而 Request / Response 这一对
     说的是「报文哪一侧、怎么编解码」—— 原类挂在 `function.response` 上、职责是解应答，
     叫 `ReadField` 会和「读请求」混淆（读请求里根本没有命名字段）。
-    嵌套类跟着父类走全名，是为了**每个名字都能从上一级推出来**（省下的那几个字不值一次猜测）。
-    Codec 与测试随类名同步（`ModbusFunctionCodec` / `ModbusFunctionRequestCodec` / …），
+    嵌套类跟着父类走全名，是为了 **每个名字都能从上一级推出来**（省下的那几个字不值一次猜测）。
+    Codec 与测试随类名同步（`ModbusPollingCodec` / `ModbusPollingRequestCodec` / …），
     **包名不动**（`db.modbus.service.function.*`：它确实是「服务的方法」，读起来仍成立）。
-    `InvokeModbusServiceRequest`（invoke 接口的请求体，与上面这几个类无关）**不改名**。
+    `InvokeModbusServiceRequest`（invoke 接口的请求体，与上面这几个类无关） **不改名**。
     `ModbusService` / `ModbusServiceService` / `ModbusServiceResource` / `ModbusServiceValidator` /
     `ModbusServiceHistory` / `ModbusServiceFailure` 这批「服务一级」的名字也不动。
   * **`function.response` 从裸数组包成对象**（`ModbusFunctionResponse`，内含 `fields[]`）。原来
@@ -512,12 +512,12 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   全量 469 例中 468 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo）。
 
 * **Modbus 阈值告警（第一步：配置模型与校验）**。在此之前只知道「采到没采到」
-  （`ModbusServiceFailure`：帧错 / 设备无应答 / CRC 不过），**采到了但值不对看不见** ——
+  （`ModbusServiceFailure`：帧错 / 设备无应答 / CRC 不过）， **采到了但值不对看不见** ——
   温度已经 12℃ 了，曲线画出来了，没人盯着就不会有人发现。本次补上「读方法的出值可配阈值」这一层：
-  `ModbusFunctionResponseFieldAlarm`（新）、`ModbusFunctionResponseField.alarm` 与 `ModbusFunctionResponseFieldBit.alarm`（新）、
-  `ModbusFunctionResponseFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
+  `ModbusPollingResponseFieldAlarm`（新）、`ModbusFunctionResponseField.alarm` 与 `ModbusFunctionResponseFieldBit.alarm`（新）、
+  `ModbusPollingResponseFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
   `ModbusServiceValidator.validateAlarm`；`validateInterval` 里那段取功能码的代码同时抽成了
-  共用的 `isReadFunction`。**采集链路上的接线、查询接口与前端在后续提交** ——
+  共用的 `isReadFunction`。 **采集链路上的接线、查询接口与前端在后续提交** ——
   这一步零 IO、可独立落地，没配告警的服务在采集热路径上一分钱都不多花
   （`ModbusAlarmPolicy.hasEnabledAlarm` 是纯内存判断，与 `ModbusHistoryPolicy`「绝大多数采集
   一个数据库操作都没有」同一条纪律）。几处值得记下的口径：
@@ -876,8 +876,8 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
 * JSON 互转按「一个实体一个 Codec」拆开、放在实体的 `codec` 子包
   （`cc.openxiot.matrix.db.modbus.service.codec`），统一 `JsonObject encode(X)` / `X decode(JsonObject)`：
   `ModbusServiceCodec`（主键按十六进制串输出，另带 `JsonArray encode(List)`）、
-  `DeviceOnCodec`（时名 `ModbusServiceParentCodec`）、`ModbusFunctionCodec`、`ModbusFunctionResponseFieldCodec`、
-  `ModbusFunctionResponseFieldValueCodec`。
+  `DeviceOnCodec`（时名 `ModbusServiceParentCodec`）、`ModbusPollingCodec`、`ModbusPollingResponseFieldCodec`、
+  `ModbusPollingResponseFieldValueCodec`。
 * 应答帧的解析单独放在 `ModbusResponseParser.parse(fields, frameHex)`（复用了
   `ModbusFrameCodec` 的 CRC 与字节序原语），名字与 JSON 编解码区分开。
 * `ModbusFrameCodec` 的 `checkCrc` / `reorder` 由 private 改为 public（仅可见性，行为不变，供本方案复用），

@@ -24,6 +24,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ModbusConfigCodecTest {
 
+    /**
+     * 存量 fieldNames/命令级 scale-unit → fields 归一：encode 输出 fields（每字段自带 name/scale/unit），
+     * 迁移专用字段（fieldNames/scale/unit）不进 JSON。
+     */
+    @Test
+    void encodesLegacyFieldNamesAsFields() {
+        ModbusCommand c = new ModbusCommand();
+        c.name = "读";
+        c.fc = "03";
+        c.index = 1;
+        c.start = 0;
+        c.quantity = 2;
+        c.dataType = "uint16";
+        c.byteOrder = "ABCD";
+        c.legacyFieldNames = List.of("甲", "乙");
+        c.legacyScale = 0.5;
+        c.legacyUnit = "℃";
+
+        JsonObject o = ModbusCommandCodec.encode(c);
+        JsonArray fields = o.getJsonArray("fields");
+        assertEquals(2, fields.size());
+        assertEquals("甲", fields.getJsonObject(0).getString("name"));
+        assertEquals(0.5, fields.getJsonObject(0).getDouble("scale").doubleValue());
+        assertEquals("℃", fields.getJsonObject(0).getString("unit"));
+        assertEquals("乙", fields.getJsonObject(1).getString("name"));
+        assertNull(o.getJsonArray("fieldNames"));
+        assertNull(o.getDouble("scale"));
+        assertNull(o.getString("unit"));
+    }
+
     @Test
     void encodesConfigWithSlaveCommandsAndPerson() {
         ModbusConfig config = config();
@@ -54,14 +84,19 @@ class ModbusConfigCodecTest {
         assertEquals(2, read.getInteger("quantity").intValue());
         assertEquals("uint16", read.getString("dataType"));
         assertEquals("ABCD", read.getString("byteOrder"));
-        assertEquals(0.1, read.getDouble("scale").doubleValue());
-        assertEquals("℃", read.getString("unit"));
+        // 03/04 应答字段逐条自带 名称/缩放/单位（以寄存器为中心）
+        JsonArray readFields = read.getJsonArray("fields");
+        assertEquals(2, readFields.size());
+        assertEquals("进水温度", readFields.getJsonObject(0).getString("name"));
+        assertEquals(0.1, readFields.getJsonObject(0).getDouble("scale").doubleValue());
+        assertEquals("℃", readFields.getJsonObject(0).getString("unit"));
+        assertEquals("进水温度2", readFields.getJsonObject(1).getString("name"));
 
-        // 01 读位：逐位命名走 bitNames（与 0F 的 coils 同形），不出 fieldNames
+        // 01 读位：逐位命名走 bitNames（与 0F 的 coils 同形），不出 fields
         JsonObject bitRead = o.getJsonArray("commands").getJsonObject(2);
         assertEquals("01", bitRead.getString("fc"));
         assertEquals(8, bitRead.getInteger("quantity").intValue());
-        assertNull(bitRead.getJsonArray("fieldNames"));
+        assertNull(bitRead.getJsonArray("fields"));
         JsonArray bitNames = bitRead.getJsonArray("bitNames");
         assertEquals(2, bitNames.size());
         assertEquals(0, bitNames.getJsonObject(0).getInteger("offset").intValue());
@@ -137,8 +172,13 @@ class ModbusConfigCodecTest {
         read.quantity = 2;
         read.dataType = "uint16";
         read.byteOrder = "ABCD";
-        read.scale = 0.1;
-        read.unit = "℃";
+        ModbusCommand.Field f1 = new ModbusCommand.Field();
+        f1.name = "进水温度";
+        f1.scale = 0.1;
+        f1.unit = "℃";
+        ModbusCommand.Field f2 = new ModbusCommand.Field();
+        f2.name = "进水温度2";
+        read.fields = List.of(f1, f2);
 
         ModbusCommand write = new ModbusCommand();
         write.name = "写开关";

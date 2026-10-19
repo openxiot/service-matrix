@@ -48,6 +48,9 @@ public final class ModbusConfigCodec {
         if (c.lifecycle != null) {
             o.put("lifecycle", c.lifecycle);
         }
+        if (c.registries != null) {
+            o.put("registries", ModbusRegistryCodec.encode(c.registries));
+        }
         o.put("commands", ModbusCommandCodec.encode(c.commands));
         if (c.creator != null) {
             o.put("creator", PersonCodec.encode(c.creator));

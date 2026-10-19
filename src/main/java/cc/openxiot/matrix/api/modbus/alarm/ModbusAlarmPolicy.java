@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -74,7 +74,7 @@ public final class ModbusAlarmPolicy {
     }
 
     /** 该开的告警：出值名 + 触发那一刻的配置（要快照进告警行，见 Modbus-Alarm.md 第四节）。 */
-    public record Open(String field, ModbusFunctionResponseFieldAlarm alarm, Object sample, String unit) {
+    public record Open(String field, ModbusPollingResponseFieldAlarm alarm, Object sample, String unit) {
     }
 
     /**
@@ -87,7 +87,7 @@ public final class ModbusAlarmPolicy {
      * <p>现在一个出值可以有多条规则，所以 {@code alarm} 是**哪一条**规则判不了也一并带着：
      * 日志的去重键要细到规则，否则同一出值第二条坏规则永远不会被报出来。</p>
      */
-    public record Skip(String field, ModbusFunctionResponseFieldAlarm alarm, Object sample) {
+    public record Skip(String field, ModbusPollingResponseFieldAlarm alarm, Object sample) {
     }
 
     /**
@@ -142,8 +142,8 @@ public final class ModbusAlarmPolicy {
      * <p>纯内存判断、不碰库。没配告警的服务因此在采集热路径上**零数据库操作** ——
      * 与 {@code ModbusHistoryPolicy}「绝大多数采集一个数据库操作都没有」同一条纪律。</p>
      */
-    public static boolean hasEnabledAlarm(ModbusFunction function) {
-        for (ModbusFunctionResponseField field : ModbusFunction.responseFields(function)) {
+    public static boolean hasEnabledAlarm(ModbusPolling function) {
+        for (ModbusPollingResponseField field : ModbusPolling.responseFields(function)) {
             if (field == null) {
                 continue;
             }
@@ -151,7 +151,7 @@ public final class ModbusAlarmPolicy {
                 return true;
             }
             if (field.bitList != null) {
-                for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+                for (ModbusPollingResponseFieldBit bit : field.bitList) {
                     if (bit != null && hasEnabled(bit.alarms)) {
                         return true;
                     }
@@ -162,16 +162,16 @@ public final class ModbusAlarmPolicy {
     }
 
     /** 配置是否生效：{@code enabled} 缺省与 false 一个意思（配置留着、不告警）。 */
-    public static boolean isEnabled(ModbusFunctionResponseFieldAlarm alarm) {
+    public static boolean isEnabled(ModbusPollingResponseFieldAlarm alarm) {
         return alarm != null && Boolean.TRUE.equals(alarm.enabled);
     }
 
     /** 一组规则里有没有启用的。 */
-    private static boolean hasEnabled(List<ModbusFunctionResponseFieldAlarm> alarms) {
+    private static boolean hasEnabled(List<ModbusPollingResponseFieldAlarm> alarms) {
         if (alarms == null) {
             return false;
         }
-        for (ModbusFunctionResponseFieldAlarm alarm : alarms) {
+        for (ModbusPollingResponseFieldAlarm alarm : alarms) {
             if (isEnabled(alarm)) {
                 return true;
             }
@@ -185,12 +185,12 @@ public final class ModbusAlarmPolicy {
      * <p>顺序是有语义的：级别相同的两条规则同时命中时，靠后的那条赢（见 {@link #decide}）。
      * 停用的规则直接丢掉 —— 它不参与判定，配置却仍然留在定义里（与 {@code polling} 同一条规矩）。</p>
      */
-    static List<ModbusFunctionResponseFieldAlarm> enabledRules(List<ModbusFunctionResponseFieldAlarm> alarms) {
+    static List<ModbusPollingResponseFieldAlarm> enabledRules(List<ModbusPollingResponseFieldAlarm> alarms) {
         if (alarms == null || alarms.isEmpty()) {
             return List.of();
         }
-        List<ModbusFunctionResponseFieldAlarm> rules = new ArrayList<>(alarms.size());
-        for (ModbusFunctionResponseFieldAlarm alarm : alarms) {
+        List<ModbusPollingResponseFieldAlarm> rules = new ArrayList<>(alarms.size());
+        for (ModbusPollingResponseFieldAlarm alarm : alarms) {
             if (isEnabled(alarm)) {
                 rules.add(alarm);
             }
@@ -204,7 +204,7 @@ public final class ModbusAlarmPolicy {
      * <p>判不了的一律 {@link Verdict#SKIP}（而不是猜一个 MISS）—— 校验器挡住了新存的坏定义，
      * 这里兜的是库里可能已有的老数据，调用方见到 SKIP 会记一条 WARN 日志，不静默。</p>
      */
-    public static Verdict hit(Object value, ModbusFunctionResponseFieldAlarm alarm) {
+    public static Verdict hit(Object value, ModbusPollingResponseFieldAlarm alarm) {
         if (!isEnabled(alarm) || value == null || alarm.compare == null) {
             return Verdict.SKIP;
         }
@@ -215,10 +215,10 @@ public final class ModbusAlarmPolicy {
     }
 
     /**
-     * 「等于」：目标可能是取值表的某个 description（{@link ModbusFunctionResponseFieldAlarm#state}），
-     * 也可能是一个数（{@link ModbusFunctionResponseFieldAlarm#threshold}）—— 由配置里有哪个决定。
+     * 「等于」：目标可能是取值表的某个 description（{@link ModbusPollingResponseFieldAlarm#state}），
+     * 也可能是一个数（{@link ModbusPollingResponseFieldAlarm#threshold}）—— 由配置里有哪个决定。
      */
-    private static Verdict hitEquals(Object value, ModbusFunctionResponseFieldAlarm alarm) {
+    private static Verdict hitEquals(Object value, ModbusPollingResponseFieldAlarm alarm) {
         if (alarm.state != null) {
             // 带 value-list 的字段：原始值命中取值表时出的是 description 字符串。
             // 没命中时出的是个数（scale 已生效）—— 那明确「不是」这个命名状态，故是 MISS 不是 SKIP：
@@ -243,7 +243,7 @@ public final class ModbusAlarmPolicy {
     }
 
     /** {@code >} / {@code >=} / {@code <} / {@code <=}：只对数值有意义。 */
-    private static Verdict hitNumeric(Object value, ModbusFunctionResponseFieldAlarm alarm) {
+    private static Verdict hitNumeric(Object value, ModbusPollingResponseFieldAlarm alarm) {
         if (alarm.threshold == null || !(value instanceof Number number)) {
             return Verdict.SKIP;
         }
@@ -272,10 +272,10 @@ public final class ModbusAlarmPolicy {
      *                        （行上的 {@code ruleId} 缺失，只可能出现在更早的数据里）——
      *                        故调用方要用允许 null 值的 {@code Map}
      */
-    public static Decision decide(ModbusFunction function,
+    public static Decision decide(ModbusPolling function,
                                   Map<String, Object> values,
                                   Map<String, OpenAlarmRule> openRuleByField) {
-        List<ModbusFunctionResponseField> fields = ModbusFunction.responseFields(function);
+        List<ModbusPollingResponseField> fields = ModbusPolling.responseFields(function);
         if (fields.isEmpty()) {
             return NOTHING;
         }
@@ -287,13 +287,13 @@ public final class ModbusAlarmPolicy {
         // 不能因为「本次没开/没关」而被下面的 DEFINITION 逻辑误关掉
         Set<String> covered = new HashSet<>();
 
-        for (ModbusFunctionResponseField field : fields) {
+        for (ModbusPollingResponseField field : fields) {
             if (field == null) {
                 continue;
             }
             covered.addAll(judge(field.field, field.alarms, field.unit, vals, open, acc));
             if (field.bitList != null) {
-                for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+                for (ModbusPollingResponseFieldBit bit : field.bitList) {
                     if (bit != null) {
                         // 位没有自己的单位：父字段那个是「整个寄存器」的工程单位，
                         // 贴到 0/1 的位上只会让列表里出现「1 ℃」这种话。位一律不带单位。
@@ -340,7 +340,7 @@ public final class ModbusAlarmPolicy {
      *         供 DEFINITION 那条逻辑排除
      */
     private static Set<String> judge(String field,
-                                     List<ModbusFunctionResponseFieldAlarm> alarms,
+                                     List<ModbusPollingResponseFieldAlarm> alarms,
                                      String unit,
                                      Map<String, Object> vals,
                                      Map<String, OpenAlarmRule> open,
@@ -348,24 +348,24 @@ public final class ModbusAlarmPolicy {
         if (field == null) {
             return Set.of();
         }
-        List<ModbusFunctionResponseFieldAlarm> rules = enabledRules(alarms);
+        List<ModbusPollingResponseFieldAlarm> rules = enabledRules(alarms);
         if (rules.isEmpty()) {
             return Set.of();
         }
         if (!vals.containsKey(field)) {
             // 配了告警、这一帧里却没有这个出值：判不了，记下来让调用方说一声（不能当成「没越限」，
             // 那会把一条开着的告警凭空关掉）。不看 `open`：没开着也一样要报，否则定义配错了没人知道。
-            for (ModbusFunctionResponseFieldAlarm rule : rules) {
+            for (ModbusPollingResponseFieldAlarm rule : rules) {
                 acc.skips.add(new Skip(field, rule, null));
             }
             return Set.of();
         }
         Object value = vals.get(field);
 
-        ModbusFunctionResponseFieldAlarm winner = null;
+        ModbusPollingResponseFieldAlarm winner = null;
         boolean missed = false;
-        List<ModbusFunctionResponseFieldAlarm> skipped = new ArrayList<>(rules.size());
-        for (ModbusFunctionResponseFieldAlarm rule : rules) {
+        List<ModbusPollingResponseFieldAlarm> skipped = new ArrayList<>(rules.size());
+        for (ModbusPollingResponseFieldAlarm rule : rules) {
             Verdict verdict = hit(value, rule);
             if (verdict == Verdict.HIT) {
                 // `>=` 而不是 `>`：同级时**后**出现的那条接手
@@ -379,7 +379,7 @@ public final class ModbusAlarmPolicy {
             }
         }
         // 判不了的照旧记日志：有别的规则命中，不代表这一条就判得了（它仍然是坏的）
-        for (ModbusFunctionResponseFieldAlarm rule : skipped) {
+        for (ModbusPollingResponseFieldAlarm rule : skipped) {
             acc.skips.add(new Skip(field, rule, value));
         }
 

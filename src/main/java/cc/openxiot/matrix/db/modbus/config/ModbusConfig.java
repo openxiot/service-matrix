@@ -32,7 +32,10 @@ public class ModbusConfig extends ReactivePanacheMongoEntity {
     @Schema(description = "从站设备信息（厂家/型号/从站地址/描述）", required = true)
     public ModbusSlave slave = new ModbusSlave();
 
-    @Schema(description = "功能码动作列表（有序；每个动作按功能码读一个参数或写一段）", required = true)
+    @Schema(description = "寄存器/点位定义列表（以寄存器为核心的点表，**可空**——为空时点表行为与纯 commands 一致；新配置想用寄存器中心再填）", required = false)
+    public List<ModbusRegistry> registries;
+
+    @Schema(description = "功能码动作列表（有序；显式命令 = 用户手动添加的批量读/写。单寄存器读以寄存器表隐式生成，不再放这里）", required = false)
     public List<ModbusCommand> commands;
 
     @Schema(description = "生命周期：development 开发 / preview 预览 / released 已发布（仅 development 可修改）",

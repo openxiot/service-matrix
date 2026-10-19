@@ -1,14 +1,15 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPlan.Close;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -48,11 +49,11 @@ class ModbusAlarmPlanTest {
     @Test
     void bitKeysAreJudgedOnTheBit() {
         // 位是独立的结果键：配在位上，就按位判。父字段有没有告警与它无关
-        ModbusFunctionResponseField bits = bits("进水阀位", "进水阀", alarm(true));
+        ModbusPollingResponseField bits = bits("进水阀位", "进水阀", alarm(true));
         assertTrue(plan(service(function(bits)), open(1, "进水阀")).isEmpty());
 
         // 反过来：位上的告警被关掉 ⇒ 位那个键不再被覆盖（哪怕父字段还配着）
-        ModbusFunctionResponseField off = bits("进水阀位", "进水阀", alarm(false));
+        ModbusPollingResponseField off = bits("进水阀位", "进水阀", alarm(false));
         assertEquals(List.of("进水阀"), fields(plan(service(function(off)), open(1, "进水阀"))));
     }
 
@@ -76,7 +77,7 @@ class ModbusAlarmPlanTest {
         // 同一出值上**还有别的启用规则**，但这条开行不是它们开的（ruleId 对不上）：
         // 新定义里已经没有能判定它的规则了，关掉。判据停在出值级就会漏掉这一条 ——
         // 而那条行会一直挂着，因为没有任何规则能再改变它的状态
-        ModbusFunctionResponseField field = field("进水温度", alarm("r2", true));
+        ModbusPollingResponseField field = field("进水温度", alarm("r2", true));
         assertEquals(List.of("进水温度"), fields(plan(service(function(field)), open(1, "进水温度"))));
     }
 
@@ -113,9 +114,12 @@ class ModbusAlarmPlanTest {
     @Test
     void writeMethodClosesEverything() {
         // 写方法的应答是请求回显、没有读值，告警只许配在读方法上 —— 它上面任何开行都是残留
-        ModbusFunction write = new ModbusFunction();
-        write.index = 1;
-        write.request = ModbusFunctionRequests.write("06", 0, ModbusFunctionRequests.field(1, "写入值", "uint16", 1));
+        ModbusPolling write = new ModbusPolling();
+                    write.from = new ModbusPollingFrom();
+                    write.from.type = "command";
+                    write.from.index = 1;
+                    write.index = 1;
+        write.request = ModbusPollingRequests.write("06", 0, ModbusPollingRequests.field(1, "写入值", "uint16", 1));
         assertEquals(List.of("进水温度"), fields(plan(service(write), open(1, "进水温度"))));
     }
 
@@ -226,55 +230,58 @@ class ModbusAlarmPlanTest {
         return row;
     }
 
-    private static ModbusService service(ModbusFunction... functions) {
+    private static ModbusService service(ModbusPolling... functions) {
         return service(SID, functions);
     }
 
-    private static ModbusService service(String serviceId, ModbusFunction... functions) {
+    private static ModbusService service(String serviceId, ModbusPolling... functions) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(serviceId);
         service.functions = new ArrayList<>(List.of(functions));
         return service;
     }
 
-    private static ModbusFunction function(ModbusFunctionResponseField... fields) {
+    private static ModbusPolling function(ModbusPollingResponseField... fields) {
         return function(1, fields);
     }
 
-    private static ModbusFunction function(int index, ModbusFunctionResponseField... fields) {
-        ModbusFunction function = new ModbusFunction();
-        function.index = index;
-        function.request = ModbusFunctionRequests.holding();
-        function.response = ModbusFunctionResponses.of(fields);
+    private static ModbusPolling function(int index, ModbusPollingResponseField... fields) {
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = index;
+                    function.index = index;
+        function.request = ModbusPollingRequests.holding();
+        function.response = ModbusPollingResponses.of(fields);
         return function;
     }
 
-    private static ModbusFunctionResponseField field(String name, ModbusFunctionResponseFieldAlarm... alarms) {
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+    private static ModbusPollingResponseField field(String name, ModbusPollingResponseFieldAlarm... alarms) {
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = name;
         field.alarms = new ArrayList<>(List.of(alarms));
         return field;
     }
 
-    private static ModbusFunctionResponseField bits(String name, String bitName, ModbusFunctionResponseFieldAlarm... alarms) {
-        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
+    private static ModbusPollingResponseField bits(String name, String bitName, ModbusPollingResponseFieldAlarm... alarms) {
+        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
         bit.offset = 0;
         bit.field = bitName;
         bit.alarms = new ArrayList<>(List.of(alarms));
 
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = name;
         field.bitList = new ArrayList<>(List.of(bit));
         return field;
     }
 
     /** 一条规则：id 就是 {@link #RULE_ID}，与夹具 {@link #row} 上那个对得上（= 「还是这条规则」）。 */
-    private static ModbusFunctionResponseFieldAlarm alarm(boolean enabled) {
+    private static ModbusPollingResponseFieldAlarm alarm(boolean enabled) {
         return alarm(RULE_ID, enabled);
     }
 
-    private static ModbusFunctionResponseFieldAlarm alarm(String id, boolean enabled) {
-        ModbusFunctionResponseFieldAlarm alarm = new ModbusFunctionResponseFieldAlarm();
+    private static ModbusPollingResponseFieldAlarm alarm(String id, boolean enabled) {
+        ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
         alarm.id = id;
         alarm.enabled = enabled;
         alarm.compare = ">";

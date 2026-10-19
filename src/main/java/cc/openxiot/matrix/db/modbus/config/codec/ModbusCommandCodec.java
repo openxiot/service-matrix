@@ -10,7 +10,7 @@ import java.util.List;
  * {@link ModbusCommand}（一个功能码动作）与 JSON 的互转。
  *
  * <p>字段按「所有功能码共用 → 读操作 → 写操作」的顺序输出，只输出有值的：
- * 读操作的 quantity / fieldNames / bitNames / dataType / byteOrder / scale / unit，写操作的
+ * 读操作的 quantity / fields / bitNames / dataType / byteOrder，写操作的
  * coilState / registerValue / coils / registers 互不重叠，前端按 fc 取用。</p>
  */
 public final class ModbusCommandCodec {
@@ -23,6 +23,8 @@ public final class ModbusCommandCodec {
         if (cmd == null) {
             return o;
         }
+        // 存量 fieldNames/命令级 scale-unit → fields 归一（幂等；迁移专用字段不进 JSON）
+        ModbusCommand.upgradeLegacyFields(cmd);
         if (cmd.name != null) {
             o.put("name", cmd.name);
         }
@@ -38,12 +40,8 @@ public final class ModbusCommandCodec {
         if (cmd.quantity != null) {
             o.put("quantity", cmd.quantity);
         }
-        if (cmd.fieldNames != null) {
-            JsonArray names = new JsonArray();
-            for (String fieldName : cmd.fieldNames) {
-                names.add(fieldName);
-            }
-            o.put("fieldNames", names);
+        if (cmd.fields != null) {
+            o.put("fields", encodeFields(cmd.fields));
         }
         if (cmd.bitNames != null) {
             o.put("bitNames", encodeBitNames(cmd.bitNames));
@@ -53,12 +51,6 @@ public final class ModbusCommandCodec {
         }
         if (cmd.byteOrder != null) {
             o.put("byteOrder", cmd.byteOrder);
-        }
-        if (cmd.scale != null) {
-            o.put("scale", cmd.scale);
-        }
-        if (cmd.unit != null) {
-            o.put("unit", cmd.unit);
         }
         if (cmd.coilState != null) {
             o.put("coilState", cmd.coilState);
@@ -81,6 +73,25 @@ public final class ModbusCommandCodec {
             for (ModbusCommand command : commands) {
                 arr.add(encode(command));
             }
+        }
+        return arr;
+    }
+
+    /** 应答字段（03/04）：逐条输出 name + 自带 scale/unit（以寄存器为中心，各字段独立）。 */
+    private static JsonArray encodeFields(List<ModbusCommand.Field> fields) {
+        JsonArray arr = new JsonArray();
+        for (ModbusCommand.Field field : fields) {
+            JsonObject o = new JsonObject();
+            if (field.name != null) {
+                o.put("name", field.name);
+            }
+            if (field.scale != null) {
+                o.put("scale", field.scale);
+            }
+            if (field.unit != null) {
+                o.put("unit", field.unit);
+            }
+            arr.add(o);
         }
         return arr;
     }

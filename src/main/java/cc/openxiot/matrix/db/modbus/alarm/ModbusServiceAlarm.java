@@ -73,7 +73,7 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusFunction.index）", examples = {"1"}, required = true)
+    @Schema(description = "方法序号（ModbusPolling.index）", examples = {"1"}, required = true)
     public Integer functionIndex;
 
     @Schema(description = "出值名：字段名（response.fields[].field），或位区里某个具名位（bit-list[].field）"
@@ -136,7 +136,7 @@ public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
             + "**绝不下发给前端**", hidden = true)
     public String openKey;
 
-    @Schema(description = "触发这条的是哪条规则（配置里的 ModbusFunctionResponseFieldAlarm.id）。"
+    @Schema(description = "触发这条的是哪条规则（配置里的 ModbusPollingResponseFieldAlarm.id）。"
             + "「这条开着的行是不是还该开着」要靠它与当前胜者比对 —— "
             + "**内部标识，绝不下发给前端**：行上的定义快照已经够前端说清「触发条件」，"
             + "与 openKey 同一条规矩", hidden = true)

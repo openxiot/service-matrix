@@ -84,7 +84,7 @@ class ModbusPollResourceTest {
     private ModbusPoll poll() {
         ModbusPoll poll = new ModbusPoll();
         poll.serviceId = SID;
-        poll.functionIndex = 1;
+        poll.pollingIndex = 1;
         poll.did = DID;
         poll.interval = 10;
         poll.nextRunAt = new Date(NOW + 10_000);
@@ -131,7 +131,7 @@ class ModbusPollResourceTest {
                 .body("data.inFlight", equalTo(1))
                 .body("data.lastTickAt", equalTo(NOW))
                 .body("data.items", hasSize(1))
-                .body("data.items[0].functionIndex", equalTo(1))
+                .body("data.items[0].pollingIndex", equalTo(1))
                 .body("data.items[0].did", equalTo(DID))
                 .body("data.items[0].interval", equalTo(10))
                 .body("data.items[0].nextRunAt", equalTo(NOW + 10_000))

@@ -10,7 +10,7 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -113,7 +113,7 @@ public class ModbusHistoryService {
      * @return 新的比对基准（= 写后的影子文档）；null 表示**这次什么都没写、没有新基准**，
      *         调用方据此保留它原有的基准而不是清空（没写就说明库里的状态没变，旧基准仍然有效）
      */
-    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusFunction function, JsonObject values) {
+    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusPolling function, JsonObject values) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
@@ -131,7 +131,7 @@ public class ModbusHistoryService {
      * （真·首次采集，会 {@code insert}）—— 而不是「我不知道」。拿不准就传库里读出来的那份；
      * 轮询器的判定见 {@code ModbusPollBaselines.usable}：故障态与没缓存都回退到读库。</p>
      */
-    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusFunction function,
+    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusPolling function,
                                            JsonObject values, ModbusServiceShadow baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -183,7 +183,7 @@ public class ModbusHistoryService {
      *
      * @return 新的基准（这里就是故障态本身）；null = 没有写、基准不变
      */
-    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusFunction function,
+    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusPolling function,
                                                   Throwable error) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -205,7 +205,7 @@ public class ModbusHistoryService {
      * {@code ModbusPollBaselines.usable} 会判它不可用 → 下一次采集回退到读库。
      * 「故障态不吃内存基准」这条口径就是这样自然成立的，不需要额外的失效逻辑。</p>
      */
-    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusFunction function,
+    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusPolling function,
                                                   Throwable error, ModbusServiceShadow baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -258,7 +258,7 @@ public class ModbusHistoryService {
     // ===== 内部 =====
 
     /** 能不能记：服务已落库、方法有序号。否则静默跳过 —— 也不产生基准。 */
-    private static boolean recordable(ModbusService service, ModbusFunction function) {
+    private static boolean recordable(ModbusService service, ModbusPolling function) {
         return service != null && service.id != null && function != null && function.index != null;
     }
 

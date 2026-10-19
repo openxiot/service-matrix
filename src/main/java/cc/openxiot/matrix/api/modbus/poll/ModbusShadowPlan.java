@@ -2,9 +2,9 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,12 +50,12 @@ public final class ModbusShadowPlan {
      * 一个方法在影子里会出现的**全部**键：{@code response.fields[].field} 加上各位展开的名字
      * {@code response.fields[].bitList[].field}（见 {@code ModbusResponseParser}：位名与字段名放进同一个结果对象）。
      */
-    public static Set<String> definedFields(List<ModbusFunctionResponseField> response) {
+    public static Set<String> definedFields(List<ModbusPollingResponseField> response) {
         Set<String> defined = new HashSet<>();
         if (response == null) {
             return defined;
         }
-        for (ModbusFunctionResponseField field : response) {
+        for (ModbusPollingResponseField field : response) {
             if (field == null) {
                 continue;
             }
@@ -65,7 +65,7 @@ public final class ModbusShadowPlan {
             if (field.bitList == null) {
                 continue;
             }
-            for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+            for (ModbusPollingResponseFieldBit bit : field.bitList) {
                 if (bit != null && bit.field != null && !bit.field.isBlank()) {
                     defined.add(bit.field);
                 }
@@ -90,9 +90,9 @@ public final class ModbusShadowPlan {
         }
 
         Map<Integer, Set<String>> definedByIndex = new HashMap<>();
-        for (ModbusFunction function : service.functions) {
+        for (ModbusPolling function : service.functions) {
             if (function != null && function.index != null) {
-                definedByIndex.put(function.index, definedFields(ModbusFunction.responseFields(function)));
+                definedByIndex.put(function.index, definedFields(ModbusPolling.responseFields(function)));
             }
         }
 

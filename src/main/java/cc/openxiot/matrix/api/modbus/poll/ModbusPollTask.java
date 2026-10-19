@@ -70,7 +70,7 @@ public final class ModbusPollTask {
      * 而权威的那个 id 在库里那一行上。</p>
      */
     public static ModbusPollTask of(ModbusPoll poll, ObjectId id, String ownerId) {
-        ModbusPollTask task = new ModbusPollTask(id, poll.serviceId, poll.functionIndex, poll.did);
+        ModbusPollTask task = new ModbusPollTask(id, poll.serviceId, poll.pollingIndex, poll.did);
         task.intervalSeconds = poll.interval == null ? 0 : poll.interval;
         task.ownerId = ownerId;
         task.nextRunAt = poll.nextRunAt == null ? 0L : poll.nextRunAt.getTime();

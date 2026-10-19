@@ -47,7 +47,11 @@
         ]
       },
       "interval": 5,
-      "polling": true
+      "polling": true,
+      "from": {
+        "type": "command",
+        "index": 1
+      }
     },
     {
       "index": 2,
@@ -79,6 +83,10 @@
             ]
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 2
       }
     },
     {
@@ -120,6 +128,10 @@
             ]
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 3
       }
     },
     {
@@ -161,6 +173,10 @@
             "unit": "摄氏度"
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 4
       }
     },
     {
@@ -178,6 +194,10 @@
             "value": true
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 5
       }
     },
     {
@@ -195,6 +215,10 @@
             "value": 70
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 6
       }
     },
     {
@@ -219,6 +243,10 @@
             "format": "bit"
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 7
       }
     },
     {
@@ -245,6 +273,10 @@
             "value": 7.5
           }
         ]
+      },
+      "from": {
+        "type": "command",
+        "index": 8
       }
     }
   ]

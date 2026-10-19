@@ -66,7 +66,7 @@ public final class WebDashboardLayoutCodec {
 
     /**
      * 一张卡片。缺省项**不补空值**：{@code title} 没设就是不出现（前端据此走「用默认标题」），
-     * 与 {@code ModbusFunctionResponseFieldCodec} 对 {@code value-list} / {@code bit-list} 的处理同口径
+     * 与 {@code ModbusPollingResponseFieldCodec} 对 {@code value-list} / {@code bit-list} 的处理同口径
      * —— 补成空串会让「没设」和「设成了空」再也分不开。
      */
     public static JsonObject encodeWidget(WebDashboardWidget widget) {

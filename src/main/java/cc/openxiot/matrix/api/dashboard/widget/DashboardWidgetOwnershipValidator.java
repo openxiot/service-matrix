@@ -6,9 +6,9 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -279,7 +279,7 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
             return "service does not belong to this space: " + ref.serviceId();
         }
-        ModbusFunction function = findFunction(service, ref.functionIndex());
+        ModbusPolling function = findFunction(service, ref.functionIndex());
         if (function == null) {
             return "function not found: " + ref.functionIndex();
         }
@@ -289,11 +289,11 @@ public class DashboardWidgetOwnershipValidator {
         return null;
     }
 
-    private static ModbusFunction findFunction(ModbusService service, Integer index) {
+    private static ModbusPolling findFunction(ModbusService service, Integer index) {
         if (service.functions == null) {
             return null;
         }
-        for (ModbusFunction function : service.functions) {
+        for (ModbusPolling function : service.functions) {
             if (function != null && index.equals(function.index)) {
                 return function;
             }
@@ -309,8 +309,8 @@ public class DashboardWidgetOwnershipValidator {
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
-    private static boolean hasField(ModbusFunction function, String field) {
-        for (ModbusFunctionResponseField candidate : ModbusFunction.responseFields(function)) {
+    private static boolean hasField(ModbusPolling function, String field) {
+        for (ModbusPollingResponseField candidate : ModbusPolling.responseFields(function)) {
             if (candidate == null) {
                 continue;
             }
@@ -318,7 +318,7 @@ public class DashboardWidgetOwnershipValidator {
                 return true;
             }
             if (candidate.bitList != null) {
-                for (ModbusFunctionResponseFieldBit bit : candidate.bitList) {
+                for (ModbusPollingResponseFieldBit bit : candidate.bitList) {
                     if (bit != null && field.equals(bit.field)) {
                         return true;
                     }

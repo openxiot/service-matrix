@@ -27,7 +27,7 @@ import java.util.Date;
  * 前端要按故障类型聚合，而从 message 文本里反推类型等于把协议语义压成了字符串匹配。
  * 分类由抛出点决定（见 {@code ModbusFailureType}），这里只存名字 —— 存字符串不存枚举值，
  * 是为了将来枚举增删时老文档还读得出来（与 {@code SpaceEntity.type}、
- * {@code ModbusFunctionResponseField.format} 同口径）。</p>
+ * {@code ModbusPollingResponseField.format} 同口径）。</p>
  */
 @MongoEntity(database = "modbus", collection = "service-failures")
 @RegisterForReflection
@@ -37,7 +37,7 @@ public class ModbusServiceFailure extends ReactivePanacheMongoEntity {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusFunction.index）", examples = {"1"}, required = true)
+    @Schema(description = "方法序号（ModbusPolling.index）", examples = {"1"}, required = true)
     public Integer functionIndex;
 
     @Schema(description = "失败分类（ModbusFailureType 的名字），前端按它聚合；"

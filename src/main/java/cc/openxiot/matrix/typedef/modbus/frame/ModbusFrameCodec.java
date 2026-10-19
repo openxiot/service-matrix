@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.typedef.modbus.frame;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequest;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequestField;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequestField;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -209,7 +209,7 @@ public final class ModbusFrameCodec {
      * @param values invoke 传入的「字段名 → 原始值」；读方法传 null
      * @throws IllegalArgumentException 定义不成立（方向与字段/数量不匹配、取值缺失或类型不符）
      */
-    public static String encodeRequest(ModbusFunctionRequest request, Map<String, Object> values) {
+    public static String encodeRequest(ModbusPollingRequest request, Map<String, Object> values) {
         if (request == null) {
             throw new IllegalArgumentException("modbus service request is not set");
         }
@@ -238,9 +238,9 @@ public final class ModbusFrameCodec {
         };
     }
 
-    private static byte[] writeSingleCoilBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+    private static byte[] writeSingleCoilBody(int slave, int start, List<ModbusPollingRequestField> fields,
                                               Map<String, Object> values) {
-        ModbusFunctionRequestField field = singleField(fields, "05");
+        ModbusPollingRequestField field = singleField(fields, "05");
         boolean on = toBit(resolveValue(field, values), field.field);
         return new byte[]{
                 (byte) slave, (byte) 0x05,
@@ -249,9 +249,9 @@ public final class ModbusFrameCodec {
         };
     }
 
-    private static byte[] writeSingleRegisterBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+    private static byte[] writeSingleRegisterBody(int slave, int start, List<ModbusPollingRequestField> fields,
                                                   Map<String, Object> values) {
-        ModbusFunctionRequestField field = singleField(fields, "06");
+        ModbusPollingRequestField field = singleField(fields, "06");
         String format = requireFormat(field);
         if (registerWidth(format, field.field) != 2) {
             // fc 06 只有一个寄存器：int32/float32 这类 4 字节格式在这里会被静默截掉一半
@@ -266,15 +266,15 @@ public final class ModbusFrameCodec {
         };
     }
 
-    private static byte[] writeMultipleCoilsBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+    private static byte[] writeMultipleCoilsBody(int slave, int start, List<ModbusPollingRequestField> fields,
                                                  Map<String, Object> values) {
-        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+        List<ModbusPollingRequestField> ordered = orderedFields(fields);
         int quantity = ordered.size();
         int byteCount = (quantity + 7) / 8;
         byte[] bits = new byte[byteCount];
 
         int position = 0;
-        for (ModbusFunctionRequestField field : ordered) {
+        for (ModbusPollingRequestField field : ordered) {
             // offset 必须与排列位置一致：0F 的帧只有「起始地址 + 个数 + 紧凑位区」，不留空洞
             if (field.offset != null && field.offset != position) {
                 throw new IllegalArgumentException("modbus coil offset out of order: " + field.offset
@@ -298,18 +298,18 @@ public final class ModbusFrameCodec {
         return frame;
     }
 
-    private static byte[] writeMultipleRegistersBody(int slave, int start, List<ModbusFunctionRequestField> fields,
+    private static byte[] writeMultipleRegistersBody(int slave, int start, List<ModbusPollingRequestField> fields,
                                                      Map<String, Object> values) {
-        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+        List<ModbusPollingRequestField> ordered = orderedFields(fields);
 
         int byteCount = 0;
-        for (ModbusFunctionRequestField field : ordered) {
+        for (ModbusPollingRequestField field : ordered) {
             byteCount += registerWidth(requireFormat(field), field.field);
         }
 
         byte[] data = new byte[byteCount];
         int position = 0;   // 以寄存器计的写入位置
-        for (ModbusFunctionRequestField field : ordered) {
+        for (ModbusPollingRequestField field : ordered) {
             String format = requireFormat(field);
             int width = registerWidth(format, field.field);
             // 同 0F：10 的帧也没有空洞，每个字段紧接上一个
@@ -340,8 +340,8 @@ public final class ModbusFrameCodec {
     }
 
     /** 05/06 的写请求只有一个字段（帧里没有「第几个」可言，offset 也不该填）。 */
-    private static ModbusFunctionRequestField singleField(List<ModbusFunctionRequestField> fields, String fc) {
-        List<ModbusFunctionRequestField> ordered = orderedFields(fields);
+    private static ModbusPollingRequestField singleField(List<ModbusPollingRequestField> fields, String fc) {
+        List<ModbusPollingRequestField> ordered = orderedFields(fields);
         if (ordered.size() != 1) {
             throw new IllegalArgumentException("modbus fc " + fc + " writes one field, got " + ordered.size());
         }
@@ -353,17 +353,17 @@ public final class ModbusFrameCodec {
     }
 
     /** 字段按 {@code index} 升序 —— 与应答侧 {@code ModbusResponseParser} 同一口径，决定数据区排列。 */
-    private static List<ModbusFunctionRequestField> orderedFields(List<ModbusFunctionRequestField> fields) {
+    private static List<ModbusPollingRequestField> orderedFields(List<ModbusPollingRequestField> fields) {
         if (fields == null || fields.isEmpty()) {
             throw new IllegalArgumentException("modbus write request has no fields");
         }
-        List<ModbusFunctionRequestField> ordered = new ArrayList<>(fields);
+        List<ModbusPollingRequestField> ordered = new ArrayList<>(fields);
         ordered.sort(Comparator.comparingInt(field -> field.index == null ? 0 : field.index));
         return ordered;
     }
 
     /** 写字段的取值：invoke 给了就用给的，否则回落字段缺省值；两者都没有则报错。 */
-    private static Object resolveValue(ModbusFunctionRequestField field, Map<String, Object> values) {
+    private static Object resolveValue(ModbusPollingRequestField field, Map<String, Object> values) {
         if (values != null && values.get(field.field) != null) {
             return values.get(field.field);
         }
@@ -373,7 +373,7 @@ public final class ModbusFrameCodec {
         throw new IllegalArgumentException("modbus write field has no value: " + field.field);
     }
 
-    private static String requireFormat(ModbusFunctionRequestField field) {
+    private static String requireFormat(ModbusPollingRequestField field) {
         if (field.format == null || field.format.isBlank()) {
             throw new IllegalArgumentException("modbus write field format is not set: " + field.field);
         }
@@ -506,7 +506,11 @@ public final class ModbusFrameCodec {
             default -> throw new IllegalArgumentException("unsupported modbus data type: " + command.dataType);
         };
 
-        double scale = command.scale == null ? 1.0 : command.scale;
+        // 命令级 scale 已废弃（fieldNames→fields 后缩放各字段自带）：这里取首个应答字段的 scale 兜底，
+        // 无字段/未配时恒 1.0。真正的逐字段缩放走服务路（ModbusResponseParser）。
+        Double cmdScale = command.fields != null && !command.fields.isEmpty()
+                && command.fields.get(0) != null ? command.fields.get(0).scale : null;
+        double scale = cmdScale == null ? 1.0 : cmdScale;
         return scale == 1.0 ? value : ((Number) value).doubleValue() * scale;
     }
 

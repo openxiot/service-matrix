@@ -23,6 +23,7 @@ import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
@@ -69,8 +70,6 @@ class ModbusConfigServiceTest {
         c.quantity = 2;
         c.dataType = "float32";
         c.byteOrder = "ABCD";
-        c.scale = 0.1;
-        c.unit = "℃";
         return c;
     }
 
@@ -90,6 +89,97 @@ class ModbusConfigServiceTest {
         b.offset = offset;
         b.name = name;
         return b;
+    }
+
+    private static ModbusCommand.Field field(String name) {
+        ModbusCommand.Field f = new ModbusCommand.Field();
+        f.name = name;
+        return f;
+    }
+
+    /** 寄存器序号（供 ModbusRegistry.index）：同表内必须唯一，用个计数器保证。 */
+    private static int registrySeq;
+
+    /** 寄存器样例：跨多寄存器类型（32/64 位）自动补 byteOrder，其余免填。 */
+    private static ModbusRegistry registry(String area, int address, String access, String dataType, String name) {
+        ModbusRegistry r = new ModbusRegistry();
+        r.name = name;
+        r.index = ++registrySeq;
+        r.address = address;
+        r.area = area;
+        r.access = access;
+        r.dataType = dataType;
+        if (dataType != null && List.of("int32", "uint32", "float32", "int64", "uint64").contains(dataType)) {
+            r.byteOrder = "ABCD";
+        }
+        return r;
+    }
+
+    // ===== 寄存器（registries）校验 =====
+
+    /** 以寄存器为中心的点表：带 registries 也能建。 */
+    @Test
+    void createWithRegistriesSucceeds() {
+        cfg.registries = List.of(
+                registry("holding", 0, "R", "float32", "进水温度"),
+                registry("holding", 2, "RW", "uint16", "开度"),
+                registry("coil", 0, "RW", null, "启停"));
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** 同一 (area, address) 重复：一个物理位只出现一次。 */
+    @Test
+    void createWithDuplicatedRegistryAddressFails() {
+        cfg.registries = List.of(
+                registry("holding", 0, "R", "float32", "进水温度"),
+                registry("holding", 0, "R", "float32", "重复点"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[1]: duplicated (area holding, address 0)", ex.getMessage());
+    }
+
+    /** 区不在四区内。 */
+    @Test
+    void createWithInvalidRegistryAreaFails() {
+        cfg.registries = List.of(registry("bogus", 0, "R", "uint16", "x"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[0].area: bogus", ex.getMessage());
+    }
+
+    /** 32 位跨 2 寄存器：byteOrder 必填。 */
+    @Test
+    void createWithRegistryMultiRegisterMissingByteOrderFails() {
+        ModbusRegistry r = registry("holding", 0, "R", "float32", "进水温度");
+        r.byteOrder = null;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("registries[0].byteOrder is required for dataType float32", ex.getMessage());
+    }
+
+    /** 读写方向缺失。 */
+    @Test
+    void createWithRegistryMissingAccessFails() {
+        ModbusRegistry r = registry("holding", 0, "R", "uint16", "x");
+        r.access = null;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("registries[0].access is required", ex.getMessage());
+    }
+
+    /** 应答字段名重复：会互为覆盖，拒绝。 */
+    @Test
+    void createWithDuplicateFieldNamesFails() {
+        ModbusCommand c = readHolding();
+        c.fields = List.of(field("温度"), field("温度"));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].fields[1].name: 温度 duplicated", ex.getMessage());
     }
 
     /** 桩：模拟仓储落库时由 Panache 生成主键（服务层不再自造 id）。 */
@@ -309,7 +399,7 @@ class ModbusConfigServiceTest {
         ModbusCommand c = readHolding();
         c.dataType = "uint16";
         c.quantity = 3;
-        c.fieldNames = List.of("第一个温度值", "第二个温度值", "第三个温度值");
+        c.fields = List.of(field("第一个温度值"), field("第二个温度值"), field("第三个温度值"));
         cfg.commands = List.of(c);
         insertOk();
 
@@ -332,21 +422,21 @@ class ModbusConfigServiceTest {
         ModbusCommand c = readHolding();
         c.dataType = "uint16";
         c.quantity = 3;
-        c.fieldNames = List.of("第一个温度值", "第二个温度值"); // 3 个值应有 3 个名称
+        c.fields = List.of(field("第一个温度值"), field("第二个温度值")); // 3 个值应有 3 个名称
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fieldNames: 2 (fc 03 needs 3)", ex.getMessage());
+        assertEquals("invalid commands[0].fields: 2 (fc 03 needs 3)", ex.getMessage());
     }
 
     @Test
     void createWithBlankFieldNameFails() {
         ModbusCommand c = readHolding();
-        c.fieldNames = List.of("进水温度", " ");
+        c.fields = List.of(field("进水温度"), field(" "));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fieldNames[1]: blank", ex.getMessage());
+        assertEquals("commands[0].fields[1].name is required", ex.getMessage());
     }
 
     /** string 整段算一个值：无论数量多少，应答只有一个字段。 */
@@ -355,11 +445,11 @@ class ModbusConfigServiceTest {
         ModbusCommand c = readHolding();
         c.dataType = "string";
         c.quantity = 5;
-        c.fieldNames = List.of("设备型号", "备用");
+        c.fields = List.of(field("设备型号"), field("备用"));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fieldNames: 2 (fc 03 needs 1)", ex.getMessage());
+        assertEquals("invalid commands[0].fields: 2 (fc 03 needs 1)", ex.getMessage());
     }
 
     @Test
@@ -370,11 +460,11 @@ class ModbusConfigServiceTest {
         c.fc = "05";
         c.start = 0;
         c.coilState = "on";
-        c.fieldNames = List.of("开关状态");
+        c.fields = List.of(field("开关状态"));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].fieldNames is not allowed: fc 05 has no response fields", ex.getMessage());
+        assertEquals("commands[0].fields is not allowed: fc 05 has no response fields", ex.getMessage());
     }
 
     /** 01/02 读位：逐位命名走 bitNames（offset 0 基），可以只命名其中几位。 */
@@ -421,13 +511,13 @@ class ModbusConfigServiceTest {
 
     /** 01/02 的应答字段只有一个（整段位掩码），字段名不再由点表给（生成时按功能名称兜底）。 */
     @Test
-    void createWithFieldNamesOnBitReadFails() {
+    void createWithFieldsOnBitReadFails() {
         ModbusCommand c = readCoil();
-        c.fieldNames = List.of("开关状态");
+        c.fields = List.of(field("开关状态"));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].fieldNames is not allowed: fc 01 names each bit via bitNames", ex.getMessage());
+        assertEquals("commands[0].fields is not allowed: fc 01 names each bit via bitNames", ex.getMessage());
     }
 
     @Test

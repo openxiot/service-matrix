@@ -313,7 +313,7 @@ staging / prod 跑的是 **Azure DocumentDB**（原 Cosmos DB for MongoDB vCore�
 | `modbus.history.retention-days` | `90` | 明细保留天数；`> 0` 建 `at` 上的 TTL 索引，`<= 0` = 关（并删掉已有的索引）。**缺省即生效**，只作用于 `service-histories` |
 | `modbus.index.enabled` | `true` | 建索引开关，与点表/服务共用；关掉时保留策略也不建 |
 
-**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusFunctionResponseField` 上加字段，
+**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusPollingResponseField` 上加字段，
 现阶段先用全局缺省。
 
 ## 九、变更记录

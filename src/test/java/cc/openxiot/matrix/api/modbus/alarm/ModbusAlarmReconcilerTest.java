@@ -1,12 +1,13 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
@@ -277,29 +278,32 @@ class ModbusAlarmReconcilerTest {
         return service;
     }
 
-    private static ModbusService service(String serviceId, ModbusFunction... functions) {
+    private static ModbusService service(String serviceId, ModbusPolling... functions) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(serviceId);
         service.functions = List.of(functions);
         return service;
     }
 
-    private static ModbusFunction function(ModbusFunctionResponseField... fields) {
+    private static ModbusPolling function(ModbusPollingResponseField... fields) {
         return function(1, fields);
     }
 
-    private static ModbusFunction function(int index, ModbusFunctionResponseField... fields) {
-        ModbusFunction function = new ModbusFunction();
-        function.index = index;
-        function.response = ModbusFunctionResponses.of(fields);
+    private static ModbusPolling function(int index, ModbusPollingResponseField... fields) {
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = index;
+                    function.index = index;
+        function.response = ModbusPollingResponses.of(fields);
         return function;
     }
 
-    private static ModbusFunctionResponseField field(String name, boolean alarmEnabled) {
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+    private static ModbusPollingResponseField field(String name, boolean alarmEnabled) {
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = name;
         if (alarmEnabled) {
-            ModbusFunctionResponseFieldAlarm alarm = new ModbusFunctionResponseFieldAlarm();
+            ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
             alarm.id = RULE_ID;
             alarm.enabled = true;
             alarm.compare = ">";

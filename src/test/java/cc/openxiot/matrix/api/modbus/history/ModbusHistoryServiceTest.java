@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.modbus.history;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -9,8 +11,7 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -506,11 +507,14 @@ class ModbusHistoryServiceTest {
         return service;
     }
 
-    private static ModbusFunction function() {
-        ModbusFunction function = new ModbusFunction();
-        function.index = FUNCTION_INDEX;
+    private static ModbusPolling function() {
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = FUNCTION_INDEX;
+                    function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusFunctionRequests.holding();
+        function.request = ModbusPollingRequests.holding();
         return function;
     }
 

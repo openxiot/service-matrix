@@ -20,9 +20,6 @@ public class LogStreamService {
             DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
     @Inject
-    org.jboss.logging.Logger logger;
-
-    @Inject
     LogBroadcaster broadcaster;
 
     void serveLogPage(@Observes Router router) {

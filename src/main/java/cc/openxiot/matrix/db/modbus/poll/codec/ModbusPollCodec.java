@@ -31,8 +31,8 @@ public final class ModbusPollCodec {
         if (poll.serviceId != null) {
             o.put("serviceId", poll.serviceId);
         }
-        if (poll.functionIndex != null) {
-            o.put("functionIndex", poll.functionIndex);
+        if (poll.pollingIndex != null) {
+            o.put("pollingIndex", poll.pollingIndex);
         }
         if (poll.did != null) {
             o.put("did", poll.did);

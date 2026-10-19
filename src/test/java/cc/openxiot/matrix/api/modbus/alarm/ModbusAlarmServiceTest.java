@@ -1,16 +1,17 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.request.ModbusFunctionRequests;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
-import cc.openxiot.matrix.db.modbus.service.function.response.ModbusFunctionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -97,7 +98,7 @@ class ModbusAlarmServiceTest {
     void steadyStateWritesNothing() {
         // 值仍越限、而告警已经开着、而且**还是那条规则**：读一次「哪些开着」，然后一个写操作都没有 ——
         // 「一次越限一条」这条口径的落点，破了就是每天上千条重复告警
-        ModbusFunctionResponseFieldAlarm rule = alarm(">", 80.0);
+        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
 
@@ -113,11 +114,11 @@ class ModbusAlarmServiceTest {
 
     @Test
     void opensWithTheDefinitionSnapshot() {
-        ModbusFunctionResponseFieldAlarm rule = alarm(">", 80.0);
+        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
-        ModbusFunctionResponseField field = field("进水温度", rule);
+        ModbusPollingResponseField field = field("进水温度", rule);
         field.unit = "℃";
         service.evaluate(modbusService(), function(field), sample("进水温度", 85.5)).await().indefinitely();
 
@@ -148,7 +149,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
-        ModbusFunctionResponseField bits = bits("进水阀位", "进水阀", alarm("=", 1.0));
+        ModbusPollingResponseField bits = bits("进水阀位", "进水阀", alarm("=", 1.0));
         bits.unit = "℃";
         service.evaluate(modbusService(), function(bits), sample("进水阀", 1)).await().indefinitely();
 
@@ -162,7 +163,7 @@ class ModbusAlarmServiceTest {
 
     @Test
     void closesByValueWhenTheValueComesBack() {
-        ModbusFunctionResponseFieldAlarm rule = alarm(">", 80.0);
+        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
@@ -182,7 +183,7 @@ class ModbusAlarmServiceTest {
         // 不关的话这条再也判定不到、会永远挂在那里。
         // 注意这个方法的**另一个字段仍配着告警** —— 这正是这条路径能走到的形状（局部修改），
         // 而「最后一个告警也被关掉」那种整体回退走的是下面那条：闸门在这里就返回了
-        ModbusFunctionResponseFieldAlarm rule = alarm(">", 80.0);
+        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
@@ -215,7 +216,7 @@ class ModbusAlarmServiceTest {
 
     @Test
     void oneSampleCanOpenAndCloseAtOnce() {
-        ModbusFunctionResponseFieldAlarm low = alarm("<", 5.0);
+        ModbusPollingResponseFieldAlarm low = alarm("<", 5.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("回水温度", low)));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
@@ -237,8 +238,8 @@ class ModbusAlarmServiceTest {
     void theRowOpenedByAnotherRuleIsSupersededNotRecovered() {
         // 同一出值的一组规则里换了一条生效：那条开着的要按 SUPERSEDED 关 ——
         // 降级时值并没有回到正常，记成 VALUE 是谎话
-        ModbusFunctionResponseFieldAlarm warn = level(alarm(">", 26.0), "WARN");
-        ModbusFunctionResponseFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
+        ModbusPollingResponseFieldAlarm warn = level(alarm(">", 26.0), "WARN");
+        ModbusPollingResponseFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", critical)));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
@@ -261,8 +262,8 @@ class ModbusAlarmServiceTest {
         // 但那个窗口里告警是消失的，而轮询一停就永久丢。而 Uni.combine().all() 是**并发**的，
         // 所以顺序只能由两段 chain 保证，不能靠 ops 列表的先后。
         // 与 ModbusServiceServiceTest 里那条 InOrder 同一性质：顺序写错了不报错，只是悄悄丢告警。
-        ModbusFunctionResponseFieldAlarm warn = level(alarm(">", 26.0), "WARN");
-        ModbusFunctionResponseFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
+        ModbusPollingResponseFieldAlarm warn = level(alarm(">", 26.0), "WARN");
+        ModbusPollingResponseFieldAlarm critical = level(alarm(">", 30.0), "CRITICAL");
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", warn)));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
@@ -282,7 +283,7 @@ class ModbusAlarmServiceTest {
     void handledRowIsClosedBeforeTheNewOneIsInserted() {
         // 与上一条同一性质、同一理由（先关再插，否则插入撞唯一索引被静默吞掉），而这里的代价
         // 更容易被当成 bug：用户刚点完「处理」，下一秒那条就整个不见了
-        ModbusFunctionResponseFieldAlarm rule = alarm(">", 80.0);
+        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(openHandled("进水温度", rule)));
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
@@ -312,7 +313,7 @@ class ModbusAlarmServiceTest {
         // 但它往往是持续状态（老数据 / 固件与点表不符）：5 秒一条会刷成一万七千行/天，
         // 所以同一条规则只报一次
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
-        ModbusFunction function = function(field("进水温度", alarm(">", 80.0)));
+        ModbusPolling function = function(field("进水温度", alarm(">", 80.0)));
 
         // 定义比数、运行期给的是字符串（这一帧拿不出可比的值）
         service.evaluate(modbusService(), function, sample("进水温度", "ON")).await().indefinitely();
@@ -331,8 +332,8 @@ class ModbusAlarmServiceTest {
     void everyBrokenRuleIsWarnedOnItsOwn() {
         // 一个出值可以配一组规则，所以「哪一条判不了」要分别报出来 ——
         // 去重键细到规则，否则同一出值的第二条坏规则永远不会被报出来
-        ModbusFunctionResponseFieldAlarm first = alarm("??", 80.0);
-        ModbusFunctionResponseFieldAlarm second = alarm("??", 90.0);
+        ModbusPollingResponseFieldAlarm first = alarm("??", 80.0);
+        ModbusPollingResponseFieldAlarm second = alarm("??", 90.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
 
         service.evaluate(modbusService(), function(field("进水温度", first, second)),
@@ -541,29 +542,32 @@ class ModbusAlarmServiceTest {
         return service;
     }
 
-    private static ModbusFunction function(ModbusFunctionResponseField... fields) {
-        ModbusFunction function = new ModbusFunction();
-        function.index = FUNCTION_INDEX;
+    private static ModbusPolling function(ModbusPollingResponseField... fields) {
+        ModbusPolling function = new ModbusPolling();
+                    function.from = new ModbusPollingFrom();
+                    function.from.type = "command";
+                    function.from.index = FUNCTION_INDEX;
+                    function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusFunctionRequests.holding();
-        function.response = ModbusFunctionResponses.of(fields);
+        function.request = ModbusPollingRequests.holding();
+        function.response = ModbusPollingResponses.of(fields);
         return function;
     }
 
-    private static ModbusFunctionResponseField field(String name, ModbusFunctionResponseFieldAlarm... alarms) {
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+    private static ModbusPollingResponseField field(String name, ModbusPollingResponseFieldAlarm... alarms) {
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = name;
         field.alarms = new ArrayList<>(List.of(alarms));
         return field;
     }
 
-    private static ModbusFunctionResponseField bits(String name, String bitName, ModbusFunctionResponseFieldAlarm... alarms) {
-        ModbusFunctionResponseFieldBit bit = new ModbusFunctionResponseFieldBit();
+    private static ModbusPollingResponseField bits(String name, String bitName, ModbusPollingResponseFieldAlarm... alarms) {
+        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
         bit.offset = 0;
         bit.field = bitName;
         bit.alarms = new ArrayList<>(List.of(alarms));
 
-        ModbusFunctionResponseField field = new ModbusFunctionResponseField();
+        ModbusPollingResponseField field = new ModbusPollingResponseField();
         field.field = name;
         field.bitList = new ArrayList<>(List.of(bit));
         return field;
@@ -573,8 +577,8 @@ class ModbusAlarmServiceTest {
      * 一条规则。<b>标识由内容生成</b>（与 {@code ModbusAlarmPolicyTest} 的夹具同口径）：
      * 参数相同的两条规则算同一条 —— 「这条开着的行还是那条规则开的」因此不必到处手写 id。
      */
-    private static ModbusFunctionResponseFieldAlarm alarm(String compare, Double threshold) {
-        ModbusFunctionResponseFieldAlarm alarm = new ModbusFunctionResponseFieldAlarm();
+    private static ModbusPollingResponseFieldAlarm alarm(String compare, Double threshold) {
+        ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
         alarm.id = compare + threshold;
         alarm.enabled = true;
         alarm.compare = compare;
@@ -585,13 +589,13 @@ class ModbusAlarmServiceTest {
     }
 
     /** 改级别（选举看它）。 */
-    private static ModbusFunctionResponseFieldAlarm level(ModbusFunctionResponseFieldAlarm alarm, String level) {
+    private static ModbusPollingResponseFieldAlarm level(ModbusPollingResponseFieldAlarm alarm, String level) {
         alarm.level = level;
         return alarm;
     }
 
-    private static ModbusFunctionResponseFieldAlarm disabled() {
-        ModbusFunctionResponseFieldAlarm alarm = alarm(">", 80.0);
+    private static ModbusPollingResponseFieldAlarm disabled() {
+        ModbusPollingResponseFieldAlarm alarm = alarm(">", 80.0);
         alarm.enabled = false;
         return alarm;
     }
@@ -617,7 +621,7 @@ class ModbusAlarmServiceTest {
     private static Map<String, OpenAlarmRule> openWith(boolean handled, Object... pairs) {
         Map<String, OpenAlarmRule> open = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
-            ModbusFunctionResponseFieldAlarm rule = (ModbusFunctionResponseFieldAlarm) pairs[i + 1];
+            ModbusPollingResponseFieldAlarm rule = (ModbusPollingResponseFieldAlarm) pairs[i + 1];
             open.put((String) pairs[i], new OpenAlarmRule(rule.id, handled));
         }
         return open;

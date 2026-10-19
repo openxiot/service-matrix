@@ -10,9 +10,9 @@ import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseField;
-import cc.openxiot.matrix.db.modbus.service.function.response.field.ModbusFunctionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.function.ModbusFunction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cn.geekcity.xiot.spec.status.Status;
@@ -773,7 +773,7 @@ public class DashboardWidgetDataService {
      * <p>这一轮没取到值的字段**不带 {@code value}**（不是补 0、也不是补 null）：前端据此显示
      * {@code -}，「没有这个键」与「值是 0」是两回事，后者是真实的读数。</p>
      */
-    private static JsonArray fieldRows(ModbusFunction function, List<String> configured,
+    private static JsonArray fieldRows(ModbusPolling function, List<String> configured,
                                        JsonObject values) {
         JsonArray rows = new JsonArray();
         for (String name : configured) {
@@ -799,18 +799,18 @@ public class DashboardWidgetDataService {
      * 但如果服务定义在那之后改了，这里也不该把卡片渲染成空白 —— 按名字把值照原样显示出来，
      * 是能给的最后一个诚实答案。</p>
      */
-    private static FieldMeta fieldMeta(ModbusFunction function, String name) {
-        List<ModbusFunctionResponseField> fields = ModbusFunction.responseFields(function);
-        for (ModbusFunctionResponseField field : fields) {
+    private static FieldMeta fieldMeta(ModbusPolling function, String name) {
+        List<ModbusPollingResponseField> fields = ModbusPolling.responseFields(function);
+        for (ModbusPollingResponseField field : fields) {
             if (field != null && name.equals(field.field)) {
                 return new FieldMeta(field.unit == null ? "" : field.unit, false);
             }
         }
-        for (ModbusFunctionResponseField field : fields) {
+        for (ModbusPollingResponseField field : fields) {
             if (field == null || field.bitList == null) {
                 continue;
             }
-            for (ModbusFunctionResponseFieldBit bit : field.bitList) {
+            for (ModbusPollingResponseFieldBit bit : field.bitList) {
                 if (bit != null && name.equals(bit.field)) {
                     // 位没有单位：与历史页 fieldRef 对位的 `unit: ''` 一致
                     return new FieldMeta("", true);
@@ -825,11 +825,11 @@ public class DashboardWidgetDataService {
      * 里那两个同名私有方法同一段逻辑（那两处的签名一个收 {@code Integer}、一个收 {@code int}）——
      * 三次出现仍是各写一份：为 8 行扫描去动两个正在工作的类，风险比收益大。
      */
-    private static ModbusFunction findFunction(ModbusService service, Integer index) {
+    private static ModbusPolling findFunction(ModbusService service, Integer index) {
         if (service == null || service.functions == null || index == null) {
             return null;
         }
-        for (ModbusFunction function : service.functions) {
+        for (ModbusPolling function : service.functions) {
             if (function != null && index.equals(function.index)) {
                 return function;
             }
