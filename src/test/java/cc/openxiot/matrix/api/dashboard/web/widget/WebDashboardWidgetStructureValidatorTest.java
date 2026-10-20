@@ -401,22 +401,22 @@ class WidgetStructureValidatorTest {
     void line_serviceField_tripleRequired() {
         assertInvalid("config.serviceId is required",
                 widget("line", config("source", "serviceField", "window", last(24))));
-        assertInvalid("config.functionIndex must be a number",
+        assertInvalid("config.pollingIndex must be a number",
                 widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1")));
         assertInvalid("config.field is required",
                 widget("line", config("source", "serviceField", "window", last(24),
-                        "serviceId", "s1", "functionIndex", 0)));
+                        "serviceId", "s1", "pollingIndex", 0)));
         assertValid(widget("line", config("source", "serviceField", "window", last(24),
-                "serviceId", "s1", "functionIndex", 0, "field", "temp")));
+                "serviceId", "s1", "pollingIndex", 0, "field", "temp")));
     }
 
     @Test
     void line_maxPointsRange() {
         assertInvalid("config.maxPoints must be between 1 and 2000",
                 widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
-                        "functionIndex", 0, "field", "temp", "maxPoints", 0)));
+                        "pollingIndex", 0, "field", "temp", "maxPoints", 0)));
         assertValid(widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
-                "functionIndex", 0, "field", "temp", "maxPoints", 100)));
+                "pollingIndex", 0, "field", "temp", "maxPoints", 100)));
     }
 
     /**
@@ -427,9 +427,9 @@ class WidgetStructureValidatorTest {
     void line_showFailureShadowMustBeBoolean() {
         assertInvalid("config.showFailureShadow must be a boolean", widget("line",
                 config("source", "serviceField", "window", last(24), "serviceId", "s1",
-                        "functionIndex", 0, "field", "temp", "showFailureShadow", "true")));
+                        "pollingIndex", 0, "field", "temp", "showFailureShadow", "true")));
         assertValid(widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
-                "functionIndex", 0, "field", "temp", "showFailureShadow", true)));
+                "pollingIndex", 0, "field", "temp", "showFailureShadow", true)));
     }
 
     @Test
@@ -504,17 +504,17 @@ class WidgetStructureValidatorTest {
 
     @Test
     void service_keysRequired() {
-        assertInvalid("config.serviceId is required", widget("service", config("functionIndex", 0, "fields", List.of("a"))));
-        assertInvalid("config.functionIndex must be a number",
+        assertInvalid("config.serviceId is required", widget("service", config("pollingIndex", 0, "fields", List.of("a"))));
+        assertInvalid("config.pollingIndex must be a number",
                 widget("service", config("serviceId", "s1", "fields", List.of("a"))));
         assertInvalid("config.fields must be an array",
-                widget("service", config("serviceId", "s1", "functionIndex", 0, "fields", "a")));
+                widget("service", config("serviceId", "s1", "pollingIndex", 0, "fields", "a")));
     }
 
     @Test
     void service_fieldsNotEmpty() {
         assertInvalid("config.fields must not be empty",
-                widget("service", config("serviceId", "s1", "functionIndex", 0, "fields", List.of())));
+                widget("service", config("serviceId", "s1", "pollingIndex", 0, "fields", List.of())));
     }
 
     @Test
@@ -524,19 +524,19 @@ class WidgetStructureValidatorTest {
             tooMany.add("f" + i);
         }
         assertInvalid("config.fields has too many entries", widget("service",
-                config("serviceId", "s1", "functionIndex", 0, "fields", tooMany)));
+                config("serviceId", "s1", "pollingIndex", 0, "fields", tooMany)));
     }
 
     @Test
     void service_fieldsUnique() {
         assertInvalid("config.fields has a duplicate: temp", widget("service",
-                config("serviceId", "s1", "functionIndex", 0, "fields", List.of("temp", "temp"))));
+                config("serviceId", "s1", "pollingIndex", 0, "fields", List.of("temp", "temp"))));
     }
 
     @Test
     void service_fieldEntriesMustBeStrings() {
         assertInvalid("config.fields must contain strings", widget("service",
-                config("serviceId", "s1", "functionIndex", 0, "fields", List.of("temp", 3))));
+                config("serviceId", "s1", "pollingIndex", 0, "fields", List.of("temp", 3))));
     }
 
     /**
@@ -545,15 +545,15 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void service_bitNameIsAValidField() {
-        assertValid(widget("service", config("serviceId", "s1", "functionIndex", 0,
+        assertValid(widget("service", config("serviceId", "s1", "pollingIndex", 0,
                 "fields", List.of("status", "status.bit0", "status.bit1"))));
     }
 
     @Test
     void service_showUnitMustBeBoolean() {
         assertInvalid("config.showUnit must be a boolean", widget("service",
-                config("serviceId", "s1", "functionIndex", 0, "fields", List.of("temp"), "showUnit", 1)));
-        assertValid(widget("service", config("serviceId", "s1", "functionIndex", 0,
+                config("serviceId", "s1", "pollingIndex", 0, "fields", List.of("temp"), "showUnit", 1)));
+        assertValid(widget("service", config("serviceId", "s1", "pollingIndex", 0,
                 "fields", List.of("temp"), "showUnit", true)));
     }
 
@@ -564,7 +564,7 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void service_leftoverShowStaleIsIgnored() {
-        assertValid(widget("service", config("serviceId", "s1", "functionIndex", 0,
+        assertValid(widget("service", config("serviceId", "s1", "pollingIndex", 0,
                 "fields", List.of("temp"), "showStale", 1)));
     }
 

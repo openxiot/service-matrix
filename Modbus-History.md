@@ -111,10 +111,10 @@
 ## 三、数据模型（落库 `modbus`，三张集合）
 
 ```
-ModbusServiceShadow    serviceId / functionIndex / fields{字段→值} / recordedAt
+ModbusServiceShadow    serviceId / pollingIndex / fields{字段→值} / recordedAt
                                      / lastError / errorAt
-ModbusServiceHistory   serviceId / functionIndex / field / value / at / keepalive
-ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message / at
+ModbusServiceHistory   serviceId / pollingIndex / field / value / at / keepalive
+ModbusServiceFailure   serviceId / pollingIndex / type / remoteCode / message / at
 ```
 
 * **影子按 function 一条（字段内嵌），历史按 field 一条，失败记录按 function 一条。**
@@ -123,7 +123,7 @@ ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message /
   成功与失败共用这一个文档，是为了让每次 invoke 只读一次库 ——
   最后一次调用的结果本来就该是一份状态：要么是值，要么是一个故障。
   按 function 存，一次采集一次写就够；历史按字段落，粒度才对得上前端按点取曲线。
-* **点位的身份是 `(serviceId, functionIndex, field)` 三元组**，不额外拼 `pointId` 字符串
+* **点位的身份是 `(serviceId, pollingIndex, field)` 三元组**，不额外拼 `pointId` 字符串
   —— 字段名是用户填的（可能是中文，可能带任何分隔符），拼串做前缀匹配迟早会撞上转义问题。
 * **时间统一 `Date`（UTC）**，不存字符串：将来真要搬走时这种格式最省事。
 * **`value` 是异构的**：数值（`int8`..`uint32`/`float32`、缩放后的 `double`）、
@@ -144,8 +144,8 @@ ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message /
   枚举增删时老文档还读得出来。`remoteCode` 只有 `SLAVE_EXCEPTION`（异常码）与
   `DEVICE_ERROR`（父设备状态码）有值，其余为 null —— 前端按 `type` 聚合后靠它下钻。
 
-**索引**：影子 `(serviceId, functionIndex)` 唯一；历史 `(serviceId, functionIndex, field, at)`；
-失败记录 `(serviceId, functionIndex, at)`。历史那条复合索引支撑「某点某时间段倒序取 N 条」：
+**索引**：影子 `(serviceId, pollingIndex)` 唯一；历史 `(serviceId, pollingIndex, field, at)`；
+失败记录 `(serviceId, pollingIndex, at)`。历史那条复合索引支撑「某点某时间段倒序取 N 条」：
 前三个字段等值 + `at` 范围，排序可正可反，不需要额外索引。
 
 ## 四、写入顺序：先明细，后影子
@@ -184,12 +184,12 @@ ModbusServiceFailure   serviceId / functionIndex / type / remoteCode / message /
 
 ```
 GET /current/{spaceId}/{serviceId}
-    → { serviceId, functions: [ { functionIndex, fields, recordedAt[, lastError, errorAt] } ] }
-GET /range/{spaceId}?serviceId&functionIndex&field&from&to&maxPoints
-    → { serviceId, functionIndex, field, from, to, maxPoints, downsampled, total,
+    → { serviceId, functions: [ { pollingIndex, fields, recordedAt[, lastError, errorAt] } ] }
+GET /range/{spaceId}?serviceId&pollingIndex&field&from&to&maxPoints
+    → { serviceId, pollingIndex, field, from, to, maxPoints, downsampled, total,
         points: [ {at, value[, keepalive]} | {at, until, count, first, last, min, max, avg} ]
         [, carryIn] }
-GET /failures/{spaceId}?serviceId&functionIndex&type&from&to&limit
+GET /failures/{spaceId}?serviceId&pollingIndex&type&from&to&limit
     → { serviceId, from, to, limit, truncated, items: [...], summary: {total, byType, byRemoteCode} }
 ```
 
@@ -228,7 +228,7 @@ GET /failures/{spaceId}?serviceId&functionIndex&type&from&to&limit
 `summary` 是**这批 `items`** 按 `type`（故障类型分布，取不到分类的老文档算 `UNKNOWN`）与
 `remoteCode`（哪几个从站、哪个异常码最多）的聚合，两个数组都按条数降序、条数相同按键升序，
 输出稳定、前端不必再排；这正是分类落地成三个字段的目的。
-`functionIndex` / `type` 不传即不限；`type` 拼错**报错而不是返回空列表**
+`pollingIndex` / `type` 不传即不限；`type` 拼错**报错而不是返回空列表**
 （「拼错的分类」和「这段时间没这类故障」在界面上长得一样）；`limit` 缺省 200、封顶 1000，
 取到「上限 + 1」条时置 `truncated: true`，与 `total` 一起读。
 **当前值接口**带 `lastError` / `errorAt` —— 前端得能显示

@@ -39,7 +39,7 @@ public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepos
     }
 
     /**
-     * 启动时确保索引存在：{@code (serviceId, functionIndex, field, at)} 复合索引，
+     * 启动时确保索引存在：{@code (serviceId, pollingIndex, field, at)} 复合索引，
      * 外加（{@code retentionSeconds > 0} 时）{@code at} 上的 TTL 索引（见 Modbus-History.md 第六节）。
      *
      * <p>这条复合索引支撑「某点某时间段倒序取 N 条」：前三段等值 + {@code at} 范围，
@@ -52,7 +52,7 @@ public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepos
      */
     public Uni<Void> ensureIndexes(long retentionSeconds) {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "functionIndex", "field", "at"))
+                .createIndex(Indexes.ascending("serviceId", "pollingIndex", "field", "at"))
                 .onFailure().recoverWithNull()
                 .chain(ignored -> ensureRetention(retentionSeconds));
     }
@@ -143,9 +143,9 @@ public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepos
      *
      * <p>只读一条：这条索引（前三段等值 + {@code at} 范围）会让它落在倒序的第一条上。</p>
      */
-    public Uni<ModbusServiceHistory> findCarryIn(String serviceId, Integer functionIndex, String field, Date from) {
+    public Uni<ModbusServiceHistory> findCarryIn(String serviceId, Integer pollingIndex, String field, Date from) {
         return collection()
-                .find(pointFilter(serviceId, functionIndex, field, Filters.lt("at", from)),
+                .find(pointFilter(serviceId, pollingIndex, field, Filters.lt("at", from)),
                         new FindOptions().sort(Sorts.descending("at")).limit(1))
                 .collect().first();
     }
@@ -154,15 +154,15 @@ public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepos
      * 区间 {@code [from, to]} 内的样本，按 {@code at} 升序。
      *
      * <p>升序由这里定死、{@link ModbusHistoryWindow} 不再排序：排序口径只该有一处。
-     * 投影只取 {@code value / at / keepalive} —— 每行重复的 {@code serviceId / functionIndex / field}
+     * 投影只取 {@code value / at / keepalive} —— 每行重复的 {@code serviceId / pollingIndex / field}
      * 在结果里是常量，取回来只是白付流量。</p>
      *
      * @param limit 条数上限；调用方传「上限 + 1」以便判出「超了」（见 {@code ModbusHistoryQueryService}）
      */
-    public Uni<List<ModbusServiceHistory>> findRange(String serviceId, Integer functionIndex, String field,
+    public Uni<List<ModbusServiceHistory>> findRange(String serviceId, Integer pollingIndex, String field,
                                                      Date from, Date to, int limit) {
         return collection()
-                .find(pointFilter(serviceId, functionIndex, field,
+                .find(pointFilter(serviceId, pollingIndex, field,
                                 Filters.and(Filters.gte("at", from), Filters.lte("at", to))),
                         new FindOptions()
                                 .sort(Sorts.ascending("at"))
@@ -171,9 +171,9 @@ public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepos
                 .collect().asList();
     }
 
-    private static Bson pointFilter(String serviceId, Integer functionIndex, String field, Bson at) {
+    private static Bson pointFilter(String serviceId, Integer pollingIndex, String field, Bson at) {
         return Filters.and(Filters.eq("serviceId", serviceId),
-                Filters.eq("functionIndex", functionIndex),
+                Filters.eq("pollingIndex", pollingIndex),
                 Filters.eq("field", field),
                 at);
     }

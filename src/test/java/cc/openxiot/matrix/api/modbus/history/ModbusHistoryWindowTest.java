@@ -206,7 +206,7 @@ class ModbusHistoryWindowTest {
 
     // ===== 夹具 =====
 
-    /** 只填窗口会用到的两个字段：点位身份（serviceId / functionIndex / field）由仓储的查询决定。 */
+    /** 只填窗口会用到的两个字段：点位身份（serviceId / pollingIndex / field）由仓储的查询决定。 */
     private static ModbusServiceHistory sample(long at, Object value) {
         ModbusServiceHistory row = new ModbusServiceHistory();
         row.at = new Date(at);

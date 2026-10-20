@@ -14,7 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * <p>{@code index} 仅作**溯源**：指向 config 的 {@code ModbusRegistry#index}（{@code type="registry"}）
  * 或 {@code ModbusCommand#index}（{@code type="command"}），说明这个方法是从哪条点表/命令配出来的。
  * 它**不是**方法在服务内的身份 —— 身份是 {@code ModbusPolling.index}（1 起自然数、同服务唯一），
- * 轮询身份（{@code modbus.polls.functionIndex}）、告警/影子的方法键都读 {@code ModbusPolling.index}。</p>
+ * 轮询身份（{@code modbus.polls.pollingIndex}）、告警/影子的方法键都读 {@code ModbusPolling.index}。</p>
  *
  * <p>{@code access} 只对 registry 来源有意义（"read"/"write"）：command 方法的读写方向完全由
  * {@code request.fc} 决定，不需要再标一遍；registry 方法由点表展开，把点表上的读/写向带过来供溯源。</p>

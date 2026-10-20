@@ -433,12 +433,12 @@ public class ModbusPollReconciler {
         return service.device == null ? null : service.device.did;
     }
 
-    private static ModbusPoll rowOf(List<ModbusPoll> polls, Integer functionIndex) {
-        if (functionIndex == null) {
+    private static ModbusPoll rowOf(List<ModbusPoll> polls, Integer pollingIndex) {
+        if (pollingIndex == null) {
             return null;
         }
         for (ModbusPoll poll : polls) {
-            if (functionIndex.equals(poll.pollingIndex)) {
+            if (pollingIndex.equals(poll.pollingIndex)) {
                 return poll;
             }
         }

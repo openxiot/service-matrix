@@ -343,10 +343,10 @@ public class DashboardWidgetDataService {
     private Uni<Map<String, CurveFetched>> fetchCurves(Map<String, CurveQuery> curves) {
         Map<String, Uni<CurveFetched>> queries = new LinkedHashMap<>();
         curves.forEach((key, curve) -> queries.put(key,
-                historyQueryService.range(curve.serviceId(), curve.functionIndex(), curve.field(),
+                historyQueryService.range(curve.serviceId(), curve.pollingIndex(), curve.field(),
                                 curve.window().from(), curve.window().to(), curve.maxPoints())
                         .map(result -> new CurveFetched(ModbusHistoryRangeCodec.encode(
-                                curve.serviceId(), curve.functionIndex(), curve.field(), result), null))
+                                curve.serviceId(), curve.pollingIndex(), curve.field(), result), null))
                         .onFailure().recoverWithItem(
                                 failure -> new CurveFetched(null, messageOf(failure)))));
         return joinAll(queries);
@@ -363,7 +363,7 @@ public class DashboardWidgetDataService {
     private Uni<Map<String, JsonArray>> fetchFailures(Map<String, FailureQuery> failures) {
         Map<String, Uni<JsonArray>> queries = new LinkedHashMap<>();
         failures.forEach((key, query) -> queries.put(key,
-                historyQueryService.failures(query.serviceId(), query.functionIndex(), null,
+                historyQueryService.failures(query.serviceId(), query.pollingIndex(), null,
                                 query.window().from(), query.window().to(), null)
                         .map(result -> failureTimes(result.items()))
                         .onFailure().recoverWithItem(failure -> new JsonArray())));
@@ -386,13 +386,13 @@ public class DashboardWidgetDataService {
         return times;
     }
 
-    /** 影子按 {@code functionIndex} 索引（一个服务下每个方法至多一条影子）。 */
+    /** 影子按 {@code pollingIndex} 索引（一个服务下每个方法至多一条影子）。 */
     private static Map<Integer, ModbusServiceShadow> shadowsByFunction(List<ModbusServiceShadow> shadows) {
         Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
         if (shadows != null) {
             for (ModbusServiceShadow shadow : shadows) {
-                if (shadow != null && shadow.functionIndex != null) {
-                    byIndex.put(shadow.functionIndex, shadow);
+                if (shadow != null && shadow.pollingIndex != null) {
+                    byIndex.put(shadow.pollingIndex, shadow);
                 }
             }
         }
@@ -700,13 +700,13 @@ public class DashboardWidgetDataService {
      */
     private static JsonObject fieldData(CurveQuery query, CurveFetched curve, ServiceFetched service,
                                         Map<String, JsonArray> failures) {
-        FieldMeta meta = fieldMeta(findFunction(service.service(), query.functionIndex()), query.field());
+        FieldMeta meta = fieldMeta(findFunction(service.service(), query.pollingIndex()), query.field());
         // 这份响应体是这次取数现编的（`fetchCurves` 里每个去重键一份），就地缀上三样即可
         JsonObject data = curve.range();
         data.put("unit", meta.unit());
         data.put("step", meta.bit());
         data.put("failures", failures.getOrDefault(
-                FailureQuery.keyOf(query.serviceId(), query.functionIndex(), query.window()),
+                FailureQuery.keyOf(query.serviceId(), query.pollingIndex(), query.window()),
                 new JsonArray()));
         return data;
     }
@@ -722,12 +722,12 @@ public class DashboardWidgetDataService {
 
     /**
      * 服务卡的 data：
-     * {@code {functionIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
+     * {@code {pollingIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>，不是某个状态字段：影子就是
      * 「最后一次成功的采集」，一个从没成功过的方法**根本不会有影子**
      * （{@link ModbusHistoryQueryService#currentValues} 的说法）。所以没有影子时只给
-     * {@code functionIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
+     * {@code pollingIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
      * 一行都没有值可显示的空壳不是信息。</p>
      *
      * <p>{@code recordedAt} 属于**整个 function**，不是每个字段各自的：同一张卡的字段必须来自
@@ -743,16 +743,16 @@ public class DashboardWidgetDataService {
      * （位值说「开/关」、枚举描述）仍留在前端 —— 见 §D5 与本次修订（十）。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
-        Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
-        if (functionIndex == null) {
+        Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
+        if (pollingIndex == null) {
             return null;
         }
-        ModbusServiceShadow shadow = fetched.shadows().get(functionIndex);
-        JsonObject data = new JsonObject().put("functionIndex", functionIndex);
+        ModbusServiceShadow shadow = fetched.shadows().get(pollingIndex);
+        JsonObject data = new JsonObject().put("pollingIndex", pollingIndex);
         if (shadow == null) {
             return data;
         }
-        data.put("fields", fieldRows(findFunction(fetched.service(), functionIndex),
+        data.put("fields", fieldRows(findFunction(fetched.service(), pollingIndex),
                 DashboardWidgetConfigs.strList(config.get("fields")),
                 shadow.fields == null ? null : new JsonObject(shadow.fields)));
         if (shadow.recordedAt != null) {
@@ -927,11 +927,11 @@ public class DashboardWidgetDataService {
      * （降不降采样、桶多粗都不一样）。只按「点位 × 窗口」去重，会让其中一张卡拿到另一张的点数
      * —— 而它看起来完全正常，因为它本来就是一组合法的采样。</p>
      */
-    private record CurveQuery(String serviceId, Integer functionIndex, String field, Window window,
+    private record CurveQuery(String serviceId, Integer pollingIndex, String field, Window window,
                               int maxPoints) {
 
         String key() {
-            return serviceId + "#" + functionIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
+            return serviceId + "#" + pollingIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
         }
 
         /**
@@ -941,14 +941,14 @@ public class DashboardWidgetDataService {
         static CurveQuery of(DashboardWidgetView widget, Window window) {
             Map<String, Object> config = widget.config();
             String serviceId = configString(config, "serviceId");
-            Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
+            Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
             String field = configString(config, "field");
-            if (serviceId == null || functionIndex == null || field == null) {
+            if (serviceId == null || pollingIndex == null || field == null) {
                 return null;
             }
             Integer maxPoints = DashboardWidgetConfigs.intVal(config.get("maxPoints"));
             // 缺省由 queryService 那侧归一（夹到 [1, 2000]），这里只给「没配」的那档
-            return new CurveQuery(serviceId, functionIndex, field, window,
+            return new CurveQuery(serviceId, pollingIndex, field, window,
                     maxPoints == null ? ModbusHistoryQueryService.DEFAULT_MAX_POINTS : maxPoints);
         }
     }
@@ -960,22 +960,22 @@ public class DashboardWidgetDataService {
      * 见 {@code ModbusServiceFailure}），所以同一个方法的几条曲线画的是同一条竖线，
      * 共用一次查询。</p>
      */
-    private record FailureQuery(String serviceId, Integer functionIndex, Window window) {
+    private record FailureQuery(String serviceId, Integer pollingIndex, Window window) {
 
         String key() {
-            return keyOf(serviceId, functionIndex, window);
+            return keyOf(serviceId, pollingIndex, window);
         }
 
-        static String keyOf(String serviceId, Integer functionIndex, Window window) {
-            return serviceId + "#" + functionIndex + "#" + window.key();
+        static String keyOf(String serviceId, Integer pollingIndex, Window window) {
+            return serviceId + "#" + pollingIndex + "#" + window.key();
         }
 
         /** 从卡片配置里读（方法序号缺了就给 {@code null}：没有它也无从查失败）。 */
         static FailureQuery of(DashboardWidgetView widget, Window window) {
             String serviceId = configString(widget.config(), "serviceId");
-            Integer functionIndex = DashboardWidgetConfigs.intVal(widget.config().get("functionIndex"));
-            return serviceId == null || functionIndex == null
-                    ? null : new FailureQuery(serviceId, functionIndex, window);
+            Integer pollingIndex = DashboardWidgetConfigs.intVal(widget.config().get("pollingIndex"));
+            return serviceId == null || pollingIndex == null
+                    ? null : new FailureQuery(serviceId, pollingIndex, window);
         }
     }
 
@@ -984,7 +984,7 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 一个服务的取数结果：该服务各方法当前的影子（按 functionIndex）、服务定义、以及错误文案。
+     * 一个服务的取数结果：该服务各方法当前的影子（按 pollingIndex）、服务定义、以及错误文案。
      *
      * <p>定义与影子一起取：定义用来产出每个字段的 {@code unit} / {@code bit}，两者缺一个卡片
      * 都画不出来，分两次取只会多一个中间状态。</p>

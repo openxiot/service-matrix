@@ -171,7 +171,7 @@ class ModbusServiceCodecTest {
 
         assertEquals(5, service.functions.size());
         ModbusPolling first = service.functions.get(0);
-        assertEquals(1, first.index.intValue());   // 方法身份（modbus.polls.functionIndex 读它）
+        assertEquals(1, first.index.intValue());   // 方法身份（modbus.polls.pollingIndex 读它）
         assertEquals("读进水温度", first.name);
         assertEquals(5, first.interval.intValue());   // 服务端自动调用周期（秒）
         assertEquals(Boolean.TRUE, first.polling);    // 自动轮询开关

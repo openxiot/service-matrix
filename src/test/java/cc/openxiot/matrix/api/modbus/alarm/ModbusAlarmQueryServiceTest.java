@@ -111,7 +111,7 @@ class ModbusAlarmQueryServiceTest {
     private static ModbusServiceAlarm row(String serviceId, Long at, Date recoveredAt) {
         ModbusServiceAlarm alarm = new ModbusServiceAlarm();
         alarm.serviceId = serviceId;
-        alarm.functionIndex = 1;
+        alarm.pollingIndex = 1;
         alarm.field = "进水温度";
         alarm.level = "WARN";
         alarm.text = "温度过高";

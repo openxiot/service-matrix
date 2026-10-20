@@ -63,14 +63,14 @@ public final class ModbusAlarmPlan {
     /**
      * 一次要关的残留：某个服务、某个方法上的一批出值（{@code closeType = DEFINITION}）。
      *
-     * @param functionIndex 方法序号；**可能是 null**（行里没有的话），此时只有
+     * @param pollingIndex 方法序号；**可能是 null**（行里没有的话），此时只有
      *                      「这个方法已从定义里删掉」这一种解释 —— 也一样要关
      */
-    public record Close(String serviceId, Integer functionIndex, List<String> fields) {
+    public record Close(String serviceId, Integer pollingIndex, List<String> fields) {
     }
 
     /**
-     * 新定义里**配着启用告警**的全部规则：{@code functionIndex → {出值名 → 该出值上启用的规则标识}}。
+     * 新定义里**配着启用告警**的全部规则：{@code pollingIndex → {出值名 → 该出值上启用的规则标识}}。
      *
      * <p>写方法（{@code response} 为空）进来是空集 —— 告警只许配在读方法上，写方法的应答是请求回显、
      * 没有读值，所以它上面任何开行都是残留。</p>
@@ -125,7 +125,7 @@ public final class ModbusAlarmPlan {
      * 这批开着的告警行里，哪些该按 {@code DEFINITION} 关掉。不需要动的**不出现在结果里**
      * （调用方据此零写操作，启动时稳态就是零写）。
      *
-     * <p>结果按 {@code (serviceId, functionIndex)} 排好序，且每个方法只出现一次 ——
+     * <p>结果按 {@code (serviceId, pollingIndex)} 排好序，且每个方法只出现一次 ——
      * 关闭是按整个开行标识 {@code updateMany} 的，一个方法一条语句就够。</p>
      */
     public static List<Close> plan(Collection<ModbusService> services, Collection<ModbusServiceAlarm> open) {
@@ -142,7 +142,7 @@ public final class ModbusAlarmPlan {
             covered.put(service.id.toHexString(), configuredRules(service));
         }
 
-        // (serviceId, functionIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
+        // (serviceId, pollingIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
         Map<Key, Set<String>> stale = new LinkedHashMap<>();
         for (ModbusServiceAlarm row : open) {
             if (row == null || row.serviceId == null || row.field == null || row.field.isBlank()
@@ -153,24 +153,24 @@ public final class ModbusAlarmPlan {
             if (byIndex == null) {
                 continue;   // 不认识的服务：见类注释，保守不动
             }
-            Map<String, Set<String>> rules = row.functionIndex == null ? null : byIndex.get(row.functionIndex);
+            Map<String, Set<String>> rules = row.pollingIndex == null ? null : byIndex.get(row.pollingIndex);
             Set<String> ids = rules == null ? null : rules.get(row.field);
             if (ids != null && ids.contains(row.ruleId)) {
                 continue;   // 新定义里还有这条规则且启用着，留着 —— 它归值判定管
             }
-            stale.computeIfAbsent(new Key(row.serviceId, row.functionIndex), key -> new TreeSet<>())
+            stale.computeIfAbsent(new Key(row.serviceId, row.pollingIndex), key -> new TreeSet<>())
                     .add(row.field);
         }
 
         stale.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> closes.add(new Close(entry.getKey().serviceId(),
-                        entry.getKey().functionIndex(), List.copyOf(entry.getValue()))));
+                        entry.getKey().pollingIndex(), List.copyOf(entry.getValue()))));
         return closes;
     }
 
-    /** 分组键。{@code functionIndex} 可以是 null（Comparator 显式处理，不靠 {@code Integer} 的自然序）。 */
-    private record Key(String serviceId, Integer functionIndex) implements Comparable<Key> {
+    /** 分组键。{@code pollingIndex} 可以是 null（Comparator 显式处理，不靠 {@code Integer} 的自然序）。 */
+    private record Key(String serviceId, Integer pollingIndex) implements Comparable<Key> {
 
         @Override
         public int compareTo(Key other) {
@@ -178,11 +178,11 @@ public final class ModbusAlarmPlan {
             if (byService != 0) {
                 return byService;
             }
-            if (functionIndex == null || other.functionIndex == null) {
+            if (pollingIndex == null || other.pollingIndex == null) {
                 // null 排在前（没有序号的行最可疑，日志里先看到它）
-                return functionIndex == other.functionIndex ? 0 : (functionIndex == null ? -1 : 1);
+                return pollingIndex == other.pollingIndex ? 0 : (pollingIndex == null ? -1 : 1);
             }
-            return Integer.compare(functionIndex, other.functionIndex);
+            return Integer.compare(pollingIndex, other.pollingIndex);
         }
     }
 }

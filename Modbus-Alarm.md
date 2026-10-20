@@ -176,7 +176,7 @@ ModbusFunctionResponseFieldBit.alarms   : List<ModbusFunctionResponseFieldAlarm>
 
 ## 五、状态与边沿：开着的行就是状态
 
-不另存一份告警态。`(serviceId, functionIndex, field)` 上有**未恢复**的告警就是「开着」，
+不另存一份告警态。`(serviceId, pollingIndex, field)` 上有**未恢复**的告警就是「开着」，
 判定只需要这一张集合（**出值名 → 那条开着的行上的 `(ruleId, handled)`**，即 `OpenAlarmRule`），
 它由告警表自己查出来。一个出值同时最多一条开着 —— 这既是选举的结果，也恰好是那条唯一部分索引
 强制的**不变式**。
@@ -238,7 +238,7 @@ ModbusFunctionResponseFieldBit.alarms   : List<ModbusFunctionResponseFieldAlarm>
 
 **为什么不放进 `ModbusServiceShadow`** —— 是**正确性**理由，不是成本理由：影子是**全量替换**写的
 （`ModbusHistoryService` 里 `shadowRepo.replace(next)`），而这一带**没有任何事务**。影子按
-`(serviceId, functionIndex)` 一条，告警态是按字段的；让告警判定成为该文档的**第二个写者**，
+`(serviceId, pollingIndex)` 一条，告警态是按字段的；让告警判定成为该文档的**第二个写者**，
 一次并发就会把 `fields` / `recordedAt` / `lastError` 或告警态悄悄覆盖掉 —— 而「先明细后影子」
 那条顺序不变量正是靠单写者成立的。另外 poller 在热路径上**故意跳过**影子读
 （`ModbusPollBaselines` 用内存基准），告警无论如何都得自己读一次，扩影子在那里一分钱都省不到。
@@ -252,7 +252,7 @@ ModbusFunctionResponseFieldBit.alarms   : List<ModbusFunctionResponseFieldAlarm>
 关闭失败则行还开着，下一条仍正常的样本会重试关闭。故障记录当初要那套顺序不变量，
 是因为它一条记录同时改了明细与影子两个地方。
 
-**成本**：每个「配了告警的方法」每轮一次带索引的读（`{serviceId, functionIndex, openKey: {$exists: true}}`，
+**成本**：每个「配了告警的方法」每轮一次带索引的读（`{serviceId, pollingIndex, openKey: {$exists: true}}`，
 只投影 `field`、`ruleId` 与 `handled`），一个方法配 3 个字段也只读一次、一个出值配 8 条规则也还是读一次。
 **没配告警的服务零库操作** ——
 第一层闸门 `hasEnabledAlarm` 是纯内存判断，与 `ModbusHistoryPolicy`「绝大多数采集一个数据库操作都没有」
@@ -401,7 +401,7 @@ poller（1 副本）与 API 副本（N 个）可能同时判定同一 `(service,
 
 **回退档**（本次没用上，留档；**不静默降级**）：
 
-* **F1**：普通唯一复合索引 `{serviceId, functionIndex, field, recoveredAt}` —— 不用任何冷门特性。
+* **F1**：普通唯一复合索引 `{serviceId, pollingIndex, field, recoveredAt}` —— 不用任何冷门特性。
   开着的行 `recoveredAt` 都是 null，唯一索引把 null 当一个值，所以第二条开行会撞；
   关闭的行时间戳各异可以共存。唯一失效模式是「同一毫秒的两次关闭」，而那会让**关闭**失败 —— 自愈。
 * **F2**：不建唯一索引，改用 `updateOne({openKey}, {$setOnInsert: …}, upsert: true)` 读
@@ -419,7 +419,7 @@ poller（1 副本）与 API 副本（N 个）可能同时判定同一 `(service,
 
 ```java
 public String  serviceId;
-public Integer functionIndex;
+public Integer pollingIndex;
 public String  field;        // 出值名（字段名，或 bit-list 的位名）
 // —— 触发那一刻的定义快照 ——
 public String  compare;      public Double threshold;   public String state;
@@ -433,7 +433,7 @@ public Boolean handled;      public Person handledBy;
 // —— 触发时的样本 ——
 public Object  sample;       // 那一刻的值（Number 或 description），开着期间不刷新
 // —— 内部，不下发 ——
-public String  openKey;      // 未恢复时才有：serviceId#functionIndex#field
+public String  openKey;      // 未恢复时才有：serviceId#pollingIndex#field
 public String  ruleId;       // 触发这条的是哪条规则（配置里那条规则的 id）
 ```
 
@@ -465,8 +465,8 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
    冒烟通过后已建（索引文档形态与四条探针见第七节）。一组规则落地后它又**升级成一条更强的
    不变式**：「一个出值同时最多一条开着」不再只是选举的结果，而是索引强制的东西 ——
    这也正是 `openKey` 至今仍是出值级、不必带上规则标识的原因
-2. `{serviceId: 1, functionIndex: 1, openKey: 1}` —— 采集侧查未恢复
-3. `{serviceId: 1, functionIndex: 1, at: -1}` —— 列表查询
+2. `{serviceId: 1, pollingIndex: 1, openKey: 1}` —— 采集侧查未恢复
+3. `{serviceId: 1, pollingIndex: 1, at: -1}` —— 列表查询
 
 **仓储**（`ModbusServiceAlarmRepository`）里没有一条「整文档替换」：行落下之后只有两种改动 ——
 关闭（`recoveredAt` / `closeType`、`$unset openKey`）与处理（`handled` / `handledBy`），
@@ -495,7 +495,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/many/{spaceId}` | 空间成员 | `serviceId`（不传 = **整个空间含子空间**）、`functionIndex`、`field`、`level`、`open`、`handled`、`from`/`to`、`limit` |
+| GET | `/many/{spaceId}` | 空间成员 | `serviceId`（不传 = **整个空间含子空间**）、`pollingIndex`、`field`、`level`、`open`、`handled`、`from`/`to`、`limit` |
 | POST | `/handle/{spaceId}/{id}` | **空间成员** | 无 body，处理人取 `currentUser()`；返回更新后的那条 |
 
 路径另起一段（不挂在 `/modbus/history` 或 `/modbus/service` 之下）：告警是**第三件事** ——
@@ -655,7 +655,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   都会被当成已处理，于是每轮采集都给它们关旧开新：稳态零写当场失效、列表每采一次翻一倍。
 * `ModbusAlarmPlanTest`（17 例，纯函数不连库）：还配着 ⇒ 不动（字段 / 位各自）；告警被关掉 ⇒ 关、
   告警配置整个没了 ⇒ 关、字段被删 ⇒ 关、方法被整个删 ⇒ 关、**字段改名**（旧名那条）⇒ 关、
-  写方法上的开行 ⇒ 关、`functionIndex` 为 null 的行 ⇒ 关；**不认识的服务一条都不动**
+  写方法上的开行 ⇒ 关、`pollingIndex` 为 null 的行 ⇒ 关；**不认识的服务一条都不动**
   （含服务列表为空）；坐标不全的行跳过；空 / null 输入 ⇒ 空；**一个方法一条 `Close` 且字段名有序**；
   排序确定（服务 → 方法序号，`null` 在前）。规则级判据那一组：**删掉那条规则、同出值别的规则还在
   ⇒ 照样关**（判据停在出值级会漏掉，而那条行会一直挂着 —— 没有任何规则能再改变它）；
@@ -778,7 +778,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     需求方写的一律是「告警」。同一件事两种语境两个词正是最容易翻岔的地方，故以一次纯改名的
     独立提交打头（6 个键 × 66 份原地改名，65 种语言的译文一个字没动 —— 它们在那些语言里
     本来就是同一个词）。
-  * **编辑器里告警存的是「侧表」**，键 `` `${configId}#${functionIndex}#${fieldKey}` ``：
+  * **编辑器里告警存的是「侧表」**，键 `` `${configId}#${pollingIndex}#${fieldKey}` ``：
     页面上的 `functions` 是按源点表**重建**的，与点表无关的东西存不住（轮询当初就是这么办的）。
     `configId` 前缀不能省 —— 换了源点表不能把告警带到同序号的方法/字段上。
   * **`ServiceBaseline` 必须加 `alarms` 签名**，否则**只改告警会让「保存」按钮不亮**，

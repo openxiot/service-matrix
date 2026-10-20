@@ -46,7 +46,7 @@
       带 `lastError` / `errorAt`，前端得能显示「最后已知值 + 它从哪一刻起不再更新」，
       而不是把陈旧值当最新值画。没有影子的方法**不出现**在结果里（「从没调用过」≠「有值但很旧」）。
 - [x] **历史区间接口** `GET .../range/{spaceId}`：
-      `serviceId` + `functionIndex` + `field` + `from` + `to` + `maxPoints`。
+      `serviceId` + `pollingIndex` + `field` + `from` + `to` + `maxPoints`。
   - [x] **carry-in**：区间起点之前最近的一条单独查一条带回（`carryIn` 键，可能没有），
         不混进 `points` —— 它不是区间的数据，是区间起点的状态。
   - [x] **服务端降采样**：按 `maxPoints`（缺省 500 / 封顶 2000）分桶，
@@ -57,11 +57,11 @@
   - [x] **一次最多 20000 条原始样本，超了报错而不是静默截断**
         （取 `上限 + 1` 条判溢出；截断会把曲线尾巴悄悄抹掉，前端看起来一切正常）。
 - [x] **故障列表接口** `GET .../failures/{spaceId}`：按服务 + 时间段列失败记录（前端在曲线上打阴影区）。
-      注意一次失败覆盖的是整个 function，不是单个字段（`functionIndex` 不传 = 整个服务）。
+      注意一次失败覆盖的是整个 function，不是单个字段（`pollingIndex` 不传 = 整个服务）。
       支持**按 `type` 过滤 + 聚合**（故障类型分布）与**按 `remoteCode` 下钻**
       （哪个从站、哪个异常码最多）—— 分类落成字段就是为了这两个查询。
       `type` 拼错**报错而不是返回空列表**；`limit` 缺省 200 / 封顶 1000，多取一条置 `truncated`。
-      索引仍是 `(serviceId, functionIndex, at)`：带 `functionIndex` 的查询吃满索引，
+      索引仍是 `(serviceId, pollingIndex, at)`：带 `pollingIndex` 的查询吃满索引，
       不带时只有第一段用得上、排序靠内存 —— 故障是去重过的，行数很少，先这样。
       真要「整个服务按类型聚合」也快了，再补 `(serviceId, at)`（写侧索引已经不少，先量了再说）。
 - [x] 鉴权口径与现有接口一致：路径上带 `spaceId`，查历史要**空间成员**（与 `invoke` 同口径）。
@@ -101,7 +101,7 @@
       只动 `lastStatus`，**不删任务、不动周期**；调用必须带超时（小于租约时长）；优雅停机。
 - [x] 观测：`lastRunAt` / `lastStatus` / 连续失败计数 + 单条心跳（不是每次采集都写）。
 - [x] 服务定义变更（改了 `response`、删了方法）后影子的对账：
-      按当前定义清掉不再存在的 `(functionIndex, field)`，否则影子留下永远收不到更新的键。
+      按当前定义清掉不再存在的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
 
 落实位置（2026-09-13）：`db/modbus/poll/`（`ModbusPoll` + 仓储 + Codec）与 `api/modbus/poll/`
 （纯函数件 `ModbusPollPlan` / `ModbusPollSchedule` / `ModbusShadowPlan`、`ModbusPollWheel` 时间轮、

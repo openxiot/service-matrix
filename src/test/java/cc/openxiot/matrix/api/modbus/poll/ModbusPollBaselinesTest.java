@@ -73,7 +73,7 @@ class ModbusPollBaselinesTest {
     private static ModbusServiceShadow shadow(String lastError) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.serviceId = "svc-1";
-        shadow.functionIndex = 1;
+        shadow.pollingIndex = 1;
         shadow.fields = Map.of("temp", 21);
         shadow.lastError = lastError;
         return shadow;

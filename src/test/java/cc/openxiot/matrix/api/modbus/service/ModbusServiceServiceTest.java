@@ -441,7 +441,7 @@ class ModbusServiceServiceTest {
     private static ModbusServiceShadow shadow(String lastError) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.serviceId = SERVICE_ID;
-        shadow.functionIndex = FUNCTION_INDEX;
+        shadow.pollingIndex = FUNCTION_INDEX;
         shadow.fields = Map.of("进水温度", 61.5);
         shadow.lastError = lastError;
         return shadow;

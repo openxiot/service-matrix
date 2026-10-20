@@ -26,8 +26,8 @@ public final class ModbusServiceShadowCodec {
         if (shadow == null) {
             return o;
         }
-        if (shadow.functionIndex != null) {
-            o.put("functionIndex", shadow.functionIndex);
+        if (shadow.pollingIndex != null) {
+            o.put("pollingIndex", shadow.pollingIndex);
         }
         if (shadow.fields != null) {
             o.put("fields", new JsonObject(shadow.fields));

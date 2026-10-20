@@ -14,7 +14,7 @@ import java.util.Date;
  * 因此这份数据**不是均匀采样序列**：相邻两条之间的时间差就是该值持续了多久，
  * 区间查询必须带 carry-in 点、统计必须按时间加权（见 Modbus-History.md 第五节）。</p>
  *
- * <p>点位的身份是 {@code (serviceId, functionIndex, field)} 三元组，不拼 {@code pointId} 字符串：
+ * <p>点位的身份是 {@code (serviceId, pollingIndex, field)} 三元组，不拼 {@code pointId} 字符串：
  * 字段名是用户填的，拼串做前缀匹配迟早撞上转义问题。查询与索引都按这三个字段走
  * （见 {@link ModbusServiceHistoryRepository}）。</p>
  */
@@ -27,7 +27,7 @@ public class ModbusServiceHistory extends ReactivePanacheMongoEntity {
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusPolling.index）", examples = {"1"}, required = true)
-    public Integer functionIndex;
+    public Integer pollingIndex;
 
     @Schema(description = "字段名：response 里解析出来的出值名（含 bit-list 展开的位名）", required = true)
     public String field;

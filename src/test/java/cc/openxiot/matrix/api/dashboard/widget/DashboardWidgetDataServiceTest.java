@@ -494,7 +494,7 @@ class WidgetDataServiceTest {
 
         JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
 
-        assertEquals(1, data.getInteger("functionIndex").intValue());
+        assertEquals(1, data.getInteger("pollingIndex").intValue());
         assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
         JsonObject row = data.getJsonArray("fields").getJsonObject(0);
         assertEquals("温度", row.getString("field"));
@@ -504,7 +504,7 @@ class WidgetDataServiceTest {
     }
 
     /**
-     * 尚未采集：这个 function 没有影子。**只给 functionIndex** ——
+     * 尚未采集：这个 function 没有影子。**只给 pollingIndex** ——
      * 「有没有 recordedAt」就是这一态的判据（前端据此渲染「尚未采集」），
      * 而一行都没有值可显示的空 fields 不是信息。
      */
@@ -514,7 +514,7 @@ class WidgetDataServiceTest {
 
         JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
 
-        assertTrue(data.containsKey("functionIndex"));
+        assertTrue(data.containsKey("pollingIndex"));
         assertFalse(data.containsKey("recordedAt"));
         assertFalse(data.containsKey("fields"));
         assertFalse(data.containsKey("error"));
@@ -766,7 +766,7 @@ class WidgetDataServiceTest {
 
         // 曲线这一段就是 /history/range 的响应体：前端两条路共用同一个 decodeRange
         assertEquals(SERVICE_ID, data.getString("serviceId"));
-        assertEquals(1, data.getInteger("functionIndex").intValue());
+        assertEquals(1, data.getInteger("pollingIndex").intValue());
         assertEquals("温度", data.getString("field"));
         assertEquals(24 * HOUR, data.getLong("to") - data.getLong("from"));
         assertEquals(500, data.getInteger("maxPoints").intValue());
@@ -896,7 +896,7 @@ class WidgetDataServiceTest {
     /** 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。 */
     private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
-                "functionIndex", 1, "field", "温度", "window", window);
+                "pollingIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
     }
@@ -908,7 +908,7 @@ class WidgetDataServiceTest {
     private static ModbusServiceHistory sample(long at, Object value) {
         ModbusServiceHistory row = new ModbusServiceHistory();
         row.serviceId = SERVICE_ID;
-        row.functionIndex = 1;
+        row.pollingIndex = 1;
         row.field = "温度";
         row.at = new Date(at);
         row.value = value;
@@ -1004,9 +1004,9 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList())).thenReturn(Uni.createFrom().item(array));
     }
 
-    private static WebDashboardWidget serviceCard(String id, int functionIndex, List<String> fields) {
+    private static WebDashboardWidget serviceCard(String id, int pollingIndex, List<String> fields) {
         return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
-                "functionIndex", functionIndex, "fields", fields));
+                "pollingIndex", pollingIndex, "fields", fields));
     }
 
     private void stubService(ModbusServiceShadow shadow, ModbusService definition) {
@@ -1031,7 +1031,7 @@ class WidgetDataServiceTest {
         for (Date time : at) {
             ModbusServiceFailure failure = new ModbusServiceFailure();
             failure.serviceId = SERVICE_ID;
-            failure.functionIndex = 1;
+            failure.pollingIndex = 1;
             failure.message = "modbus timeout";
             failure.at = time;
             items.add(failure);
@@ -1041,11 +1041,11 @@ class WidgetDataServiceTest {
     }
 
     /** 一条影子。{@code lastError} / {@code errorAt} 为 null 表示这个 function 没失败过。 */
-    private static ModbusServiceShadow shadow(int functionIndex, Map<String, Object> fields,
+    private static ModbusServiceShadow shadow(int pollingIndex, Map<String, Object> fields,
                                               Date recordedAt, String lastError, Date errorAt) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.serviceId = SERVICE_ID;
-        shadow.functionIndex = functionIndex;
+        shadow.pollingIndex = pollingIndex;
         shadow.fields = fields;
         shadow.recordedAt = recordedAt;
         shadow.lastError = lastError;
@@ -1057,7 +1057,7 @@ class WidgetDataServiceTest {
      * 一个方法：{@code primary} 是主字段（带单位），{@code bit} 是它位区里的一个位名
      * （没有单位）。两者可以都给 —— 那正是「位名与父字段并存」的实际情况。
      */
-    private static ModbusService serviceDef(int functionIndex, String primary, String unit, String second,
+    private static ModbusService serviceDef(int pollingIndex, String primary, String unit, String second,
                                             String... bits) {
         List<ModbusPollingResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
@@ -1067,8 +1067,8 @@ class WidgetDataServiceTest {
         ModbusPolling function = new ModbusPolling();
                     function.from = new ModbusPollingFrom();
                     function.from.type = "command";
-                    function.from.index = functionIndex;
-                    function.index = functionIndex;
+                    function.from.index = pollingIndex;
+                    function.index = pollingIndex;
         function.name = primary;
         function.response = ModbusPollingResponses.of(fields);
 

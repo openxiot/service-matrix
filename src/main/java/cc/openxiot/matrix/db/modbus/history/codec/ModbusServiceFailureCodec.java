@@ -40,8 +40,8 @@ public final class ModbusServiceFailureCodec {
         if (failure.serviceId != null) {
             o.put("serviceId", failure.serviceId);
         }
-        if (failure.functionIndex != null) {
-            o.put("functionIndex", failure.functionIndex);
+        if (failure.pollingIndex != null) {
+            o.put("pollingIndex", failure.pollingIndex);
         }
         if (failure.type != null) {
             o.put("type", failure.type);

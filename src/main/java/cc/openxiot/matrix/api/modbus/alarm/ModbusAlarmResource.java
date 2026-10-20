@@ -100,7 +100,7 @@ public class ModbusAlarmResource extends AbstractResource {
     public Uni<Response> many(
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
-            @QueryParam("functionIndex") Integer functionIndex,
+            @QueryParam("pollingIndex") Integer pollingIndex,
             @QueryParam("field") String field,
             @QueryParam("level") String level,
             @QueryParam("open") Boolean open,
@@ -115,9 +115,9 @@ public class ModbusAlarmResource extends AbstractResource {
         return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
-                        .chain(ids -> queryService.alarmsOfServices(ids, functionIndex, field, level,
+                        .chain(ids -> queryService.alarmsOfServices(ids, pollingIndex, field, level,
                                 open, handled, millis(from), millis(to), limit))
-                        : queryService.alarms(serviceId, functionIndex, field, level,
+                        : queryService.alarms(serviceId, pollingIndex, field, level,
                         open, handled, millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()

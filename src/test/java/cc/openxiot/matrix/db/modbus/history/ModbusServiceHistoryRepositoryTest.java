@@ -30,8 +30,8 @@ class ModbusServiceHistoryRepositoryTest {
     /** 库里的常态：{@code _id_} + 我们那条复合索引，没有 TTL。 */
     private static final List<Document> NO_TTL = List.of(
             index("_id_", new Document("_id", 1)),
-            index("serviceId_1_functionIndex_1_field_1_at_1",
-                    new Document("serviceId", 1).append("functionIndex", 1).append("field", 1).append("at", 1)));
+            index("serviceId_1_pollingIndex_1_field_1_at_1",
+                    new Document("serviceId", 1).append("pollingIndex", 1).append("field", 1).append("at", 1)));
 
     @Test
     void noTtlIndexMeansNull() {

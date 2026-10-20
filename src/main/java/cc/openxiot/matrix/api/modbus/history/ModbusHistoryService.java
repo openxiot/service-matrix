@@ -262,25 +262,25 @@ public class ModbusHistoryService {
         return service != null && service.id != null && function != null && function.index != null;
     }
 
-    private static List<ModbusServiceHistory> rows(String serviceId, Integer functionIndex,
+    private static List<ModbusServiceHistory> rows(String serviceId, Integer pollingIndex,
                                                    Map<String, Object> sample,
                                                    ModbusHistoryPolicy.Decision decision, Date now) {
         List<ModbusServiceHistory> rows = new ArrayList<>(
                 decision.changedFields().size() + decision.keepaliveFields().size());
         for (String field : decision.changedFields()) {
-            rows.add(row(serviceId, functionIndex, field, sample.get(field), now, false));
+            rows.add(row(serviceId, pollingIndex, field, sample.get(field), now, false));
         }
         for (String field : decision.keepaliveFields()) {
-            rows.add(row(serviceId, functionIndex, field, sample.get(field), now, true));
+            rows.add(row(serviceId, pollingIndex, field, sample.get(field), now, true));
         }
         return rows;
     }
 
-    private static ModbusServiceHistory row(String serviceId, Integer functionIndex, String field,
+    private static ModbusServiceHistory row(String serviceId, Integer pollingIndex, String field,
                                             Object value, Date at, boolean keepalive) {
         ModbusServiceHistory row = new ModbusServiceHistory();
         row.serviceId = serviceId;
-        row.functionIndex = functionIndex;
+        row.pollingIndex = pollingIndex;
         row.field = field;
         row.value = value;
         row.at = at;
@@ -288,11 +288,11 @@ public class ModbusHistoryService {
         return row;
     }
 
-    private static ModbusServiceFailure failureOf(String serviceId, Integer functionIndex,
+    private static ModbusServiceFailure failureOf(String serviceId, Integer pollingIndex,
                                                   Throwable error, String message, Date at) {
         ModbusServiceFailure failure = new ModbusServiceFailure();
         failure.serviceId = serviceId;
-        failure.functionIndex = functionIndex;
+        failure.pollingIndex = pollingIndex;
         failure.type = typeOf(error).name();
         failure.remoteCode = error instanceof ModbusInvokeException e ? e.remoteCode() : null;
         failure.message = message;
@@ -333,7 +333,7 @@ public class ModbusHistoryService {
      * <p>三个调用点的差别只在这几个入参上 —— 成功传新样本、清掉故障态；失败传上一次成功的值与时刻、
      * 换上新故障。写成一个构造器是为了让「哪些字段活着传到下一次」一眼可见。</p>
      */
-    private static ModbusServiceShadow shadowOf(ModbusServiceShadow previous, String serviceId, Integer functionIndex,
+    private static ModbusServiceShadow shadowOf(ModbusServiceShadow previous, String serviceId, Integer pollingIndex,
                                                 Map<String, Object> fields, Date recordedAt,
                                                 String lastError, Date errorAt) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
@@ -341,7 +341,7 @@ public class ModbusHistoryService {
             shadow.id = previous.id;
         }
         shadow.serviceId = serviceId;
-        shadow.functionIndex = functionIndex;
+        shadow.pollingIndex = pollingIndex;
         shadow.fields = fields;
         shadow.recordedAt = recordedAt;
         shadow.lastError = lastError;
@@ -351,8 +351,8 @@ public class ModbusHistoryService {
 
     /** 调用成功、但没有读值（写方法）时清故障态：值与时刻原样保留。 */
     private static ModbusServiceShadow clearedShadow(ModbusServiceShadow previous, String serviceId,
-                                                     Integer functionIndex) {
-        return shadowOf(previous, serviceId, functionIndex,
+                                                     Integer pollingIndex) {
+        return shadowOf(previous, serviceId, pollingIndex,
                 previous.fields, previous.recordedAt, null, null);
     }
 }

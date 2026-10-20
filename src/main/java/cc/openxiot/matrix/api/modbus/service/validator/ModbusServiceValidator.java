@@ -146,7 +146,7 @@ public final class ModbusServiceValidator {
             if (function == null) {
                 return base + " is null";
             }
-            // 方法身份：index 必填、>=1、同服务唯一 —— 轮询身份（modbus.polls.functionIndex）、
+            // 方法身份：index 必填、>=1、同服务唯一 —— 轮询身份（modbus.polls.pollingIndex）、
             // 告警/影子的方法键都读它
             if (function.index == null) {
                 return base + ".index is required";

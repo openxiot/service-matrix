@@ -86,7 +86,7 @@ class ObjectPropertyCodecProviderTest {
 
         assertEquals(new BsonInt32(42), doc.get("value"));
         assertEquals(new BsonString("6aa759bb4e45b0b6122d2ed5"), doc.get("serviceId"));
-        assertEquals(1, doc.getInt32("functionIndex").getValue());
+        assertEquals(1, doc.getInt32("pollingIndex").getValue());
         assertTrue(!doc.containsKey("keepalive"), "null 不落键：正常样本身上不该出现 keepalive");
 
         ModbusServiceHistory read = decode(ModbusServiceHistory.class, doc);
@@ -133,7 +133,7 @@ class ObjectPropertyCodecProviderTest {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.id = new ObjectId();
         shadow.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        shadow.functionIndex = 1;
+        shadow.pollingIndex = 1;
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("温度", 25);
         fields.put("状态", "运行");
@@ -219,7 +219,7 @@ class ObjectPropertyCodecProviderTest {
         widget.size = "HALF";
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("serviceId", "6aa759bb4e45b0b6122d2ed5");
-        config.put("functionIndex", 1);
+        config.put("pollingIndex", 1);
         config.put("fields", List.of("temp", "status.bit0"));
         config.put("showUnit", Boolean.TRUE);
         widget.config = config;
@@ -348,7 +348,7 @@ class ObjectPropertyCodecProviderTest {
         ModbusServiceHistory sample = new ModbusServiceHistory();
         sample.id = new ObjectId();
         sample.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        sample.functionIndex = 1;
+        sample.pollingIndex = 1;
         sample.field = "温度";
         sample.value = value;
         sample.at = new Date(AT);

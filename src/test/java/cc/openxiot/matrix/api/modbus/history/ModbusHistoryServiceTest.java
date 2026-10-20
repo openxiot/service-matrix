@@ -97,7 +97,7 @@ class ModbusHistoryServiceTest {
 
         ModbusServiceHistory row = rowsOf().getFirst();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.functionIndex.intValue());
+        assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
         assertEquals("进水温度", row.field);
         assertEquals(62.5, row.value);
         assertEquals(Boolean.FALSE, row.keepalive);   // 值变化落的正常样本，不是保活打点
@@ -188,7 +188,7 @@ class ModbusHistoryServiceTest {
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
         ModbusServiceFailure row = savedFailure();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.functionIndex.intValue());
+        assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
         assertEquals(408, row.remoteCode);
         assertEquals(TIMEOUT, row.message);
@@ -537,7 +537,7 @@ class ModbusHistoryServiceTest {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.id = id;
         shadow.serviceId = SERVICE_ID;
-        shadow.functionIndex = FUNCTION_INDEX;
+        shadow.pollingIndex = FUNCTION_INDEX;
         shadow.fields = fields;
         shadow.recordedAt = recordedAt;
         shadow.lastError = lastError;

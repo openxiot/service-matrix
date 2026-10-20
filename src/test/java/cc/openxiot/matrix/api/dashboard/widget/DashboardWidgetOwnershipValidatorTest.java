@@ -316,9 +316,9 @@ class WidgetOwnershipValidatorTest {
         return widget(id, "device", config("did", did, "pid", "p1"));
     }
 
-    private static WebDashboardWidget serviceWithField(String id, String serviceId, int functionIndex, String field) {
+    private static WebDashboardWidget serviceWithField(String id, String serviceId, int pollingIndex, String field) {
         return widget(id, "service", config("serviceId", serviceId,
-                "functionIndex", functionIndex, "fields", List.of(field)));
+                "pollingIndex", pollingIndex, "fields", List.of(field)));
     }
 
     private static WebDashboardWidget widget(String id, String type, Map<String, Object> config) {

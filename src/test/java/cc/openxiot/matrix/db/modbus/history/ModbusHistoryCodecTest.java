@@ -130,7 +130,7 @@ class ModbusHistoryCodecTest {
         // 有故障时 fields / recordedAt 照旧在（那是最后一次成功的值与时刻），
         // 前端靠 errorAt 判断「这个值从哪一刻起不再更新」
         ModbusServiceShadow shadow = new ModbusServiceShadow();
-        shadow.functionIndex = 1;
+        shadow.pollingIndex = 1;
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("进水温度", 61.5);
         shadow.fields = fields;

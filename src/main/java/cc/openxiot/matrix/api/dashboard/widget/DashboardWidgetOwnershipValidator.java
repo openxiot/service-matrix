@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (serviceId, functionIndex, field)} 三元组是否真实存在。
+ * {@code (serviceId, pollingIndex, field)} 三元组是否真实存在。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
  * 结构错误是「这份 body 根本不成形」，一次请求只能报一个；归属错误是「某一张卡指向了不存在
@@ -184,13 +184,13 @@ public class DashboardWidgetOwnershipValidator {
             switch (widget.type() == null ? "" : widget.type()) {
                 case "service" -> {
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
-                    if (serviceId == null || functionIndex == null) {
+                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
+                    if (serviceId == null || pollingIndex == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, functionIndex, field));
+                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollingIndex, field));
                     }
                 }
                 case "line" -> {
@@ -198,13 +198,13 @@ public class DashboardWidgetOwnershipValidator {
                         continue;
                     }
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    Integer functionIndex = DashboardWidgetConfigs.intVal(config.get("functionIndex"));
+                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
                     String field = DashboardWidgetConfigs.str(config.get("field"));
-                    if (serviceId == null || functionIndex == null || field == null) {
+                    if (serviceId == null || pollingIndex == null || field == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
-                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, functionIndex, field));
+                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollingIndex, field));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
@@ -279,9 +279,9 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
             return "service does not belong to this space: " + ref.serviceId();
         }
-        ModbusPolling function = findFunction(service, ref.functionIndex());
+        ModbusPolling function = findFunction(service, ref.pollingIndex());
         if (function == null) {
-            return "function not found: " + ref.functionIndex();
+            return "function not found: " + ref.pollingIndex();
         }
         if (!hasField(function, ref.field())) {
             return "field not found: " + ref.field();
@@ -344,8 +344,8 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (serviceId, functionIndex, field) 引用；服务卡片的每个字段各一条。 */
-    private record ServiceRef(int index, String widgetId, String serviceId, Integer functionIndex, String field) {
+    /** 一次 (serviceId, pollingIndex, field) 引用；服务卡片的每个字段各一条。 */
+    private record ServiceRef(int index, String widgetId, String serviceId, Integer pollingIndex, String field) {
     }
 
     /** 一张设备卡片的引用。 */

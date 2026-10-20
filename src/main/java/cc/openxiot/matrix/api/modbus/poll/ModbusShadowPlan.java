@@ -20,7 +20,7 @@ import java.util.TreeSet;
  * <p>两种「陈旧」的代价与急迫性完全不同，所以处置也不同：</p>
  *
  * <ul>
- *   <li><b>孤儿方法</b>（定义里删掉的 {@code functionIndex}）：那张影子再也不会被更新，
+ *   <li><b>孤儿方法</b>（定义里删掉的 {@code pollingIndex}）：那张影子再也不会被更新，
  *       却一直出现在「当前值接口」里 —— 前端会显示一个永远不变的值，而它对应的点位已经不存在了。
  *       必须主动删。</li>
  *   <li><b>废弃字段键</b>（{@code response} 里删掉的 {@code field}）：{@code ModbusHistoryService.record}
@@ -98,18 +98,18 @@ public final class ModbusShadowPlan {
 
         String serviceId = service.id.toHexString();
         for (ModbusServiceShadow shadow : shadows) {
-            if (shadow == null || shadow.id == null || shadow.functionIndex == null) {
+            if (shadow == null || shadow.id == null || shadow.pollingIndex == null) {
                 continue;
             }
             // 影子是别的服务的：对账按服务做，串了就是 bug，不动它（正常不会发生）
             if (!serviceId.equals(shadow.serviceId)) {
                 continue;
             }
-            if (!definedByIndex.containsKey(shadow.functionIndex)) {
+            if (!definedByIndex.containsKey(shadow.pollingIndex)) {
                 fixes.add(new Fix(shadow, List.of(), true));
                 continue;
             }
-            Set<String> defined = definedByIndex.get(shadow.functionIndex);
+            Set<String> defined = definedByIndex.get(shadow.pollingIndex);
             Set<String> stale = new TreeSet<>();
             if (shadow.fields != null) {
                 for (String key : shadow.fields.keySet()) {
@@ -123,7 +123,7 @@ public final class ModbusShadowPlan {
             }
         }
         fixes.sort((left, right) -> {
-            int byIndex = Integer.compare(left.shadow().functionIndex, right.shadow().functionIndex);
+            int byIndex = Integer.compare(left.shadow().pollingIndex, right.shadow().pollingIndex);
             return byIndex != 0 ? byIndex : left.shadow().id.compareTo(right.shadow().id);
         });
         return fixes;

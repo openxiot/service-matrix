@@ -99,7 +99,7 @@ class ModbusPollPlanTest {
         assertTrue(!ModbusPollPlan.shouldPoll(null));
     }
 
-    /** 一份定义 → 只留下该轮询的那些，按 functionIndex 升序。 */
+    /** 一份定义 → 只留下该轮询的那些，按 pollingIndex 升序。 */
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
         ModbusService service = service(3, 1, 2);

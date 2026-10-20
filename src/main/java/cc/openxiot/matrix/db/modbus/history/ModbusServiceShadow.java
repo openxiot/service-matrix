@@ -36,7 +36,7 @@ public class ModbusServiceShadow extends ReactivePanacheMongoEntity {
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusPolling.index）", examples = {"1"}, required = true)
-    public Integer functionIndex;
+    public Integer pollingIndex;
 
     @Schema(description = "最后一次**成功**采集的「字段 → 值」：数值，或 value-list 的 description，或位展开的 0|1")
     public Map<String, Object> fields;

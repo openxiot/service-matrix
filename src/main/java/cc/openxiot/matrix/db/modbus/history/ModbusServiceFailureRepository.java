@@ -31,13 +31,13 @@ public class ModbusServiceFailureRepository implements ReactivePanacheMongoRepos
     }
 
     /**
-     * 启动时确保 {@code (serviceId, functionIndex, at)} 索引存在（幂等；失败仅告警，不阻断启动）。
+     * 启动时确保 {@code (serviceId, pollingIndex, at)} 索引存在（幂等；失败仅告警，不阻断启动）。
      *
      * <p>支撑「某个服务的故障列表，按时间倒序」：前两段等值 + {@code at} 排序。</p>
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "functionIndex", "at"))
+                .createIndex(Indexes.ascending("serviceId", "pollingIndex", "at"))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
@@ -50,18 +50,18 @@ public class ModbusServiceFailureRepository implements ReactivePanacheMongoRepos
     /**
      * 某段区间内的故障记录，按 {@code at} **倒序**（最近的在前，列表就是这么看的）。
      *
-     * <p>{@code functionIndex} 与 {@code type} 为 null 表示不限（分别是「整个服务」与「所有分类」）。
-     * 注意索引是 {@code (serviceId, functionIndex, at)}：不带 {@code functionIndex} 时只有第一段用得上，
+     * <p>{@code pollingIndex} 与 {@code type} 为 null 表示不限（分别是「整个服务」与「所有分类」）。
+     * 注意索引是 {@code (serviceId, pollingIndex, at)}：不带 {@code pollingIndex} 时只有第一段用得上，
      * 排序要靠内存完成 —— 故障是去重过的，行数很少，这样够用（要不要补索引见 Modbus-History-TODO.md 第二步）。</p>
      *
      * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
      */
-    public Uni<List<ModbusServiceFailure>> findRange(String serviceId, Integer functionIndex, String type,
+    public Uni<List<ModbusServiceFailure>> findRange(String serviceId, Integer pollingIndex, String type,
                                                      Date from, Date to, int limit) {
         List<Bson> filters = new ArrayList<>();
         filters.add(Filters.eq("serviceId", serviceId));
-        if (functionIndex != null) {
-            filters.add(Filters.eq("functionIndex", functionIndex));
+        if (pollingIndex != null) {
+            filters.add(Filters.eq("pollingIndex", pollingIndex));
         }
         if (type != null && !type.isBlank()) {
             filters.add(Filters.eq("type", type));

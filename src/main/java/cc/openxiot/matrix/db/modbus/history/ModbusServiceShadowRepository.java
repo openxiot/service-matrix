@@ -29,23 +29,23 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
     }
 
     /**
-     * 启动时确保 {@code (serviceId, functionIndex)} 唯一索引存在
+     * 启动时确保 {@code (serviceId, pollingIndex)} 唯一索引存在
      * （幂等；失败仅告警，不阻断启动，与 {@code ModbusServiceRepository.ensureIndexes} 同口径）。
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "functionIndex"), new IndexOptions().unique(true))
+                .createIndex(Indexes.ascending("serviceId", "pollingIndex"), new IndexOptions().unique(true))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
 
     /** 取某个方法的当前值，没有则 null：既是前端要的最新值，也是下一次采集的比对基准。 */
-    public Uni<ModbusServiceShadow> find(String serviceId, Integer functionIndex) {
-        if (serviceId == null || functionIndex == null) {
+    public Uni<ModbusServiceShadow> find(String serviceId, Integer pollingIndex) {
+        if (serviceId == null || pollingIndex == null) {
             return Uni.createFrom().nullItem();
         }
         return collection()
-                .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.eq("functionIndex", functionIndex)))
+                .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.eq("pollingIndex", pollingIndex)))
                 .collect().first();
     }
 
@@ -60,7 +60,7 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
         }
         return collection()
                 .find(Filters.eq("serviceId", serviceId),
-                        new FindOptions().sort(Sorts.ascending("functionIndex")))
+                        new FindOptions().sort(Sorts.ascending("pollingIndex")))
                 .collect().asList();
     }
 
@@ -91,7 +91,7 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
 
     /**
      * 删掉指定的几条（影子对账用：定义里已经删掉的方法，它的影子再也不会被更新）。
-     * 按 {@code _id} 删而不是按 {@code (serviceId, functionIndex)}：对账手里拿到的就是读出来的文档，
+     * 按 {@code _id} 删而不是按 {@code (serviceId, pollingIndex)}：对账手里拿到的就是读出来的文档，
      * 主键现成，且不必再拼一次复合条件。删除条数为 0 不算失败。
      */
     public Uni<Long> deleteByIds(List<ObjectId> ids) {

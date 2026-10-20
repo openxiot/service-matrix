@@ -92,7 +92,7 @@ class ModbusHistoryQueryServiceTest {
     private static ModbusServiceFailure failure(String serviceId, Long at) {
         ModbusServiceFailure failure = new ModbusServiceFailure();
         failure.serviceId = serviceId;
-        failure.functionIndex = 1;
+        failure.pollingIndex = 1;
         failure.type = "NO_RESPONSE";
         failure.message = "no response";
         failure.at = at == null ? null : new Date(at);

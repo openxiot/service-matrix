@@ -33,9 +33,9 @@ import java.util.TreeSet;
  * 超过 28 警告 / 超过 30 严重」这种分级配置里，越限到 31℃ 时四条规则里两条同时命中 ——
  * 却只产生一条告警（{@link #rank} 最高的那条），其余开着的行按 {@code SUPERSEDED} 关掉。
  * 于是不变式是「一个出值同时最多一条开着」，它恰好就是告警表那条唯一部分索引强制的东西
- * （{@code openKey} 因此仍然只是 {@code serviceId#functionIndex#field}，不带规则标识）。</p>
+ * （{@code openKey} 因此仍然只是 {@code serviceId#pollingIndex#field}，不带规则标识）。</p>
  *
- * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, functionIndex, field)} 上有未恢复的告警
+ * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, pollingIndex, field)} 上有未恢复的告警
  * 就是「开着」。判定只需要这一张集合，它由告警表自己查出来
  * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceShadow、也不用 poller 的内存基准）。</p>
  */

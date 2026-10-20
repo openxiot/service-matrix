@@ -21,7 +21,7 @@
 - [x] 结论成立 ⇒ **1 号索引已补进 `ensureIndexes()`**（回退档 F1 / F2 未启用，留档备查）。
 
 > 失败的判定路径没有走过，但留着：真不成立时走 F1（普通唯一复合索引
-> `{serviceId, functionIndex, field, recoveredAt}`）或 F2（`updateOne` upsert + `updateMany` 兜底，
+> `{serviceId, pollingIndex, field, recoveredAt}`）或 F2（`updateOne` upsert + `updateMany` 兜底，
 > 并把竞态写进文档）—— **不静默降级**。
 
 ## 第一步：配置模型与校验（已完成）
@@ -163,7 +163,7 @@
   两者查的表、兜底值、用在的列都不同，合成一份要按前缀分派。
 - [x] `modbus.service.ts`：`getAlarms(...)` / `handleAlarm(spaceId, id)`。
 - [x] 编辑器逐字段配置：照抄轮询那套「侧表 + 签名」——
-      `alarms` 是 `Map`，键 `` `${configId}#${functionIndex}#${fieldKey}` ``（**`configId` 前缀**：
+      `alarms` 是 `Map`，键 `` `${configId}#${pollingIndex}#${fieldKey}` ``（**`configId` 前缀**：
       换源点表不能把告警带到同序号的方法/字段上）、`withAlarms(func)` 在保存时并回去、
       `seedAlarms` 装载、`alarmSignature` 排序序列化。
 - [x] **`ServiceBaseline` 加了 `alarms: string` 且 `serviceChanged` 比它** ——

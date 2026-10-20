@@ -443,7 +443,7 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
     这也是没有复用 `ModbusServiceService.subtreeServiceIds` 的原因（它不带 `configId`，点表得再查一次）。
   * **告警与故障仍逐个 serviceId 各查一次再内存归并**，新增
     `ModbusServiceAlarmRepository.findTimeline` / `ModbusServiceFailureRepository.findTimeline`
-    （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, functionIndex, at)` 跨服务查
+    （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, pollingIndex, at)` 跨服务查
     会丢掉前缀，与 `ModbusHistoryQueryService` 的说明同一条；分桶也在内存里做（整点密集零填充），
     全后端依旧没有 `$group` / `Aggregates`。
 
@@ -576,7 +576,7 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
     （**不是**代码问题）。搬家后跑一次 `clean test` 即可。
 * **修：轮询器一次都没采到设备 —— 内存任务没带 `_id`**。现网现象（staging，
   `MODBUS_POLL_ENABLED=true` 的副本）：每周期一条
-  `modbus poll task has no id, key: <serviceId>:<functionIndex>`，间隔看着就是 `interval`，
+  `modbus poll task has no id, key: <serviceId>:<pollingIndex>`，间隔看着就是 `interval`，
   而设备一次都没被采到 —— 库里那一行只有写入路径插进去的那几个字段
   （`nextRunAt` 停在首次写入的时刻，`lastRunAt` / `leaseOwner` / `lastStatus` **始终为空**，
   说明认领（`claim`）一次都没成功过）。
@@ -664,9 +664,9 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   定义里的 `interval` 从「一份没有执行者的配置」变成真有人按时去调。**同一个 jar 双部署**
   （api N 副本 + poller 1 副本），靠 `modbus.poll.enabled` 区分，**缺省关** ——
   一次发布让多个副本一起采集 = 同一条 RS485 上出现重复帧。
-  * **新集合 `modbus.polls`**（`db/modbus/poll`）：`serviceId / functionIndex / did / interval /
+  * **新集合 `modbus.polls`**（`db/modbus/poll`）：`serviceId / pollingIndex / did / interval /
     nextRunAt / leaseOwner / leaseUntil / lastRunAt / lastStatus / lastError / failCount`；
-    索引 `(serviceId, functionIndex)` 唯一 + `nextRunAt`。**纯派生数据**，随时可全量重建。
+    索引 `(serviceId, pollingIndex)` 唯一 + `nextRunAt`。**纯派生数据**，随时可全量重建。
   * **入表口径与原定义分开判**（`ModbusPollPlan`）：读方法（复查 `ModbusFrameCodec.isRead`）+
     有 `interval` + `polling != false`。第三条是**故意与校验器重复**的 ——
     让服务端定时往寄存器里写值是危险动作，库里可能已有历史数据或被直接改过，
@@ -687,7 +687,7 @@ ModbusFunctionResponseFieldAlarm    id / enabled / compare / threshold / state /
   * **观测**：`lastRunAt` / `lastStatus`（只有 `OK` / `FAILED`，**跳过不是状态**）/ `lastError` /
     `failCount` 落库，查询接口 `GET /matrix/v1/modbus/poll/{spaceId}`（空间成员）连内存指标一起给；
     心跳**不做成逐次写库**，只在内存里记、由接口读出去。
-  * **影子对账**（`ModbusShadowPlan`）：定义里删掉的 `functionIndex` 是孤儿、必须主动删
+  * **影子对账**（`ModbusShadowPlan`）：定义里删掉的 `pollingIndex` 是孤儿、必须主动删
     （否则当前值接口一直显示一个不存在的点位）；`response` 里删掉的字段键写路径顺手剪掉即可
     （`record` 整体替换 `fields`，最坏拖到保活周期就自愈）。
   * 测试：新增 66 个纯单测（`ModbusPollScheduleTest` / `ModbusPollPlanTest` / `ModbusPollWheelTest` /

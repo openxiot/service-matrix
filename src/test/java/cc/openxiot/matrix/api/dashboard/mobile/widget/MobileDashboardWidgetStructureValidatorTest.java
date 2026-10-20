@@ -197,7 +197,7 @@ class MobileDashboardWidgetStructureValidatorTest {
         svc.id = "w1";
         svc.type = "service";
         svc.size = "FULL";
-        svc.config = config("serviceId", "s1", "functionIndex", 0, "fields", List.of());
+        svc.config = config("serviceId", "s1", "pollingIndex", 0, "fields", List.of());
         assertInvalid("config.fields must not be empty", svc);
     }
 
@@ -223,7 +223,7 @@ class MobileDashboardWidgetStructureValidatorTest {
     /** 一张 config 齐全的服务卡（身份 / 档位 / 半格之外，config 那层也过得去）。 */
     private static MobileDashboardWidget service() {
         MobileDashboardWidget w = typed("service");
-        w.config = config("serviceId", "0x01", "functionIndex", 1, "fields", List.of("temperature"));
+        w.config = config("serviceId", "0x01", "pollingIndex", 1, "fields", List.of("temperature"));
         return w;
     }
 

@@ -38,7 +38,7 @@ public class ModbusServiceFailure extends ReactivePanacheMongoEntity {
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusPolling.index）", examples = {"1"}, required = true)
-    public Integer functionIndex;
+    public Integer pollingIndex;
 
     @Schema(description = "失败分类（ModbusFailureType 的名字），前端按它聚合；"
             + "分这么细是因为每一类对应不同的处置方向（设备侧 / 报文侧 / 定义侧 / 平台侧）",

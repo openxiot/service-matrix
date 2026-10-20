@@ -270,9 +270,9 @@ public class ModbusServiceService {
      *
      * @param values 写方法的写入值（字段名 → 原始值），可为 null；读方法必须为 null
      */
-    public Uni<JsonObject> invoke(String ownerId, String serviceId, Integer functionIndex,
+    public Uni<JsonObject> invoke(String ownerId, String serviceId, Integer pollingIndex,
                                   Map<String, Object> values) {
-        return invoke(ownerId, serviceId, functionIndex, values, null);
+        return invoke(ownerId, serviceId, pollingIndex, values, null);
     }
 
     /**
@@ -286,33 +286,33 @@ public class ModbusServiceService {
      * <p>没有 {@code values}：轮询只有读方法（写方法一律不许开轮询，见
      * {@link ModbusServiceValidator}），写请求没有可轮询的东西。</p>
      */
-    public Uni<JsonObject> invokePolled(String ownerId, String serviceId, Integer functionIndex,
+    public Uni<JsonObject> invokePolled(String ownerId, String serviceId, Integer pollingIndex,
                                         ModbusPollBaselines baselines) {
-        return invoke(ownerId, serviceId, functionIndex, null, baselines);
+        return invoke(ownerId, serviceId, pollingIndex, null, baselines);
     }
 
-    private Uni<JsonObject> invoke(String ownerId, String serviceId, Integer functionIndex,
+    private Uni<JsonObject> invoke(String ownerId, String serviceId, Integer pollingIndex,
                                    Map<String, Object> values, ModbusPollBaselines baselines) {
         String err = checkId(serviceId);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        if (functionIndex == null || functionIndex < 1) {
+        if (pollingIndex == null || pollingIndex < 1) {
             return Uni.createFrom().failure(new IllegalArgumentException("function is required"));
         }
 
         return repo.findById(serviceId).onItem()
                 .transformToUni(service -> service == null
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + serviceId))
-                        : invokeFunction(ownerId, service, functionIndex, values, baselines));
+                        : invokeFunction(ownerId, service, pollingIndex, values, baselines));
     }
 
-    private Uni<JsonObject> invokeFunction(String ownerId, ModbusService service, int functionIndex,
+    private Uni<JsonObject> invokeFunction(String ownerId, ModbusService service, int pollingIndex,
                                            Map<String, Object> values, ModbusPollBaselines baselines) {
-        ModbusPolling function = findFunction(service, functionIndex);
+        ModbusPolling function = findFunction(service, pollingIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
-            return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + functionIndex));
+            return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + pollingIndex));
         }
 
         // 入参对账同样在这里做（execute 之前）：缺值 / 未知字段名 / 给读方法传值都是**调用方的请求错误**，

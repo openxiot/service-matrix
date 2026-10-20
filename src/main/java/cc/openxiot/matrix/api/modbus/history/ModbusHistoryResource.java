@@ -90,7 +90,7 @@ public class ModbusHistoryResource extends AbstractResource {
     }
 
     /**
-     * 一个点位的区间曲线：{@code {serviceId, functionIndex, field, from, to, maxPoints, downsampled,
+     * 一个点位的区间曲线：{@code {serviceId, pollingIndex, field, from, to, maxPoints, downsampled,
      * carryIn, points}}。
      *
      * <p>{@code carryIn} 是区间起点之前最近的那一条（可能没有）：不带它，前端不知道 {@code from}
@@ -103,19 +103,19 @@ public class ModbusHistoryResource extends AbstractResource {
     public Uni<Response> range(
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
-            @QueryParam("functionIndex") Integer functionIndex,
+            @QueryParam("pollingIndex") Integer pollingIndex,
             @QueryParam("field") String field,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
             @QueryParam("maxPoints") Integer maxPoints
     ) {
-        logger.infov("query modbus history, space: {0}, service: {1}, function: {2}, field: {3}",
-                spaceId, serviceId, functionIndex, field);
+        logger.infov("query modbus history, space: {0}, service: {1}, polling: {2}, field: {3}",
+                spaceId, serviceId, pollingIndex, field);
         return requireSpaceMember(spaceId)
-                .chain(ignored -> queryService.range(serviceId, functionIndex, field,
+                .chain(ignored -> queryService.range(serviceId, pollingIndex, field,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(
-                        ModbusHistoryRangeCodec.encode(serviceId, functionIndex, field, result)))
+                        ModbusHistoryRangeCodec.encode(serviceId, pollingIndex, field, result)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
@@ -137,7 +137,7 @@ public class ModbusHistoryResource extends AbstractResource {
      * 整棵子树（项目 = 根空间 + 子空间，设备可以挂在任一子空间上）。故障清单若只查根空间自己的服务，
      * 子空间里的服务就会「表里列着、异常栏永远是空的」—— 把「没查」显示成「没问题」。</p>
      *
-     * <p>{@code functionIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
+     * <p>{@code pollingIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
      * {@code type} 不传 = 所有分类。</p>
      */
     @GET
@@ -146,7 +146,7 @@ public class ModbusHistoryResource extends AbstractResource {
     public Uni<Response> failures(
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
-            @QueryParam("functionIndex") Integer functionIndex,
+            @QueryParam("pollingIndex") Integer pollingIndex,
             @QueryParam("type") String type,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
@@ -159,8 +159,8 @@ public class ModbusHistoryResource extends AbstractResource {
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
                         .chain(ids -> queryService.failuresOfServices(
-                                ids, functionIndex, type, millis(from), millis(to), limit))
-                        : queryService.failures(serviceId, functionIndex, type,
+                                ids, pollingIndex, type, millis(from), millis(to), limit))
+                        : queryService.failures(serviceId, pollingIndex, type,
                         millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()

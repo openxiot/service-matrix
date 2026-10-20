@@ -43,7 +43,7 @@ class ModbusShadowPlanTest {
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
-        assertEquals(2, fixes.get(0).shadow().functionIndex);
+        assertEquals(2, fixes.get(0).shadow().pollingIndex);
         assertTrue(fixes.get(0).staleFields().isEmpty());
     }
 
@@ -134,7 +134,7 @@ class ModbusShadowPlanTest {
         assertTrue(ModbusShadowPlan.plan(service, List.of(other)).isEmpty());
     }
 
-    /** 多个修复按 functionIndex 升序（调用方按顺序写库，日志里也好读）。 */
+    /** 多个修复按 pollingIndex 升序（调用方按顺序写库，日志里也好读）。 */
     @Test
     void fixesAreSortedByFunctionIndex() {
         ModbusService service = service(function(1, field("temp")));
@@ -146,11 +146,11 @@ class ModbusShadowPlanTest {
         List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
 
         assertEquals(3, fixes.size());
-        assertEquals(1, fixes.get(0).shadow().functionIndex);
+        assertEquals(1, fixes.get(0).shadow().pollingIndex);
         assertEquals(List.of("stale"), fixes.get(0).staleFields());
-        assertEquals(2, fixes.get(1).shadow().functionIndex);
+        assertEquals(2, fixes.get(1).shadow().pollingIndex);
         assertTrue(fixes.get(1).orphan());
-        assertEquals(3, fixes.get(2).shadow().functionIndex);
+        assertEquals(3, fixes.get(2).shadow().pollingIndex);
     }
 
     /** 取名字时把空名与空元素都滤掉：它们进不了影子，也就不该出现在「定义里有」这一侧。 */
@@ -211,11 +211,11 @@ class ModbusShadowPlanTest {
         return service;
     }
 
-    private static ModbusServiceShadow shadow(String serviceId, Integer functionIndex, Map<String, Object> fields) {
+    private static ModbusServiceShadow shadow(String serviceId, Integer pollingIndex, Map<String, Object> fields) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.id = new ObjectId();
         shadow.serviceId = serviceId;
-        shadow.functionIndex = functionIndex;
+        shadow.pollingIndex = pollingIndex;
         shadow.fields = fields == null ? null : new LinkedHashMap<>(fields);
         return shadow;
     }

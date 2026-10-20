@@ -138,9 +138,9 @@ api:    每次 invoke 都读库（N 副本，各副本的内存基准会漂）
 
 ```
 modbus.polls
-  { _id, serviceId, functionIndex, did, interval, nextRunAt, leaseOwner, leaseUntil,
+  { _id, serviceId, pollingIndex, did, interval, nextRunAt, leaseOwner, leaseUntil,
     lastRunAt, lastStatus, lastError, failCount }
-索引：(serviceId, functionIndex) 唯一 + nextRunAt（+ leaseUntil）
+索引：(serviceId, pollingIndex) 唯一 + nextRunAt（+ leaseUntil）
 ```
 
 `failCount`（连续失败计数，第八节要求）是落地时加的；`lastStatus` 只有 `OK` / `FAILED` 两个值 ——
@@ -156,7 +156,7 @@ modbus.polls
 对账（reconcile）把 `polls` 拉回与定义一致，三种时机都要有：
 
 1. **写入路径**：create / update / delete 服务时同步对齐（`update` 是整体替换 `functions`，
-   做一次按 `(functionIndex)` 的增删改即可）；
+   做一次按 `(pollingIndex)` 的增删改即可）；
 2. **启动时全量对一次**；
 3. **之后周期性再对一次**（建议 5 分钟）。定义文档**是可能被直接改库的**
    （这个项目的库里已经手工改过字段名），凡是靠写入路径维护的派生数据一定会漂 ——
@@ -305,7 +305,7 @@ modbus.polls
    → `ModbusPollBaselines` + `record` / `recordFailure` 的 4 参入口 + `ShutdownEvent`。
 5. 观测（第八节）。→ `ModbusPollResource`（`GET /matrix/v1/modbus/poll/{spaceId}`）。
 6. 影子对账：定义变更（改了 `response`、删了方法）后，按当前定义清掉影子里
-   **不再存在**的 `(functionIndex, field)`，否则影子留下永远收不到更新的键。
+   **不再存在**的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
    → `ModbusShadowPlan` + 写入路径 / 启动全量扫。
 7. 之后才谈扩容（租约已经是现成的）与合并帧（要改数据模型）。
 

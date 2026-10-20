@@ -89,10 +89,10 @@ public class ModbusHistoryQueryService {
      *
      * @param to 传 null 表示「到现在」（缺 {@code from} 没有同样明确的含义，所以 {@code from} 必填）
      */
-    public Uni<RangeResult> range(String serviceId, Integer functionIndex, String field,
+    public Uni<RangeResult> range(String serviceId, Integer pollingIndex, String field,
                                   Date from, Date to, Integer maxPoints) {
         Date end = to == null ? new Date() : to;
-        String err = checkPoint(serviceId, functionIndex, field);
+        String err = checkPoint(serviceId, pollingIndex, field);
         if (err == null) {
             err = checkRange(from, end);
         }
@@ -102,8 +102,8 @@ public class ModbusHistoryQueryService {
         int points = normalizeMaxPoints(maxPoints);
 
         return Uni.combine().all()
-                .unis(historyRepo.findCarryIn(serviceId, functionIndex, field, from),
-                        historyRepo.findRange(serviceId, functionIndex, field, from, end, MAX_ROWS + 1))
+                .unis(historyRepo.findCarryIn(serviceId, pollingIndex, field, from),
+                        historyRepo.findRange(serviceId, pollingIndex, field, from, end, MAX_ROWS + 1))
                 .asTuple()
                 .map(tuple -> {
                     List<ModbusServiceHistory> rows = tuple.getItem2();
@@ -120,16 +120,16 @@ public class ModbusHistoryQueryService {
     /**
      * 某个服务（可选某个方法、某类故障）在 {@code [from, to]} 上的故障记录，按时间倒序。
      *
-     * @param functionIndex 传 null = 该服务下所有方法
+     * @param pollingIndex 传 null = 该服务下所有方法
      * @param type          传 null = 不限分类；给了就必须是 {@link ModbusFailureType} 里的名字
      */
-    public Uni<FailureResult> failures(String serviceId, Integer functionIndex, String type,
+    public Uni<FailureResult> failures(String serviceId, Integer pollingIndex, String type,
                                        Date from, Date to, Integer limit) {
         if (isBlank(serviceId)) {
             return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
         }
         // 单服务只是批量那条路的一个元素：排序 / 截断的口径只有一份，免得两条路各写一遍、日后改漏一边
-        return failuresOfServices(List.of(serviceId), functionIndex, type, from, to, limit);
+        return failuresOfServices(List.of(serviceId), pollingIndex, type, from, to, limit);
     }
 
     /**
@@ -137,10 +137,10 @@ public class ModbusHistoryQueryService {
      * {@code ModbusHistoryResource.failures} 不传 {@code serviceId} 时走这里）。
      *
      * <p>为什么是「逐服务各查一次再合并」而不是一条跨服务的查询：故障集合的索引是
-     * {@code (serviceId, functionIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
+     * {@code (serviceId, pollingIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
      * 只有十几条，各查一次的量级完全可控。故障又是**去重过**的（同一条错误持续存在只落一条，
      * 见 {@link ModbusServiceFailure}），合并出来的行数本就不大 —— 所以合并与排序放在内存里做，
-     * 与「不传 functionIndex 时排序靠内存」是同一个判断。</p>
+     * 与「不传 pollingIndex 时排序靠内存」是同一个判断。</p>
      *
      * <p><b>逐服务多取一条（limit + 1）不影响全局结果</b>：全局前 limit 条必然落在「该服务的前
      * limit + 1 条」里，所以按服务先截一刀再合并，得到的仍是真正的全局前 limit 条；
@@ -148,7 +148,7 @@ public class ModbusHistoryQueryService {
      *
      * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */
-    public Uni<FailureResult> failuresOfServices(List<String> serviceIds, Integer functionIndex, String type,
+    public Uni<FailureResult> failuresOfServices(List<String> serviceIds, Integer pollingIndex, String type,
                                                  Date from, Date to, Integer limit) {
         Date end = to == null ? new Date() : to;
         String err = checkRange(from, end);
@@ -164,7 +164,7 @@ public class ModbusHistoryQueryService {
         }
         String failureType = isBlank(type) ? null : type;
         List<Uni<List<ModbusServiceFailure>>> queries = serviceIds.stream()
-                .map(id -> failureRepo.findRange(id, functionIndex, failureType, from, end, size + 1))
+                .map(id -> failureRepo.findRange(id, pollingIndex, failureType, from, end, size + 1))
                 .toList();
 
         // 并发取：服务之间没有依赖，串行只会把总耗时乘上服务数
@@ -206,12 +206,12 @@ public class ModbusHistoryQueryService {
 
     // ===== 参数 =====
 
-    private static String checkPoint(String serviceId, Integer functionIndex, String field) {
+    private static String checkPoint(String serviceId, Integer pollingIndex, String field) {
         if (isBlank(serviceId)) {
             return "serviceId is required";
         }
-        if (functionIndex == null || functionIndex < 1) {
-            return "functionIndex is required";
+        if (pollingIndex == null || pollingIndex < 1) {
+            return "pollingIndex is required";
         }
         if (isBlank(field)) {
             return "field is required";

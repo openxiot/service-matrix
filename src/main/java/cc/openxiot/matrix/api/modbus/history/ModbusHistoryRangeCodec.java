@@ -7,7 +7,7 @@ import io.vertx.core.json.JsonObject;
 
 /**
  * 区间曲线（{@code /history/range}）的响应体编码：
- * {@code {serviceId, functionIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
+ * {@code {serviceId, pollingIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
  *
  * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code DashboardWidgetDataService}）下发的是**同一份形状**，
  * 只是另外缀上 {@code unit} / {@code step} / {@code failures}。前端两条路共用同一个
@@ -26,12 +26,12 @@ public final class ModbusHistoryRangeCodec {
     /**
      * 编码一个点位的区间查询结果。
      *
-     * <p>{@code serviceId} / {@code functionIndex} / {@code field} 由调用方传进来，而不是从
+     * <p>{@code serviceId} / {@code pollingIndex} / {@code field} 由调用方传进来，而不是从
      * {@link ModbusHistoryQueryService.RangeResult} 里取：那个记录只有「这两个时刻之间、要多少个点」，
      * 是哪条曲线由调用方（HTTP 的查询参数，或看板那张卡的配置）决定 —— 而且请求里那份是**字符串**，
      * 回显它比回显解析后的值更忠实。</p>
      */
-    public static JsonObject encode(String serviceId, Integer functionIndex, String field,
+    public static JsonObject encode(String serviceId, Integer pollingIndex, String field,
                                     ModbusHistoryQueryService.RangeResult result) {
         ModbusHistoryWindow.Window window = result.window();
         JsonArray points = new JsonArray();
@@ -47,7 +47,7 @@ public final class ModbusHistoryRangeCodec {
 
         JsonObject body = new JsonObject()
                 .put("serviceId", serviceId)
-                .put("functionIndex", functionIndex)
+                .put("pollingIndex", pollingIndex)
                 .put("field", field)
                 .put("from", result.from().getTime())
                 .put("to", result.to().getTime())

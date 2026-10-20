@@ -41,7 +41,7 @@ import java.util.function.Function;
  * （{@code device.space.spaceId} 逐空间取再拍平去重），所以「服务总量」与告警页看到的范围一致。</p>
  *
  * <p><b>告警 / 故障</b>：逐个 serviceId 各查一次再在内存里归并，**不用
- * {@code Filters.in("serviceId", …)}** —— 两个集合的索引都是 {@code (serviceId, functionIndex, at)}，
+ * {@code Filters.in("serviceId", …)}** —— 两个集合的索引都是 {@code (serviceId, pollingIndex, at)}，
  * 跨服务查会丢掉索引前缀（与 {@code ModbusHistoryQueryService} 的说明同一条）。</p>
  *
  * <p><b>不做聚合管道</b>：全后端的 {@code Aggregates} / {@code $group} 零命中，分桶与归并一律在内存里做

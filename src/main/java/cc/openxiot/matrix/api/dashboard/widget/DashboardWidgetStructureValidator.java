@@ -190,8 +190,8 @@ public final class DashboardWidgetStructureValidator {
         if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
         }
-        if (DashboardWidgetConfigs.intVal(config.get("functionIndex")) == null) {
-            return "config.functionIndex must be a number";
+        if (DashboardWidgetConfigs.intVal(config.get("pollingIndex")) == null) {
+            return "config.pollingIndex must be a number";
         }
         if (DashboardWidgetConfigs.str(config.get("field")) == null) {
             return "config.field is required";
@@ -246,8 +246,8 @@ public final class DashboardWidgetStructureValidator {
         if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
         }
-        if (DashboardWidgetConfigs.intVal(config.get("functionIndex")) == null) {
-            return "config.functionIndex must be a number";
+        if (DashboardWidgetConfigs.intVal(config.get("pollingIndex")) == null) {
+            return "config.pollingIndex must be a number";
         }
         Object raw = config.get("fields");
         if (!(raw instanceof List<?> fields)) {
