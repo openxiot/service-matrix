@@ -52,12 +52,12 @@
 ## 二、配置模型
 
 ```
-ModbusFunctionResponseFieldAlarm  id / enabled / compare / threshold / state / level / text
-ModbusFunctionResponseField.alarms      : List<ModbusFunctionResponseFieldAlarm>
-ModbusFunctionResponseFieldBit.alarms   : List<ModbusFunctionResponseFieldAlarm>
+ModbusPollingResponseFieldAlarm  id / enabled / compare / threshold / state / level / text
+ModbusPollingResponseField.alarms      : List<ModbusPollingResponseFieldAlarm>
+ModbusPollingResponseFieldBit.alarms   : List<ModbusPollingResponseFieldAlarm>
 ```
 
-挂在两处：`ModbusFunctionResponseField.alarms`（`response.fields[].alarms`）与 `ModbusFunctionResponseFieldBit.alarms`
+挂在两处：`ModbusPollingResponseField.alarms`（`response.fields[].alarms`）与 `ModbusPollingResponseFieldBit.alarms`
 （`response.fields[].bit-list[].alarms`），各是一组、**各自算**（含条数上限与 `id` 唯一性）。
 
 **每条规则带一个 `id`**（前端生成、随配置落库、后端只校验）。理由：`openKey` 是**出值级**的
@@ -84,7 +84,7 @@ ModbusFunctionResponseFieldBit.alarms   : List<ModbusFunctionResponseFieldAlarm>
 （`ModbusServiceFailure` 的注释已明确反对），而且它落在**每次采集的热路径**上，
 `""→0`、`"1e3"`、前后空格全是坑。两个字段互斥，由校验器按 `compare` 与字段形态判定。
 
-**Codec** 守全仓的「null 不出键」，`ModbusFunctionResponseFieldAlarmCodec.decode(JsonObject)` 对空对象返回 `null`
+**Codec** 守全仓的「null 不出键」，`ModbusPollingResponseFieldAlarmCodec.decode(JsonObject)` 对空对象返回 `null`
 （而不是一个字段全空的实例），`decode(JsonArray)` 对**空数组**与「元素全是空对象」的数组也返回 `null`
 且丢掉空壳元素 —— 这样 `encode` 才能把「没配」与「配了个空」分开，库里也不会留下一串空壳规则
 或一个 `alarms: []`。

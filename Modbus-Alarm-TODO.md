@@ -30,7 +30,7 @@
 > 下面的记录保持当时的样子，现行口径看第 4.5 步与 `Modbus-Alarm.md`。
 
 - [x] `ModbusPollingResponseFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
-- [x] 挂在**两处**：`ModbusFunctionResponseField.alarm` 与 `ModbusFunctionResponseFieldBit.alarm`
+- [x] 挂在**两处**：`ModbusPollingResponseField.alarm` 与 `ModbusPollingResponseFieldBit.alarm`
       —— 位是独立的结果键（parser 逐位 `values.put(bit.field, …)`），只挂字段够不着「位 = 1 告警」。
 - [x] `ModbusPollingResponseFieldAlarmCodec` + 接进 `ModbusPollingResponseFieldCodec` / `ModbusPollingResponseFieldBitCodec`；
   守「null 不出键」，空对象读作「没配」。
