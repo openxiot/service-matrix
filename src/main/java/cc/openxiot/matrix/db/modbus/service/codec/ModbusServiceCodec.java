@@ -44,6 +44,9 @@ public final class ModbusServiceCodec {
         if (service.configId != null) {
             o.put("configId", service.configId);
         }
+        if (service.slaveId != null) {
+            o.put("slaveId", service.slaveId);
+        }
         o.put("device", DeviceOnCodec.encode(service.device));
         o.put("functions", ModbusPollingCodec.encode(service.functions));
         if (service.creator != null) {
@@ -114,6 +117,7 @@ public final class ModbusServiceCodec {
         service.name = o.getString("name");
         service.version = o.getInteger("version");
         service.configId = o.getString("configId");
+        service.slaveId = o.getInteger("slaveId");
         service.device = DeviceOnCodec.decode(o.getJsonObject("device"));
         service.functions = ModbusPollingCodec.decode(o.getJsonArray("functions"));
         return service;

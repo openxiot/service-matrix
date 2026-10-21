@@ -111,7 +111,13 @@ public final class ModbusServiceValidator {
         if (deviceErr != null) {
             return deviceErr;
         }
-        return validateFunctions(service.functions);
+        if (service.slaveId == null) {
+            return "slaveId is required";
+        }
+        if (service.slaveId < 1 || service.slaveId > 247) {
+            return "invalid slaveId: " + service.slaveId + " (must be 1..247)";
+        }
+        return validateFunctions(service.functions, service.slaveId);
     }
 
     /** 依赖设备的调用坐标：invoke 前也要查一遍（文档可能来自更早的口径）。 */
@@ -134,12 +140,11 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    private static String validateFunctions(List<ModbusPolling> functions) {
+    private static String validateFunctions(List<ModbusPolling> functions, Integer serviceSlaveId) {
         if (functions == null) {
             return "functions is required";
         }
         Set<Integer> seenIndex = new HashSet<>();
-        Integer serviceSlaveId = null;
         for (int i = 0; i < functions.size(); i++) {
             ModbusPolling function = functions.get(i);
             String base = "functions[" + i + "]";
@@ -187,14 +192,13 @@ public final class ModbusServiceValidator {
             if (requestErr != null) {
                 return requestErr;
             }
-            // 同一服务的各方法必须同一个从站：一个服务由一条点表映射而来，一条点表只有一个 slave
-            // （service.configId）。从站地址写错不会报错，只会静默读到隔壁设备
+            // 每个方法的 request.slaveId 必须等于服务级从站地址（service.slaveId）：
+            // 服务级 slaveId 是本服务「读哪台从站」的顶层事实，方法里走私站的地址若不一致，
+            // 会静默读到隔壁设备——这里硬校验。
             Integer slaveId = function.request.slaveId;
-            if (serviceSlaveId == null) {
-                serviceSlaveId = slaveId;
-            } else if (!serviceSlaveId.equals(slaveId)) {
+            if (!serviceSlaveId.equals(slaveId)) {
                 return "invalid " + base + ".request.slaveId: " + slaveId
-                        + " (all functions must use the same slave, " + serviceSlaveId + ")";
+                        + " (must equal service slaveId " + serviceSlaveId + ")";
             }
             String pollingErr = validatePolling(function, base);
             if (pollingErr != null) {

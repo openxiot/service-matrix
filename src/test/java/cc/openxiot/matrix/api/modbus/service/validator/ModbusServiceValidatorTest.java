@@ -404,7 +404,7 @@ class ModbusServiceValidatorTest {
         // 一个服务由一条点表映射而来，一条点表只有一个 slave：写错不会报错，只会静默读到隔壁设备
         ModbusService mixed = service();
         mixed.functions.get(1).request.slaveId = 2;
-        assertEquals("invalid functions[1].request.slaveId: 2 (all functions must use the same slave, 1)",
+        assertEquals("invalid functions[1].request.slaveId: 2 (must equal service slaveId 1)",
                 ModbusServiceValidator.validate(mixed));
     }
 
@@ -934,6 +934,7 @@ class ModbusServiceValidatorTest {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
+        service.slaveId = 1;
         service.device = device();
         service.functions = new ArrayList<>(List.of(function(1), function(2)));
         return service;
@@ -944,6 +945,7 @@ class ModbusServiceValidatorTest {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
+        service.slaveId = 1;
         service.device = device();
 
         ModbusPolling write = new ModbusPolling();

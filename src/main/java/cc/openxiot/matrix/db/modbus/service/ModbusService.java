@@ -44,6 +44,11 @@ public class ModbusService extends ReactivePanacheMongoEntity {
     @Schema(description = "源点表配置 ID（溯源用：本服务由哪条点表映射而来）")
     public String configId;
 
+    @Schema(description = "从站地址（1..247）：从源点表拷贝而来可改；各方法 request.slaveId 必须与它一致"
+            + "（校验层强制）——它是“这个服务读哪台从站”的顶层事实",
+            examples = {"1"}, required = true)
+    public Integer slaveId;
+
     @Schema(description = "依赖的设备调用坐标（调哪个设备/服务/方法、请求帧填在哪个入参 piid）", required = true)
     public DeviceOn device = new DeviceOn();
 

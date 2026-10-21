@@ -3,6 +3,7 @@
   "name": "1 号冷水机组",
   "version": 2,
   "configId": "Modbus配置ID",
+  "slaveId": 1,
   "device": {
     "did": "xxx",
     "siid": 1,
