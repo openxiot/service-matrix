@@ -20,7 +20,9 @@ import static org.mockito.Mockito.when;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
+import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
@@ -76,6 +78,8 @@ class ModbusServiceServiceTest {
     private ManipulationService manipulation;
     private ModbusHistoryService history;
     private ModbusAlarmService alarms;
+    private ModbusPollReconciler pollReconciler;
+    private ModbusAlarmReconciler alarmReconciler;
 
     @BeforeEach
     void setUp() {
@@ -84,12 +88,20 @@ class ModbusServiceServiceTest {
         history = mock(ModbusHistoryService.class);
         alarms = mock(ModbusAlarmService.class);
         when(alarms.evaluate(any(), any(), any())).thenReturn(Uni.createFrom().voidItem());
+        // update 的写入路径会串三轮派生对账（轮询任务 / 影子 / 告警），都是可弃的副作用
+        pollReconciler = mock(ModbusPollReconciler.class);
+        alarmReconciler = mock(ModbusAlarmReconciler.class);
+        when(pollReconciler.applyService(any())).thenReturn(Uni.createFrom().voidItem());
+        when(pollReconciler.reconcileShadows(any())).thenReturn(Uni.createFrom().voidItem());
+        when(alarmReconciler.reconcile(any())).thenReturn(Uni.createFrom().voidItem());
 
         service = new ModbusServiceService();
         service.repo = repo;
         service.manipulationService = manipulation;
         service.historyService = history;
         service.alarmService = alarms;
+        service.pollReconciler = pollReconciler;
+        service.alarmReconciler = alarmReconciler;
         service.logger = Logger.getLogger(ModbusServiceServiceTest.class);
     }
 
@@ -104,6 +116,34 @@ class ModbusServiceServiceTest {
         assertEquals(100, values.getInteger("进水温度"));
         verify(history).record(any(), any(), eq(values));
         verify(history, never()).recordFailure(any(), any(), any());   // 成功路径不碰失败记录
+    }
+
+    @Test
+    void updateHonorsSlaveIdFromThePayload() {
+        // 顶层 slaveId 是 d24c53c 新增、merge 却漏抄的一场回归：payload 里带了 slaveId 的 update
+        // 也被报成「slaveId is required」。钉住 patch 显式给的 slaveId 必须落到合并后的定义上并写库。
+        givenUpdatable(updatableService(1));
+        when(repo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        ModbusService patch = updatableService(1);   // 与函数 request.slaveId(1) 一致才过得了校验
+        ModbusService merged = service.update(SERVICE_ID, patch).await().indefinitely();
+
+        assertEquals(1, merged.slaveId);
+        // 校验通过才会走到 replace：漏抄 slaveId 时 validate 会先抛 IllegalArgumentException
+        verify(repo).replace(eq(merged));
+    }
+
+    @Test
+    void updateCarriesSlaveIdFromExistingWhenPatchOmitsIt() {
+        // patch 只改个别字段时，既有 slaveId 要保得住 —— 改一处不清掉顶层从站地址
+        givenUpdatable(updatableService(1));
+        when(repo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        ModbusService patch = updatableService(null);   // 不含 slaveId
+        ModbusService merged = service.update(SERVICE_ID, patch).await().indefinitely();
+
+        assertEquals(1, merged.slaveId);
+        verify(repo).replace(eq(merged));
     }
 
     @Test
@@ -405,6 +445,11 @@ class ModbusServiceServiceTest {
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(value));
     }
 
+    /** update 的既有文档：repo.findById 直接命中，不许落库。 */
+    private void givenUpdatable(ModbusService existing) {
+        when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(existing));
+    }
+
     private void givenParentResult(JsonArray result) {
         when(manipulation.invokeActions(eq(ROOT_SPACE_ID), anyString())).thenReturn(Uni.createFrom().item(result));
     }
@@ -435,6 +480,15 @@ class ModbusServiceServiceTest {
         service.device.siid = SIID;
         service.device.aiid = AIID;
         service.device.argument = 1;
+        return service;
+    }
+
+    /** 一份指标全部都合法的服务（能过 {@code ModbusServiceValidator}），{@code slaveId} 按参数给。 */
+    private static ModbusService updatableService(Integer slaveId) {
+        ModbusService service = modbusService();
+        service.version = ModbusService.VERSION;
+        service.slaveId = slaveId;
+        service.functions = List.of(function());
         return service;
     }
 
