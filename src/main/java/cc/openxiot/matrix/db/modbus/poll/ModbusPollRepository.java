@@ -5,10 +5,11 @@ import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.DeleteResult;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -27,14 +28,17 @@ import java.util.List;
  * —— 这两个写发生在不同的线程甚至不同的进程上，而它们本来毫无关系。</p>
  */
 @ApplicationScoped
-public class ModbusPollRepository implements ReactivePanacheMongoRepository<ModbusPoll> {
+public class ModbusPollRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     /** {@link ModbusPoll#lastStatus} 的两个取值：只有成功与失败**两种**，跳过不是状态。 */
     public static final String STATUS_OK = "OK";
     public static final String STATUS_FAILED = "FAILED";
 
     private ReactiveMongoCollection<ModbusPoll> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("polls", ModbusPoll.class);
     }
 
     /**
@@ -89,7 +93,8 @@ public class ModbusPollRepository implements ReactivePanacheMongoRepository<Modb
 
     /** 新增一条（{@code _id} 由 Panache 生成并回写到 {@code poll.id}）。 */
     public Uni<Void> insert(ModbusPoll poll) {
-        return persist(poll).replaceWithVoid();
+        if (poll.id == null) { poll.id = new ObjectId(); }
+        return collection().insertOne(poll).replaceWithVoid();
     }
 
     /** 对账：只更新调度字段（定义改了 `did` / `interval`，或周期变了要重排下一次）。 */

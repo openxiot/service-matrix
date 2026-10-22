@@ -6,10 +6,11 @@ import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.FindOptions;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
 
 import java.util.List;
@@ -22,10 +23,13 @@ import java.util.List;
  * 调用方本来就是先读影子拿到比对基准，手里的 {@code _id} 直接复用，省掉一次 upsert 语义的边界情况。</p>
  */
 @ApplicationScoped
-public class ModbusServiceLastPollingRepository implements ReactivePanacheMongoRepository<ModbusServiceLastPolling> {
+public class ModbusServiceLastPollingRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<ModbusServiceLastPolling> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("service-last-polling", ModbusServiceLastPolling.class);
     }
 
     /**
@@ -66,7 +70,8 @@ public class ModbusServiceLastPollingRepository implements ReactivePanacheMongoR
 
     /** 新增一条（{@code _id} 由 Panache 生成并回写到 {@code shadow.id}）。 */
     public Uni<Void> insert(ModbusServiceLastPolling shadow) {
-        return persist(shadow).replaceWithVoid();
+        if (shadow.id == null) { shadow.id = new ObjectId(); }
+        return collection().insertOne(shadow).replaceWithVoid();
     }
 
     /** 全量替换一条（{@code shadow.id} 必须是已落库的原值，由调用方从 {@link #find} 的结果带过来）。 */

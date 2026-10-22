@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.db.dashboard.mobile;
 
 import cc.openxiot.common.person.Person;
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * 移动端数据看板（iPhone & Android，竖屏）的布局：**一个项目一份**，项目内共享 —— 与 Web 看板
@@ -28,10 +28,14 @@ import java.util.List;
  * <p>读写权限不对称，与 Web 同一口径：读是空间成员、写是空间管理员（见
  * {@code MobileDashboardResource}）。</p>
  */
-@MongoEntity(database = "matrix", collection = "mobile-dashboard-layouts")
 @RegisterForReflection
 @Schema(description = "移动端看板布局（一个项目一份，竖屏有序堆叠）")
-public class MobileDashboardLayoutEntity extends ReactivePanacheMongoEntity {
+public class MobileDashboardLayoutEntity {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "所属空间 ID（根空间，即项目）", required = true)
     public String spaceId;

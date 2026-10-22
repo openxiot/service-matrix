@@ -1,9 +1,9 @@
 package cc.openxiot.matrix.api.space.access;
 
-import cc.openxiot.account.db.account.user.User;
-import cc.openxiot.account.user.organization.UserOrganization;
+import cc.openxiot.account.db.AccountUserRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
 
 /**
@@ -12,12 +12,15 @@ import org.bson.types.ObjectId;
 @ApplicationScoped
 public class AccountUserLookup {
 
+    @Inject
+    AccountUserRepository accountUserRepository;
+
     /** 用户名快照；用户不存在或 id 非法时回退为原 id。 */
     public Uni<String> userName(String userId) {
         if (userId == null || userId.isBlank() || !ObjectId.isValid(userId)) {
             return Uni.createFrom().item(userId);
         }
-        return User.<User>findById(new ObjectId(userId))
+        return accountUserRepository.findUserById(new ObjectId(userId))
                 .map(u -> {
                     if (u == null || u.username == null || u.username.isBlank()) {
                         return userId;
@@ -31,7 +34,7 @@ public class AccountUserLookup {
         if (orgId == null || orgId.isBlank()) {
             return Uni.createFrom().item(orgId);
         }
-        return UserOrganization.<UserOrganization>findById(orgId)
+        return accountUserRepository.findOrgById(orgId)
                 .map(org -> {
                     if (org == null || org.name == null || org.name.isBlank()) {
                         return orgId;

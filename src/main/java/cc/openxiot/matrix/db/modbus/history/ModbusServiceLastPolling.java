@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.db.modbus.history;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
 import java.util.Map;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * Modbus 服务的「当前值」：某个方法**最后一次调用**的结果（库 {@code modbus}、集合 {@code service-last-polling}）。
@@ -27,10 +27,14 @@ import java.util.Map;
  * <p><b>失败时 {@code fields} / {@code recordedAt} 一律不动</b>：它们是「最后一次成功的采集」，
  * 前端要靠它们显示最后已知值（以及它有多旧），清掉就等于把值丢了。</p>
  */
-@MongoEntity(database = "modbus", collection = "service-last-polling")
 @RegisterForReflection
 @Schema(description = "Modbus 服务的当前值（最后一次调用的结果，兼作变化比对基准与故障态）")
-public class ModbusServiceLastPolling extends ReactivePanacheMongoEntity {
+public class ModbusServiceLastPolling {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;

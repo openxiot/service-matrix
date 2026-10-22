@@ -3,10 +3,11 @@ package cc.openxiot.matrix.db.modbus.config;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.result.DeleteResult;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -23,10 +24,13 @@ import java.util.List;
  * {@code ModbusServiceService} 的「按 id 取再判权」先例，id 是不可猜的 ObjectId）。</p>
  */
 @ApplicationScoped
-public class ModbusConfigRepository implements ReactivePanacheMongoRepository<ModbusConfig> {
+public class ModbusConfigRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<ModbusConfig> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("configs", ModbusConfig.class);
     }
 
     /** 十六进制字符串主键 → ObjectId；非法（空/非 24 位十六进制）返回 null，调用方按未命中处理。 */
@@ -44,7 +48,8 @@ public class ModbusConfigRepository implements ReactivePanacheMongoRepository<Mo
 
     /** 新增一条配置（id 由 Panache 生成并回写到 {@code cfg.id}，落库即 ObjectId）。 */
     public Uni<Void> insert(ModbusConfig cfg) {
-        return persist(cfg).replaceWithVoid();
+        if (cfg.id == null) { cfg.id = new ObjectId(); }
+        return collection().insertOne(cfg).replaceWithVoid();
     }
 
     /** 按 id 裸查单条（不按 owner 过滤；读/改/删的归属鉴权在 Service 里按 owner 判）。 */

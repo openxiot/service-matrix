@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.db.modbus.poll;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * 一个轮询任务：某个服务的某个方法**该多久跑一次、上次跑成什么样**（库 {@code modbus}、集合 {@code polls}）。
@@ -25,10 +25,14 @@ import java.util.Date;
  * <p>{@link #lastStatus} 只记成功与失败**两种**：跳过（重入保护）不是状态，它是「这一次没跑、下次照跑」，
  * 表现为采样间隔临时变长 —— 把它记成状态会让看板上出现一堆不需要处置的感叹号。</p>
  */
-@MongoEntity(database = "modbus", collection = "polls")
 @RegisterForReflection
 @Schema(description = "Modbus 轮询任务（派生集合：一条 = 一个服务的某个方法）")
-public class ModbusPoll extends ReactivePanacheMongoEntity {
+public class ModbusPoll {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;

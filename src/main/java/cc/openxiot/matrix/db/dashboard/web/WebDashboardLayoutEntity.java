@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.db.dashboard.web;
 
 import cc.openxiot.common.person.Person;
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * Web 数据看板（浏览器与 Pad）的布局：**一个空间一份**，空间内共享（读写权限不对称，见
@@ -25,10 +25,14 @@ import java.util.List;
  *
  * <p>与 {@code SpaceEntity} 同库（{@code matrix}）：这是空间级数据，生命周期跟着空间走。</p>
  */
-@MongoEntity(database = "matrix", collection = "web-dashboard-layouts")
 @RegisterForReflection
 @Schema(description = "自定义数据看板布局（一个空间一份）")
-public class WebDashboardLayoutEntity extends ReactivePanacheMongoEntity {
+public class WebDashboardLayoutEntity {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     // 主键 id（ObjectId）继承自 ReactivePanacheMongoEntity：落库时由 Panache 生成，
     // 不在此声明字段，避免 @BsonId 重复映射。

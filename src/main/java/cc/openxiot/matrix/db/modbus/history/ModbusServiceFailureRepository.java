@@ -6,15 +6,17 @@ import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.FindOptions;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import org.bson.types.ObjectId;
 
 /**
  * {@link ModbusServiceFailure} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-failures}）。
@@ -24,10 +26,13 @@ import java.util.List;
  * 不必为此再起一条聚合管道。</p>
  */
 @ApplicationScoped
-public class ModbusServiceFailureRepository implements ReactivePanacheMongoRepository<ModbusServiceFailure> {
+public class ModbusServiceFailureRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<ModbusServiceFailure> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("service-failures", ModbusServiceFailure.class);
     }
 
     /**
@@ -44,7 +49,8 @@ public class ModbusServiceFailureRepository implements ReactivePanacheMongoRepos
 
     /** 追加一条失败记录（一次失败一条，不像历史那样成批）。 */
     public Uni<Void> insert(ModbusServiceFailure failure) {
-        return persist(failure).replaceWithVoid();
+        if (failure.id == null) { failure.id = new ObjectId(); }
+        return collection().insertOne(failure).replaceWithVoid();
     }
 
     /**

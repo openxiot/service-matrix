@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.db.modbus.history;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * 一条采集样本（库 {@code modbus}、集合 {@code service-histories}）：**一个字段一个值**。
@@ -18,10 +18,14 @@ import java.util.Date;
  * 字段名是用户填的，拼串做前缀匹配迟早撞上转义问题。查询与索引都按这三个字段走
  * （见 {@link ModbusServiceHistoryRepository}）。</p>
  */
-@MongoEntity(database = "modbus", collection = "service-histories")
 @RegisterForReflection
 @Schema(description = "Modbus 采集历史的一条样本（一个字段一个值）")
-public class ModbusServiceHistory extends ReactivePanacheMongoEntity {
+public class ModbusServiceHistory {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;

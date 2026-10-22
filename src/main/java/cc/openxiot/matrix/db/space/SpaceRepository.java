@@ -5,11 +5,14 @@ import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
+import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 
@@ -17,23 +20,35 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @ApplicationScoped
-public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEntity> {
+public class SpaceRepository {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
+
+    private ReactiveMongoCollection<SpaceEntity> collection() {
+        return mongoClient.getDatabase("matrix").getCollection("spaces", SpaceEntity.class);
+    }
+
+    public Uni<SpaceEntity> findById(ObjectId id) {
+        return collection().find(Filters.eq("_id", id)).collect().first();
+    }
 
     public Uni<SpaceEntity> findById(String id) {
         return findById(new ObjectId(id));
     }
 
     public Uni<Boolean> deleteById(String id) {
-        return deleteById(new ObjectId(id));
+        return collection().deleteOne(Filters.eq("_id", new ObjectId(id)))
+                .map(r -> r.getDeletedCount() > 0);
     }
 
     public Uni<List<SpaceEntity>> findByParentId(String parentId) {
-        return list("parentId", parentId);
+        return collection().find(Filters.eq("parentId", parentId)).collect().asList();
     }
 
     /** 按祖先取整棵子树（{@code ancestors} 含该 id 的都是它的后代，不含自己）。索引见 {@link #ensureIndexes}。 */
     public Uni<List<SpaceEntity>> findByAncestor(String ancestorId) {
-        return list("ancestors", ancestorId);
+        return collection().find(Filters.eq("ancestors", ancestorId)).collect().asList();
     }
 
     /**
@@ -48,7 +63,7 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
      * 再补它。</p>
      */
     public Uni<Void> ensureIndexes() {
-        return mongoCollection()
+        return collection()
                 .createIndex(Indexes.ascending("ancestors"))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
@@ -62,7 +77,7 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
         Document filter = new Document("parentId", null)
                 .append("accesses", new Document("$elemMatch",
                         new Document("id", accessId).append("type", accessType)));
-        return mongoCollection().find(filter).collect().asList();
+        return collection().find(filter).collect().asList();
     }
 
     /** 原子追加访问条目（$push） */
@@ -72,14 +87,14 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
                 .append("role", access.role)
                 .append("name", access.name)
                 .append("remark", access.remark);
-        return mongoCollection()
+        return collection()
                 .updateOne(Filters.eq("_id", new ObjectId(rootId)), Updates.push("accesses", accessDoc))
                 .map(UpdateResult::getModifiedCount);
     }
 
     /** 原子移除用户访问条目（$pull，仅匹配 type = user 的条目） */
     public Uni<Long> pullAccess(String rootId, String memberId) {
-        return mongoCollection()
+        return collection()
                 .updateOne(Filters.eq("_id", new ObjectId(rootId)),
                         Updates.pull("accesses",
                                 Filters.and(
@@ -90,7 +105,7 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
 
     /** 原子调整用户访问条目角色（$set 位置操作符，仅匹配 type = user 的条目） */
     public Uni<Long> updateAccessRole(String rootId, String memberId, String role) {
-        return mongoCollection()
+        return collection()
                 .updateOne(
                         Filters.and(
                                 Filters.eq("_id", new ObjectId(rootId)),
@@ -103,7 +118,7 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
 
     /** 原子更新用户访问条目备注（$set 位置操作符，仅匹配 type = user 的条目） */
     public Uni<Long> updateAccessRemark(String rootId, String memberId, String remark) {
-        return mongoCollection()
+        return collection()
                 .updateOne(
                         Filters.and(
                                 Filters.eq("_id", new ObjectId(rootId)),
@@ -121,14 +136,14 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
      * 跟同时改名字/属性的别的客户端互不覆盖，也不会把整份文档按陈旧副本写回去。</p>
      */
     public Uni<Long> setAnchor(String spaceId, ModelAnchor anchor) {
-        return mongoCollection()
+        return collection()
                 .updateOne(Filters.eq("_id", new ObjectId(spaceId)), Updates.set("anchor", anchor.toDocument()))
                 .map(UpdateResult::getModifiedCount);
     }
 
     /** 原子清除 3D 锚点（$unset）。字段整个移除，不是置 null。 */
     public Uni<Long> clearAnchor(String spaceId) {
-        return mongoCollection()
+        return collection()
                 .updateOne(Filters.eq("_id", new ObjectId(spaceId)), Updates.unset("anchor"))
                 .map(UpdateResult::getModifiedCount);
     }
@@ -138,11 +153,19 @@ public class SpaceRepository implements ReactivePanacheMongoRepository<SpaceEnti
             space.createTime = LocalDateTime.now();
         }
         space.updateTime = LocalDateTime.now();
-        return persist(space);
+        if (space.id == null) {
+            space.id = new ObjectId();
+        }
+        return collection().insertOne(space).map(v -> space);
     }
 
     public Uni<SpaceEntity> persistOrUpdateEntity(SpaceEntity space) {
         space.updateTime = LocalDateTime.now();
-        return persistOrUpdate(space);
+        if (space.id == null) {
+            space.id = new ObjectId();
+        }
+        return collection()
+                .replaceOne(Filters.eq("_id", space.id), space, new ReplaceOptions().upsert(true))
+                .map(v -> space);
     }
 }

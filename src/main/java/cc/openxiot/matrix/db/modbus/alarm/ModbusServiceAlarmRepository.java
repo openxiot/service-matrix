@@ -13,10 +13,11 @@ import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import io.quarkus.mongodb.FindOptions;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
@@ -40,13 +41,21 @@ import java.util.Map;
  * 这消除了「幽灵告警永远关不掉」这个失效模式，也让采集热路径只需要「存在性」而不需要身份。</p>
  */
 @ApplicationScoped
-public class ModbusServiceAlarmRepository implements ReactivePanacheMongoRepository<ModbusServiceAlarm> {
+public class ModbusServiceAlarmRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     /** MongoDB 的重复键错误码。 */
     private static final int DUPLICATE_KEY = 11000;
 
     private ReactiveMongoCollection<ModbusServiceAlarm> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("service-alarms", ModbusServiceAlarm.class);
+    }
+
+    /** 按 id 查询单条告警（供详情/关闭入口用）。 */
+    public Uni<ModbusServiceAlarm> findById(ObjectId id) {
+        return collection().find(Filters.eq("_id", id)).collect().first();
     }
 
     /**
@@ -114,7 +123,8 @@ public class ModbusServiceAlarmRepository implements ReactivePanacheMongoReposit
      * <p>其它失败一律照常外传：调用方（采集链路）自己决定记日志还是咽下去。</p>
      */
     public Uni<Boolean> insertOpen(ModbusServiceAlarm alarm) {
-        return persist(alarm)
+        if (alarm.id == null) { alarm.id = new ObjectId(); }
+        return collection().insertOne(alarm)
                 .map(ignored -> true)
                 .onFailure(ModbusServiceAlarmRepository::isDuplicateKey)
                 .recoverWithItem(false);

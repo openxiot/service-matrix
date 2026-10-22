@@ -2,8 +2,6 @@ package cc.openxiot.matrix.db.space;
 
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonDiscriminator;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -11,12 +9,18 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
-@MongoEntity(database = "matrix", collection = "spaces")
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "空间")
-public class SpaceEntity extends ReactivePanacheMongoEntity {
+public class SpaceEntity {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "空间名称", required = true)
     public String name;

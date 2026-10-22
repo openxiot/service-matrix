@@ -4,10 +4,12 @@ import cc.openxiot.matrix.db.mongo.DuplicateKey;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.bson.types.ObjectId;
 
 /**
  * 移动端看板布局的数据访问（Panache，实体固定落库 {@code matrix}/集合 {@code mobile-dashboard-layouts}）。
@@ -18,10 +20,13 @@ import jakarta.enterprise.context.ApplicationScoped;
  * <p>「重复键」判法由 {@code db.mongo.DuplicateKey} 与 Web 仓库共用，这里直接引用，不再拷一份。</p>
  */
 @ApplicationScoped
-public class MobileDashboardLayoutRepository implements ReactivePanacheMongoRepository<MobileDashboardLayoutEntity> {
+public class MobileDashboardLayoutRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<MobileDashboardLayoutEntity> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("matrix").getCollection("mobile-dashboard-layouts", MobileDashboardLayoutEntity.class);
     }
 
     /**
@@ -40,12 +45,14 @@ public class MobileDashboardLayoutRepository implements ReactivePanacheMongoRepo
 
     /** 读某个空间的移动端布局；没有文档时返回 {@code null}（调用方据此给预置布局，不报错）。 */
     public Uni<MobileDashboardLayoutEntity> findBySpaceId(String spaceId) {
-        return list("spaceId", spaceId).map(layouts -> layouts.isEmpty() ? null : layouts.get(0));
+        return collection().find(Filters.eq("spaceId", spaceId)).collect().asList()
+                .map(layouts -> layouts.isEmpty() ? null : layouts.get(0));
     }
 
     /** 新增一份布局（id 由 Panache 生成并回写到 {@code layout.id}）。 */
     public Uni<Void> insert(MobileDashboardLayoutEntity layout) {
-        return persist(layout).replaceWithVoid();
+        if (layout.id == null) { layout.id = new ObjectId(); }
+        return collection().insertOne(layout).replaceWithVoid();
     }
 
     /**

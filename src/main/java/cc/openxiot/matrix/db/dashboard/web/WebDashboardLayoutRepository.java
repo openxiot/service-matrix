@@ -4,10 +4,12 @@ import cc.openxiot.matrix.db.mongo.DuplicateKey;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.bson.types.ObjectId;
 
 /**
  * 看板布局的数据访问（Panache，实体固定落库 {@code matrix}/集合 {@code web-dashboard-layouts}）。
@@ -16,10 +18,13 @@ import jakarta.enterprise.context.ApplicationScoped;
  * 的入口 —— 布局对外的身份就是空间 ID，其 ObjectId 是实现细节，不暴露给前端。</p>
  */
 @ApplicationScoped
-public class WebDashboardLayoutRepository implements ReactivePanacheMongoRepository<WebDashboardLayoutEntity> {
+public class WebDashboardLayoutRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<WebDashboardLayoutEntity> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("matrix").getCollection("web-dashboard-layouts", WebDashboardLayoutEntity.class);
     }
 
     /**
@@ -38,12 +43,14 @@ public class WebDashboardLayoutRepository implements ReactivePanacheMongoReposit
 
     /** 读某个空间的布局；没有文档时返回 {@code null}（调用方据此给预置布局，不报错）。 */
     public Uni<WebDashboardLayoutEntity> findBySpaceId(String spaceId) {
-        return list("spaceId", spaceId).map(layouts -> layouts.isEmpty() ? null : layouts.get(0));
+        return collection().find(Filters.eq("spaceId", spaceId)).collect().asList()
+                .map(layouts -> layouts.isEmpty() ? null : layouts.get(0));
     }
 
     /** 新增一份布局（id 由 Panache 生成并回写到 {@code layout.id}）。 */
     public Uni<Void> insert(WebDashboardLayoutEntity layout) {
-        return persist(layout).replaceWithVoid();
+        if (layout.id == null) { layout.id = new ObjectId(); }
+        return collection().insertOne(layout).replaceWithVoid();
     }
 
     /**

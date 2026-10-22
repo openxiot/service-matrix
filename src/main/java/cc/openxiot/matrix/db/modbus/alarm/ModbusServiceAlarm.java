@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.db.modbus.alarm;
 
 import cc.openxiot.common.person.Person;
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * 一次阈值告警（库 {@code modbus}、集合 {@code service-alarms}）。
@@ -32,10 +32,14 @@ import java.util.Date;
  *
  * <p>{@link #text} 是**用户自己填的**（如「温度过高」），前后端一律原样显示、**永不翻译**。</p>
  */
-@MongoEntity(database = "modbus", collection = "service-alarms")
 @RegisterForReflection
 @Schema(description = "Modbus 服务出值的一次阈值告警")
-public class ModbusServiceAlarm extends ReactivePanacheMongoEntity {
+public class ModbusServiceAlarm {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     /** {@link #closeType}：值回到正常，告警关闭。 */
     public static final String CLOSE_VALUE = "VALUE";

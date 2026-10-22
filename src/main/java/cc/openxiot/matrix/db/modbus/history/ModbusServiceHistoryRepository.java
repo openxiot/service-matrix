@@ -8,7 +8,7 @@ import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
 import io.quarkus.mongodb.FindOptions;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,13 +29,16 @@ import java.util.concurrent.TimeUnit;
  * 降采样是纯函数 {@code ModbusHistoryWindow} 的事，好让它跑得了单测。</p>
  */
 @ApplicationScoped
-public class ModbusServiceHistoryRepository implements ReactivePanacheMongoRepository<ModbusServiceHistory> {
+public class ModbusServiceHistoryRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     @Inject
     Logger logger;
 
     private ReactiveMongoCollection<ModbusServiceHistory> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("service-histories", ModbusServiceHistory.class);
     }
 
     /**

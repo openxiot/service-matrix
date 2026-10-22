@@ -5,10 +5,11 @@ import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import io.quarkus.mongodb.FindOptions;
 import com.mongodb.client.result.DeleteResult;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoRepository;
+import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
 
 import java.util.List;
@@ -25,13 +26,16 @@ import java.util.List;
  * {@code device.space.spaceId}（创建服务时一并落库的设备落点副本，索引见 {@link #ensureIndexes}）。</p>
  */
 @ApplicationScoped
-public class ModbusServiceRepository implements ReactivePanacheMongoRepository<ModbusService> {
+public class ModbusServiceRepository  {
+
+    @Inject
+    ReactiveMongoClient mongoClient;
 
     /** 精简查询（{@link #findBriefBySpaceId}）要带回来的字段；{@code _id} 由 Mongo 默认带出。 */
     private static final List<String> BRIEF_FIELDS = List.of("name", "device.did", "device.space.spaceId");
 
     private ReactiveMongoCollection<ModbusService> collection() {
-        return mongoCollection();
+        return mongoClient.getDatabase("modbus").getCollection("services", ModbusService.class);
     }
 
     /** 十六进制字符串主键 → ObjectId；非法（空/非 24 位十六进制）返回 null，调用方按未命中处理。 */
@@ -53,7 +57,8 @@ public class ModbusServiceRepository implements ReactivePanacheMongoRepository<M
 
     /** 新增一条（id 由 Panache 生成并回写到 {@code service.id}，落库即 ObjectId）。 */
     public Uni<Void> insert(ModbusService service) {
-        return persist(service).replaceWithVoid();
+        if (service.id == null) { service.id = new ObjectId(); }
+        return collection().insertOne(service).replaceWithVoid();
     }
 
     /** 全量替换一条（更新：整文档覆盖；{@code service.id} 已是落库对象，直接用）。 */

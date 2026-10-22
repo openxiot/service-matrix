@@ -3,8 +3,6 @@ package cc.openxiot.matrix.db.device;
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.SpaceOn;
 
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntityBase;
-import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonDiscriminator;
 import org.bson.codecs.pojo.annotations.BsonId;
@@ -13,11 +11,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.Date;
 import java.util.List;
 
-@MongoEntity(database = "matrix", collection = "devices")
 @BsonDiscriminator
 @RegisterForReflection
 @Schema(description = "设备")
-public class DeviceEntity extends ReactivePanacheMongoEntityBase {
+public class DeviceEntity {
 
     @BsonId
     @Schema(description = "设备ID", required = true)

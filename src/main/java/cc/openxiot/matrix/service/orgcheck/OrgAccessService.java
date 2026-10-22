@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.service.orgcheck;
 
+import cc.openxiot.account.db.AccountUserRepository;
 import cc.openxiot.account.user.organization.UserOrganization;
 import cc.openxiot.account.user.organization.member.Member;
 import cc.openxiot.account.user.organization.member.MemberRole;
@@ -9,6 +10,7 @@ import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
 import cc.openxiot.matrix.db.space.access.SpaceAccessType;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.util.List;
 
@@ -34,16 +36,19 @@ import java.util.List;
 @ApplicationScoped
 public class OrgAccessService {
 
+    @Inject
+    AccountUserRepository accountUserRepository;
+
     /**
      * 取组织（含 members）。
      *
      * <p>{@code UserOrganization} 是 matrix 侧对 account 库 {@code user-organizations} 集合的
-     * 投影，查它走 Panache 的静态方法。测试进程不连库（{@code quarkus.mongodb.devservices.enabled=false}），
+     * 投影。测试进程不连库（{@code quarkus.mongodb.devservices.enabled=false}），
      * 所以留这一个 {@code protected} 的口子让 {@code OrgAccessServiceTest} 顶掉 —— 那个测试因此
      * 不需要 Mongo，是纯内存的。改签名前先看那个测试。</p>
      */
     protected Uni<UserOrganization> findOrg(String orgId) {
-        return UserOrganization.findById(orgId);
+        return accountUserRepository.findOrgById(orgId);
     }
 
     /** 组织成员（不分角色）。 */

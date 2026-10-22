@@ -2,12 +2,12 @@ package cc.openxiot.matrix.db.modbus.service;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.List;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * Modbus 服务：把一条 Modbus 点表映射成一组可直接调用的「方法」。
@@ -19,10 +19,14 @@ import java.util.List;
  * 主键 {@code _id} 由 Panache 生成 ObjectId，对外（URL / JSON / invoke 请求体）一律以十六进制字符串呈现；
  * 持久化经 {@link ModbusServiceRepository}。</p>
  */
-@MongoEntity(database = "modbus", collection = "services")
 @RegisterForReflection
 @Schema(description = "Modbus 服务（将点表映射成可调用的方法集合）")
-public class ModbusService extends ReactivePanacheMongoEntity {
+public class ModbusService {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     /**
      * 定义格式版本号：当前只认 2。

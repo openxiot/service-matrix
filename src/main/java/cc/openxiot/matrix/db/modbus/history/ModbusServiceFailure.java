@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.db.modbus.history;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.reactive.ReactivePanacheMongoEntity;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import java.util.Date;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.types.ObjectId;
 
 /**
  * 一次 function 执行失败的记录（库 {@code modbus}、集合 {@code service-failures}）。
@@ -29,10 +29,14 @@ import java.util.Date;
  * 是为了将来枚举增删时老文档还读得出来（与 {@code SpaceEntity.type}、
  * {@code ModbusPollingResponseField.format} 同口径）。</p>
  */
-@MongoEntity(database = "modbus", collection = "service-failures")
 @RegisterForReflection
 @Schema(description = "Modbus 服务的一次 function 执行失败记录")
-public class ModbusServiceFailure extends ReactivePanacheMongoEntity {
+public class ModbusServiceFailure {
+
+    @BsonId
+    @Schema(description = "主键（MongoDB ObjectId）", required = false)
+    public ObjectId id;
+
 
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
