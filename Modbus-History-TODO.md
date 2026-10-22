@@ -5,7 +5,7 @@
 ## 第一步：落库规则与存储层（已完成）
 
 - [x] `ModbusHistoryPolicy`：变位 / 死区 / 保活打点的纯判定（逐字段），无数据库依赖，可单测。
-- [x] `ModbusServiceShadow`：当前值 + 比对基准 + 故障态（`lastError` / `errorAt`），按 function 一条。
+- [x] `ModbusServiceLastPolling`：当前值 + 比对基准 + 故障态（`lastError` / `errorAt`），按 function 一条。
 - [x] `ModbusServiceHistory`：变化日志，按 field 一条。
 - [x] `ModbusServiceFailure`：执行失败记录，按 function 一条，**同一故障只落一条**。
       失败原因拆成 `type` + `remoteCode` + `message`（前端按类型聚合，见下条）。
@@ -39,7 +39,7 @@
 
 ## 第二步：读取接口（已完成）
 
-- [x] `ModbusServiceShadowCodec` / `ModbusServiceHistoryCodec` / `ModbusServiceFailureCodec`。
+- [x] `ModbusServiceLastPollingCodec` / `ModbusServiceHistoryCodec` / `ModbusServiceFailureCodec`。
       最后一个是双边契约里少见的「聚合由服务端做」：`summary` 是**这批 `items`** 的
       `byType` / `byRemoteCode`（条数降序、条数相同按键升序），前端不必再排。
 - [x] **当前值接口** `GET /matrix/v1/modbus/history/current/{spaceId}/{serviceId}`：按服务列出影子 ——
@@ -104,7 +104,7 @@
       按当前定义清掉不再存在的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
 
 落实位置（2026-09-13）：`db/modbus/poll/`（`ModbusPoll` + 仓储 + Codec）与 `api/modbus/poll/`
-（纯函数件 `ModbusPollPlan` / `ModbusPollSchedule` / `ModbusShadowPlan`、`ModbusPollWheel` 时间轮、
+（纯函数件 `ModbusPollPlan` / `ModbusPollSchedule` / `ModbusLastPollingPlan`、`ModbusPollWheel` 时间轮、
 `ModbusPollBaselines` 内存基准、`ModbusPollReconciler` 对账、`ModbusPollScheduler` 调度循环、
 `ModbusPollResource` 查询接口）；`ModbusHistoryService` 加了一对「基准由调用方给」的入口。
 纯单测 66 个（schedule / plan / wheel / baselines / shadowPlan 五个新文件 + 两个既有文件扩充）全绿；
@@ -123,7 +123,7 @@
       **保留的口径**：查询与写入**恒带 `serviceId`** —— 现有复合索引全部以它打头，
       将来换存储或自建分片时它决定迁移成本。若是哪天换成 RU 版 Mongo API 或自建 MongoDB，
       「数据进去之前定分区键」会重新变成硬约束。
-- [x] ~~同上，`service-shadows` 与 `polls` 也按 `/serviceId`~~ —— 同上，随上一条一并结论化
+- [x] ~~同上，`service-last-polling` 与 `polls` 也按 `/serviceId`~~ —— 同上，随上一条一并结论化
       （`polls` 是纯派生数据、清空重来无害，真要动口径重建即可，同样不存在「不可改」的约束）。
 - [x] **保留策略**（2026-09-13 落地，见 `Modbus-History.md` 第六节）：
       `service-histories` 在 `at` 上挂集合级 TTL 索引，保留 **90 天**

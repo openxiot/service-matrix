@@ -7,8 +7,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import io.quarkus.runtime.StartupEvent;
@@ -50,7 +50,7 @@ public class ModbusHistoryService {
     private static final int MAX_MESSAGE_LENGTH = 500;
 
     @Inject
-    ModbusServiceShadowRepository shadowRepo;
+    ModbusServiceLastPollingRepository shadowRepo;
 
     @Inject
     ModbusServiceHistoryRepository historyRepo;
@@ -113,7 +113,7 @@ public class ModbusHistoryService {
      * @return 新的比对基准（= 写后的影子文档）；null 表示**这次什么都没写、没有新基准**，
      *         调用方据此保留它原有的基准而不是清空（没写就说明库里的状态没变，旧基准仍然有效）
      */
-    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusPolling function, JsonObject values) {
+    public Uni<ModbusServiceLastPolling> record(ModbusService service, ModbusPolling function, JsonObject values) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
@@ -131,8 +131,8 @@ public class ModbusHistoryService {
      * （真·首次采集，会 {@code insert}）—— 而不是「我不知道」。拿不准就传库里读出来的那份；
      * 轮询器的判定见 {@code ModbusPollBaselines.usable}：故障态与没缓存都回退到读库。</p>
      */
-    public Uni<ModbusServiceShadow> record(ModbusService service, ModbusPolling function,
-                                           JsonObject values, ModbusServiceShadow baseline) {
+    public Uni<ModbusServiceLastPolling> record(ModbusService service, ModbusPolling function,
+                                           JsonObject values, ModbusServiceLastPolling baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
@@ -142,7 +142,7 @@ public class ModbusHistoryService {
                 : new LinkedHashMap<>(values.getMap());
         String serviceId = service.id.toHexString();
         Date now = new Date();
-        ModbusServiceShadow shadow = baseline;
+        ModbusServiceLastPolling shadow = baseline;
         boolean failedBefore = shadow != null && shadow.lastError != null;
 
         if (sample.isEmpty()) {
@@ -151,7 +151,7 @@ public class ModbusHistoryService {
             if (!failedBefore) {
                 return Uni.createFrom().nullItem();
             }
-            ModbusServiceShadow cleared = clearedShadow(shadow, serviceId, function.index);
+            ModbusServiceLastPolling cleared = clearedShadow(shadow, serviceId, function.index);
             return shadowRepo.replace(cleared).replaceWith(cleared);
         }
 
@@ -169,7 +169,7 @@ public class ModbusHistoryService {
         // 先追加历史，成功后再动影子：中间失败则影子停在旧值，下次采集仍判为「变了」而重试。
         // 影子的写必须在 chain 之内构造 —— 放外面（哪怕 Uni 是懒的）也等于把「先历史后影子」
         // 这条约定寄托在 Mutiny 的懒执行上，读代码的人和测试都看不出来。
-        ModbusServiceShadow next = shadowOf(shadow, serviceId, function.index, sample, now, null, null);
+        ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index, sample, now, null, null);
         return historyRepo.insertAll(rows(serviceId, function.index, sample, decision, now))
                 .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
                 .replaceWith(next);
@@ -183,7 +183,7 @@ public class ModbusHistoryService {
      *
      * @return 新的基准（这里就是故障态本身）；null = 没有写、基准不变
      */
-    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusPolling function,
+    public Uni<ModbusServiceLastPolling> recordFailure(ModbusService service, ModbusPolling function,
                                                   Throwable error) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -205,15 +205,15 @@ public class ModbusHistoryService {
      * {@code ModbusPollBaselines.usable} 会判它不可用 → 下一次采集回退到读库。
      * 「故障态不吃内存基准」这条口径就是这样自然成立的，不需要额外的失效逻辑。</p>
      */
-    public Uni<ModbusServiceShadow> recordFailure(ModbusService service, ModbusPolling function,
-                                                  Throwable error, ModbusServiceShadow baseline) {
+    public Uni<ModbusServiceLastPolling> recordFailure(ModbusService service, ModbusPolling function,
+                                                  Throwable error, ModbusServiceLastPolling baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
         String serviceId = service.id.toHexString();
         String message = messageOf(error);
         Date now = new Date();
-        ModbusServiceShadow shadow = baseline;
+        ModbusServiceLastPolling shadow = baseline;
 
         if (shadow != null && message.equals(shadow.lastError)) {
             // 同一个故障还在持续（DTU 离线是最典型的形态）：不落重复记录。
@@ -222,7 +222,7 @@ public class ModbusHistoryService {
             // 反过来 message 相同则分类必然相同 —— 用 message 是更严的那个键。
             return Uni.createFrom().nullItem();
         }
-        ModbusServiceShadow next = shadowOf(shadow, serviceId, function.index,
+        ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
                 shadow == null ? null : shadow.fields,
                 shadow == null ? null : shadow.recordedAt,
                 message, now);
@@ -333,10 +333,10 @@ public class ModbusHistoryService {
      * <p>三个调用点的差别只在这几个入参上 —— 成功传新样本、清掉故障态；失败传上一次成功的值与时刻、
      * 换上新故障。写成一个构造器是为了让「哪些字段活着传到下一次」一眼可见。</p>
      */
-    private static ModbusServiceShadow shadowOf(ModbusServiceShadow previous, String serviceId, Integer pollingIndex,
+    private static ModbusServiceLastPolling shadowOf(ModbusServiceLastPolling previous, String serviceId, Integer pollingIndex,
                                                 Map<String, Object> fields, Date recordedAt,
                                                 String lastError, Date errorAt) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
         if (previous != null) {
             shadow.id = previous.id;
         }
@@ -350,7 +350,7 @@ public class ModbusHistoryService {
     }
 
     /** 调用成功、但没有读值（写方法）时清故障态：值与时刻原样保留。 */
-    private static ModbusServiceShadow clearedShadow(ModbusServiceShadow previous, String serviceId,
+    private static ModbusServiceLastPolling clearedShadow(ModbusServiceLastPolling previous, String serviceId,
                                                      Integer pollingIndex) {
         return shadowOf(previous, serviceId, pollingIndex,
                 previous.fields, previous.recordedAt, null, null);

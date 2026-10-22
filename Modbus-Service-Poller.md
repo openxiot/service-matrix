@@ -4,7 +4,7 @@
 采到的值**落到哪里**（影子 + 历史）。这份文档回答剩下的那个问题：**谁按时去跑，怎么保证不重复、不丢、不把总线打死。**
 
 > 文档形态对齐 `Modbus-History.md`（设计）+ `Modbus-History-TODO.md`（计划）：本文只讲设计，落地清单在
-> `Modbus-History-TODO.md` 第三步。设计讨论发生在实现 `ModbusServiceShadow` 之前那一轮，这里落成文字，
+> `Modbus-History-TODO.md` 第三步。设计讨论发生在实现 `ModbusServiceLastPolling` 之前那一轮，这里落成文字，
 > 并补上当时没定的几处（见第九节）。
 
 ## 一、形态：同一份代码，两种部署
@@ -120,7 +120,7 @@ api:    每次 invoke 都读库（N 副本，各副本的内存基准会漂）
 落地后的三条口径（与上文的差异，以这三条为准）：
 
 * 4 参入口是**唯一实现**，3 参入口就是「读库取基准 → 委托 4 参」的一行委托 ——
-  两个入口都**返回新基准**（`Uni<ModbusServiceShadow>`），null = 这次什么都没写、基准不变。
+  两个入口都**返回新基准**（`Uni<ModbusServiceLastPolling>`），null = 这次什么都没写、基准不变。
 * 4 参入口的 `baseline` 是**权威的**：传 null 表示「库里确实没有影子」（真·首次采集，会 `insert`），
   而不是「我不知道」。拿不准就传库里读出来的那份 —— 轮询器侧的判定就是
   `ModbusPollBaselines.usable`：没缓存或缓存带故障 → 回退读库，于是上面第 4 条
@@ -306,7 +306,7 @@ modbus.polls
 5. 观测（第八节）。→ `ModbusPollResource`（`GET /matrix/v1/modbus/poll/{spaceId}`）。
 6. 影子对账：定义变更（改了 `response`、删了方法）后，按当前定义清掉影子里
    **不再存在**的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
-   → `ModbusShadowPlan` + 写入路径 / 启动全量扫。
+   → `ModbusLastPollingPlan` + 写入路径 / 启动全量扫。
 7. 之后才谈扩容（租约已经是现成的）与合并帧（要改数据模型）。
 
 两个实现时才定下来的口径（与上文正文的差异，以这两条为准）：

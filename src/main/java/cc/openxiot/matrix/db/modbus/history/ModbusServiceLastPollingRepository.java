@@ -15,16 +15,16 @@ import org.bson.types.ObjectId;
 import java.util.List;
 
 /**
- * {@link ModbusServiceShadow} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-shadows}）。
+ * {@link ModbusServiceLastPolling} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-last-polling}）。
  *
  * <p>写入只有两条路，与 {@code ModbusServiceRepository} 同口径：不存在走 {@link #insert}（主键由 Panache 生成），
  * 已存在走 {@link #replace}（带原 {@code _id} 全量替换）。不用 upsert ——
  * 调用方本来就是先读影子拿到比对基准，手里的 {@code _id} 直接复用，省掉一次 upsert 语义的边界情况。</p>
  */
 @ApplicationScoped
-public class ModbusServiceShadowRepository implements ReactivePanacheMongoRepository<ModbusServiceShadow> {
+public class ModbusServiceLastPollingRepository implements ReactivePanacheMongoRepository<ModbusServiceLastPolling> {
 
-    private ReactiveMongoCollection<ModbusServiceShadow> collection() {
+    private ReactiveMongoCollection<ModbusServiceLastPolling> collection() {
         return mongoCollection();
     }
 
@@ -40,7 +40,7 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
     }
 
     /** 取某个方法的当前值，没有则 null：既是前端要的最新值，也是下一次采集的比对基准。 */
-    public Uni<ModbusServiceShadow> find(String serviceId, Integer pollingIndex) {
+    public Uni<ModbusServiceLastPolling> find(String serviceId, Integer pollingIndex) {
         if (serviceId == null || pollingIndex == null) {
             return Uni.createFrom().nullItem();
         }
@@ -54,7 +54,7 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
      *
      * <p>只返回**有影子**的方法：没有的表示从没被调用过，与「有值但很旧」是两回事。</p>
      */
-    public Uni<List<ModbusServiceShadow>> listByServiceId(String serviceId) {
+    public Uni<List<ModbusServiceLastPolling>> listByServiceId(String serviceId) {
         if (serviceId == null || serviceId.isBlank()) {
             return Uni.createFrom().item(List.of());
         }
@@ -65,12 +65,12 @@ public class ModbusServiceShadowRepository implements ReactivePanacheMongoReposi
     }
 
     /** 新增一条（{@code _id} 由 Panache 生成并回写到 {@code shadow.id}）。 */
-    public Uni<Void> insert(ModbusServiceShadow shadow) {
+    public Uni<Void> insert(ModbusServiceLastPolling shadow) {
         return persist(shadow).replaceWithVoid();
     }
 
     /** 全量替换一条（{@code shadow.id} 必须是已落库的原值，由调用方从 {@link #find} 的结果带过来）。 */
-    public Uni<Void> replace(ModbusServiceShadow shadow) {
+    public Uni<Void> replace(ModbusServiceLastPolling shadow) {
         return collection()
                 .replaceOne(Filters.eq("_id", shadow.id), shadow)
                 .replaceWithVoid();

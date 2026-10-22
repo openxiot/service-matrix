@@ -31,8 +31,12 @@ public final class ModbusHistoryRangeCodec {
      * 是哪条曲线由调用方（HTTP 的查询参数，或看板那张卡的配置）决定 —— 而且请求里那份是**字符串**，
      * 回显它比回显解析后的值更忠实。</p>
      */
-    public static JsonObject encode(String serviceId, Integer pollingIndex, String field,
-                                    ModbusHistoryQueryService.RangeResult result) {
+    public static JsonObject encode(
+            String serviceId,
+            Integer pollingIndex,
+            String field,
+            ModbusHistoryQueryService.RangeResult result
+    ) {
         ModbusHistoryWindow.Window window = result.window();
         JsonArray points = new JsonArray();
         if (window.downsampled()) {

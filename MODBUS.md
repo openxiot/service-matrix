@@ -136,6 +136,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 | PUT | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
 | DELETE | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 删除 |
 | POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法，body `{"service": "<id>", "function": <index>, "values": {"字段名": 值}}`（`values` 只在写方法上用，见第五节） |
+| GET | `/matrix/v1/modbus/shadows/{spaceId}?serviceIds=a,b,c` | 空间成员 | **寄存器缓存网格**：一次读一个/多个服务的全部可读寄存器当前缓存值（独立资源，见 `ModbusShadowResource`/`ModbusShadowService`；`serviceIds` 缺省则该空间全取，可用逗号或重复参数） |
 | GET | `/matrix/v1/modbus/poll/{spaceId}` | 空间成员 | 该空间下服务的**轮询任务**与运行时状态（另起一段路径，见 `Modbus-Service-Poller.md` 第八节） |
 
 **权限一律按空间判，与 `DeviceResource` 同口径**：路径上的 `spaceId` 是当前项目空间（前端统一传
@@ -201,7 +202,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   调用方自己知道发了什么，成功即 200。
   父设备报错 / 帧非法 / CRC 不符 / 异常码一律 `OxResponse.error(message)`，不做部分成功。
 
-* **`invoke` 有副作用：顺带落历史**。成功按落库规则写 `service-histories` 并更新 `service-shadows`，
+* **`invoke` 有副作用：顺带落历史**。成功按落库规则写 `service-histories` 并更新 `service-last-polling`，
   失败写 `service-failures`（见 `Modbus-History.md`）。**手动调用一次 = 记一次**，
   与轮询器走的是同一个入口 —— 所以「只想看一眼当前值」的调用也会在曲线上留一个点。
   记录写失败既不改写成功响应、也不改写失败响应：值已经拿到了，历史只是副作用。
@@ -310,6 +311,16 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     两边各写一份迟早漂移。
 
 ## 八、变更记录
+
+### 2026-10-22
+
+* **新增独立的「寄存器缓存网格」读端点** `GET /matrix/v1/modbus/shadows/{spaceId}?serviceIds=...`：
+  独立资源 `ModbusShadowResource` / 独立 `ModbusShadowService`（不在 `/modbus/service` 下、不复用
+  `ModbusServiceService` 的调用逻辑），把点表可读寄存器 × `service-last-polling` 快照归并成按寄存器的
+  网格，一次看整张点表缓存实况（含 `no-data`）。`serviceIds` 支持逗号或重复参数，缺省则该空间全取。
+* **当前值改名对齐语义**：`ModbusServiceShadow` → `ModbusServiceLastPolling`、集合
+  `service-shadows` → `service-last-polling`（直接改名不迁移），相应计划类 `ModbusShadowPlan` →
+  `ModbusLastPollingPlan`。详见 `Modbus-History.md` 九、2026-10-22。
 
 ### 2026-09-23
 
@@ -658,7 +669,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   前端 `device.service.editor.ts` 的常量与 `ModbusService.ts` 的 JSDoc，六处同步。
   （本节下方的历史叙述保留当时的 3 秒，不回改。）
 * **补充说明：`invoke` 会顺带落历史**（第五节）：成功写 `service-histories` 并更新
-  `service-shadows`，失败写 `service-failures` —— 手动调用一次 = 记一次，
+  `service-last-polling`，失败写 `service-failures` —— 手动调用一次 = 记一次，
   与轮询器同一个入口。记录写失败既不改写成功响应、也不改写失败响应。
 * **轮询器落地**（`Modbus-History-TODO.md` 第三步全部；设计见 `Modbus-Service-Poller.md`）：
   定义里的 `interval` 从「一份没有执行者的配置」变成真有人按时去调。**同一个 jar 双部署**
@@ -687,11 +698,11 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * **观测**：`lastRunAt` / `lastStatus`（只有 `OK` / `FAILED`，**跳过不是状态**）/ `lastError` /
     `failCount` 落库，查询接口 `GET /matrix/v1/modbus/poll/{spaceId}`（空间成员）连内存指标一起给；
     心跳**不做成逐次写库**，只在内存里记、由接口读出去。
-  * **影子对账**（`ModbusShadowPlan`）：定义里删掉的 `pollingIndex` 是孤儿、必须主动删
+  * **影子对账**（`ModbusLastPollingPlan`）：定义里删掉的 `pollingIndex` 是孤儿、必须主动删
     （否则当前值接口一直显示一个不存在的点位）；`response` 里删掉的字段键写路径顺手剪掉即可
     （`record` 整体替换 `fields`，最坏拖到保活周期就自愈）。
   * 测试：新增 66 个纯单测（`ModbusPollScheduleTest` / `ModbusPollPlanTest` / `ModbusPollWheelTest` /
-    `ModbusPollBaselinesTest` / `ModbusShadowPlanTest` + 两个既有测试文件的扩充），另加
+    `ModbusPollBaselinesTest` / `ModbusLastPollingPlanTest` + 两个既有测试文件的扩充），另加
     `ModbusPollResourceTest`（`@QuarkusTest`，查询接口 + 鉴权 + 空运行时状态，5 例）。
     **`@QuarkusTest` 本机是可以跑的**：只要连库的东西都 `@InjectMock` 掉（`DeviceResourceTest` /
     `ModbusConfigResourceTest` / `ModbusServiceResourceTest` / `ModbusPollResourceTest` 四个共 49 例全绿）；

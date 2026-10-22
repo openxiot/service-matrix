@@ -46,7 +46,7 @@ public final class ModbusHistoryPolicy {
     /**
      * 判定一次采集。
      *
-     * @param baseline        上一次落库的「字段 → 值」（{@code ModbusServiceShadow.fields}）；没有影子时传 null
+     * @param baseline        上一次落库的「字段 → 值」（{@code ModbusServiceLastPolling.fields}）；没有影子时传 null
      * @param recordedAt      上一次落库时间；没有影子时传 null
      * @param values          本次采集的「字段 → 值」
      * @param now             本次采集时间

@@ -3,7 +3,7 @@ package cc.openxiot.matrix.db.modbus.history;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Bucket;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceFailureCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceLastPollingCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -129,7 +129,7 @@ class ModbusHistoryCodecTest {
     void shadowKeepsStaleValuesAndOmitsAbsentError() {
         // 有故障时 fields / recordedAt 照旧在（那是最后一次成功的值与时刻），
         // 前端靠 errorAt 判断「这个值从哪一刻起不再更新」
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
         shadow.pollingIndex = 1;
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("进水温度", 61.5);
@@ -138,7 +138,7 @@ class ModbusHistoryCodecTest {
         shadow.lastError = "no response";
         shadow.errorAt = new Date(T0 + 60_000);
 
-        JsonObject failed = ModbusServiceShadowCodec.encode(shadow);
+        JsonObject failed = ModbusServiceLastPollingCodec.encode(shadow);
         assertEquals(61.5, failed.getJsonObject("fields").getDouble("进水温度"));
         assertEquals(T0, failed.getLong("recordedAt"));
         assertEquals("no response", failed.getString("lastError"));
@@ -146,7 +146,7 @@ class ModbusHistoryCodecTest {
 
         shadow.lastError = null;
         shadow.errorAt = null;
-        JsonObject healthy = ModbusServiceShadowCodec.encode(shadow);
+        JsonObject healthy = ModbusServiceLastPollingCodec.encode(shadow);
         assertFalse(healthy.containsKey("lastError"));
         assertFalse(healthy.containsKey("errorAt"));
     }

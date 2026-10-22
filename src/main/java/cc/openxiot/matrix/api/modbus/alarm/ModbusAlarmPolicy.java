@@ -37,7 +37,7 @@ import java.util.TreeSet;
  *
  * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, pollingIndex, field)} 上有未恢复的告警
  * 就是「开着」。判定只需要这一张集合，它由告警表自己查出来
- * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceShadow、也不用 poller 的内存基准）。</p>
+ * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceLastPolling、也不用 poller 的内存基准）。</p>
  */
 public final class ModbusAlarmPolicy {
 

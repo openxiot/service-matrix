@@ -6,7 +6,7 @@ import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceFailureCodec;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceLastPollingCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -25,7 +25,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 import java.util.Date;
-import java.util.List;
 
 /**
  * Modbus 采集历史的读取（见 Modbus-History.md 第五节）：当前值、区间曲线、故障列表。
@@ -82,9 +81,11 @@ public class ModbusHistoryResource extends AbstractResource {
         logger.infov("get modbus current values, space: {0}, service: {1}", spaceId, serviceId);
         return requireSpaceMember(spaceId)
                 .chain(ignored -> queryService.currentValues(serviceId))
-                .map(shadows -> OxResponse.ok(new JsonObject()
-                        .put("serviceId", serviceId)
-                        .put("functions", ModbusServiceShadowCodec.encode(shadows))))
+                .map(shadows -> OxResponse.ok(
+                        new JsonObject()
+                                .put("serviceId", serviceId)
+                                .put("functions", ModbusServiceLastPollingCodec.encode(shadows)))
+                )
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }

@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -77,7 +77,7 @@ public class ModbusPollReconciler {
     ModbusPollRepository pollRepo;
 
     @Inject
-    ModbusServiceShadowRepository shadowRepo;
+    ModbusServiceLastPollingRepository shadowRepo;
 
     @Inject
     SpaceRepository spaceRepo;
@@ -225,14 +225,14 @@ public class ModbusPollReconciler {
         }
         String serviceId = service.id.toHexString();
         return shadowRepo.listByServiceId(serviceId).chain(shadows -> {
-            List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
+            List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, shadows);
             if (fixes.isEmpty()) {
                 return Uni.createFrom().voidItem();
             }
             List<Uni<Void>> ops = new ArrayList<>();
             List<ObjectId> orphans = new ArrayList<>();
             int trimmed = 0;
-            for (ModbusShadowPlan.Fix fix : fixes) {
+            for (ModbusLastPollingPlan.Fix fix : fixes) {
                 if (fix.orphan()) {
                     orphans.add(fix.shadow().id);
                     continue;

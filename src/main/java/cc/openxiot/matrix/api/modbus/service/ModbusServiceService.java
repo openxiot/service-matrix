@@ -12,7 +12,7 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
@@ -252,6 +252,7 @@ public class ModbusServiceService {
                                 .replaceWith(count)));
     }
 
+    
     // ===== 方法调用 =====
 
     /**
@@ -270,8 +271,12 @@ public class ModbusServiceService {
      *
      * @param values 写方法的写入值（字段名 → 原始值），可为 null；读方法必须为 null
      */
-    public Uni<JsonObject> invoke(String ownerId, String serviceId, Integer pollingIndex,
-                                  Map<String, Object> values) {
+    public Uni<JsonObject> invoke(
+            String ownerId,
+            String serviceId,
+            Integer pollingIndex,
+            Map<String, Object> values
+    ) {
         return invoke(ownerId, serviceId, pollingIndex, values, null);
     }
 
@@ -286,13 +291,22 @@ public class ModbusServiceService {
      * <p>没有 {@code values}：轮询只有读方法（写方法一律不许开轮询，见
      * {@link ModbusServiceValidator}），写请求没有可轮询的东西。</p>
      */
-    public Uni<JsonObject> invokePolled(String ownerId, String serviceId, Integer pollingIndex,
-                                        ModbusPollBaselines baselines) {
+    public Uni<JsonObject> invokePolled(
+            String ownerId,
+            String serviceId,
+            Integer pollingIndex,
+            ModbusPollBaselines baselines
+    ) {
         return invoke(ownerId, serviceId, pollingIndex, null, baselines);
     }
 
-    private Uni<JsonObject> invoke(String ownerId, String serviceId, Integer pollingIndex,
-                                   Map<String, Object> values, ModbusPollBaselines baselines) {
+    private Uni<JsonObject> invoke(
+            String ownerId,
+            String serviceId,
+            Integer pollingIndex,
+            Map<String, Object> values,
+            ModbusPollBaselines baselines
+    ) {
         String err = checkId(serviceId);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -307,8 +321,13 @@ public class ModbusServiceService {
                         : invokeFunction(ownerId, service, pollingIndex, values, baselines));
     }
 
-    private Uni<JsonObject> invokeFunction(String ownerId, ModbusService service, int pollingIndex,
-                                           Map<String, Object> values, ModbusPollBaselines baselines) {
+    private Uni<JsonObject> invokeFunction(
+            String ownerId,
+            ModbusService service,
+            int pollingIndex,
+            Map<String, Object> values,
+            ModbusPollBaselines baselines
+    ) {
         ModbusPolling function = findFunction(service, pollingIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
@@ -336,8 +355,13 @@ public class ModbusServiceService {
      * <p>每个失败点都抛带分类的 {@link ModbusInvokeException}：分类只有在这里定得准
      * （是链路失败、父设备报错还是无应答，各自的排查方向完全不同），见 {@link ModbusFailureType}。</p>
      */
-    private Uni<JsonObject> execute(String ownerId, ModbusService service, ModbusPolling function,
-                                    Map<String, Object> values, ModbusPollBaselines baselines) {
+    private Uni<JsonObject> execute(
+            String ownerId,
+            ModbusService service,
+            ModbusPolling function,
+            Map<String, Object> values,
+            ModbusPollBaselines baselines
+    ) {
         String coordinateErr = ModbusServiceValidator.checkDevice(service.device);
         if (coordinateErr != null) {
             return Uni.createFrom().failure(
@@ -382,8 +406,11 @@ public class ModbusServiceService {
      * {@code values}（缺省回落字段的缺省值）。读写两条路走同一个
      * {@link ModbusFrameCodec#encodeRequest(ModbusPollingRequest, Map)}，不再需要前端算好一整串帧。</p>
      */
-    private static String requestFrame(ModbusService service, ModbusPolling function,
-                                       Map<String, Object> values) {
+    private static String requestFrame(
+            ModbusService service,
+            ModbusPolling function,
+            Map<String, Object> values
+    ) {
         DeviceOn device = service.device;
         ActionOperation action = new ActionOperation(new ActionID(device.did, device.siid, device.aiid));
         String frame = ModbusFrameCodec.encodeRequest(function.request, values);
@@ -417,14 +444,18 @@ public class ModbusServiceService {
      * <p>单副本前提下才这么省：api 副本（N 个）上这个缓存永远是空的，所以手动 invoke 自然就是每次读库，
      * 不需要额外判断「我在哪个副本上」。</p>
      */
-    private Uni<Void> recordHistory(ModbusService service, ModbusPolling function, JsonObject values,
-                                    ModbusPollBaselines baselines) {
+    private Uni<Void> recordHistory(
+            ModbusService service,
+            ModbusPolling function,
+            JsonObject values,
+            ModbusPollBaselines baselines
+    ) {
         ModbusPollKey key = baselines == null
                 ? null
                 : new ModbusPollKey(service.id.toHexString(), function.index);
-        ModbusServiceShadow cached = baselines == null ? null : baselines.get(key);
+        ModbusServiceLastPolling cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusServiceShadow> recorded = cached != null
+        Uni<ModbusServiceLastPolling> recorded = cached != null
                 ? historyService.record(service, function, values, cached)
                 : historyService.record(service, function, values);
         return recorded
@@ -469,14 +500,18 @@ public class ModbusServiceService {
      * 缓存的 {@code lastError} 可能已经被 api 副本上的手动调用清掉了，拿它当基准会把一次新的同类故障
      * 并进上一次的账上（见 {@code ModbusPollBaselines.usable}）。</p>
      */
-    private Uni<Void> recordFailure(ModbusService service, ModbusPolling function, Throwable error,
-                                    ModbusPollBaselines baselines) {
+    private Uni<Void> recordFailure(
+            ModbusService service,
+            ModbusPolling function,
+            Throwable error,
+            ModbusPollBaselines baselines
+    ) {
         ModbusPollKey key = baselines == null
                 ? null
                 : new ModbusPollKey(service.id.toHexString(), function.index);
-        ModbusServiceShadow cached = baselines == null ? null : baselines.get(key);
+        ModbusServiceLastPolling cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusServiceShadow> recorded = cached != null
+        Uni<ModbusServiceLastPolling> recorded = cached != null
                 ? historyService.recordFailure(service, function, error, cached)
                 : historyService.recordFailure(service, function, error);
         return recorded
@@ -498,9 +533,7 @@ public class ModbusServiceService {
      */
     private Uni<Void> purgeHistory(List<String> serviceIds) {
         return historyService.purge(serviceIds)
-                .onFailure().invoke(e -> logger.warnv(
-                        "purge modbus history failed, services: {0}, error: {1}",
-                        serviceIds, e.getMessage()))
+                .onFailure().invoke(e -> logger.warnv("purge modbus history failed, services: {0}, error: {1}", serviceIds, e.getMessage()))
                 .onFailure().recoverWithNull();
     }
 

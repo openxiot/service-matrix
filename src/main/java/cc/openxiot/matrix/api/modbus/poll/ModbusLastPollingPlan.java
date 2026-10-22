@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 影子（{@code service-shadows}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
+ * 影子（{@code service-last-polling}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
  *
  * <p>两种「陈旧」的代价与急迫性完全不同，所以处置也不同：</p>
  *
@@ -32,9 +32,9 @@ import java.util.TreeSet;
  * **不进周期对账** —— 那要扫「服务 × 影子」，而影子的陈旧只可能来自定义变更，
  * 定义变更必经写入路径；直接改库的情况由启动那次兜住。</p>
  */
-public final class ModbusShadowPlan {
+public final class ModbusLastPollingPlan {
 
-    private ModbusShadowPlan() {
+    private ModbusLastPollingPlan() {
     }
 
     /**
@@ -43,7 +43,7 @@ public final class ModbusShadowPlan {
      * @param staleFields 定义里已经没有的字段键（{@code orphan} 为 true 时无意义）
      * @param orphan      整个方法已从定义里删掉 —— 整条影子都要删
      */
-    public record Fix(ModbusServiceShadow shadow, List<String> staleFields, boolean orphan) {
+    public record Fix(ModbusServiceLastPolling shadow, List<String> staleFields, boolean orphan) {
     }
 
     /**
@@ -83,7 +83,7 @@ public final class ModbusShadowPlan {
      * <p>写方法（{@code response} 为空）的影子**不算孤儿**：它确实会被调用（手动 invoke 写方法），
      * 影子也就该存在，只是没有字段而已。</p>
      */
-    public static List<Fix> plan(ModbusService service, List<ModbusServiceShadow> shadows) {
+    public static List<Fix> plan(ModbusService service, List<ModbusServiceLastPolling> shadows) {
         List<Fix> fixes = new ArrayList<>();
         if (service == null || service.id == null || service.functions == null || shadows == null) {
             return fixes;
@@ -97,7 +97,7 @@ public final class ModbusShadowPlan {
         }
 
         String serviceId = service.id.toHexString();
-        for (ModbusServiceShadow shadow : shadows) {
+        for (ModbusServiceLastPolling shadow : shadows) {
             if (shadow == null || shadow.id == null || shadow.pollingIndex == null) {
                 continue;
             }

@@ -236,7 +236,7 @@ ModbusPollingResponseFieldBit.alarms   : List<ModbusPollingResponseFieldAlarm>
 `ModbusAlarmServiceTest.switchingOffTheLastAlarmLeavesTheGateClosedOnPurpose` 钉住的是
 **「闸门在前、对账在后」这个分工**，别让人以为是漏判。
 
-**为什么不放进 `ModbusServiceShadow`** —— 是**正确性**理由，不是成本理由：影子是**全量替换**写的
+**为什么不放进 `ModbusServiceLastPolling`** —— 是**正确性**理由，不是成本理由：影子是**全量替换**写的
 （`ModbusHistoryService` 里 `shadowRepo.replace(next)`），而这一带**没有任何事务**。影子按
 `(serviceId, pollingIndex)` 一条，告警态是按字段的；让告警判定成为该文档的**第二个写者**，
 一次并发就会把 `fields` / `recordedAt` / `lastError` 或告警态悄悄覆盖掉 —— 而「先明细后影子」

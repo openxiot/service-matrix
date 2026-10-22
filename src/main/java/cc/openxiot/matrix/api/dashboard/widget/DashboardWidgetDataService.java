@@ -8,7 +8,7 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
@@ -387,10 +387,10 @@ public class DashboardWidgetDataService {
     }
 
     /** 影子按 {@code pollingIndex} 索引（一个服务下每个方法至多一条影子）。 */
-    private static Map<Integer, ModbusServiceShadow> shadowsByFunction(List<ModbusServiceShadow> shadows) {
-        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
+    private static Map<Integer, ModbusServiceLastPolling> shadowsByFunction(List<ModbusServiceLastPolling> shadows) {
+        Map<Integer, ModbusServiceLastPolling> byIndex = new HashMap<>();
         if (shadows != null) {
-            for (ModbusServiceShadow shadow : shadows) {
+            for (ModbusServiceLastPolling shadow : shadows) {
                 if (shadow != null && shadow.pollingIndex != null) {
                     byIndex.put(shadow.pollingIndex, shadow);
                 }
@@ -734,7 +734,7 @@ public class DashboardWidgetDataService {
      * 同一个 function（§5.7），所以时间只有一处。</p>
      *
      * <p>{@code error} / {@code errorAt} 与值**可以同时存在**：影子里的 {@code fields} /
-     * {@code recordedAt} 是最后一次**成功**的采集，失败时一律不动（见 {@code ModbusServiceShadow}
+     * {@code recordedAt} 是最后一次**成功**的采集，失败时一律不动（见 {@code ModbusServiceLastPolling}
      * 的说明）。也就是说有 {@code lastError} 时值仍在，只是从那一刻起没再更新过。
      * 两个都下发、由前端并排显示 —— 服务端不做「失败就不给值」的取舍，那会丢掉最后的已知读数。</p>
      *
@@ -747,7 +747,7 @@ public class DashboardWidgetDataService {
         if (pollingIndex == null) {
             return null;
         }
-        ModbusServiceShadow shadow = fetched.shadows().get(pollingIndex);
+        ModbusServiceLastPolling shadow = fetched.shadows().get(pollingIndex);
         JsonObject data = new JsonObject().put("pollingIndex", pollingIndex);
         if (shadow == null) {
             return data;
@@ -989,7 +989,7 @@ public class DashboardWidgetDataService {
      * <p>定义与影子一起取：定义用来产出每个字段的 {@code unit} / {@code bit}，两者缺一个卡片
      * 都画不出来，分两次取只会多一个中间状态。</p>
      */
-    private record ServiceFetched(Map<Integer, ModbusServiceShadow> shadows, ModbusService service,
+    private record ServiceFetched(Map<Integer, ModbusServiceLastPolling> shadows, ModbusService service,
                                   String error) {
     }
 

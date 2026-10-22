@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.db.modbus.history.codec;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
 
 /**
- * {@link ModbusServiceShadow} → JSON（当前值接口用）。
+ * {@link ModbusServiceLastPolling} → JSON（当前值接口用）。
  *
  * <p>只出不进：影子是采集写进去的派生状态，不由请求体决定，所以没有 decode。</p>
  *
@@ -16,12 +16,12 @@ import java.util.List;
  * 注意 {@code fields} / {@code recordedAt} 是**最后一次成功**采集的值与时刻，
  * 有故障时它们照旧存在（值是从那一刻起就不再更新的那个值），所以要靠 {@code errorAt} 判断陈旧程度。</p>
  */
-public final class ModbusServiceShadowCodec {
+public final class ModbusServiceLastPollingCodec {
 
-    private ModbusServiceShadowCodec() {
+    private ModbusServiceLastPollingCodec() {
     }
 
-    public static JsonObject encode(ModbusServiceShadow shadow) {
+    public static JsonObject encode(ModbusServiceLastPolling shadow) {
         JsonObject o = new JsonObject();
         if (shadow == null) {
             return o;
@@ -45,10 +45,10 @@ public final class ModbusServiceShadowCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusServiceShadow> shadows) {
+    public static JsonArray encode(List<ModbusServiceLastPolling> shadows) {
         JsonArray arr = new JsonArray();
         if (shadows != null) {
-            for (ModbusServiceShadow shadow : shadows) {
+            for (ModbusServiceLastPolling shadow : shadows) {
                 arr.add(encode(shadow));
             }
         }

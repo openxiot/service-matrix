@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -46,7 +46,7 @@ class ModbusPollBaselinesTest {
     @Test
     void putWithNullKeepsTheOldBaseline() {
         ModbusPollBaselines baselines = new ModbusPollBaselines();
-        ModbusServiceShadow cached = shadow(null);
+        ModbusServiceLastPolling cached = shadow(null);
         baselines.put(KEY, cached);
 
         baselines.put(KEY, null);
@@ -70,8 +70,8 @@ class ModbusPollBaselinesTest {
         baselines.forget(new ModbusPollKey("svc-9", 9));
     }
 
-    private static ModbusServiceShadow shadow(String lastError) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+    private static ModbusServiceLastPolling shadow(String lastError) {
+        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
         shadow.serviceId = "svc-1";
         shadow.pollingIndex = 1;
         shadow.fields = Map.of("temp", 21);

@@ -31,7 +31,7 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
@@ -522,7 +522,7 @@ class WidgetDataServiceTest {
 
     /**
      * 采集失败：影子里的值与时刻是**最后一次成功**的，失败时不动
-     * （见 {@code ModbusServiceShadow}），所以值与 error 同时存在 —— 两个都下发，
+     * （见 {@code ModbusServiceLastPolling}），所以值与 error 同时存在 —— 两个都下发，
      * 「最后的已知读数」不该被丢掉。
      */
     @Test
@@ -1009,7 +1009,7 @@ class WidgetDataServiceTest {
                 "pollingIndex", pollingIndex, "fields", fields));
     }
 
-    private void stubService(ModbusServiceShadow shadow, ModbusService definition) {
+    private void stubService(ModbusServiceLastPolling shadow, ModbusService definition) {
         when(historyQueryService.currentValues(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(shadow == null ? List.of() : List.of(shadow)));
         when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
@@ -1041,9 +1041,9 @@ class WidgetDataServiceTest {
     }
 
     /** 一条影子。{@code lastError} / {@code errorAt} 为 null 表示这个 function 没失败过。 */
-    private static ModbusServiceShadow shadow(int pollingIndex, Map<String, Object> fields,
+    private static ModbusServiceLastPolling shadow(int pollingIndex, Map<String, Object> fields,
                                               Date recordedAt, String lastError, Date errorAt) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
         shadow.serviceId = SERVICE_ID;
         shadow.pollingIndex = pollingIndex;
         shadow.fields = fields;

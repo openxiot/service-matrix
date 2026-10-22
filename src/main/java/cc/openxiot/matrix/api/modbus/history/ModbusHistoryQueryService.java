@@ -5,9 +5,10 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -44,7 +45,7 @@ public class ModbusHistoryQueryService {
     public static final int MAX_FAILURE_LIMIT = 1_000;
 
     @Inject
-    ModbusServiceShadowRepository shadowRepo;
+    ModbusServiceLastPollingRepository shadowRepo;
 
     @Inject
     ModbusServiceHistoryRepository historyRepo;
@@ -55,7 +56,12 @@ public class ModbusHistoryQueryService {
     /**
      * 区间查询的结果：规范化之后的入参（Resource 要原样回给前端）加上整形后的点。
      */
-    public record RangeResult(Date from, Date to, int maxPoints, ModbusHistoryWindow.Window window) {
+    public record RangeResult(
+            Date from,
+            Date to,
+            int maxPoints,
+            ModbusHistoryWindow.Window window
+    ) {
     }
 
     /**
@@ -67,8 +73,13 @@ public class ModbusHistoryQueryService {
      * @param items     明细，按时间倒序（最近的在前）
      * @param truncated true = 还有更早的故障没取回来（前端要提示「时间范围太宽」）
      */
-    public record FailureResult(Date from, Date to, int limit, List<ModbusServiceFailure> items,
-                                boolean truncated) {
+    public record FailureResult(
+            Date from,
+            Date to,
+            int limit,
+            List<ModbusServiceFailure> items,
+            boolean truncated
+    ) {
     }
 
     /**
@@ -77,7 +88,7 @@ public class ModbusHistoryQueryService {
      * <p>没有影子的方法**不会出现在结果里** —— 那表示它从没被调用过（或从没成功过），
      * 与「有值但很旧」是两回事，前端要能分开渲染。要完整的 methods 清单得读服务定义。</p>
      */
-    public Uni<List<ModbusServiceShadow>> currentValues(String serviceId) {
+    public Uni<List<ModbusServiceLastPolling>> currentValues(String serviceId) {
         if (isBlank(serviceId)) {
             return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
         }
@@ -89,8 +100,14 @@ public class ModbusHistoryQueryService {
      *
      * @param to 传 null 表示「到现在」（缺 {@code from} 没有同样明确的含义，所以 {@code from} 必填）
      */
-    public Uni<RangeResult> range(String serviceId, Integer pollingIndex, String field,
-                                  Date from, Date to, Integer maxPoints) {
+    public Uni<RangeResult> range(
+            String serviceId,
+            Integer pollingIndex,
+            String field,
+            Date from,
+            Date to,
+            Integer maxPoints
+    ) {
         Date end = to == null ? new Date() : to;
         String err = checkPoint(serviceId, pollingIndex, field);
         if (err == null) {
@@ -105,7 +122,7 @@ public class ModbusHistoryQueryService {
                 .unis(historyRepo.findCarryIn(serviceId, pollingIndex, field, from),
                         historyRepo.findRange(serviceId, pollingIndex, field, from, end, MAX_ROWS + 1))
                 .asTuple()
-                .map(tuple -> {
+                .map(Unchecked.function(tuple -> {
                     List<ModbusServiceHistory> rows = tuple.getItem2();
                     if (rows.size() > MAX_ROWS) {
                         // 多取一条就是为了在这里判「超了」：报错比返回一段被悄悄截掉的曲线诚实
@@ -114,7 +131,7 @@ public class ModbusHistoryQueryService {
                     }
                     return new RangeResult(from, end, points,
                             ModbusHistoryWindow.of(tuple.getItem1(), rows, from.getTime(), end.getTime(), points));
-                });
+                }));
     }
 
     /**
@@ -123,8 +140,14 @@ public class ModbusHistoryQueryService {
      * @param pollingIndex 传 null = 该服务下所有方法
      * @param type          传 null = 不限分类；给了就必须是 {@link ModbusFailureType} 里的名字
      */
-    public Uni<FailureResult> failures(String serviceId, Integer pollingIndex, String type,
-                                       Date from, Date to, Integer limit) {
+    public Uni<FailureResult> failures(
+            String serviceId,
+            Integer pollingIndex,
+            String type,
+            Date from,
+            Date to,
+            Integer limit
+    ) {
         if (isBlank(serviceId)) {
             return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
         }
@@ -148,8 +171,14 @@ public class ModbusHistoryQueryService {
      *
      * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */
-    public Uni<FailureResult> failuresOfServices(List<String> serviceIds, Integer pollingIndex, String type,
-                                                 Date from, Date to, Integer limit) {
+    public Uni<FailureResult> failuresOfServices(
+            List<String> serviceIds,
+            Integer pollingIndex,
+            String type,
+            Date from,
+            Date to,
+            Integer limit
+    ) {
         Date end = to == null ? new Date() : to;
         String err = checkRange(from, end);
         if (err == null) {

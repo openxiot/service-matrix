@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
@@ -62,7 +62,7 @@ class ModbusPollReconcilerTest {
     ModbusPollRepository pollRepo;
 
     @Mock
-    ModbusServiceShadowRepository shadowRepo;
+    ModbusServiceLastPollingRepository shadowRepo;
 
     @Mock
     SpaceRepository spaceRepo;

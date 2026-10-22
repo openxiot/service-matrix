@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
@@ -22,13 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusShadowPlan}：定义改了之后，影子该跟着动哪些。
+ * {@link ModbusLastPollingPlan}：定义改了之后，影子该跟着动哪些。
  *
  * <p>两件事分开看：**孤儿方法**（定义里删掉的方法）必须主动删 —— 它的影子再也不会被更新，
  * 却一直出现在当前值接口里；**废弃字段键**（{@code response} 里删掉的字段）下一次成功采集就自愈，
  * 顺手剪掉即可。</p>
  */
-class ModbusShadowPlanTest {
+class ModbusLastPollingPlanTest {
 
     private static final String SERVICE_ID = new ObjectId().toHexString();
 
@@ -36,10 +36,10 @@ class ModbusShadowPlanTest {
     @Test
     void shadowOfADeletedFunctionIsAnOrphan() {
         ModbusService service = service(function(1, field("temp")));
-        ModbusServiceShadow alive = shadow(SERVICE_ID, 1, Map.of("temp", 21));
-        ModbusServiceShadow orphan = shadow(SERVICE_ID, 2, Map.of("gone", 1));
+        ModbusServiceLastPolling alive = shadow(SERVICE_ID, 1, Map.of("temp", 21));
+        ModbusServiceLastPolling orphan = shadow(SERVICE_ID, 2, Map.of("gone", 1));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(alive, orphan));
+        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(alive, orphan));
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
@@ -51,10 +51,10 @@ class ModbusShadowPlanTest {
     @Test
     void fieldsMissingFromTheDefinitionAreStale() {
         ModbusService service = service(function(1, field("temp"), field("humidity")));
-        ModbusServiceShadow shadow = shadow(SERVICE_ID, 1,
+        ModbusServiceLastPolling shadow = shadow(SERVICE_ID, 1,
                 map("temp", 21, "humidity", 60, "removed", 1));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(shadow));
+        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(shadow));
 
         assertEquals(1, fixes.size());
         assertFalse(fixes.get(0).orphan());
@@ -67,10 +67,10 @@ class ModbusShadowPlanTest {
         ModbusPollingResponseField word = field("status");
         word.bitList = List.of(bit(0, "running"), bit(1, "fault"));
         ModbusService service = service(function(1, word));
-        ModbusServiceShadow shadow = shadow(SERVICE_ID, 1,
+        ModbusServiceLastPolling shadow = shadow(SERVICE_ID, 1,
                 map("status", 3, "running", 1, "fault", 1, "stale", 0));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(shadow));
+        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(shadow));
 
         assertEquals(1, fixes.size());
         assertEquals(List.of("stale"), fixes.get(0).staleFields());
@@ -81,29 +81,29 @@ class ModbusShadowPlanTest {
     void consistentShadowsProduceNoFix() {
         ModbusService service = service(function(1, field("temp")));
 
-        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow(SERVICE_ID, 1, Map.of("temp", 21)))).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow(SERVICE_ID, 1, Map.of()))).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow(SERVICE_ID, 1, null))).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, List.of()).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, null).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of(shadow(SERVICE_ID, 1, Map.of("temp", 21)))).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of(shadow(SERVICE_ID, 1, Map.of()))).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of(shadow(SERVICE_ID, 1, null))).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of()).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, null).isEmpty());
     }
 
     /** 写方法（空 {@code response}）的影子**不算孤儿**：它确实会被调用（手动 invoke 写方法）。 */
     @Test
     void writeFunctionsShadowIsNotAnOrphan() {
         ModbusService service = service(writeFunction(1));
-        ModbusServiceShadow shadow = shadow(SERVICE_ID, 1, null);
+        ModbusServiceLastPolling shadow = shadow(SERVICE_ID, 1, null);
 
-        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow)).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of(shadow)).isEmpty());
     }
 
     /** 写方法没有读值可记，但影子上一旦留下过字段，它们就成了「定义里没有的」—— 一样要剪掉。 */
     @Test
     void fieldsOnAWriteFunctionsShadowAreStale() {
         ModbusService service = service(writeFunction(1));
-        ModbusServiceShadow shadow = shadow(SERVICE_ID, 1, Map.of("leftover", 1));
+        ModbusServiceLastPolling shadow = shadow(SERVICE_ID, 1, Map.of("leftover", 1));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(shadow));
+        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(shadow));
 
         assertEquals(1, fixes.size());
         assertFalse(fixes.get(0).orphan());
@@ -118,32 +118,32 @@ class ModbusShadowPlanTest {
         ModbusService noId = service(function(1, field("temp")));
         noId.id = null;
 
-        List<ModbusServiceShadow> shadows = List.of(shadow(SERVICE_ID, 9, Map.of("x", 1)));
+        List<ModbusServiceLastPolling> shadows = List.of(shadow(SERVICE_ID, 9, Map.of("x", 1)));
 
-        assertTrue(ModbusShadowPlan.plan(null, shadows).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(noFunctions, shadows).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(noId, shadows).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(null, shadows).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(noFunctions, shadows).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(noId, shadows).isEmpty());
     }
 
     /** 影子是别的服务的：对账按服务做，串了就是 bug —— 不动它，也不要把它当孤儿删掉。 */
     @Test
     void shadowsOfAnotherServiceAreSkipped() {
         ModbusService service = service(function(1, field("temp")));
-        ModbusServiceShadow other = shadow(new ObjectId().toHexString(), 9, Map.of("x", 1));
+        ModbusServiceLastPolling other = shadow(new ObjectId().toHexString(), 9, Map.of("x", 1));
 
-        assertTrue(ModbusShadowPlan.plan(service, List.of(other)).isEmpty());
+        assertTrue(ModbusLastPollingPlan.plan(service, List.of(other)).isEmpty());
     }
 
     /** 多个修复按 pollingIndex 升序（调用方按顺序写库，日志里也好读）。 */
     @Test
     void fixesAreSortedByFunctionIndex() {
         ModbusService service = service(function(1, field("temp")));
-        List<ModbusServiceShadow> shadows = new ArrayList<>(List.of(
+        List<ModbusServiceLastPolling> shadows = new ArrayList<>(List.of(
                 shadow(SERVICE_ID, 3, Map.of("x", 1)),
                 shadow(SERVICE_ID, 1, map("temp", 21, "stale", 0)),
                 shadow(SERVICE_ID, 2, Map.of("y", 1))));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
+        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, shadows);
 
         assertEquals(3, fixes.size());
         assertEquals(1, fixes.get(0).shadow().pollingIndex);
@@ -160,8 +160,8 @@ class ModbusShadowPlanTest {
         word.bitList = List.of(bit(0, "running"), bit(1, null));
 
         assertEquals(Set.of("status", "running"),
-                ModbusShadowPlan.definedFields(List.of(word, field(null), field("  "))));
-        assertTrue(ModbusShadowPlan.definedFields(null).isEmpty());
+                ModbusLastPollingPlan.definedFields(List.of(word, field(null), field("  "))));
+        assertTrue(ModbusLastPollingPlan.definedFields(null).isEmpty());
     }
 
     // -- helpers --
@@ -211,8 +211,8 @@ class ModbusShadowPlanTest {
         return service;
     }
 
-    private static ModbusServiceShadow shadow(String serviceId, Integer pollingIndex, Map<String, Object> fields) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+    private static ModbusServiceLastPolling shadow(String serviceId, Integer pollingIndex, Map<String, Object> fields) {
+        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
         shadow.id = new ObjectId();
         shadow.serviceId = serviceId;
         shadow.pollingIndex = pollingIndex;

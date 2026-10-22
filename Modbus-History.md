@@ -111,7 +111,7 @@
 ## 三、数据模型（落库 `modbus`，三张集合）
 
 ```
-ModbusServiceShadow    serviceId / pollingIndex / fields{字段→值} / recordedAt
+ModbusServiceLastPolling    serviceId / pollingIndex / fields{字段→值} / recordedAt
                                      / lastError / errorAt
 ModbusServiceHistory   serviceId / pollingIndex / field / value / at / keepalive
 ModbusServiceFailure   serviceId / pollingIndex / type / remoteCode / message / at
@@ -193,6 +193,13 @@ GET /failures/{spaceId}?serviceId&pollingIndex&type&from&to&limit
     → { serviceId, from, to, limit, truncated, items: [...], summary: {total, byType, byRemoteCode} }
 ```
 
+**另有一条独立的「寄存器缓存网格」读投影**（`GET /matrix/v1/modbus/shadows/{spaceId}?serviceIds=a,b,c`，
+见 `ModbusShadowResource` / `ModbusShadowService`，路径独立、不挂在 `/modbus/history` 下）：它不读
+`service-histories`，而是把 `service-last-polling`（每个方法最后一次成功调用快照）× 点表可读寄存器
+**归并成「按寄存器」的网格**，一次返回整张点表的缓存实况，含从没被调用过的可读寄存器（`no-data`）。
+与上面的 `GET /current/{spaceId}/{serviceId}`（按方法、只回有快照的方法）互补：要看某个服务**全部可读
+寄存器**的当前缓存值，用它。
+
 两件事必须做对，否则数据存了也没法用：
 
 * **carry-in 点**（`carryIn` 键，可能没有）：只有变化点时，一次区间查询（`from` 到 `to`）如果某点最后一次变化在 `from` 之前，
@@ -253,7 +260,7 @@ GET /failures/{spaceId}?serviceId&pollingIndex&type&from&to&limit
 * **为什么故障记录不设 TTL**：`service-failures` 的 `at` 是「故障**首次**出现时刻」且同一故障只落一条 ——
   挂上 TTL 会让「还在持续的老故障」那条记录先消失，曲线上的故障阴影就断了。
   它去重后行数很少，本来也不是容量问题。
-* **为什么当前值不设**：`service-shadows` 是每字段一条的当前状态，删了就没了（不是历史）。
+* **为什么当前值不设**：`service-last-polling` 是每字段一条的当前状态，删了就没了（不是历史）。
 * **删除是服务端后台行为**：MongoDB 系的 TTL 监视器约每分钟跑一趟，删除**可能滞后**，
   不是到点即删；不占应用侧资源。
 * **保留策略必须一开始就有**，否则数据只进不出，存储费无声地涨。
@@ -318,6 +325,16 @@ staging / prod 跑的是 **Azure DocumentDB**（原 Cosmos DB for MongoDB vCore�
 
 ## 九、变更记录
 
+### 2026-10-22
+
+* **「当前值」改名并对齐语义**：`ModbusServiceShadow` → `ModbusServiceLastPolling`（`{@code fields}` 等字段
+  不变）——它存的其实是「某个读方法**最后一次被调用**的快照」，叫"影子"名不副实。集合
+  `service-shadows` → `service-last-polling`，**直接改名、不做数据迁移**（dev/staging 上旧的
+  `service-shadows` 成孤儿不再读，下次轮询自动重建）。
+* **新增独立的寄存器缓存网格读投影**：`ModbusShadowResource` / `ModbusShadowService`
+  （`GET /modbus/shadows/{spaceId}?serviceIds=a,b,c`，见第五节末）——把 `service-last-polling` ×
+  点表可读寄存器归并成按寄存器的网格，与 per-method 的 `GET /current/{spaceId}/{serviceId}` 互补。
+
 ### 2026-09-13
 
 * **保留策略落地（第六节）**：`service-histories` 在 `at` 上挂集合级 TTL 索引，
@@ -333,7 +350,7 @@ staging / prod 跑的是 **Azure DocumentDB**（原 Cosmos DB for MongoDB vCore�
 * `interval` 下限 3 → 5 秒（`ModbusServiceValidator` 与前端编辑器常量，
   `MODBUS.md` 第七节文案同步）。
 * 初版：确定「落库规则（变位 / 死区 / 保活打点）+ 影子作基准 + 先历史后影子」的形态。
-* 落地 `ModbusServiceShadow` / `ModbusServiceHistory` / `ModbusHistoryPolicy` /
+* 落地 `ModbusServiceLastPolling` / `ModbusServiceHistory` / `ModbusHistoryPolicy` /
   `ModbusHistoryService`，并接进 `ModbusServiceService.invoke`（手动调用即开始记录）。
 * 加执行失败记录：`ModbusServiceFailure`，同一个故障只落一条；故障态记在影子上
   （`lastError` / `errorAt`），恢复后的第一次成功强制落全字段。
