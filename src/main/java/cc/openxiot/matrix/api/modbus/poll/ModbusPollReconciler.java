@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -76,7 +76,7 @@ public class ModbusPollReconciler {
     ModbusPollRepository pollRepo;
 
     @Inject
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
     @Inject
     SpaceRepository spaceRepo;

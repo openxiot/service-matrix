@@ -6,9 +6,9 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -283,7 +283,7 @@ public class DashboardWidgetOwnershipValidator {
         }
         // 老卡带 pollingIndex（方法序号）：按那个方法的应答字段校验，行为不变。
         if (ref.pollingIndex() != null) {
-            ModbusPolling function = findFunction(service, ref.pollingIndex());
+            ModbusTransaction function = findFunction(service, ref.pollingIndex());
             if (function == null) {
                 return "function not found: " + ref.pollingIndex();
             }
@@ -306,11 +306,11 @@ public class DashboardWidgetOwnershipValidator {
      * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
      * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
      */
-    private static ModbusPolling findFunctionByField(ModbusService service, String field) {
-        if (service == null || service.functions == null) {
+    private static ModbusTransaction findFunctionByField(ModbusService service, String field) {
+        if (service == null || service.transactions == null) {
             return null;
         }
-        for (ModbusPolling function : service.functions) {
+        for (ModbusTransaction function : service.transactions) {
             if (function != null && hasField(function, field)) {
                 return function;
             }
@@ -318,11 +318,11 @@ public class DashboardWidgetOwnershipValidator {
         return null;
     }
 
-    private static ModbusPolling findFunction(ModbusService service, Integer index) {
-        if (service.functions == null) {
+    private static ModbusTransaction findFunction(ModbusService service, Integer index) {
+        if (service.transactions == null) {
             return null;
         }
-        for (ModbusPolling function : service.functions) {
+        for (ModbusTransaction function : service.transactions) {
             if (function != null && index.equals(function.index)) {
                 return function;
             }
@@ -338,8 +338,8 @@ public class DashboardWidgetOwnershipValidator {
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
-    private static boolean hasField(ModbusPolling function, String field) {
-        for (ModbusPollingResponseField candidate : ModbusPolling.responseFields(function)) {
+    private static boolean hasField(ModbusTransaction function, String field) {
+        for (ModbusTransactionResponseField candidate : ModbusTransaction.responseFields(function)) {
             if (candidate == null) {
                 continue;
             }
@@ -347,7 +347,7 @@ public class DashboardWidgetOwnershipValidator {
                 return true;
             }
             if (candidate.bitList != null) {
-                for (ModbusPollingResponseFieldBit bit : candidate.bitList) {
+                for (ModbusTransactionResponseFieldBit bit : candidate.bitList) {
                     if (bit != null && field.equals(bit.field)) {
                         return true;
                     }

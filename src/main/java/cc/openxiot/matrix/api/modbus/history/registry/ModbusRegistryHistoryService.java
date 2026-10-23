@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus.history.registry;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
@@ -36,7 +36,7 @@ public class ModbusRegistryHistoryService {
     public static final int MAX_MAX_POINTS = 2_000;
 
     @Inject
-    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+    ModbusRegistryHistoryRepository registryHistoryRepo;
 
     /** 只用来把 field 名解析成寄存器序号（只读服务定义的点表快照，见 {@link #resolveRegister}）。 */
     @Inject
@@ -86,8 +86,8 @@ public class ModbusRegistryHistoryService {
                                 registryHistoryRepo.findRange(serviceId, reg.index, from, end, MAX_ROWS + 1))
                         .asTuple()
                         .map(Unchecked.function(tuple -> {
-                            ModbusServiceRegistryHistory carry = tuple.getItem1();
-                            List<ModbusServiceRegistryHistory> events = tuple.getItem2();
+                            ModbusRegistryHistory carry = tuple.getItem1();
+                            List<ModbusRegistryHistory> events = tuple.getItem2();
                             if (events.size() > MAX_ROWS) {
                                 // 多取一条就是为了在这里判「超了」：报错比返回一段被悄悄截掉的曲线诚实
                                 throw new IllegalArgumentException("time range too wide: more than " + MAX_ROWS
@@ -125,10 +125,10 @@ public class ModbusRegistryHistoryService {
     }
 
     /** 区间内的事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
-    private static List<ModbusHistorySample> samplesOf(List<ModbusServiceRegistryHistory> events) {
+    private static List<ModbusHistorySample> samplesOf(List<ModbusRegistryHistory> events) {
         List<ModbusHistorySample> samples = new ArrayList<>();
         if (events != null) {
-            for (ModbusServiceRegistryHistory event : events) {
+            for (ModbusRegistryHistory event : events) {
                 if (event != null && !Boolean.TRUE.equals(event.failure)) {
                     samples.add(sampleOf(event));
                 }
@@ -139,7 +139,7 @@ public class ModbusRegistryHistoryService {
 
     /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
      *  用内存样本 {@link ModbusHistorySample} 当中间载体，与看板字段曲线那条路共用同一套已测的整形逻辑。 */
-    private static ModbusHistorySample sampleOf(ModbusServiceRegistryHistory event) {
+    private static ModbusHistorySample sampleOf(ModbusRegistryHistory event) {
         return new ModbusHistorySample(event.at, event.value);
     }
 

@@ -8,7 +8,7 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -309,7 +309,7 @@ class ModbusAlarmServiceTest {
         // 所以同一条规则只报一次
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         ModbusService svc = modbusService(field("进水温度", alarm(">", 80.0)));
-        ModbusPolling function = function();
+        ModbusTransaction function = function();
 
         // 定义比数、运行期给的是字符串（这一帧拿不出可比的值）
         service.evaluate(svc, function, sample("进水温度", "ON")).await().indefinitely();
@@ -546,8 +546,8 @@ private static ModbusService modbusService(ModbusRegistry... registries) {
 }
 
 /** 方法只承担方法序号（告警行按读块维度）：出值规则已迁到服务点表快照。 */
-private static ModbusPolling function(ModbusRegistry... ignored) {
-    ModbusPolling function = new ModbusPolling();
+private static ModbusTransaction function(ModbusRegistry... ignored) {
+    ModbusTransaction function = new ModbusTransaction();
     function.index = FUNCTION_INDEX;
     return function;
 }

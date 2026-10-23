@@ -7,7 +7,7 @@ import java.util.Date;
  * {@link #at} 与 {@link #value}。
  *
  * <p><b>不是 Mongo 实体</b>：不加 {@code @RegisterForReflection}、没有 codec、不落库。它只是
- * {@link ModbusHistoryWindow}（纯函数、只跑内存）与数据源（{@code ModbusServiceRegistryHistory}）之间
+ * {@link ModbusHistoryWindow}（纯函数、只跑内存）与数据源（{@code ModbusRegistryHistory}）之间
  * 的中间载体 —— 原来用已停写的库实体 {@code ModbusServiceHistory} 充当，把窗口从那套实体里解耦出来。
  * 谁产出它：{@code ModbusRegistryHistoryService#sampleOf} 与 {@code DashboardWidgetDataService#sampleOf}。
  * 谁消费它：{@link ModbusHistoryWindow} 与 {@link ModbusHistoryRangeCodec}。</p>

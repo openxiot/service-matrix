@@ -8,7 +8,7 @@ import java.util.Map;
  *
  * <p>它承接旧 {@code ModbusServiceLastPolling} 在「变位/死区判定、恢复判定、故障去重」里的角色，
  * 字段逐字相同（值映射 + 时刻 + 故障消息），但**不再落库**：轮询器经 {@code ModbusPollBaselines} 缓存它，
- * 手动 invoke 从逐寄存器影子（{@code ModbusServiceShadow}）重建它；落库一面已全走逐寄存器
+ * 手动 invoke 从逐寄存器影子（{@code ModbusShadow}）重建它；落库一面已全走逐寄存器
  * （RegistryHistory + Shadow）。</p>
  *
  * <p>{@code lastError} 非空 = 上次调用失败（此时 {@code valueByField}/{@code recordedAt} 仍是

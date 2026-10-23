@@ -1,21 +1,21 @@
 package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
  *
  * <ul>
  *   <li>值没变时**值历史/影子一个数据库操作都不做** —— 这条是整套成本模型的落点，破了就等于没优化；
- *       例外是操作日志（{@code ModbusServicePollingHistory}）：它每调用一条、**跟值变没变无关**，
+ *       例外是操作日志（{@code ModbusTransactionHistory}）：它每调用一条、**跟值变没变无关**，
  *       是用户拍板接受的写路径放大（靠保留策略兜底）。</li>
  *   <li>**先写明细（历史 / 失败记录）、再更新影子** —— 反过来会让失败的那次变化永久丢失。</li>
  *   <li>明细写失败时**影子必须停在旧态** —— 下次采集才能把同一次变化重判并重试。</li>
@@ -66,15 +66,15 @@ class ModbusHistoryServiceTest {
     private static final String CRC_ERROR = "modbus response crc mismatch: 0103020064B9AE";
 
     private ModbusHistoryService service;
-    private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
-    private ModbusServiceShadowRepository registryShadowRepo;
-    private ModbusServicePollingHistoryRepository pollingHistoryRepo;
+    private ModbusRegistryHistoryRepository registryHistoryRepo;
+    private ModbusShadowRepository registryShadowRepo;
+    private ModbusTransactionHistoryRepository pollingHistoryRepo;
 
     @BeforeEach
     void setUp() {
-        registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
-        registryShadowRepo = mock(ModbusServiceShadowRepository.class);
-        pollingHistoryRepo = mock(ModbusServicePollingHistoryRepository.class);
+        registryHistoryRepo = mock(ModbusRegistryHistoryRepository.class);
+        registryShadowRepo = mock(ModbusShadowRepository.class);
+        pollingHistoryRepo = mock(ModbusTransactionHistoryRepository.class);
 
         service = new ModbusHistoryService();
         service.registryHistoryRepo = registryHistoryRepo;
@@ -101,9 +101,9 @@ class ModbusHistoryServiceTest {
                 .await().indefinitely();
 
         // 新的寄存器历史：一条事件，值为 62.5、指向寄存器 1
-        ArgumentCaptor<List<ModbusServiceRegistryHistory>> rows = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<ModbusRegistryHistory>> rows = ArgumentCaptor.forClass(List.class);
         verify(registryHistoryRepo).insertAll(rows.capture());
-        ModbusServiceRegistryHistory event = rows.getValue().getFirst();
+        ModbusRegistryHistory event = rows.getValue().getFirst();
         assertEquals(1, event.registerIndex.intValue());
         assertEquals("进水温度", event.name);
         assertEquals(62.5, event.value);
@@ -132,9 +132,9 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        ArgumentCaptor<ModbusServicePollingHistory> log = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+        ArgumentCaptor<ModbusTransactionHistory> log = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusServicePollingHistory row = log.getValue();
+        ModbusTransactionHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollingIndex);
         assertEquals(Boolean.TRUE, row.ok);
@@ -169,9 +169,9 @@ class ModbusHistoryServiceTest {
     void opLog_failure_recordsTypeAndRemoteCode() {
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
-        ArgumentCaptor<ModbusServicePollingHistory> log = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+        ArgumentCaptor<ModbusTransactionHistory> log = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusServicePollingHistory row = log.getValue();
+        ModbusTransactionHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollingIndex);
         assertEquals(Boolean.FALSE, row.ok);
@@ -191,7 +191,7 @@ class ModbusHistoryServiceTest {
                 .await().indefinitely();
 
         // 寄存器历史事件写了一条（值是 62.5、指向寄存器 1）
-        ModbusServiceRegistryHistory row = registryRowsOf().getFirst();
+        ModbusRegistryHistory row = registryRowsOf().getFirst();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(1, row.registerIndex.intValue());
         assertEquals("进水温度", row.name);
@@ -200,9 +200,9 @@ class ModbusHistoryServiceTest {
         assertNotNull(row.at);
 
         // 寄存器影子换成新值：带上值与序号（名称/单位由服务定义 configSnapshot 提供）
-        ArgumentCaptor<ModbusServiceShadow> shadowCap = ArgumentCaptor.forClass(ModbusServiceShadow.class);
+        ArgumentCaptor<ModbusShadow> shadowCap = ArgumentCaptor.forClass(ModbusShadow.class);
         verify(registryShadowRepo).upsertValue(shadowCap.capture());
-        ModbusServiceShadow saved = shadowCap.getValue();
+        ModbusShadow saved = shadowCap.getValue();
         assertEquals(1, saved.registerIndex.intValue());
         assertEquals(62.5, saved.value);
         assertNotNull(saved.recordedAt);
@@ -273,7 +273,7 @@ class ModbusHistoryServiceTest {
         inOrder.verify(pollingHistoryRepo).insert(any());
 
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
-        ModbusServicePollingHistory row = savedPollingLog();
+        ModbusTransactionHistory row = savedPollingLog();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
@@ -282,9 +282,9 @@ class ModbusHistoryServiceTest {
         assertNotNull(row.at);
 
         // 寄存器影子记住故障态，但**上一次成功的值原样保留**（upsertFailure 不动 value）
-        ArgumentCaptor<ModbusServiceShadow> shadowCap = ArgumentCaptor.forClass(ModbusServiceShadow.class);
+        ArgumentCaptor<ModbusShadow> shadowCap = ArgumentCaptor.forClass(ModbusShadow.class);
         verify(registryShadowRepo).upsertFailure(shadowCap.capture());
-        ModbusServiceShadow saved = shadowCap.getValue();
+        ModbusShadow saved = shadowCap.getValue();
         assertEquals(1, saved.registerIndex.intValue());
         assertEquals(TIMEOUT, saved.lastError);   // 故障态落到寄存器影子
         assertNull(saved.value);                  // 失败写不带新值：最后一次成功值由 upsertFailure 原样保留
@@ -312,7 +312,7 @@ class ModbusHistoryServiceTest {
 
         service.recordFailure(modbusService(), function(), crcMismatch()).await().indefinitely();
 
-        ModbusServicePollingHistory row = savedPollingLog();
+        ModbusTransactionHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(row.type));
         assertEquals(CRC_ERROR, row.message);
         assertNull(row.remoteCode);   // CRC 不符没有远端码 —— 有码的是从站异常与父设备报错
@@ -323,9 +323,9 @@ class ModbusHistoryServiceTest {
         // 这个 function 从没成功过：影子上只有故障态，没有值
         service.recordFailure(modbusServiceWithRegistries(), function(), parentTimeout()).await().indefinitely();
 
-        ArgumentCaptor<ModbusServiceShadow> shadowCap = ArgumentCaptor.forClass(ModbusServiceShadow.class);
+        ArgumentCaptor<ModbusShadow> shadowCap = ArgumentCaptor.forClass(ModbusShadow.class);
         verify(registryShadowRepo).upsertFailure(shadowCap.capture());
-        ModbusServiceShadow saved = shadowCap.getValue();
+        ModbusShadow saved = shadowCap.getValue();
         assertEquals(TIMEOUT, saved.lastError);
         assertNull(saved.value);
         verify(registryShadowRepo, never()).upsertValue(any());
@@ -341,7 +341,7 @@ class ModbusHistoryServiceTest {
         service.recordFailure(modbusService(), function(), new IllegalStateException("connection reset"))
                 .await().indefinitely();
 
-        ModbusServicePollingHistory row = savedPollingLog();
+        ModbusTransactionHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.UNKNOWN.name(), row.type);
         assertNull(row.remoteCode);
         assertEquals("connection reset", row.message);   // 明细照旧保留，分类不确定不等于信息丢失
@@ -385,9 +385,9 @@ class ModbusHistoryServiceTest {
 
         assertEquals(List.of("进水温度"), fieldsOf());
         assertNull(next.lastError());      // 恢复：故障态清零
-        ArgumentCaptor<ModbusServiceShadow> shadowCap = ArgumentCaptor.forClass(ModbusServiceShadow.class);
+        ArgumentCaptor<ModbusShadow> shadowCap = ArgumentCaptor.forClass(ModbusShadow.class);
         verify(registryShadowRepo).upsertValue(shadowCap.capture());
-        ModbusServiceShadow saved = shadowCap.getValue();
+        ModbusShadow saved = shadowCap.getValue();
         assertNull(saved.lastError);
         assertNull(saved.errorAt);
         assertEquals(61.5, saved.value);
@@ -556,21 +556,21 @@ class ModbusHistoryServiceTest {
         return service;
     }
 
-    private static ModbusPolling function() {
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+    private static ModbusTransaction function() {
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusPollingRequests.holding();
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+        function.request = ModbusTransactionRequests.holding();
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusPollingResponses.of(field);
+        function.response = ModbusTransactionResponses.of(field);
         return function;
     }
 
@@ -585,18 +585,18 @@ class ModbusHistoryServiceTest {
     }
 
     /** 一只无故障的逐寄存器影子（上一次成功采集）。 */
-    private static ModbusServiceShadow valueShadow(Object value, Date recordedAt) {
+    private static ModbusShadow valueShadow(Object value, Date recordedAt) {
         return registryShadow(1, value, recordedAt, null, null);
     }
 
     /** 一只停在故障态的逐寄存器影子（上一次调用失败，值仍是最后一次成功采集）。 */
-    private static ModbusServiceShadow faultShadow(Object value, Date recordedAt, String lastError) {
+    private static ModbusShadow faultShadow(Object value, Date recordedAt, String lastError) {
         return registryShadow(1, value, recordedAt, lastError, new Date());
     }
 
-    private static ModbusServiceShadow registryShadow(Integer registerIndex, Object value,
+    private static ModbusShadow registryShadow(Integer registerIndex, Object value,
                                                       Date recordedAt, String lastError, Date errorAt) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+        ModbusShadow shadow = new ModbusShadow();
         shadow.serviceId = SERVICE_ID;
         shadow.registerIndex = registerIndex;
         shadow.value = value;
@@ -615,8 +615,8 @@ class ModbusHistoryServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private List<ModbusServiceRegistryHistory> registryRowsOf() {
-        ArgumentCaptor<List<ModbusServiceRegistryHistory>> captor = ArgumentCaptor.forClass(List.class);
+    private List<ModbusRegistryHistory> registryRowsOf() {
+        ArgumentCaptor<List<ModbusRegistryHistory>> captor = ArgumentCaptor.forClass(List.class);
         verify(registryHistoryRepo).insertAll(captor.capture());
         return captor.getValue();
     }
@@ -626,8 +626,8 @@ class ModbusHistoryServiceTest {
         return registryRowsOf().stream().map(row -> row.name).toList();
     }
 
-    private ModbusServicePollingHistory savedPollingLog() {
-        ArgumentCaptor<ModbusServicePollingHistory> captor = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+    private ModbusTransactionHistory savedPollingLog() {
+        ArgumentCaptor<ModbusTransactionHistory> captor = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
         verify(pollingHistoryRepo).insert(captor.capture());
         return captor.getValue();
     }

@@ -5,15 +5,15 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -57,14 +57,14 @@ public class ModbusHistoryService {
     /** 寄存器中心的新存储：逐寄存器的历史事件与当前值（影子）。已停写的按方法历史
      *  {@code service-histories}（{@code ModbusServiceHistory}）不再写入、也在这里删了仓库。 */
     @Inject
-    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+    ModbusRegistryHistoryRepository registryHistoryRepo;
 
     @Inject
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
-    /** 操作日志：每次调用一条（见 {@link ModbusServicePollingHistory}）。写失败静默，不拖累调用。 */
+    /** 操作日志：每次调用一条（见 {@link ModbusTransactionHistory}）。写失败静默，不拖累调用。 */
     @Inject
-    ModbusServicePollingHistoryRepository pollingHistoryRepo;
+    ModbusTransactionHistoryRepository pollingHistoryRepo;
 
     /** 只为级联删除而注入：告警行与历史同命 —— 服务没了，它再也没人能处理（见 {@link #purge}）。 */
     @Inject
@@ -121,7 +121,7 @@ public class ModbusHistoryService {
      * @return 新的比对基准（= 写后的影子文档）；null 表示**这次什么都没写、没有新基准**，
      *         调用方据此保留它原有的基准而不是清空（没写就说明库里的状态没变，旧基准仍然有效）
      */
-    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusPolling function, JsonObject values) {
+    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusTransaction function, JsonObject values) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
@@ -143,7 +143,7 @@ public class ModbusHistoryService {
      * （真·首次采集，会 {@code insert}）—— 而不是「我不知道」。拿不准就传库里读出来的那份；
      * 轮询器的判定见 {@code ModbusPollBaselines.usable}：故障态与没缓存都回退到读库。</p>
      */
-    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusPolling function,
+    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusTransaction function,
                                       JsonObject values, ModbusPollBaseline baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -158,7 +158,7 @@ public class ModbusHistoryService {
 
         // 操作日志：每次调用一条（成功侧）。**它跟「值变没变」无关** —— 变化与否是值历史/影子的取舍
         //（那两条仍各自按变化/保活判定），操作日志记的是「这轮调用执行过、成了」。
-        ModbusServicePollingHistory log = pollingLog(serviceId, function.index,
+        ModbusTransactionHistory log = pollingLog(serviceId, function.index,
                 sample.isEmpty() ? "write" : "read", true, now, sample.isEmpty() ? null : sample,
                 null, null, null);
         Uni<ModbusPollBaseline> result;
@@ -200,7 +200,7 @@ public class ModbusHistoryService {
      *
      * @return 新的基准（这里就是故障态本身）；null = 没有写、基准不变
      */
-    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusPolling function,
+    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusTransaction function,
                                              Throwable error) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -225,7 +225,7 @@ public class ModbusHistoryService {
      * {@code ModbusPollBaselines.usable} 会判它不可用 → 下一次采集回退到读库。
      * 「故障态不吃内存基准」这条口径就是这样自然成立的，不需要额外的失效逻辑。</p>
      */
-    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusPolling function,
+    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusTransaction function,
                                              Throwable error, ModbusPollBaseline baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
@@ -236,7 +236,7 @@ public class ModbusHistoryService {
 
         // 操作日志：每次调用一条（失败侧）。分类 / 远端码 / 异常文本都在这儿，失败统计据此过滤。
         // **重复失败也照记**：操作日志记的是操作本身（这次调用又失败了），去重是值历史/影子的取舍。
-        ModbusServicePollingHistory log = pollingLog(serviceId, function.index, "read", false, now, null,
+        ModbusTransactionHistory log = pollingLog(serviceId, function.index, "read", false, now, null,
                 typeOf(error).name(), remoteCodeOf(error), message);
         Uni<ModbusPollBaseline> result;
         if (baseline != null && message.equals(baseline.lastError())) {
@@ -284,7 +284,7 @@ public class ModbusHistoryService {
     // ===== 内部 =====
 
     /** 能不能记：服务已落库、方法有序号。否则静默跳过 —— 也不产生基准。 */
-    private static boolean recordable(ModbusService service, ModbusPolling function) {
+    private static boolean recordable(ModbusService service, ModbusTransaction function) {
         return service != null && service.id != null && function != null && function.index != null;
     }
 
@@ -296,8 +296,8 @@ public class ModbusHistoryService {
     private Uni<Void> registryEffects(ModbusService service, Map<String, Object> sample,
                                       ModbusHistoryPolicy.Decision decision, Date now) {
         String serviceId = service.id.toHexString();
-        List<ModbusServiceRegistryHistory> rows = new ArrayList<>();
-        List<ModbusServiceShadow> shadows = new ArrayList<>();
+        List<ModbusRegistryHistory> rows = new ArrayList<>();
+        List<ModbusShadow> shadows = new ArrayList<>();
         for (String field : allFields(decision)) {
             ModbusRegistry reg = registerOf(service, field);
             if (reg == null || reg.index == null) {
@@ -310,12 +310,12 @@ public class ModbusHistoryService {
     }
 
     /** 寄存器历史 + 当前值的**失败侧**写入：该读方法应答里的每个可读寄存器各记一条失败 + 更新故障态。 */
-    private Uni<Void> registryFailureEffects(ModbusService service, ModbusPolling function, Throwable error, Date now) {
+    private Uni<Void> registryFailureEffects(ModbusService service, ModbusTransaction function, Throwable error, Date now) {
         String serviceId = service.id.toHexString();
         String message = messageOf(error);
-        List<ModbusServiceRegistryHistory> rows = new ArrayList<>();
-        List<ModbusServiceShadow> shadows = new ArrayList<>();
-        for (ModbusPollingResponseField field : ModbusPolling.responseFields(function)) {
+        List<ModbusRegistryHistory> rows = new ArrayList<>();
+        List<ModbusShadow> shadows = new ArrayList<>();
+        for (ModbusTransactionResponseField field : ModbusTransaction.responseFields(function)) {
             if (field == null) {
                 continue;
             }
@@ -325,16 +325,16 @@ public class ModbusHistoryService {
             }
             rows.add(registryEvent(serviceId, reg, now, null, message));
             // errorAt = now：这条故障首次出现的时刻；同故障持续时被 recordFailure 去重跳过、不会刷新
-            //（与 ModbusServiceShadow.errorAt 的文档「首次出现、持续期间不刷新」一致）
+            //（与 ModbusShadow.errorAt 的文档「首次出现、持续期间不刷新」一致）
             shadows.add(registryShadow(serviceId, reg, now, null, message, now));
         }
         return writeRegistry(rows, shadows, true);
     }
 
     /** 一次成功的读事件（值）或失败事件（标记 + 原因）。 */
-    private static ModbusServiceRegistryHistory registryEvent(String serviceId, ModbusRegistry reg,
+    private static ModbusRegistryHistory registryEvent(String serviceId, ModbusRegistry reg,
                                                               Date at, Object value, String message) {
-        ModbusServiceRegistryHistory e = new ModbusServiceRegistryHistory();
+        ModbusRegistryHistory e = new ModbusRegistryHistory();
         e.serviceId = serviceId;
         e.registerIndex = reg.index;
         e.name = reg.name;
@@ -347,9 +347,9 @@ public class ModbusHistoryService {
     }
 
     /** 寄存器当前值文档：成功侧带值 / 失败侧只带故障（value 留给 upsertFailure 不动）。 */
-    private static ModbusServiceShadow registryShadow(String serviceId, ModbusRegistry reg, Date at,
+    private static ModbusShadow registryShadow(String serviceId, ModbusRegistry reg, Date at,
                                                       Object value, String lastError, Date errorAt) {
-        ModbusServiceShadow sh = new ModbusServiceShadow();
+        ModbusShadow sh = new ModbusShadow();
         sh.serviceId = serviceId;
         sh.registerIndex = reg.index;
         sh.value = value;
@@ -359,7 +359,7 @@ public class ModbusHistoryService {
         return sh;
     }
 
-    private Uni<Void> writeRegistry(List<ModbusServiceRegistryHistory> rows, List<ModbusServiceShadow> shadows,
+    private Uni<Void> writeRegistry(List<ModbusRegistryHistory> rows, List<ModbusShadow> shadows,
                                     boolean failure) {
         if (rows.isEmpty() && shadows.isEmpty()) {
             // 没有可解析到寄存器的字段（写方法 / 位名 / 未配寄存器点表的旧服务）：不写寄存器侧
@@ -415,11 +415,11 @@ public class ModbusHistoryService {
     }
 
     /** 一条操作日志文档。成功侧带响应快照、失败侧带分类/远端码/文本。 */
-    private static ModbusServicePollingHistory pollingLog(String serviceId, Integer pollingIndex,
+    private static ModbusTransactionHistory pollingLog(String serviceId, Integer pollingIndex,
                                                           String operation, boolean ok, Date at,
                                                           Map<String, Object> fields,
                                                           String type, Integer remoteCode, String message) {
-        ModbusServicePollingHistory row = new ModbusServicePollingHistory();
+        ModbusTransactionHistory row = new ModbusTransactionHistory();
         row.serviceId = serviceId;
         row.pollingIndex = pollingIndex;
         row.operation = operation;
@@ -461,11 +461,11 @@ public class ModbusHistoryService {
      * <p>service 未落库（configSnapshot 为 null）或整个块一只影子都没有时返回 null ——
      * 那才是真·首次采集（会 {@code insert} 全新影子）。</p>
      */
-    private static ModbusPollBaseline blockBaseline(ModbusService service, ModbusPolling function,
-                                                    List<ModbusServiceShadow> shadows) {
-        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
+    private static ModbusPollBaseline blockBaseline(ModbusService service, ModbusTransaction function,
+                                                    List<ModbusShadow> shadows) {
+        Map<Integer, ModbusShadow> byIndex = new HashMap<>();
         if (shadows != null) {
-            for (ModbusServiceShadow shadow : shadows) {
+            for (ModbusShadow shadow : shadows) {
                 if (shadow != null && shadow.registerIndex != null) {
                     byIndex.put(shadow.registerIndex, shadow);
                 }
@@ -475,12 +475,12 @@ public class ModbusHistoryService {
         Date last = null;
         String lastError = null;
         if (service != null && service.configSnapshot != null && service.configSnapshot.registries != null) {
-            Set<String> defined = ModbusLastPollingPlan.definedFields(ModbusPolling.responseFields(function));
+            Set<String> defined = ModbusLastPollingPlan.definedFields(ModbusTransaction.responseFields(function));
             for (ModbusRegistry reg : service.configSnapshot.registries) {
                 if (reg == null || reg.index == null || !defined.contains(reg.name)) {
                     continue;
                 }
-                ModbusServiceShadow shadow = byIndex.get(reg.index);
+                ModbusShadow shadow = byIndex.get(reg.index);
                 if (shadow == null) {
                     continue;
                 }

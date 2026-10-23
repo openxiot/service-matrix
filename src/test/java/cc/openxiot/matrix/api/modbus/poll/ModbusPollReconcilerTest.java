@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -62,7 +62,7 @@ class ModbusPollReconcilerTest {
     ModbusPollRepository pollRepo;
 
     @Mock
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
     @Mock
     SpaceRepository spaceRepo;
@@ -175,15 +175,15 @@ class ModbusPollReconcilerTest {
         space.rootId = SPACE_ID;
         device.space = space;
         service.device = device;
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = 1;
                     function.index = 1;
         function.interval = 30;
         function.polling = Boolean.TRUE;
-        function.request = ModbusPollingRequests.holding();
-        service.functions = List.of(function);
+        function.request = ModbusTransactionRequests.holding();
+        service.transactions = List.of(function);
         return service;
     }
 

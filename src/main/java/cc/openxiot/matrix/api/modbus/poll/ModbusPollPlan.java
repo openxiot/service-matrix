@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.poll;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -38,7 +38,7 @@ public final class ModbusPollPlan {
     }
 
     /** 该不该入表：三条口径见类注释。 */
-    public static boolean shouldPoll(ModbusPolling function) {
+    public static boolean shouldPoll(ModbusTransaction function) {
         if (function == null || function.index == null) {
             return false;
         }
@@ -52,7 +52,7 @@ public final class ModbusPollPlan {
     }
 
     /** 请求定义的功能码（{@code request} 缺失时返回 {@code null}，{@code isRead} 认它作非读）。 */
-    public static String functionFc(ModbusPollingRequest request) {
+    public static String functionFc(ModbusTransactionRequest request) {
         return request == null ? null : request.fc;
     }
 
@@ -74,11 +74,11 @@ public final class ModbusPollPlan {
                                            int jitterPercent, RandomGenerator random) {
         List<ModbusPoll> tasks = new ArrayList<>();
         if (service == null || service.id == null || did == null || did.isBlank()
-                || service.functions == null) {
+                || service.transactions == null) {
             return tasks;
         }
         String serviceId = service.id.toHexString();
-        for (ModbusPolling function : service.functions) {
+        for (ModbusTransaction function : service.transactions) {
             if (!shouldPoll(function)) {
                 continue;
             }

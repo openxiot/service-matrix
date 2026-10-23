@@ -9,10 +9,10 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -35,10 +35,10 @@ import java.util.Map;
  *
  * <p>数据源按卡片类型分几路，各自**按去重键批量取**（§8）：统计卡 / 分布图 / 告警曲线走
  * {@link StatisticsQueryService#overview}（按窗口分组），服务卡走
- * {@link ModbusServiceShadowCodec}（当前值，按 serviceId 去重），设备卡走
+ * {@link ModbusShadowCodec}（当前值，按 serviceId 去重），设备卡走
  * {@link ManipulationService#getShadows}（按 did 去重、**一屏一次调用**），
  * 字段曲线走 {@link ModbusRegistryHistoryService#range}（按「点位 × 窗口 × 点数」去重）
- * 与其配套的 {@link ModbusPollingHistoryService#failures}（按「方法 × 窗口」去重）。</p>
+ * 与其配套的 {@link ModbusTransactionHistoryService#failures}（按「方法 × 窗口」去重）。</p>
  *
  * <h3>取数分组：**只给真正读它的卡片取**</h3>
  * <p>{@code overview} 是按窗口分组的，所以「哪些卡片需要 overview」决定了要发几次查询。
@@ -72,10 +72,10 @@ public class DashboardWidgetDataService {
     DashboardWidgetOwnershipValidator ownershipValidator;
 
     @Inject
-    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+    ModbusRegistryHistoryRepository registryHistoryRepo;
 
     @Inject
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
     /**
      * 只用来取服务定义（每个字段的 {@code unit} 与「是不是位」）。
@@ -380,7 +380,7 @@ public class DashboardWidgetDataService {
                         .map(tuple -> {
                             List<Date> failures = new ArrayList<>();
                             List<ModbusHistorySample> samples = new ArrayList<>();
-                            for (ModbusServiceRegistryHistory event : tuple.getItem2()) {
+                            for (ModbusRegistryHistory event : tuple.getItem2()) {
                                 if (event == null) {
                                     continue;
                                 }
@@ -394,7 +394,7 @@ public class DashboardWidgetDataService {
                             }
                             // carry-in 必须是**成功**事件才有值（失败事件没落到值）：
                             // 失败那次读接下来仍持续旧值，曲线从窗口起点的状态由最后一次成功续上
-                            ModbusServiceRegistryHistory carryIn = tuple.getItem1();
+                            ModbusRegistryHistory carryIn = tuple.getItem1();
                             ModbusHistorySample carryInSample =
                                     carryIn != null && !Boolean.TRUE.equals(carryIn.failure)
                                             ? sampleOf(carryIn) : null;
@@ -414,15 +414,15 @@ public class DashboardWidgetDataService {
 
     /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
      *  用内存样本 {@link ModbusHistorySample} 当中间载体，与历史区间那条路共用同一套已测的整形逻辑。 */
-    private static ModbusHistorySample sampleOf(ModbusServiceRegistryHistory event) {
+    private static ModbusHistorySample sampleOf(ModbusRegistryHistory event) {
         return new ModbusHistorySample(event.at, event.value);
     }
 
-    /** 寄存器影子按 {@code registerIndex} 索引（一个服务下每只寄存器一条，见 {@code ModbusServiceShadow}）。 */
-    private static Map<Integer, ModbusServiceShadow> registryShadowsByIndex(List<ModbusServiceShadow> shadows) {
-        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
+    /** 寄存器影子按 {@code registerIndex} 索引（一个服务下每只寄存器一条，见 {@code ModbusShadow}）。 */
+    private static Map<Integer, ModbusShadow> registryShadowsByIndex(List<ModbusShadow> shadows) {
+        Map<Integer, ModbusShadow> byIndex = new HashMap<>();
         if (shadows != null) {
-            for (ModbusServiceShadow shadow : shadows) {
+            for (ModbusShadow shadow : shadows) {
                 if (shadow != null && shadow.registerIndex != null) {
                     byIndex.put(shadow.registerIndex, shadow);
                 }
@@ -633,7 +633,7 @@ public class DashboardWidgetDataService {
      * <p><b>{@code alarms.today} 的 value 不在这里算</b>：「今日」= 用户本地时区的 00:00 之后，
      * 而服务端不知道用户时区（也不该按服务器时区猜）。所以这类卡片下发 {@code hourly} 与窗口终点
      * {@code to}，由前端按本地 00:00 求和 —— 与现有 dashboard 页的做法逐字一致
-     * （{@code dashboard.functions.ts} 的 {@code sumSince(hourly, dayStart(o.to))}）。
+     * （{@code dashboard.transactions.ts} 的 {@code sumSince(hourly, dayStart(o.to))}）。
      * 这也是 §D5「服务端只返回原始值」的直接结果。</p>
      */
     private static JsonObject statData(Map<String, Object> config, StatisticsQueryService.Overview overview) {
@@ -763,7 +763,7 @@ public class DashboardWidgetDataService {
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>，不是某个状态字段：影子就是
      * 「最后一次成功的采集」，一个从没成功过的方法**根本不会有影子**
-     * （{@link ModbusServiceShadowCodec} 的说法）。所以没有影子时只给
+     * （{@link ModbusShadowCodec} 的说法）。所以没有影子时只给
      * {@code pollingIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
      * 一行都没有值可显示的空壳不是信息。</p>
      *
@@ -783,7 +783,7 @@ public class DashboardWidgetDataService {
      * 服务卡的 data：{@code {recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>：每只寄存器的最新值就是它的影子
-     * （{@code ModbusServiceShadow}），从没成功读过的寄存器**没有影子**。配置的寄存器一条都没采过时
+     * （{@code ModbusShadow}），从没成功读过的寄存器**没有影子**。配置的寄存器一条都没采过时
      * 不给 {@code fields}，前端据此渲染「尚未采集」。</p>
      *
      * <p>{@code recordedAt} / {@code error} 属于**整个服务卡**：取各参与寄存器影子里**最近一次**成功
@@ -796,13 +796,13 @@ public class DashboardWidgetDataService {
         List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
         JsonObject data = new JsonObject();
         JsonArray rows = new JsonArray();
-        ModbusServiceShadow representative = null;
+        ModbusShadow representative = null;
         for (String name : configured) {
             ModbusRegistry reg = registerOf(fetched.service(), name);
             if (reg == null || reg.index == null) {
                 continue;
             }
-            ModbusServiceShadow shadow = fetched.registryShadows().get(reg.index);
+            ModbusShadow shadow = fetched.registryShadows().get(reg.index);
             JsonObject row = new JsonObject().put("field", name);
             if (shadow != null && shadow.value != null) {
                 row.put("value", shadow.value);
@@ -822,7 +822,7 @@ public class DashboardWidgetDataService {
     }
 
     /** 影子上的采集时刻 / 失败信息 → 卡片 data（「最后一次成功采集」的整体属性）。 */
-    private static void attachTiming(JsonObject data, ModbusServiceShadow shadow) {
+    private static void attachTiming(JsonObject data, ModbusShadow shadow) {
         if (shadow == null) {
             return;
         }
@@ -838,7 +838,7 @@ public class DashboardWidgetDataService {
     }
 
     /** 取「成功采集时间更晚」的那份影子做代表；候选没影子 / 没时间不给。 */
-    private static boolean newer(ModbusServiceShadow candidate, ModbusServiceShadow current) {
+    private static boolean newer(ModbusShadow candidate, ModbusShadow current) {
         if (candidate == null || candidate.recordedAt == null) {
             return false;
         }
@@ -1005,7 +1005,7 @@ public class DashboardWidgetDataService {
      * <p>定义与影子一起取：定义用来把配置的字段名解析到寄存器、并产出 {@code unit} / {@code bit}，
      * 两者缺一个卡片都画不出来，分两次取只会多一个中间状态。</p>
      */
-    private record ServiceFetched(Map<Integer, ModbusServiceShadow> registryShadows, ModbusService service,
+    private record ServiceFetched(Map<Integer, ModbusShadow> registryShadows, ModbusService service,
                                   String error) {
     }
 

@@ -28,15 +28,15 @@ import java.util.concurrent.ConcurrentMap;
  * 于是编码在第一步就炸：</p>
  *
  * <pre>
- * Failed to encode 'ModbusServiceRegistryHistory'. Encoding 'value' errored with:
+ * Failed to encode 'ModbusRegistryHistory'. Encoding 'value' errored with:
  * Can't find a codec for CodecCacheKey{clazz=class java.lang.Object, types=null}.
  * </pre>
  *
- * <p>而「值」这件事天然是异构的：{@link cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory#value}
+ * <p>而「值」这件事天然是异构的：{@link cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory#value}
  * 是数值 / {@code value-list} 的 description / 位展开的 0|1，声明类型只能是 {@code Object} ——
  * 缺的不是某一条 codec，而是「声明类型 = {@code Object}」这一格的兜底。</p>
  *
- * <p>{@code Map<String, Object>}（{@link cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory#fields}、
+ * <p>{@code Map<String, Object>}（{@link cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory#fields}、
  * {@link cc.openxiot.matrix.db.space.SpaceEntity#attributes}）本来不会被这条卡住：
  * 驱动的 {@code MapPropertyCodecProvider} 对「值类型是 {@code Object} 的 Map」另有一条兜底
  * （退回去用裸 {@code Map} 的 codec，那个 codec 自己按运行时类分发）。本 provider 因为排在 Map 之前，

@@ -2,14 +2,14 @@ package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -38,12 +38,12 @@ class ModbusShadowServiceTest {
 
     private ModbusShadowService shadowService;
     private ModbusServiceRepository repo;
-    private ModbusServiceShadowRepository registryShadowRepo;
+    private ModbusShadowRepository registryShadowRepo;
 
     @BeforeEach
     void setUp() {
         repo = mock(ModbusServiceRepository.class);
-        registryShadowRepo = mock(ModbusServiceShadowRepository.class);
+        registryShadowRepo = mock(ModbusShadowRepository.class);
         shadowService = new ModbusShadowService();
         shadowService.repo = repo;
         shadowService.registryShadowRepo = registryShadowRepo;
@@ -85,7 +85,7 @@ class ModbusShadowServiceTest {
     @Test
     void registerCacheWithoutSnapshotReturnsEmpty() {
         ModbusService svc = service();
-        svc.functions = List.of(readFunction(1, "进水温度"));
+        svc.transactions = List.of(readFunction(1, "进水温度"));
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
 
@@ -143,9 +143,9 @@ class ModbusShadowServiceTest {
 
     // ---- 夹具 ----
 
-    private void givenService(List<ModbusPolling> functions) {
+    private void givenService(List<ModbusTransaction> functions) {
         ModbusService svc = service();
-        svc.functions = functions;
+        svc.transactions = functions;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
     }
 
@@ -178,24 +178,24 @@ class ModbusShadowServiceTest {
         return cfg;
     }
 
-    private static ModbusPolling readFunction(int index, String fieldName) {
-        ModbusPolling fn = new ModbusPolling();
+    private static ModbusTransaction readFunction(int index, String fieldName) {
+        ModbusTransaction fn = new ModbusTransaction();
         fn.index = index;
         fn.name = "读" + fieldName;
-        fn.request = ModbusPollingRequests.holding();
-        ModbusPollingResponseField f = new ModbusPollingResponseField();
+        fn.request = ModbusTransactionRequests.holding();
+        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
         f.index = 1;
         f.field = fieldName;
         f.bytes = 2;
         f.format = "uint16";
         f.byteOrder = "ABCD";
-        fn.response = ModbusPollingResponses.of(f);
+        fn.response = ModbusTransactionResponses.of(f);
         return fn;
     }
 
-    private static ModbusServiceShadow shadow(int registerIndex, Object value,
+    private static ModbusShadow shadow(int registerIndex, Object value,
                                               Date recordedAt, String lastError, Date errorAt) {
-        ModbusServiceShadow sh = new ModbusServiceShadow();
+        ModbusShadow sh = new ModbusShadow();
         sh.serviceId = SERVICE_ID;
         sh.registerIndex = registerIndex;
         sh.value = value;

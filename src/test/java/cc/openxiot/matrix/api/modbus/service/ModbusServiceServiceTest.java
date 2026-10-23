@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.service;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,9 +30,9 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -308,7 +308,7 @@ class ModbusServiceServiceTest {
         // 写方法（fc 06）：帧按字段 + invoke 给的值**现组**，应答是请求回显 —— 返回空对象。
         // 回显写入值会被 ModbusHistoryService 当成一次采集样本灌进历史曲线（它的口径是
         // 「values 非空即为一次采样」），所以这里必须是空的。
-        ModbusPolling write = writeFunction(null);
+        ModbusTransaction write = writeFunction(null);
         givenService(modbusService(), write);
         givenParentResult(parentResult(Status.COMPLETED, null, "0106000100C8D99C"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
@@ -325,7 +325,7 @@ class ModbusServiceServiceTest {
     @Test
     void writeMethodFallsBackToTheDefaultValue() {
         // 没给值的字段回落定义里的缺省值：那 138 条带死值的点表写命令才能开箱即用
-        ModbusPolling write = writeFunction(100);
+        ModbusTransaction write = writeFunction(100);
         givenService(modbusService(), write);
         givenParentResult(parentResult(Status.COMPLETED, null, "010600010064D9E1"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
@@ -456,8 +456,8 @@ class ModbusServiceServiceTest {
 
     // ===== 夹具 =====
 
-    private void givenService(ModbusService value, ModbusPolling function) {
-        value.functions = List.of(function);
+    private void givenService(ModbusService value, ModbusTransaction function) {
+        value.transactions = List.of(function);
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(value));
     }
 
@@ -505,7 +505,7 @@ class ModbusServiceServiceTest {
         service.version = ModbusService.VERSION;
         service.configSnapshot = configSnapshot();
         service.slaveId = slaveId;
-        service.functions = List.of(function());
+        service.transactions = List.of(function());
         return service;
     }
 
@@ -520,30 +520,30 @@ class ModbusServiceServiceTest {
         return new ModbusPollBaseline(Map.of("进水温度", 61.5), null, lastError);
     }
 
-    private static ModbusPolling function() {
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+    private static ModbusTransaction function() {
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusPollingRequests.holding();
+        function.request = ModbusTransactionRequests.holding();
 
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusPollingResponses.of(field);
+        function.response = ModbusTransactionResponses.of(field);
         return function;
     }
 
     /** 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。 */
-    private static ModbusPolling writeFunction(Integer defaultValue) {
-        ModbusPolling write = function();
-        write.request = ModbusPollingRequests.write("06", 1,
-                ModbusPollingRequests.field(1, "写入值", "uint16", defaultValue));
+    private static ModbusTransaction writeFunction(Integer defaultValue) {
+        ModbusTransaction write = function();
+        write.request = ModbusTransactionRequests.write("06", 1,
+                ModbusTransactionRequests.field(1, "写入值", "uint16", defaultValue));
         write.response = null;
         return write;
     }

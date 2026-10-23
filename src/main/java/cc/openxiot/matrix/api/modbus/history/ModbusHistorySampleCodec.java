@@ -17,7 +17,7 @@ import io.vertx.core.json.JsonObject;
  * {@code first} / {@code last}（与 {@code ModbusHistoryPolicy} 里「非数值精确比较」同一口径）。</p>
  *
  * <p>样本只出 {@code {at, value}}：这里的样本是内存载体 {@link ModbusHistorySample}（由寄存器事件
- * {@code ModbusServiceRegistryHistory} 转来，只取窗口化要用的两列），没有保活标记可出。
+ * {@code ModbusRegistryHistory} 转来，只取窗口化要用的两列），没有保活标记可出。
  * 原先 {@code ModbusServiceHistory} 上的 {@code keepalive} 已随那套停写的按方法历史一起消亡。</p>
  *
  * <p>只出不进：历史是采集写进去的，不由请求体决定，所以没有 decode。</p>

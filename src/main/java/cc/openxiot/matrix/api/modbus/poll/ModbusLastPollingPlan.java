@@ -2,10 +2,10 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,7 +15,7 @@ import java.util.Set;
 /**
  * 影子（{@code service-shadows}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
  *
- * <p>寄存器是**原子单位**：对账以逐寄存器影子（{@link ModbusServiceShadow}）为单位，
+ * <p>寄存器是**原子单位**：对账以逐寄存器影子（{@link ModbusShadow}）为单位，
  * 现有的「寄存器」由 {@code ModbusService.configSnapshot.registries} 给出。</p>
  *
  * <p>唯一需要处置的是**孤儿寄存器**（定义里删掉的 {@code registerIndex}）：那只寄存器的影子再也不会被更新，
@@ -37,19 +37,19 @@ public final class ModbusLastPollingPlan {
      * @param staleFields 寄存器是原子单位，没有「废弃字段键」—— 恒为空（{@code orphan} 为 true 时无意义）
      * @param orphan      整只寄存器已从点表里删掉 —— 整条影子都要删
      */
-    public record Fix(ModbusServiceShadow shadow, List<String> staleFields, boolean orphan) {
+    public record Fix(ModbusShadow shadow, List<String> staleFields, boolean orphan) {
     }
 
     /**
      * 一个方法在影子里会出现的**全部**键：{@code response.fields[].field} 加上各位展开的名字
      * {@code response.fields[].bitList[].field}（见 {@code ModbusResponseParser}：位名与字段名放进同一个结果对象）。
      */
-    public static Set<String> definedFields(List<ModbusPollingResponseField> response) {
+    public static Set<String> definedFields(List<ModbusTransactionResponseField> response) {
         Set<String> defined = new HashSet<>();
         if (response == null) {
             return defined;
         }
-        for (ModbusPollingResponseField field : response) {
+        for (ModbusTransactionResponseField field : response) {
             if (field == null) {
                 continue;
             }
@@ -59,7 +59,7 @@ public final class ModbusLastPollingPlan {
             if (field.bitList == null) {
                 continue;
             }
-            for (ModbusPollingResponseFieldBit bit : field.bitList) {
+            for (ModbusTransactionResponseFieldBit bit : field.bitList) {
                 if (bit != null && bit.field != null && !bit.field.isBlank()) {
                     defined.add(bit.field);
                 }
@@ -77,7 +77,7 @@ public final class ModbusLastPollingPlan {
      * <p>寄存器是原子单位，没有「废弃字段键」：对非孤儿（registerIndex 还在点表里）一律不改，
      * 因此只产出 {@code orphan == true} 的修复，且 {@code staleFields} 恒为空。</p>
      */
-    public static List<Fix> plan(ModbusService service, List<ModbusServiceShadow> shadows) {
+    public static List<Fix> plan(ModbusService service, List<ModbusShadow> shadows) {
         List<Fix> fixes = new ArrayList<>();
         ModbusConfig config = service == null ? null : service.configSnapshot;
         if (service == null || service.id == null || config == null || config.registries == null || shadows == null) {
@@ -92,7 +92,7 @@ public final class ModbusLastPollingPlan {
         }
 
         String serviceId = service.id.toHexString();
-        for (ModbusServiceShadow shadow : shadows) {
+        for (ModbusShadow shadow : shadows) {
             if (shadow == null || shadow.id == null || shadow.registerIndex == null) {
                 continue;
             }

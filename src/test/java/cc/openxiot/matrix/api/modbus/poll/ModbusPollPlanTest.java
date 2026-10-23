@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -30,10 +30,10 @@ class ModbusPollPlanTest {
     private static final long NOW = 1_700_000_000_000L;
 
     /** 读保持寄存器（fc 03）。 */
-    private static final ModbusPollingRequest READ_REQUEST = ModbusPollingRequests.holding();
+    private static final ModbusTransactionRequest READ_REQUEST = ModbusTransactionRequests.holding();
 
     /** 写单寄存器（fc 06）。 */
-    private static final ModbusPollingRequest WRITE_REQUEST = ModbusPollingRequests.write("06", 1);
+    private static final ModbusTransactionRequest WRITE_REQUEST = ModbusTransactionRequests.write("06", 1);
 
     @Test
     void pollingTrueWithIntervalIsPolled() {
@@ -62,7 +62,7 @@ class ModbusPollPlanTest {
     @Test
     void writeFunctionsAreNotPolledEvenWithAnInterval() {
         for (String fc : List.of("05", "06", "0F", "10")) {
-            ModbusPollingRequest request = ModbusPollingRequests.write(fc, 1);
+            ModbusTransactionRequest request = ModbusTransactionRequests.write(fc, 1);
             assertTrue(!ModbusPollPlan.shouldPoll(function(1, request, 10, Boolean.TRUE)),
                     "write function must not be polled: fc " + fc);
         }
@@ -75,9 +75,9 @@ class ModbusPollPlanTest {
     @Test
     void requestsWithoutFunctionCodeAreNotPolled() {
         assertNull(ModbusPollPlan.functionFc(null));
-        assertNull(ModbusPollPlan.functionFc(new ModbusPollingRequest()));
+        assertNull(ModbusPollPlan.functionFc(new ModbusTransactionRequest()));
         assertTrue(!ModbusPollPlan.shouldPoll(function(1, null, 10, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, new ModbusPollingRequest(), 10, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(function(1, new ModbusTransactionRequest(), 10, Boolean.TRUE)));
     }
 
     @Test
@@ -85,16 +85,16 @@ class ModbusPollPlanTest {
         // functionFc 原样返回（大小写不在这里归一，判定读写的 isRead 自己归一）
         assertEquals("03", ModbusPollPlan.functionFc(READ_REQUEST));
         assertEquals("06", ModbusPollPlan.functionFc(WRITE_REQUEST));
-        assertEquals("0f", ModbusPollPlan.functionFc(ModbusPollingRequests.write("0f", 0)));
+        assertEquals("0f", ModbusPollPlan.functionFc(ModbusTransactionRequests.write("0f", 0)));
         // 小写 fc 照样算写方法
         assertTrue(!ModbusPollPlan.shouldPoll(
-                function(1, ModbusPollingRequests.write("0f", 1), 10, Boolean.TRUE)));
+                function(1, ModbusTransactionRequests.write("0f", 1), 10, Boolean.TRUE)));
     }
 
     /** 缺 index 的方法没有键，进不了表。 */
     @Test
     void withoutIndexIsNotPolled() {
-        ModbusPolling function = function(null, READ_REQUEST, 10, Boolean.TRUE);
+        ModbusTransaction function = function(null, READ_REQUEST, 10, Boolean.TRUE);
         assertTrue(!ModbusPollPlan.shouldPoll(function));
         assertTrue(!ModbusPollPlan.shouldPoll(null));
     }
@@ -103,10 +103,10 @@ class ModbusPollPlanTest {
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
         ModbusService service = service(3, 1, 2);
-        service.functions.get(0).interval = 30;               // index 3
-        service.functions.get(1).interval = 10;               // index 1
-        service.functions.get(2).interval = 10;
-        service.functions.get(2).polling = Boolean.FALSE;     // index 2 被关掉
+        service.transactions.get(0).interval = 30;               // index 3
+        service.transactions.get(1).interval = 10;               // index 1
+        service.transactions.get(2).interval = 10;
+        service.transactions.get(2).polling = Boolean.FALSE;     // index 2 被关掉
 
         List<ModbusPoll> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
@@ -129,8 +129,8 @@ class ModbusPollPlanTest {
     @Test
     void tasksOfSchedulesEachFunctionByItsOwnInterval() {
         ModbusService service = service(1, 2);
-        service.functions.get(0).interval = 10;
-        service.functions.get(1).interval = 60;
+        service.transactions.get(0).interval = 10;
+        service.transactions.get(1).interval = 60;
 
         List<ModbusPoll> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
@@ -142,7 +142,7 @@ class ModbusPollPlanTest {
     @Test
     void tasksOfWithoutDeviceIsEmpty() {
         ModbusService service = service(1);
-        service.functions.get(0).interval = 10;
+        service.transactions.get(0).interval = 10;
 
         assertTrue(ModbusPollPlan.tasksOf(service, null, NOW, 0, new Random(1L)).isEmpty());
         assertTrue(ModbusPollPlan.tasksOf(service, "  ", NOW, 0, new Random(1L)).isEmpty());
@@ -152,7 +152,7 @@ class ModbusPollPlanTest {
     @Test
     void tasksOfWithoutIdIsEmpty() {
         ModbusService service = service(1);
-        service.functions.get(0).interval = 10;
+        service.transactions.get(0).interval = 10;
         service.id = null;
 
         assertTrue(ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
@@ -161,7 +161,7 @@ class ModbusPollPlanTest {
     @Test
     void tasksOfWithoutFunctionsIsEmpty() {
         ModbusService service = service(1);
-        service.functions = null;
+        service.transactions = null;
 
         assertTrue(ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
         assertTrue(ModbusPollPlan.tasksOf(null, "did-1", NOW, 0, new Random(1L)).isEmpty());
@@ -169,10 +169,10 @@ class ModbusPollPlanTest {
 
     // -- helpers --
 
-    private static ModbusPolling function(Integer index, ModbusPollingRequest request, Integer interval,
+    private static ModbusTransaction function(Integer index, ModbusTransactionRequest request, Integer interval,
                                                    Boolean polling) {
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = index;
                     function.index = index;
@@ -187,9 +187,9 @@ class ModbusPollPlanTest {
         ModbusService service = new ModbusService();
         service.id = new ObjectId();
         service.name = "svc";
-        service.functions = new ArrayList<>();
+        service.transactions = new ArrayList<>();
         for (int index : indexes) {
-            service.functions.add(function(index, READ_REQUEST, null, null));
+            service.transactions.add(function(index, READ_REQUEST, null, null));
         }
         return service;
     }

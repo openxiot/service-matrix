@@ -2,11 +2,11 @@ package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -36,10 +36,10 @@ public class ModbusShadowService {
     ModbusServiceRepository repo;
 
     @Inject
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
     /**
-     * 取一个服务的寄存器缓存网格（{@code ModbusServiceShadow} 有值才出现缓存，规则见
+     * 取一个服务的寄存器缓存网格（{@code ModbusShadow} 有值才出现缓存，规则见
      * {@link #mergeRegisterCache}）。
      *
      * <p>与按方法的「当前值」接口（本类的 {@code ModbusShadowResource.current}）的差别：这里以点表
@@ -54,7 +54,7 @@ public class ModbusShadowService {
                         ? Uni.createFrom().item(List.of())
                         : registryShadowRepo.listByServiceId(serviceId)
                                 .map(shadows -> mergeRegisterCache(
-                                        service.configSnapshot, service.functions, shadows)));
+                                        service.configSnapshot, service.transactions, shadows)));
     }
 
     /**
@@ -78,7 +78,7 @@ public class ModbusShadowService {
 
     /**
      * 归并本核。可读寄存器 = 点表 {@code access ∈ {R, RW}} 的那些（写寄存器没有缓存值）。
-     * 值来自逐寄存器的影子 {@code ModbusServiceShadow}（按 {@code registerIndex} 索引到该寄存器）；
+     * 值来自逐寄存器的影子 {@code ModbusShadow}（按 {@code registerIndex} 索引到该寄存器）；
      * 拿不到影子、或影子没有值 → {@code no-data}。方法归属 {@code pollingIndex} 仍由
      * {@code functions} 里应答字段名 == 寄存器点表名的那个方法解出（只作展示，不决定值）。
      *
@@ -87,17 +87,17 @@ public class ModbusShadowService {
      */
     private static List<JsonObject> mergeRegisterCache(
             ModbusConfig config,
-            List<ModbusPolling> functions,
-            List<ModbusServiceShadow> shadows
+            List<ModbusTransaction> functions,
+            List<ModbusShadow> shadows
     ) {
         // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
         Map<String, Integer> owner = new HashMap<>();
         if (functions != null) {
-            for (ModbusPolling fn : functions) {
+            for (ModbusTransaction fn : functions) {
                 if (fn == null || fn.index == null) {
                     continue;
                 }
-                for (ModbusPollingResponseField f : ModbusPolling.responseFields(fn)) {
+                for (ModbusTransactionResponseField f : ModbusTransaction.responseFields(fn)) {
                     if (f != null && f.field != null) {
                         owner.put(f.field, fn.index);
                     }
@@ -105,9 +105,9 @@ public class ModbusShadowService {
             }
         }
         // 寄存器序号 → 影子（逐寄存器：身份是 registerIndex）
-        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
+        Map<Integer, ModbusShadow> byIndex = new HashMap<>();
         if (shadows != null) {
-            for (ModbusServiceShadow sh : shadows) {
+            for (ModbusShadow sh : shadows) {
                 if (sh != null && sh.registerIndex != null) {
                     byIndex.put(sh.registerIndex, sh);
                 }
@@ -126,7 +126,7 @@ public class ModbusShadowService {
             if (!"R".equals(access) && !"RW".equals(access)) {
                 continue;
             }
-            ModbusServiceShadow sh = reg.index == null ? null : byIndex.get(reg.index);
+            ModbusShadow sh = reg.index == null ? null : byIndex.get(reg.index);
             out.add(sh == null || sh.value == null
                     ? encodeRegister(reg, access, owner.get(reg.name), STATUS_NO_DATA,
                             null, null, null, null)

@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,14 +30,14 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
@@ -82,13 +82,13 @@ class WidgetDataServiceTest {
     DashboardWidgetOwnershipValidator ownershipValidator;
 
     @InjectMock
-    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+    ModbusRegistryHistoryRepository registryHistoryRepo;
 
     @InjectMock
     ModbusServiceRepository serviceRepo;
 
     @InjectMock
-    ModbusServiceShadowRepository registryShadowRepo;
+    ModbusShadowRepository registryShadowRepo;
 
     @InjectMock
     ManipulationService manipulationService;
@@ -101,7 +101,7 @@ class WidgetDataServiceTest {
 
     /** 区间查询要返回的寄存器事件：成功（带 value）与失败（{@code failure=true}）混在一起，
      *  由服务自己筛开 —— 值曲线与失败竖线同一条源。下面那两桩答案每次调用时现读。 */
-    private final List<ModbusServiceRegistryHistory> events = new ArrayList<>();
+    private final List<ModbusRegistryHistory> events = new ArrayList<>();
 
     /**
      * 默认没有归属问题、也没有影子与服务定义；要测什么的用例各自再 stub 一次。
@@ -542,7 +542,7 @@ class WidgetDataServiceTest {
 
     /**
      * 采集失败：影子里的值与时刻是**最后一次成功**的，失败时不动
-     * （见 {@code ModbusServiceShadow}），所以值与 error 同时存在 —— 两个都下发，
+     * （见 {@code ModbusShadow}），所以值与 error 同时存在 —— 两个都下发，
      * 「最后的已知读数」不该被丢掉。
      */
     @Test
@@ -904,8 +904,8 @@ class WidgetDataServiceTest {
     }
 
     /** 一次寄存器历史事件：成功带 {@code value}，失败带 {@code failure=true} 不带值。 */
-    private static ModbusServiceRegistryHistory registryEvent(long at, Object value, boolean failure) {
-        ModbusServiceRegistryHistory event = new ModbusServiceRegistryHistory();
+    private static ModbusRegistryHistory registryEvent(long at, Object value, boolean failure) {
+        ModbusRegistryHistory event = new ModbusRegistryHistory();
         event.serviceId = SERVICE_ID;
         event.registerIndex = 1;
         event.name = "温度";
@@ -1027,12 +1027,12 @@ private void stubService(ShadowInput input, ModbusService definition) {
 }
 
 /** 把输入的「字段 → 值 + 失败态」按服务定义里的每只寄存器展平成逐寄存器影子。 */
-private static List<ModbusServiceShadow> convertShadows(ShadowInput input, ModbusService definition) {
-    List<ModbusServiceShadow> shadows = new ArrayList<>();
+private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusService definition) {
+    List<ModbusShadow> shadows = new ArrayList<>();
     if (input != null && definition != null && definition.configSnapshot != null
             && definition.configSnapshot.registries != null) {
         for (ModbusRegistry reg : definition.configSnapshot.registries) {
-            ModbusServiceShadow s = new ModbusServiceShadow();
+            ModbusShadow s = new ModbusShadow();
             s.serviceId = SERVICE_ID;
             s.registerIndex = reg.index;
             s.value = input.values == null ? null : input.values.get(reg.name);
@@ -1068,23 +1068,23 @@ private void stubDefinition() {
      */
     private static ModbusService serviceDef(int pollingIndex, String primary, String unit, String second,
                                             String... bits) {
-        List<ModbusPollingResponseField> fields = new ArrayList<>();
+        List<ModbusTransactionResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
             fields.add(field(second, "％", null));
         }
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = pollingIndex;
                     function.index = pollingIndex;
         function.name = primary;
-        function.response = ModbusPollingResponses.of(fields);
+        function.response = ModbusTransactionResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
-        definition.functions = List.of(function);
+        definition.transactions = List.of(function);
         // 点表快照的寄存器：主字段、次字段、位各是一只可读寄存器（服务卡按名字解析到它的 index）
         List<ModbusRegistry> registries = new ArrayList<>();
         int index = 1;
@@ -1113,15 +1113,15 @@ private void stubDefinition() {
         return reg;
     }
 
-    private static ModbusPollingResponseField field(String name, String unit, List<String> bits) {
-        ModbusPollingResponseField f = new ModbusPollingResponseField();
+    private static ModbusTransactionResponseField field(String name, String unit, List<String> bits) {
+        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
         f.field = name;
         f.unit = unit;
         if (bits != null) {
-            List<ModbusPollingResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusTransactionResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusPollingResponseFieldBit b = new ModbusPollingResponseFieldBit();
+                ModbusTransactionResponseFieldBit b = new ModbusTransactionResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);

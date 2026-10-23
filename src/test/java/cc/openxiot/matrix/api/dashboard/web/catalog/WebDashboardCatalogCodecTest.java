@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,9 +11,9 @@ import java.util.List;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -78,7 +78,7 @@ class DashboardCatalogCodecTest {
         assertEquals("6512f3a4b5c6d7e8f9a0b1c5", service.getString("id"));
         assertEquals("1 号冷水机组", service.getString("name"));
 
-        JsonObject field = service.getJsonArray("functions").getJsonObject(0)
+        JsonObject field = service.getJsonArray("transactions").getJsonObject(0)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         // 编辑器判「是不是数值」靠 format、「几位小数/单位」靠 unit，两者都必须在
         assertEquals("温度", field.getString("field"));
@@ -101,30 +101,30 @@ class DashboardCatalogCodecTest {
     }
 
     private static ModbusService service() {
-        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
+        ModbusTransactionResponseFieldBit bit = new ModbusTransactionResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
 
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.index = 1;
         field.field = "温度";
         field.format = "int16";
         field.unit = "℃";
         field.bitList = List.of(bit);
 
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
+        ModbusTransaction function = new ModbusTransaction();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = 1;
                     function.index = 1;
         function.name = "读温度";
-        function.response = ModbusPollingResponses.of(field);
+        function.response = ModbusTransactionResponses.of(field);
 
         ModbusService service = new ModbusService();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
         service.name = "1 号冷水机组";
         service.device = new DeviceOn();
-        service.functions = List.of(function);
+        service.transactions = List.of(function);
         return service;
     }
 }

@@ -32,7 +32,7 @@ public class ModbusAlarmQueryService {
     /**
      * 条数上限的缺省值与封顶值。
      *
-     * <p><b>不复用故障那两个常量</b>（{@code ModbusPollingHistoryService} 的 200 / 1000，数值碰巧相同）：
+     * <p><b>不复用故障那两个常量</b>（{@code ModbusTransactionHistoryService} 的 200 / 1000，数值碰巧相同）：
      * 两个接口的规模各自会变 —— 告警是「一次越限一条」的边沿记录，故障是去重后的持续状态，
      * 哪天其中一个要调，共用常量会让另一次改动也跟着动。跨用途复用比两行重复更糟。</p>
      */
@@ -89,7 +89,7 @@ public class ModbusAlarmQueryService {
      * <p><b>逐服务多取一条（{@code limit + 1}）不影响全局结果</b>：全局前 {@code limit} 条必然落在
      * 「该服务的前 {@code limit + 1} 条」里，所以按服务先截一刀再合并，得到的仍是真正的全局前
      * {@code limit} 条；{@code truncated} 也据此判 —— 合并后仍多于 {@code limit}，
-     * 就说明还有更早的没取回来（与 {@code ModbusPollingHistoryService.failuresOfServices} 同一论证）。</p>
+     * 就说明还有更早的没取回来（与 {@code ModbusTransactionHistoryService.failuresOfServices} 同一论证）。</p>
      *
      * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */

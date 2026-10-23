@@ -2,10 +2,10 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -31,8 +31,8 @@ class ModbusLastPollingPlanTest {
     @Test
     void shadowOfADeletedRegisterIsAnOrphan() {
         ModbusService service = service(1);
-        ModbusServiceShadow alive = shadow(SERVICE_ID, 1);
-        ModbusServiceShadow orphan = shadow(SERVICE_ID, 2);
+        ModbusShadow alive = shadow(SERVICE_ID, 1);
+        ModbusShadow orphan = shadow(SERVICE_ID, 2);
 
         List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(alive, orphan));
 
@@ -47,7 +47,7 @@ class ModbusLastPollingPlanTest {
     void registryEntryWithoutAnIndexMakesItsShadowOrphan() {
         ModbusService service = service(1);
         service.configSnapshot.registries.add(new ModbusRegistry()); // index == null → 不算活寄存器
-        ModbusServiceShadow orphan = shadow(SERVICE_ID, 5);
+        ModbusShadow orphan = shadow(SERVICE_ID, 5);
 
         List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(orphan));
 
@@ -76,7 +76,7 @@ class ModbusLastPollingPlanTest {
         ModbusService noId = service(1);
         noId.id = null;
 
-        List<ModbusServiceShadow> shadows = List.of(shadow(SERVICE_ID, 9));
+        List<ModbusShadow> shadows = List.of(shadow(SERVICE_ID, 9));
 
         assertTrue(ModbusLastPollingPlan.plan(null, shadows).isEmpty());
         assertTrue(ModbusLastPollingPlan.plan(noRegistries, shadows).isEmpty());
@@ -88,7 +88,7 @@ class ModbusLastPollingPlanTest {
     @Test
     void shadowsOfAnotherServiceAreSkipped() {
         ModbusService service = service(1);
-        ModbusServiceShadow other = shadow(new ObjectId().toHexString(), 9);
+        ModbusShadow other = shadow(new ObjectId().toHexString(), 9);
 
         assertTrue(ModbusLastPollingPlan.plan(service, List.of(other)).isEmpty());
     }
@@ -97,7 +97,7 @@ class ModbusLastPollingPlanTest {
     @Test
     void fixesAreSortedByRegisterIndex() {
         ModbusService service = service(1); // 只有 index 1 还活着
-        List<ModbusServiceShadow> shadows = new ArrayList<>(List.of(
+        List<ModbusShadow> shadows = new ArrayList<>(List.of(
                 shadow(SERVICE_ID, 3),
                 shadow(SERVICE_ID, 1),
                 shadow(SERVICE_ID, 2)));
@@ -114,7 +114,7 @@ class ModbusLastPollingPlanTest {
     /** 取名字时把空名与空元素都滤掉：它们进不了影子，也就不该出现在「定义里有」这一侧。 */
     @Test
     void definedFieldsReadsFieldAndBitNames() {
-        ModbusPollingResponseField word = field("status");
+        ModbusTransactionResponseField word = field("status");
         word.bitList = List.of(bit(0, "running"), bit(1, null));
 
         assertEquals(Set.of("status", "running"),
@@ -142,22 +142,22 @@ class ModbusLastPollingPlanTest {
         return service;
     }
 
-    private static ModbusServiceShadow shadow(String serviceId, Integer registerIndex) {
-        ModbusServiceShadow shadow = new ModbusServiceShadow();
+    private static ModbusShadow shadow(String serviceId, Integer registerIndex) {
+        ModbusShadow shadow = new ModbusShadow();
         shadow.id = new ObjectId();
         shadow.serviceId = serviceId;
         shadow.registerIndex = registerIndex;
         return shadow;
     }
 
-    private static ModbusPollingResponseField field(String name) {
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+    private static ModbusTransactionResponseField field(String name) {
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.field = name;
         return field;
     }
 
-    private static ModbusPollingResponseFieldBit bit(int offset, String name) {
-        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
+    private static ModbusTransactionResponseFieldBit bit(int offset, String name) {
+        ModbusTransactionResponseFieldBit bit = new ModbusTransactionResponseFieldBit();
         bit.offset = offset;
         bit.field = name;
         return bit;

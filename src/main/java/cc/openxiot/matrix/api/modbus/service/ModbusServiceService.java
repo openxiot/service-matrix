@@ -14,9 +14,9 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
@@ -328,7 +328,7 @@ public class ModbusServiceService {
             Map<String, Object> values,
             ModbusPollBaselines baselines
     ) {
-        ModbusPolling function = findFunction(service, pollingIndex);
+        ModbusTransaction function = findFunction(service, pollingIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
             return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + pollingIndex));
@@ -358,7 +358,7 @@ public class ModbusServiceService {
     private Uni<JsonObject> execute(
             String ownerId,
             ModbusService service,
-            ModbusPolling function,
+            ModbusTransaction function,
             Map<String, Object> values,
             ModbusPollBaselines baselines
     ) {
@@ -404,11 +404,11 @@ public class ModbusServiceService {
      *
      * <p>帧在这里现组（含 CRC16）—— 读方法按 {@code start/quantity}，写方法按字段与
      * {@code values}（缺省回落字段的缺省值）。读写两条路走同一个
-     * {@link ModbusFrameCodec#encodeRequest(ModbusPollingRequest, Map)}，不再需要前端算好一整串帧。</p>
+     * {@link ModbusFrameCodec#encodeRequest(ModbusTransactionRequest, Map)}，不再需要前端算好一整串帧。</p>
      */
     private static String requestFrame(
             ModbusService service,
-            ModbusPolling function,
+            ModbusTransaction function,
             Map<String, Object> values
     ) {
         DeviceOn device = service.device;
@@ -446,7 +446,7 @@ public class ModbusServiceService {
      */
     private Uni<Void> recordHistory(
             ModbusService service,
-            ModbusPolling function,
+            ModbusTransaction function,
             JsonObject values,
             ModbusPollBaselines baselines
     ) {
@@ -482,7 +482,7 @@ public class ModbusServiceService {
      * <p>没有内存基准、也不扩影子：判定需要的「哪些出值开着」只能从告警表读，
      * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
      */
-    private Uni<Void> evaluateAlarms(ModbusService service, ModbusPolling function, JsonObject values) {
+    private Uni<Void> evaluateAlarms(ModbusService service, ModbusTransaction function, JsonObject values) {
         return alarmService.evaluate(service, function, values)
                 .onFailure().invoke(e -> logger.warnv(
                         "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
@@ -502,7 +502,7 @@ public class ModbusServiceService {
      */
     private Uni<Void> recordFailure(
             ModbusService service,
-            ModbusPolling function,
+            ModbusTransaction function,
             Throwable error,
             ModbusPollBaselines baselines
     ) {
@@ -557,7 +557,7 @@ public class ModbusServiceService {
     }
 
     /** 父设备应答 → 方法返回值。 */
-    private static JsonObject decodeFields(ModbusPolling function, ActionOperation result) {
+    private static JsonObject decodeFields(ModbusTransaction function, ActionOperation result) {
         if (result == null) {
             throw ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "no response from parent device");
         }
@@ -569,7 +569,7 @@ public class ModbusServiceService {
                             : result.description());
         }
 
-        List<ModbusPollingResponseField> fields = ModbusPolling.responseFields(function);
+        List<ModbusTransactionResponseField> fields = ModbusTransaction.responseFields(function);
         if (fields.isEmpty()) {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();
@@ -590,11 +590,11 @@ public class ModbusServiceService {
                 "no frame in parent device response, status=" + result.status());
     }
 
-    private static ModbusPolling findFunction(ModbusService service, int index) {
-        if (service.functions == null) {
+    private static ModbusTransaction findFunction(ModbusService service, int index) {
+        if (service.transactions == null) {
             return null;
         }
-        return service.functions.stream()
+        return service.transactions.stream()
                 .filter(function -> function != null
                         && function.index != null && function.index.equals(index))
                 .findFirst()
@@ -623,7 +623,7 @@ public class ModbusServiceService {
         // 顶层从站地址与 device/functions 同级，patch 缺省时保留既有值（别看成不可改）
         merged.slaveId = patch.slaveId != null ? patch.slaveId : existing.slaveId;
         merged.device = patch.device != null ? patch.device : existing.device;
-        merged.functions = patch.functions != null ? patch.functions : existing.functions;
+        merged.transactions = patch.transactions != null ? patch.transactions : existing.transactions;
         return merged;
     }
 }

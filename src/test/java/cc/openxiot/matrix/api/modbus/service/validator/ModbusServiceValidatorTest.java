@@ -4,15 +4,15 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldValue;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldValue;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -89,16 +89,16 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsMissingOrDuplicatedFunctionIndex() {
         ModbusService noFunctions = service();
-        noFunctions.functions = null;
-        assertEquals("functions is required", ModbusServiceValidator.validate(noFunctions));
+        noFunctions.transactions = null;
+        assertEquals("transactions is required", ModbusServiceValidator.validate(noFunctions));
 
         ModbusService noIndex = service();
-        noIndex.functions.get(0).from = null;
-        assertEquals("functions[0].from is required", ModbusServiceValidator.validate(noIndex));
+        noIndex.transactions.get(0).from = null;
+        assertEquals("transactions[0].from is required", ModbusServiceValidator.validate(noIndex));
 
         ModbusService duplicated = service();
-        duplicated.functions.get(1).index = 1;
-        assertEquals("invalid functions[1].index: 1 (duplicated)", ModbusServiceValidator.validate(duplicated));
+        duplicated.transactions.get(1).index = 1;
+        assertEquals("invalid transactions[1].index: 1 (duplicated)", ModbusServiceValidator.validate(duplicated));
     }
 
     @Test
@@ -116,37 +116,37 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsMissingRequestScalars() {
         ModbusService noRequest = service();
-        noRequest.functions.get(0).request = null;
-        assertEquals("functions[0].request is required", ModbusServiceValidator.validate(noRequest));
+        noRequest.transactions.get(0).request = null;
+        assertEquals("transactions[0].request is required", ModbusServiceValidator.validate(noRequest));
 
         ModbusService noSlave = service();
-        noSlave.functions.get(0).request.slaveId = null;
-        assertEquals("functions[0].request.slaveId is required", ModbusServiceValidator.validate(noSlave));
+        noSlave.transactions.get(0).request.slaveId = null;
+        assertEquals("transactions[0].request.slaveId is required", ModbusServiceValidator.validate(noSlave));
 
         ModbusService noFc = service();
-        noFc.functions.get(0).request.fc = " ";
-        assertEquals("functions[0].request.fc is required", ModbusServiceValidator.validate(noFc));
+        noFc.transactions.get(0).request.fc = " ";
+        assertEquals("transactions[0].request.fc is required", ModbusServiceValidator.validate(noFc));
 
         ModbusService noStart = service();
-        noStart.functions.get(0).request.start = null;
-        assertEquals("functions[0].request.start is required", ModbusServiceValidator.validate(noStart));
+        noStart.transactions.get(0).request.start = null;
+        assertEquals("transactions[0].request.start is required", ModbusServiceValidator.validate(noStart));
     }
 
     @Test
     void rejectsOutOfRangeRequestScalars() {
         ModbusService badSlave = service();
-        badSlave.functions.get(0).request.slaveId = 248;
-        assertEquals("invalid functions[0].request.slaveId: 248 (must be 1..247)",
+        badSlave.transactions.get(0).request.slaveId = 248;
+        assertEquals("invalid transactions[0].request.slaveId: 248 (must be 1..247)",
                 ModbusServiceValidator.validate(badSlave));
 
         ModbusService zeroSlave = service();
-        zeroSlave.functions.get(0).request.slaveId = 0;
-        assertEquals("invalid functions[0].request.slaveId: 0 (must be 1..247)",
+        zeroSlave.transactions.get(0).request.slaveId = 0;
+        assertEquals("invalid transactions[0].request.slaveId: 0 (must be 1..247)",
                 ModbusServiceValidator.validate(zeroSlave));
 
         ModbusService badStart = service();
-        badStart.functions.get(0).request.start = 65536;
-        assertEquals("invalid functions[0].request.start: 65536 (must be 0..65535)",
+        badStart.transactions.get(0).request.start = 65536;
+        assertEquals("invalid transactions[0].request.start: 65536 (must be 0..65535)",
                 ModbusServiceValidator.validate(badStart));
     }
 
@@ -154,19 +154,19 @@ class ModbusServiceValidatorTest {
     void rejectsUnknownFunctionCode() {
         // 结构化的第一个好处：fc 以前完全不校验（整帧只查「是合法 16 进制且够长」）
         ModbusService badFc = service();
-        badFc.functions.get(0).request.fc = "07";
-        assertEquals("invalid functions[0].request.fc: 07 (must be one of 01 02 03 04 05 06 0F 10)",
+        badFc.transactions.get(0).request.fc = "07";
+        assertEquals("invalid transactions[0].request.fc: 07 (must be one of 01 02 03 04 05 06 0F 10)",
                 ModbusServiceValidator.validate(badFc));
     }
 
     @Test
     void acceptsMixedCaseFunctionCode() {
         ModbusService lower = service();
-        lower.functions.get(0).request.fc = "0f";
-        lower.functions.get(0).request.quantity = null;
-        lower.functions.get(0).request.fields = new ArrayList<>(List.of(
-                ModbusPollingRequests.field(1, "开机", 0, "bit", true)));
-        lower.functions.get(0).response = null;
+        lower.transactions.get(0).request.fc = "0f";
+        lower.transactions.get(0).request.quantity = null;
+        lower.transactions.get(0).request.fields = new ArrayList<>(List.of(
+                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+        lower.transactions.get(0).response = null;
         // 第二个方法还是读方法，从站一致，故此处的 fc 大小写不敏感是唯一被考的东西
         assertNull(ModbusServiceValidator.validate(lower));
     }
@@ -176,18 +176,18 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsBadReadQuantity() {
         ModbusService noQuantity = service();
-        noQuantity.functions.get(0).request.quantity = null;
-        assertEquals("functions[0].request.quantity is required", ModbusServiceValidator.validate(noQuantity));
+        noQuantity.transactions.get(0).request.quantity = null;
+        assertEquals("transactions[0].request.quantity is required", ModbusServiceValidator.validate(noQuantity));
 
         ModbusService zero = service();
-        zero.functions.get(0).request.quantity = 0;
-        assertEquals("invalid functions[0].request.quantity: 0 (must be 1..125 registers)",
+        zero.transactions.get(0).request.quantity = 0;
+        assertEquals("invalid transactions[0].request.quantity: 0 (must be 1..125 registers)",
                 ModbusServiceValidator.validate(zero));
 
         // 126 是寄存器那条线的边界外一格：上限本身的用例在下面（要连应答一起给）
         ModbusService tooMany = service();
-        tooMany.functions.get(0).request.quantity = 126;
-        assertEquals("invalid functions[0].request.quantity: 126 (must be 1..125 registers)",
+        tooMany.transactions.get(0).request.quantity = 126;
+        assertEquals("invalid transactions[0].request.quantity: 126 (must be 1..125 registers)",
                 ModbusServiceValidator.validate(tooMany));
     }
 
@@ -195,8 +195,8 @@ class ModbusServiceValidatorTest {
     void readBitsUseTheBitsBound() {
         // 01/02 的 quantity 是位数，上限 2000 而不是 125
         ModbusService tooManyBits = service();
-        tooManyBits.functions.get(0).request = ModbusPollingRequests.read("02", 0, 2001);
-        assertEquals("invalid functions[0].request.quantity: 2001 (must be 1..2000 bits)",
+        tooManyBits.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 2001);
+        assertEquals("invalid transactions[0].request.quantity: 2001 (must be 1..2000 bits)",
                 ModbusServiceValidator.validate(tooManyBits));
     }
 
@@ -204,16 +204,16 @@ class ModbusServiceValidatorTest {
     void acceptsBitRead() {
         // 读 16 个位 = 2 字节，正好是一个 uint16 字段
         ModbusService bits = service();
-        bits.functions.get(0).request = ModbusPollingRequests.read("02", 0, 16);
+        bits.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 16);
         assertNull(ModbusServiceValidator.validate(bits));
     }
 
     @Test
     void rejectsFieldsOnReadFunctions() {
         ModbusService readWithFields = service();
-        readWithFields.functions.get(0).request.fields = new ArrayList<>(List.of(
-                ModbusPollingRequests.field(1, "设定温度", "uint16", 70)));
-        assertEquals("invalid functions[0].request.fields: not allowed on a read function (fc 03)",
+        readWithFields.transactions.get(0).request.fields = new ArrayList<>(List.of(
+                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70)));
+        assertEquals("invalid transactions[0].request.fields: not allowed on a read function (fc 03)",
                 ModbusServiceValidator.validate(readWithFields));
     }
 
@@ -223,122 +223,122 @@ class ModbusServiceValidatorTest {
     void rejectsQuantityOnWriteFunctions() {
         // 写帧里的数量由字段推出，不给配置的人再写一遍的机会（两处不一致时以谁为准是个坑）
         ModbusService written = writeService(singleRegister());
-        written.functions.get(0).request.quantity = 1;
-        assertEquals("invalid functions[0].request.quantity: 1 (not allowed on a write function (fc 06), "
+        written.transactions.get(0).request.quantity = 1;
+        assertEquals("invalid transactions[0].request.quantity: 1 (not allowed on a write function (fc 06), "
                         + "the frame's count comes from fields)",
                 ModbusServiceValidator.validate(written));
     }
 
     @Test
     void rejectsWriteWithoutFields() {
-        ModbusService noFields = writeService(ModbusPollingRequests.write("06", 0));
-        assertEquals("functions[0].request.fields is required (a write function needs the fields it writes)",
+        ModbusService noFields = writeService(ModbusTransactionRequests.write("06", 0));
+        assertEquals("transactions[0].request.fields is required (a write function needs the fields it writes)",
                 ModbusServiceValidator.validate(noFields));
 
-        ModbusService empty = writeService(ModbusPollingRequests.write("10", 0));
-        empty.functions.get(0).request.fields = new ArrayList<>();
-        assertEquals("functions[0].request.fields is required (a write function needs the fields it writes)",
+        ModbusService empty = writeService(ModbusTransactionRequests.write("10", 0));
+        empty.transactions.get(0).request.fields = new ArrayList<>();
+        assertEquals("transactions[0].request.fields is required (a write function needs the fields it writes)",
                 ModbusServiceValidator.validate(empty));
     }
 
     @Test
     void rejectsManyFieldsOnSingleValueFunctions() {
         // fc 06 的帧里只有一个值，「第几个」无从谈起
-        ModbusService twoFields = writeService(ModbusPollingRequests.write("06", 0,
-                ModbusPollingRequests.field(1, "设定温度", "uint16", 70),
-                ModbusPollingRequests.field(2, "运行模式", "uint16", 1)));
-        assertEquals("invalid functions[0].request.fields: fc 06 writes exactly one field, got 2",
+        ModbusService twoFields = writeService(ModbusTransactionRequests.write("06", 0,
+                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70),
+                ModbusTransactionRequests.field(2, "运行模式", "uint16", 1)));
+        assertEquals("invalid transactions[0].request.fields: fc 06 writes exactly one field, got 2",
                 ModbusServiceValidator.validate(twoFields));
     }
 
     @Test
     void rejectsOffsetOnSingleValueFunctions() {
-        ModbusService offset = writeService(ModbusPollingRequests.write("05", 0,
-                ModbusPollingRequests.field(1, "开机", 0, "bit", true)));
-        assertEquals("invalid functions[0].request.fields[0].offset: 0 (fc 05 writes one value)",
+        ModbusService offset = writeService(ModbusTransactionRequests.write("05", 0,
+                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+        assertEquals("invalid transactions[0].request.fields[0].offset: 0 (fc 05 writes one value)",
                 ModbusServiceValidator.validate(offset));
     }
 
     @Test
     void rejectsWriteFormatOutsideTheFunctionCode() {
         // 05/0F 是位区
-        ModbusService register = writeService(ModbusPollingRequests.write("05", 0,
-                ModbusPollingRequests.field(1, "开机", "uint16", 1)));
-        assertEquals("invalid functions[0].request.fields[0].format: uint16 (fc 05 writes bit)",
+        ModbusService register = writeService(ModbusTransactionRequests.write("05", 0,
+                ModbusTransactionRequests.field(1, "开机", "uint16", 1)));
+        assertEquals("invalid transactions[0].request.fields[0].format: uint16 (fc 05 writes bit)",
                 ModbusServiceValidator.validate(register));
 
         // 06 只写一个寄存器：32 位格式会被静默截掉一半
-        ModbusService wide = writeService(ModbusPollingRequests.write("06", 0,
-                ModbusPollingRequests.field(1, "设定温度", "float32", 70.0)));
-        assertEquals("invalid functions[0].request.fields[0].format: float32 (fc 06 writes int16 uint16)",
+        ModbusService wide = writeService(ModbusTransactionRequests.write("06", 0,
+                ModbusTransactionRequests.field(1, "设定温度", "float32", 70.0)));
+        assertEquals("invalid transactions[0].request.fields[0].format: float32 (fc 06 writes int16 uint16)",
                 ModbusServiceValidator.validate(wide));
 
         // 10 是寄存器区：位格式没有「写哪个位」可言（那些走 0F）
-        ModbusService bit = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "开机", 0, "bit", true)));
-        assertEquals("invalid functions[0].request.fields[0].format: bit (fc 10 writes "
+        ModbusService bit = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+        assertEquals("invalid transactions[0].request.fields[0].format: bit (fc 10 writes "
                         + "float32 int16 int32 uint16 uint32)",
                 ModbusServiceValidator.validate(bit));
     }
 
     @Test
     void rejectsDuplicatedWriteIndexAndName() {
-        ModbusService duplicatedIndex = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "uint16", 70),
-                ModbusPollingRequests.field(1, "运行模式", 1, "uint16", 1)));
-        assertEquals("invalid functions[0].request.fields[1].index: 1 (duplicated)",
+        ModbusService duplicatedIndex = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", 70),
+                ModbusTransactionRequests.field(1, "运行模式", 1, "uint16", 1)));
+        assertEquals("invalid transactions[0].request.fields[1].index: 1 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedIndex));
 
         // 重名比重复序号更隐蔽：invoke 的 values 拿名字取值，两个字段会抢同一个 key
-        ModbusService duplicatedName = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "uint16", 70),
-                ModbusPollingRequests.field(2, "设定温度", 1, "uint16", 1)));
-        assertEquals("invalid functions[0].request.fields[1].field: 设定温度 (duplicated)",
+        ModbusService duplicatedName = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", 70),
+                ModbusTransactionRequests.field(2, "设定温度", 1, "uint16", 1)));
+        assertEquals("invalid transactions[0].request.fields[1].field: 设定温度 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedName));
     }
 
     @Test
     void rejectsByteOrderOnWideWriteField() {
-        ModbusService noOrder = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "int32", 700)));
-        assertEquals("functions[0].request.fields[0].byteOrder is required",
+        ModbusService noOrder = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "int32", 700)));
+        assertEquals("transactions[0].request.fields[0].byteOrder is required",
                 ModbusServiceValidator.validate(noOrder));
 
-        ModbusService badOrder = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "int32", "ABCDEFGH", 700)));
-        assertEquals("invalid functions[0].request.fields[0].byteOrder: ABCDEFGH",
+        ModbusService badOrder = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "int32", "ABCDEFGH", 700)));
+        assertEquals("invalid transactions[0].request.fields[0].byteOrder: ABCDEFGH",
                 ModbusServiceValidator.validate(badOrder));
     }
 
     @Test
     void acceptsContiguousWriteFields() {
         // 寄存器区：一个 uint16（1 个寄存器）+ 一个 int32（2 个），偏移 0、1
-        ModbusService registers = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "运行模式", 0, "uint16", 1),
-                ModbusPollingRequests.field(2, "设定温度", 1, "int32", "ABCD", 700)));
+        ModbusService registers = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "运行模式", 0, "uint16", 1),
+                ModbusTransactionRequests.field(2, "设定温度", 1, "int32", "ABCD", 700)));
         assertNull(ModbusServiceValidator.validate(registers));
 
         // 位区：偏移恰好是 0..n-1
-        ModbusService bits = writeService(ModbusPollingRequests.write("0F", 0,
-                ModbusPollingRequests.field(1, "开机", 0, "bit", true),
-                ModbusPollingRequests.field(2, "水泵", 1, "bit", false)));
+        ModbusService bits = writeService(ModbusTransactionRequests.write("0F", 0,
+                ModbusTransactionRequests.field(1, "开机", 0, "bit", true),
+                ModbusTransactionRequests.field(2, "水泵", 1, "bit", false)));
         assertNull(ModbusServiceValidator.validate(bits));
     }
 
     @Test
     void rejectsWriteFieldsWithGaps() {
         // fc 0F/10 的帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞可言
-        ModbusService gap = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "运行模式", 0, "uint16", 1),
-                ModbusPollingRequests.field(2, "设定温度", 2, "uint16", 70)));
-        assertEquals("invalid functions[0].request.fields: register offset of field 设定温度 is 2 "
+        ModbusService gap = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "运行模式", 0, "uint16", 1),
+                ModbusTransactionRequests.field(2, "设定温度", 2, "uint16", 70)));
+        assertEquals("invalid transactions[0].request.fields: register offset of field 设定温度 is 2 "
                         + "(must be 1, fields are ordered by index without gaps)",
                 ModbusServiceValidator.validate(gap));
 
-        ModbusService bitGap = writeService(ModbusPollingRequests.write("0F", 0,
-                ModbusPollingRequests.field(1, "开机", 0, "bit", true),
-                ModbusPollingRequests.field(2, "水泵", 2, "bit", false)));
-        assertEquals("invalid functions[0].request.fields: bit offset of field 水泵 is 2 "
+        ModbusService bitGap = writeService(ModbusTransactionRequests.write("0F", 0,
+                ModbusTransactionRequests.field(1, "开机", 0, "bit", true),
+                ModbusTransactionRequests.field(2, "水泵", 2, "bit", false)));
+        assertEquals("invalid transactions[0].request.fields: bit offset of field 水泵 is 2 "
                         + "(must be 1, fields are ordered by index without gaps)",
                 ModbusServiceValidator.validate(bitGap));
     }
@@ -346,28 +346,28 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsBadDefaultWriteValue() {
         // 位只有 true/false：写 1 的人多半以为位就是 0/1
-        ModbusService notBoolean = writeService(ModbusPollingRequests.write("05", 0,
-                ModbusPollingRequests.field(1, "开机", "bit", 1)));
-        assertEquals("invalid functions[0].request.fields[0].value: 1 (a bit is true or false)",
+        ModbusService notBoolean = writeService(ModbusTransactionRequests.write("05", 0,
+                ModbusTransactionRequests.field(1, "开机", "bit", 1)));
+        assertEquals("invalid transactions[0].request.fields[0].value: 1 (a bit is true or false)",
                 ModbusServiceValidator.validate(notBoolean));
 
         // 整数格式不能带小数
-        ModbusService fractional = writeService(ModbusPollingRequests.write("06", 0,
-                ModbusPollingRequests.field(1, "设定温度", "int16", 1.5)));
-        assertEquals("invalid functions[0].request.fields[0].value: 1.5 (format int16 needs an integer)",
+        ModbusService fractional = writeService(ModbusTransactionRequests.write("06", 0,
+                ModbusTransactionRequests.field(1, "设定温度", "int16", 1.5)));
+        assertEquals("invalid transactions[0].request.fields[0].value: 1.5 (format int16 needs an integer)",
                 ModbusServiceValidator.validate(fractional));
 
-        ModbusService overflow = writeService(ModbusPollingRequests.write("06", 0,
-                ModbusPollingRequests.field(1, "设定温度", "uint16", 70000)));
-        assertEquals("invalid functions[0].request.fields[0].value: 70000 (out of range for uint16)",
+        ModbusService overflow = writeService(ModbusTransactionRequests.write("06", 0,
+                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70000)));
+        assertEquals("invalid transactions[0].request.fields[0].value: 70000 (out of range for uint16)",
                 ModbusServiceValidator.validate(overflow));
     }
 
     @Test
     void acceptsNumericDefaultOnFloatField() {
         // float32 出的是任意有限数值，1.5 在这里是合法的（与 int16 那条正好相对）
-        ModbusService decimal = writeService(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "float32", "ABCD", 7.5)));
+        ModbusService decimal = writeService(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "float32", "ABCD", 7.5)));
         assertNull(ModbusServiceValidator.validate(decimal));
     }
 
@@ -377,14 +377,14 @@ class ModbusServiceValidatorTest {
     void rejectsResponseNotMatchingTheReadQuantity() {
         // 读 1 个寄存器 = 2 字节
         ModbusService wide = service();
-        wide.functions.get(0).response.fields.get(0).format = "uint32";
-        wide.functions.get(0).response.fields.get(0).bytes = 4;
-        assertEquals("invalid functions[0].response: declares 4 bytes, but fc 03 with quantity 1 reads 2",
+        wide.transactions.get(0).response.fields.get(0).format = "uint32";
+        wide.transactions.get(0).response.fields.get(0).bytes = 4;
+        assertEquals("invalid transactions[0].response: declares 4 bytes, but fc 03 with quantity 1 reads 2",
                 ModbusServiceValidator.validate(wide));
 
         ModbusService narrow = service();
-        narrow.functions.get(0).request = ModbusPollingRequests.read("03", 0, 2);
-        assertEquals("invalid functions[0].response: declares 2 bytes, but fc 03 with quantity 2 reads 4",
+        narrow.transactions.get(0).request = ModbusTransactionRequests.read("03", 0, 2);
+        assertEquals("invalid transactions[0].response: declares 2 bytes, but fc 03 with quantity 2 reads 4",
                 ModbusServiceValidator.validate(narrow));
     }
 
@@ -392,13 +392,13 @@ class ModbusServiceValidatorTest {
     void rejectsMissingResponseOnReadFunction() {
         // 没有解析规则的读方法返回 {}：调用方看到的是「成功但没有值」，是静默失效
         ModbusService noResponse = service();
-        noResponse.functions.get(0).response = null;
-        assertEquals("functions[0].response is required for a read function (a method with no field returns {})",
+        noResponse.transactions.get(0).response = null;
+        assertEquals("transactions[0].response is required for a read function (a method with no field returns {})",
                 ModbusServiceValidator.validate(noResponse));
 
         ModbusService emptyResponse = service();
-        emptyResponse.functions.get(0).response = ModbusPollingResponses.of();
-        assertEquals("functions[0].response is required for a read function (a method with no field returns {})",
+        emptyResponse.transactions.get(0).response = ModbusTransactionResponses.of();
+        assertEquals("transactions[0].response is required for a read function (a method with no field returns {})",
                 ModbusServiceValidator.validate(emptyResponse));
     }
 
@@ -406,8 +406,8 @@ class ModbusServiceValidatorTest {
     void rejectsResponseOnWriteFunction() {
         // 写应答是请求回显，没有「读到的值」可解析
         ModbusService echoed = writeService(singleRegister());
-        echoed.functions.get(0).response = ModbusPollingResponses.of(field("进水温度", "uint16", 2));
-        assertEquals("invalid functions[0].response: not allowed on a write function (the reply echoes the request)",
+        echoed.transactions.get(0).response = ModbusTransactionResponses.of(field("进水温度", "uint16", 2));
+        assertEquals("invalid transactions[0].response: not allowed on a write function (the reply echoes the request)",
                 ModbusServiceValidator.validate(echoed));
     }
 
@@ -415,8 +415,8 @@ class ModbusServiceValidatorTest {
     void rejectsInconsistentSlaveId() {
         // 一个服务由一条点表映射而来，一条点表只有一个 slave：写错不会报错，只会静默读到隔壁设备
         ModbusService mixed = service();
-        mixed.functions.get(1).request.slaveId = 2;
-        assertEquals("invalid functions[1].request.slaveId: 2 (must equal service slaveId 1)",
+        mixed.transactions.get(1).request.slaveId = 2;
+        assertEquals("invalid transactions[1].request.slaveId: 2 (must equal service slaveId 1)",
                 ModbusServiceValidator.validate(mixed));
     }
 
@@ -425,7 +425,7 @@ class ModbusServiceValidatorTest {
     @Test
     void acceptsIntervalOnReadFunctions() {
         ModbusService polled = service();
-        polled.functions.get(0).interval = 5;
+        polled.transactions.get(0).interval = 5;
         assertNull(ModbusServiceValidator.validate(polled));
     }
 
@@ -433,11 +433,11 @@ class ModbusServiceValidatorTest {
     void acceptsIntervalBounds() {
         // 上下限本身是合法的（越界才拒）
         ModbusService fastest = service();
-        fastest.functions.get(0).interval = 5;
+        fastest.transactions.get(0).interval = 5;
         assertNull(ModbusServiceValidator.validate(fastest));
 
         ModbusService slowest = service();
-        slowest.functions.get(0).interval = 3600;
+        slowest.transactions.get(0).interval = 3600;
         assertNull(ModbusServiceValidator.validate(slowest));
     }
 
@@ -445,8 +445,8 @@ class ModbusServiceValidatorTest {
     void rejectsIntervalOnWriteFunctions() {
         // 写方法的应答只是请求回显，周期调用等于让服务端周期性往寄存器里写值
         ModbusService written = writeService(singleRegister());
-        written.functions.get(0).interval = 5;
-        assertEquals("invalid functions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
+        written.transactions.get(0).interval = 5;
+        assertEquals("invalid transactions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
                 ModbusServiceValidator.validate(written));
     }
 
@@ -454,18 +454,18 @@ class ModbusServiceValidatorTest {
     void rejectsIntervalOutOfRange() {
         // 4 秒是贴近新下限的那个负例：改下限时最容易漏的就是「边界内侧一格」
         ModbusService belowMin = service();
-        belowMin.functions.get(0).interval = 4;
-        assertEquals("invalid functions[0].interval: 4 (interval must be between 5 and 3600 seconds)",
+        belowMin.transactions.get(0).interval = 4;
+        assertEquals("invalid transactions[0].interval: 4 (interval must be between 5 and 3600 seconds)",
                 ModbusServiceValidator.validate(belowMin));
 
         ModbusService tooFrequent = service();
-        tooFrequent.functions.get(0).interval = 2;
-        assertEquals("invalid functions[0].interval: 2 (interval must be between 5 and 3600 seconds)",
+        tooFrequent.transactions.get(0).interval = 2;
+        assertEquals("invalid transactions[0].interval: 2 (interval must be between 5 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooFrequent));
 
         ModbusService tooRare = service();
-        tooRare.functions.get(0).interval = 3601;
-        assertEquals("invalid functions[0].interval: 3601 (interval must be between 5 and 3600 seconds)",
+        tooRare.transactions.get(0).interval = 3601;
+        assertEquals("invalid transactions[0].interval: 3601 (interval must be between 5 and 3600 seconds)",
                 ModbusServiceValidator.validate(tooRare));
     }
 
@@ -475,19 +475,19 @@ class ModbusServiceValidatorTest {
     void acceptsPollingOnReadFunctions() {
         // 显式开轮询：有周期，读方法
         ModbusService polling = service();
-        polling.functions.get(0).interval = 5;
-        polling.functions.get(0).polling = true;
+        polling.transactions.get(0).interval = 5;
+        polling.transactions.get(0).polling = true;
         assertNull(ModbusServiceValidator.validate(polling));
 
         // 显式关轮询：周期留着不跑（暂停），一样合法
         ModbusService paused = service();
-        paused.functions.get(0).interval = 5;
-        paused.functions.get(0).polling = false;
+        paused.transactions.get(0).interval = 5;
+        paused.transactions.get(0).polling = false;
         assertNull(ModbusServiceValidator.validate(paused));
 
         // 缺省 = 按 interval 判定：老数据（只有周期、没这个字段）照旧算「启用」
         ModbusService legacy = service();
-        legacy.functions.get(0).interval = 5;
+        legacy.transactions.get(0).interval = 5;
         assertNull(ModbusServiceValidator.validate(legacy));
     }
 
@@ -495,8 +495,8 @@ class ModbusServiceValidatorTest {
     void rejectsPollingWithoutInterval() {
         // 开了轮询却没有周期：服务端无从知道多久调一次，自相矛盾
         ModbusService noInterval = service();
-        noInterval.functions.get(0).polling = true;
-        assertEquals("invalid functions[0].polling: true (polling requires an interval)",
+        noInterval.transactions.get(0).polling = true;
+        assertEquals("invalid transactions[0].polling: true (polling requires an interval)",
                 ModbusServiceValidator.validate(noInterval));
     }
 
@@ -505,19 +505,19 @@ class ModbusServiceValidatorTest {
         // 写方法开轮询：显式拒。以前是间接成立的（polling=true 要求 interval，而 interval 不允许
         // 配在写方法上），绕了一层，读代码的人看不出「写方法一律不许轮询」这条规矩。
         ModbusService written = writeService(singleRegister());
-        written.functions.get(0).polling = true;
-        assertEquals("invalid functions[0].polling: true (only read functions (fc 01/02/03/04) can be polled)",
+        written.transactions.get(0).polling = true;
+        assertEquals("invalid transactions[0].polling: true (only read functions (fc 01/02/03/04) can be polled)",
                 ModbusServiceValidator.validate(written));
 
         // 写方法上带周期又开轮询：先撞的还是轮询这条（它在周期之前）
-        written.functions.get(0).interval = 5;
-        assertEquals("invalid functions[0].polling: true (only read functions (fc 01/02/03/04) can be polled)",
+        written.transactions.get(0).interval = 5;
+        assertEquals("invalid transactions[0].polling: true (only read functions (fc 01/02/03/04) can be polled)",
                 ModbusServiceValidator.validate(written));
 
         // 光有周期、没开轮询：一样不许（周期本身在写方法上就无效）
         ModbusService intervalOnly = writeService(singleRegister());
-        intervalOnly.functions.get(0).interval = 5;
-        assertEquals("invalid functions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
+        intervalOnly.transactions.get(0).interval = 5;
+        assertEquals("invalid transactions[0].interval: 5 (only read functions (fc 01/02/03/04) can be polled)",
                 ModbusServiceValidator.validate(intervalOnly));
     }
 
@@ -526,35 +526,35 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsFormatWidthMismatch() {
         ModbusService mismatched = service();
-        ModbusPollingResponseField field = mismatched.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField field = mismatched.transactions.get(0).response.fields.get(0);
         field.format = "int8";     // int8 只占 1 字节
-        assertEquals("invalid functions[0].response.fields[0].bytes: 2 (format int8 needs 1)",
+        assertEquals("invalid transactions[0].response.fields[0].bytes: 2 (format int8 needs 1)",
                 ModbusServiceValidator.validate(mismatched));
     }
 
     @Test
     void rejectsUnknownFormatAndByteOrder() {
         ModbusService badFormat = service();
-        badFormat.functions.get(0).response.fields.get(0).format = "uint64";
-        assertEquals("invalid functions[0].response.fields[0].format: uint64",
+        badFormat.transactions.get(0).response.fields.get(0).format = "uint64";
+        assertEquals("invalid transactions[0].response.fields[0].format: uint64",
                 ModbusServiceValidator.validate(badFormat));
 
         ModbusService badOrder = service();
-        badOrder.functions.get(0).response.fields.get(0).byteOrder = "ABCDEFGH";
-        assertEquals("invalid functions[0].response.fields[0].byteOrder: ABCDEFGH",
+        badOrder.transactions.get(0).response.fields.get(0).byteOrder = "ABCDEFGH";
+        assertEquals("invalid transactions[0].response.fields[0].byteOrder: ABCDEFGH",
                 ModbusServiceValidator.validate(badOrder));
 
         ModbusService noOrder = service();
-        noOrder.functions.get(0).response.fields.get(0).byteOrder = null;
-        assertEquals("functions[0].response.fields[0].byteOrder is required",
+        noOrder.transactions.get(0).response.fields.get(0).byteOrder = null;
+        assertEquals("transactions[0].response.fields[0].byteOrder is required",
                 ModbusServiceValidator.validate(noOrder));
     }
 
     @Test
     void stringFormatTakesAnyWidth() {
         ModbusService text = service();
-        text.functions.get(0).request = ModbusPollingRequests.read("03", 0, 4);   // 8 字节 = 4 个寄存器
-        ModbusPollingResponseField field = text.functions.get(0).response.fields.get(0);
+        text.transactions.get(0).request = ModbusTransactionRequests.read("03", 0, 4);   // 8 字节 = 4 个寄存器
+        ModbusTransactionResponseField field = text.transactions.get(0).response.fields.get(0);
         field.format = "string";
         field.bytes = 8;           // string 宽度不固定，由 bytes 决定，不做宽度比对
         assertNull(ModbusServiceValidator.validate(text));
@@ -563,8 +563,8 @@ class ModbusServiceValidatorTest {
     @Test
     void singleByteNeedsNoByteOrder() {
         ModbusService oneByte = service();
-        oneByte.functions.get(0).request = ModbusPollingRequests.read("02", 0, 8);   // 1 字节 = 8 个位
-        ModbusPollingResponseField flag = oneByte.functions.get(0).response.fields.get(0);
+        oneByte.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 8);   // 1 字节 = 8 个位
+        ModbusTransactionResponseField flag = oneByte.transactions.get(0).response.fields.get(0);
         flag.format = "uint8";
         flag.bytes = 1;
         flag.byteOrder = null;     // 单字节没有字节序可言
@@ -575,24 +575,24 @@ class ModbusServiceValidatorTest {
     void byteOrderIsRequiredForEveryMultiByteField() {
         // 现行规则是「bytes > 1 就必填」，string 也不例外（虽然 string 的取值并不用 byteOrder）
         ModbusService text = service();
-        ModbusPollingResponseField field = text.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField field = text.transactions.get(0).response.fields.get(0);
         field.format = "string";
         field.bytes = 8;
         field.byteOrder = null;
-        assertEquals("functions[0].response.fields[0].byteOrder is required",
+        assertEquals("transactions[0].response.fields[0].byteOrder is required",
                 ModbusServiceValidator.validate(text));
     }
 
     @Test
     void rejectsEmptyOrDuplicatedValueList() {
         ModbusService noDescription = service();
-        noDescription.functions.get(0).response.fields.get(0).valueList = List.of(value(0L, " "));
-        assertEquals("functions[0].response.fields[0].value-list[0].description is required",
+        noDescription.transactions.get(0).response.fields.get(0).valueList = List.of(value(0L, " "));
+        assertEquals("transactions[0].response.fields[0].value-list[0].description is required",
                 ModbusServiceValidator.validate(noDescription));
 
         ModbusService duplicated = service();
-        duplicated.functions.get(0).response.fields.get(0).valueList = List.of(value(0L, "ON"), value(0L, "OFF"));
-        assertEquals("invalid functions[0].response.fields[0].value-list[1].value: 0 (duplicated)",
+        duplicated.transactions.get(0).response.fields.get(0).valueList = List.of(value(0L, "ON"), value(0L, "OFF"));
+        assertEquals("invalid transactions[0].response.fields[0].value-list[1].value: 0 (duplicated)",
                 ModbusServiceValidator.validate(duplicated));
     }
 
@@ -600,42 +600,42 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsDuplicatedFieldNames() {
         ModbusService duplicated = service();
-        ModbusPollingResponseField second = function(1).response.fields.get(0); // 序号不同、名字相同的第二个字段
+        ModbusTransactionResponseField second = function(1).response.fields.get(0); // 序号不同、名字相同的第二个字段
         second.index = 2;
-        duplicated.functions.get(0).response.fields.add(second);
-        assertEquals("invalid functions[0].response.fields[1].field: 进水温度 (duplicated)",
+        duplicated.transactions.get(0).response.fields.add(second);
+        assertEquals("invalid transactions[0].response.fields[1].field: 进水温度 (duplicated)",
                 ModbusServiceValidator.validate(duplicated));
     }
 
     @Test
     void rejectsBitListOffsetBeyondField() {
         ModbusService beyond = service();
-        ModbusPollingResponseField field = beyond.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField field = beyond.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(16, "第17位"))); // bytes 2 → 只有 0..15
-        assertEquals("invalid functions[0].response.fields[0].bit-list[0].offset: 16 (field covers 16 bits)",
+        assertEquals("invalid transactions[0].response.fields[0].bit-list[0].offset: 16 (field covers 16 bits)",
                 ModbusServiceValidator.validate(beyond));
     }
 
     @Test
     void rejectsDuplicatedBitAndFieldNames() {
         ModbusService duplicatedOffset = service();
-        ModbusPollingResponseField field = duplicatedOffset.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField field = duplicatedOffset.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(0, "第1位"), bit(0, "第2位")));
-        assertEquals("invalid functions[0].response.fields[0].bit-list[1].offset: 0 (duplicated)",
+        assertEquals("invalid transactions[0].response.fields[0].bit-list[1].offset: 0 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedOffset));
 
         // 位名与所在字段重名同样会互相覆盖
         ModbusService shadowed = service();
-        ModbusPollingResponseField owner = shadowed.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField owner = shadowed.transactions.get(0).response.fields.get(0);
         owner.bitList = new ArrayList<>(List.of(bit(0, "进水温度")));
-        assertEquals("invalid functions[0].response.fields[0].bit-list[0].field: 进水温度 (duplicated)",
+        assertEquals("invalid transactions[0].response.fields[0].bit-list[0].field: 进水温度 (duplicated)",
                 ModbusServiceValidator.validate(shadowed));
     }
 
     @Test
     void acceptsBitListWithinField() {
         ModbusService bits = service();
-        ModbusPollingResponseField field = bits.functions.get(0).response.fields.get(0);
+        ModbusTransactionResponseField field = bits.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(0, "进水阀"), bit(15, "报警")));
 
         assertNull(ModbusServiceValidator.validate(bits));
@@ -858,7 +858,7 @@ class ModbusServiceValidatorTest {
 
     @Test
     void acceptsInvokeWithEveryFieldDefaulted() {
-        ModbusPolling write = writeFunction(singleRegister());
+        ModbusTransaction write = writeFunction(singleRegister());
         assertNull(ModbusServiceValidator.validateInvoke(write, null));
         assertNull(ModbusServiceValidator.validateInvoke(write, Map.of()));
     }
@@ -874,8 +874,8 @@ class ModbusServiceValidatorTest {
 
     @Test
     void invokeRequiresFieldsWithoutDefault() {
-        ModbusPolling write = writeFunction(ModbusPollingRequests.write("10", 0,
-                ModbusPollingRequests.field(1, "设定温度", 0, "uint16", null)));
+        ModbusTransaction write = writeFunction(ModbusTransactionRequests.write("10", 0,
+                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", null)));
         assertEquals("values.设定温度 is required (this field has no default)",
                 ModbusServiceValidator.validateInvoke(write, null));
         assertNull(ModbusServiceValidator.validateInvoke(write, Map.of("设定温度", 70)));
@@ -883,14 +883,14 @@ class ModbusServiceValidatorTest {
 
     @Test
     void invokeRejectsUnknownFieldName() {
-        ModbusPolling write = writeFunction(singleRegister());
+        ModbusTransaction write = writeFunction(singleRegister());
         assertEquals("invalid values.运行模式: not a field of this function",
                 ModbusServiceValidator.validateInvoke(write, Map.of("运行模式", 1)));
     }
 
     @Test
     void invokeChecksValueTypeAndRange() {
-        ModbusPolling write = writeFunction(singleRegister());
+        ModbusTransaction write = writeFunction(singleRegister());
         assertEquals("invalid values.设定温度: 70000 (out of range for uint16)",
                 ModbusServiceValidator.validateInvoke(write, Map.of("设定温度", 70000)));
         assertEquals("invalid values.设定温度: 70.5 (format uint16 needs an integer)",
@@ -904,8 +904,8 @@ class ModbusServiceValidatorTest {
 
     @Test
     void invokeChecksBitValues() {
-        ModbusPolling write = writeFunction(ModbusPollingRequests.write("05", 0,
-                ModbusPollingRequests.field(1, "开机", "bit", true)));
+        ModbusTransaction write = writeFunction(ModbusTransactionRequests.write("05", 0,
+                ModbusTransactionRequests.field(1, "开机", "bit", true)));
         assertEquals("invalid values.开机: 1 (a bit is true or false)",
                 ModbusServiceValidator.validateInvoke(write, Map.of("开机", 1)));
         assertNull(ModbusServiceValidator.validateInvoke(write, Map.of("开机", false)));
@@ -921,7 +921,7 @@ class ModbusServiceValidatorTest {
         service.configSnapshot = configSnapshot();
         service.slaveId = 1;
         service.device = device();
-        service.functions = new ArrayList<>(List.of(function(1), function(2)));
+        service.transactions = new ArrayList<>(List.of(function(1), function(2)));
         return service;
     }
 
@@ -936,7 +936,7 @@ class ModbusServiceValidatorTest {
     }
 
     /** 一份只含给定写方法的定义（写方法没有 response，也没有 interval / polling）。 */
-    private static ModbusService writeService(ModbusPollingRequest request) {
+    private static ModbusService writeService(ModbusTransactionRequest request) {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
@@ -944,33 +944,33 @@ class ModbusServiceValidatorTest {
         service.slaveId = 1;
         service.device = device();
 
-        ModbusPolling write = new ModbusPolling();
+        ModbusTransaction write = new ModbusTransaction();
                     write.index = 1;      // 方法身份（type.index 只是溯源）
-                    write.from = new ModbusPollingFrom();
+                    write.from = new ModbusTransactionFrom();
                     write.from.type = "command";
                     write.from.index = 1;
         write.name = "写设定温度";
         write.request = request;
-        service.functions = new ArrayList<>(List.of(write));
+        service.transactions = new ArrayList<>(List.of(write));
         return service;
     }
 
-    private static ModbusPolling function(int index) {
-        ModbusPolling function = new ModbusPolling();
+    private static ModbusTransaction function(int index) {
+        ModbusTransaction function = new ModbusTransaction();
                     function.index = index;   // 方法身份（type.index 只是溯源）
-                    function.from = new ModbusPollingFrom();
+                    function.from = new ModbusTransactionFrom();
                     function.from.type = "command";
                     function.from.index = index;
         function.name = "读进水温度";
-        function.request = ModbusPollingRequests.holding();
+        function.request = ModbusTransactionRequests.holding();
 
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusPollingResponses.of(field);
+        function.response = ModbusTransactionResponses.of(field);
         return function;
     }
 
@@ -985,24 +985,24 @@ class ModbusServiceValidatorTest {
     }
 
     /** 最常用的那条写请求：fc 06 写一个寄存器，带缺省值。 */
-    private static ModbusPollingRequest singleRegister() {
-        return ModbusPollingRequests.write("06", 0,
-                ModbusPollingRequests.field(1, "设定温度", "uint16", 70));
+    private static ModbusTransactionRequest singleRegister() {
+        return ModbusTransactionRequests.write("06", 0,
+                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70));
     }
 
-    private static ModbusPolling writeFunction(ModbusPollingRequest request) {
-        return writeService(request).functions.get(0);
+    private static ModbusTransaction writeFunction(ModbusTransactionRequest request) {
+        return writeService(request).transactions.get(0);
     }
 
-    private static ModbusPollingResponseFieldValue value(Long value, String description) {
-        ModbusPollingResponseFieldValue entry = new ModbusPollingResponseFieldValue();
+    private static ModbusTransactionResponseFieldValue value(Long value, String description) {
+        ModbusTransactionResponseFieldValue entry = new ModbusTransactionResponseFieldValue();
         entry.value = value;
         entry.description = description;
         return entry;
     }
 
-    private static ModbusPollingResponseFieldBit bit(int offset, String field) {
-        ModbusPollingResponseFieldBit entry = new ModbusPollingResponseFieldBit();
+    private static ModbusTransactionResponseFieldBit bit(int offset, String field) {
+        ModbusTransactionResponseFieldBit entry = new ModbusTransactionResponseFieldBit();
         entry.offset = offset;
         entry.field = field;
         return entry;
@@ -1026,8 +1026,8 @@ class ModbusServiceValidatorTest {
         return alarm;
     }
 
-    private static ModbusPollingResponseField field(String name, String format, Integer bytes) {
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
+    private static ModbusTransactionResponseField field(String name, String format, Integer bytes) {
+        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
         field.index = 1;
         field.field = name;
         field.bytes = bytes;

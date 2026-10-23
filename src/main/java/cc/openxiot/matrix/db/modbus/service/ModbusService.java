@@ -2,7 +2,7 @@ package cc.openxiot.matrix.db.modbus.service;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -33,7 +33,7 @@ public class ModbusService {
      * 定义格式版本号：当前只认 2。
      *
      * <p>1 → 2 是 function 内部结构的演进：{@code request} 从「一整串 Modbus RTU 帧的 16 进制字符串」
-     * 改成了结构化定义（{@link cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest}），
+     * 改成了结构化定义（{@link cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest}），
      * 写方法另外多出「写入字段 + 缺省值」。校验层按本常量**硬拒旧版本**：
      * 让旧口径的定义响亮地失败，而不是被读成 null 之后报一句含糊的「request is required」。</p>
      */
@@ -59,10 +59,10 @@ public class ModbusService {
     public DeviceOn device = new DeviceOn();
 
     @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写），"
-            + "来源（type 上的 type 字段：command 显式命令 / registry 寄存器块读）见 ModbusPollingFrom；"
-            + "方法序号（身份）在 ModbusPolling 的 index",
+            + "来源（type 上的 type 字段：command 显式命令 / registry 寄存器块读）见 ModbusTransactionFrom；"
+            + "方法序号（身份）在 ModbusTransaction 的 index",
             required = true)
-    public List<ModbusPolling> functions;
+    public List<ModbusTransaction> transactions;
 
     @Schema(description = "创建者/创建时间")
     public Person creator;

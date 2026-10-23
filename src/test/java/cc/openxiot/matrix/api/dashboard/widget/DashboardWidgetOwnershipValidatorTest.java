@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransactionFrom;
+import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,9 +20,9 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusTransactionResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -200,7 +200,7 @@ class WidgetOwnershipValidatorTest {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀", "出水阀"))));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "进水阀")).isEmpty(),
-                "位名应当被认作合法字段（见 ModbusPollingResponseFieldBit）");
+                "位名应当被认作合法字段（见 ModbusTransactionResponseFieldBit）");
     }
 
     // ===== 新卡：不存方法序号，字段（寄存器）按名解析到某个读方法 =====
@@ -322,38 +322,38 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    private static ModbusService service(String id, String spaceId, ModbusPolling... functions) {
+    private static ModbusService service(String id, String spaceId, ModbusTransaction... functions) {
         ModbusService s = new ModbusService();
         s.id = new ObjectId(id);
         s.name = "1 号冷水机组";
         s.device = new DeviceOn();
         s.device.space = spaceId == null ? null : new SpaceOn(space(spaceId));
-        s.functions = List.of(functions);
+        s.transactions = List.of(functions);
         return s;
     }
 
-    private static ModbusPolling function(int index, String field, List<String> bits) {
-        ModbusPollingResponseField f = new ModbusPollingResponseField();
+    private static ModbusTransaction function(int index, String field, List<String> bits) {
+        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
         f.field = field;
         f.unit = "℃";
         if (bits != null) {
-            List<ModbusPollingResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusTransactionResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusPollingResponseFieldBit b = new ModbusPollingResponseFieldBit();
+                ModbusTransactionResponseFieldBit b = new ModbusTransactionResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);
             }
             f.bitList = bitList;
         }
-        ModbusPolling fn = new ModbusPolling();
-                    fn.from = new ModbusPollingFrom();
+        ModbusTransaction fn = new ModbusTransaction();
+                    fn.from = new ModbusTransactionFrom();
                     fn.from.type = "command";
                     fn.from.index = index;
                     fn.index = index;
         fn.name = field;
-        fn.response = ModbusPollingResponses.of(f);
+        fn.response = ModbusTransactionResponses.of(f);
         return fn;
     }
 

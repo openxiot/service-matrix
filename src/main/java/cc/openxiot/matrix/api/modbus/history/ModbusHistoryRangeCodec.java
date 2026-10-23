@@ -44,7 +44,7 @@ public final class ModbusHistoryRangeCodec {
 
     /**
      * 编码一次区间查询结果。看板的字段曲线（{@code DashboardWidgetDataService}）也走这里
-     * （数据源换成逐寄存器历史 {@code ModbusServiceRegistryHistory}，但响应是同一份形状、同一套
+     * （数据源换成逐寄存器历史 {@code ModbusRegistryHistory}，但响应是同一份形状、同一套
      * {@code points} / {@code carryIn} / {@code downsampled} 分流）—— 两条消费方共用同一个
      * {@code ModbusHistoryCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
      * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线**。</p>

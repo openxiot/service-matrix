@@ -16,7 +16,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * 「超过 / 达到 / 低于」那些<b>词</b>是页面自己的文案，由前端翻译；符号本身不翻译。</p>
  *
  * <p>{@link #enabled} 缺省 / false 都不产生告警，但配置原样留着 ——
- * 与 {@code ModbusPolling#polling} 同一条规矩（关掉不等于丢掉配置，随时可再开）。</p>
+ * 与 {@code ModbusTransaction#polling} 同一条规矩（关掉不等于丢掉配置，随时可再开）。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
