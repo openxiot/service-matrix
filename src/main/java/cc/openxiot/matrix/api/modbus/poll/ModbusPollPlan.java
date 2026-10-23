@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.poll;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;

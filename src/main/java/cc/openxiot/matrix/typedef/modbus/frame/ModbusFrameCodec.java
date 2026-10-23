@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.typedef.modbus.frame;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequestField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequestField;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

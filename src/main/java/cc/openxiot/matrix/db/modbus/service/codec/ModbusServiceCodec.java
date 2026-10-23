@@ -3,7 +3,7 @@ package cc.openxiot.matrix.db.modbus.service.codec;
 import cc.openxiot.common.person.codec.PersonCodec;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.codec.ModbusTransactionCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.codec.ModbusTransactionCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 

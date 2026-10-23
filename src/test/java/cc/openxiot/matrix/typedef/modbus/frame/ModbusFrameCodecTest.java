@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequests;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

@@ -4,8 +4,8 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
 
 import java.util.ArrayList;
 import java.util.HashSet;

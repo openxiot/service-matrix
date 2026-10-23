@@ -36,7 +36,7 @@ import java.util.Date;
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recordedAt} 同口径），
  * 省掉两端各写一遍格式解析。</p>
  */
-@Path("/matrix/v1/modbus/history")
+@Path("/matrix/v1/modbus/history/registry")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Modbus History", description = "Modbus 采集历史 API")
 @RequestScoped

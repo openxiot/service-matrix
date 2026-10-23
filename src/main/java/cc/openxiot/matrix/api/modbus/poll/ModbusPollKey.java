@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 
 /**
  * 轮询任务的身份：{@code (serviceId, pollingIndex)}，与 {@code modbus.polls} 的唯一索引同口径。
