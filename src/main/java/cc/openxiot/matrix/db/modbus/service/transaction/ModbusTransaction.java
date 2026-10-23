@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.db.modbus.service.transaction;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponse;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -62,11 +62,11 @@ public class ModbusTransaction {
 
     @Schema(description = "请求帧定义：invoke 时按它现组帧（含 CRC16）交给父设备发送。读方法给数量、"
             + "写方法给写入字段（含字段名与缺省值），两者互斥", required = true)
-    public ModbusTransactionRequest request;
+    public ModbusRequest request;
 
     @Schema(description = "应答定义：fields[] 按 index 顺序、以 bytes 依次累加偏移切分应答数据区；"
             + "写方法没有应答定义（应答是请求回显），不填")
-    public ModbusTransactionResponse response;
+    public ModbusResponse response;
 
     public ModbusTransaction() {
     }
@@ -79,7 +79,7 @@ public class ModbusTransaction {
      * （校验器那边也多一层判断：读方法拿到空表本身就是要报的错，所以它同样只需要读这张表）。
      * 收在这一个方法里，是为了让那十来处调用点不必各写一遍三段式空判断。</p>
      */
-    public static List<ModbusTransactionResponseField> responseFields(ModbusTransaction function) {
+    public static List<ModbusResponseField> responseFields(ModbusTransaction function) {
         if (function == null || function.response == null || function.response.fields == null) {
             return List.of();
         }

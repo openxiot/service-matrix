@@ -30,9 +30,9 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequests;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -527,23 +527,23 @@ class ModbusServiceServiceTest {
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusTransactionRequests.holding();
+        function.request = ModbusRequests.holding();
 
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+        ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusTransactionResponses.of(field);
+        function.response = ModbusResponses.of(field);
         return function;
     }
 
     /** 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。 */
     private static ModbusTransaction writeFunction(Integer defaultValue) {
         ModbusTransaction write = function();
-        write.request = ModbusTransactionRequests.write("06", 1,
-                ModbusTransactionRequests.field(1, "写入值", "uint16", defaultValue));
+        write.request = ModbusRequests.write("06", 1,
+                ModbusRequests.field(1, "写入值", "uint16", defaultValue));
         write.response = null;
         return write;
     }

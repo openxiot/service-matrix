@@ -5,16 +5,16 @@ package cc.openxiot.matrix.db.modbus.alarm;
  *
  * <p>判定（{@code ModbusAlarmPolicy}）输出的是状态的差量，所以它每一步都要先知道「这个出值现在开着吗」。
  * 这一张「出值名 → 本记录」的表就是那份状态的物化 —— 由
- * {@link ModbusServiceAlarmRepository#mapOpenRuleByField} 一次查出来（只投影 {@code field} /
+ * {@link ModbusAlarmRepository#mapOpenRuleByField} 一次查出来（只投影 {@code field} /
  * {@code ruleId} / {@code handled} 三列），判定过程里不再回查库，见 {@code Modbus-Alarm.md} 第五节。</p>
  *
  * <h3>为什么是两个字段而不是一个 ruleId</h3>
  *
  * <p>{@code ruleId} 回答「这条开着的行是不是还该开着」：与当前胜者的 {@code id} 不同就说明换了规则
- * （关闭原因 {@link ModbusServiceAlarm#CLOSE_SUPERSEDED}）。</p>
+ * （关闭原因 {@link ModbusAlarm#CLOSE_SUPERSEDED}）。</p>
  *
  * <p>{@code handled} 回答「这条已经被人认领过了吗」：同一条规则仍在命中、而这条已处理过时，
- * 要把它关掉（{@link ModbusServiceAlarm#CLOSE_HANDLED}）并另开一条新的 —— 「处理」的意思是
+ * 要把它关掉（{@link ModbusAlarm#CLOSE_HANDLED}）并另开一条新的 —— 「处理」的意思是
  * 「我知道了，以后还有越线再提醒我」。两者必须一起读：只看 {@code ruleId} 会把已处理的行
  * 一直当成稳态，后续的越线全被挡在门外。</p>
  *

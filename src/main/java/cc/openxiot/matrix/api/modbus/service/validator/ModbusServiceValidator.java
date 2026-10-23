@@ -6,11 +6,11 @@ import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequestField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequestField;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 
 import java.util.ArrayList;
@@ -250,14 +250,14 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 请求定义（{@link ModbusTransactionRequest}）：公共字段 → 按方向分叉。
+     * 请求定义（{@link ModbusRequest}）：公共字段 → 按方向分叉。
      *
      * <p>读写方向由 {@code fc} 推出（与点表同一口径），且**决定另外两个字段谁有效**：
      * 读只有 {@code quantity}，写只有 {@code fields}，两者都给或都不给都是定义错误 ——
      * 这正是结构化之后白拿的那层校验：以前 {@code request} 是整整一帧，方向得靠
      * {@code parseHex(request)[1]} 猜，帧里的数量与 {@code response} 对不对得上也没人管。</p>
      */
-    private static String validateRequest(ModbusTransactionRequest request, String base) {
+    private static String validateRequest(ModbusRequest request, String base) {
         String rbase = base + ".request";
         if (request == null) {
             return rbase + " is required";
@@ -287,7 +287,7 @@ public final class ModbusServiceValidator {
     }
 
     /** 读请求：数量必填并受 Modbus 上限约束；{@code fields} 是写请求的东西，出现在读请求里必须报错。 */
-    private static String validateReadRequest(ModbusTransactionRequest request, String rbase, String fc) {
+    private static String validateReadRequest(ModbusRequest request, String rbase, String fc) {
         if (request.fields != null && !request.fields.isEmpty()) {
             return "invalid " + rbase + ".fields: not allowed on a read function (fc " + fc + ")";
         }
@@ -307,12 +307,12 @@ public final class ModbusServiceValidator {
      * 写请求：{@code fields} 必填、{@code quantity} 必须不填（帧里的数量由字段推出），
      * 逐字段校验后再按 index 升序核对偏移首尾相接。
      */
-    private static String validateWriteRequest(ModbusTransactionRequest request, String rbase, String fc) {
+    private static String validateWriteRequest(ModbusRequest request, String rbase, String fc) {
         if (request.quantity != null) {
             return "invalid " + rbase + ".quantity: " + request.quantity
                     + " (not allowed on a write function (fc " + fc + "), the frame's count comes from fields)";
         }
-        List<ModbusTransactionRequestField> fields = request.fields;
+        List<ModbusRequestField> fields = request.fields;
         if (fields == null || fields.isEmpty()) {
             return rbase + ".fields is required (a write function needs the fields it writes)";
         }
@@ -327,9 +327,9 @@ public final class ModbusServiceValidator {
 
         Set<Integer> seenIndex = new HashSet<>();
         Set<String> seenField = new HashSet<>();
-        List<ModbusTransactionRequestField> ordered = new ArrayList<>(fields);
+        List<ModbusRequestField> ordered = new ArrayList<>(fields);
         for (int i = 0; i < fields.size(); i++) {
-            ModbusTransactionRequestField field = fields.get(i);
+            ModbusRequestField field = fields.get(i);
             String fbase = rbase + ".fields[" + i + "]";
             if (field == null) {
                 return fbase + " is null";
@@ -387,10 +387,10 @@ public final class ModbusServiceValidator {
      * 「起始地址 + 个数 + 紧凑数据区」，没有空洞可言 —— 点表那条线的
      * {@code ModbusFrameCodec.writeMultipleRegistersBody} 也正是这么要求的。
      */
-    private static String validateWriteOffsets(List<ModbusTransactionRequestField> fields, String rbase, boolean bits) {
+    private static String validateWriteOffsets(List<ModbusRequestField> fields, String rbase, boolean bits) {
         fields.sort(Comparator.comparingInt(field -> field.index));
         int position = 0;
-        for (ModbusTransactionRequestField field : fields) {
+        for (ModbusRequestField field : fields) {
             if (!Objects.equals(field.offset, position)) {
                 return "invalid " + rbase + ".fields: " + (bits ? "bit" : "register") + " offset of field "
                         + field.field + " is " + field.offset + " (must be " + position
@@ -412,7 +412,7 @@ public final class ModbusServiceValidator {
      * </ul>
      */
     private static String validateRequestResponse(ModbusTransaction function, String base, boolean read) {
-        List<ModbusTransactionResponseField> fields = ModbusTransaction.responseFields(function);
+        List<ModbusResponseField> fields = ModbusTransaction.responseFields(function);
         if (!read) {
             if (!fields.isEmpty()) {
                 return "invalid " + base + ".response: not allowed on a write function (the reply echoes the request)";
@@ -424,10 +424,10 @@ public final class ModbusServiceValidator {
         }
 
         int declared = 0;
-        for (ModbusTransactionResponseField field : fields) {
+        for (ModbusResponseField field : fields) {
             declared += field.bytes;
         }
-        ModbusTransactionRequest request = function.request;
+        ModbusRequest request = function.request;
         String fc = normalizeFc(request.fc);
         int expected = ("01".equals(fc) || "02".equals(fc))
                 ? (request.quantity + 7) / 8
@@ -574,7 +574,7 @@ public final class ModbusServiceValidator {
         if (function == null || function.request == null) {
             return "request is not set";
         }
-        ModbusTransactionRequest request = function.request;
+        ModbusRequest request = function.request;
         if (isReadFunction(function)) {
             if (values != null && !values.isEmpty()) {
                 return "invalid values: a read function (fc " + request.fc + ") takes no values";
@@ -582,7 +582,7 @@ public final class ModbusServiceValidator {
             return null;
         }
 
-        List<ModbusTransactionRequestField> fields = request.fields;
+        List<ModbusRequestField> fields = request.fields;
         if (fields == null || fields.isEmpty()) {
             return "request.fields is not set for a write function";
         }
@@ -590,7 +590,7 @@ public final class ModbusServiceValidator {
         boolean bits = "05".equals(fc) || "0F".equals(fc);
 
         Set<String> declared = new HashSet<>();
-        for (ModbusTransactionRequestField field : fields) {
+        for (ModbusRequestField field : fields) {
             declared.add(field.field);
             Object value = values == null ? null : values.get(field.field);
             if (value == null) {
@@ -614,7 +614,7 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    private static String validateFields(List<ModbusTransactionResponseField> fields, String base) {
+    private static String validateFields(List<ModbusResponseField> fields, String base) {
         if (fields == null) {
             return null;
         }
@@ -622,7 +622,7 @@ public final class ModbusServiceValidator {
         // 同一应答内所有出值名（各字段名 + 各位名）必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖
         Set<String> seenField = new HashSet<>();
         for (int j = 0; j < fields.size(); j++) {
-            ModbusTransactionResponseField field = fields.get(j);
+            ModbusResponseField field = fields.get(j);
             String ibase = base + ".response.fields[" + j + "]";
             if (field == null) {
                 return ibase + " is null";
@@ -677,13 +677,13 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 校验位清单（{@link ModbusTransactionResponseField#bitList}，01/02 位区）：偏移必须落在该字段覆盖的位区间内
+     * 校验位清单（{@link ModbusResponseField#bitList}，01/02 位区）：偏移必须落在该字段覆盖的位区间内
      * （{@code 0 <= offset < bytes * 8}）、不重复，名称非空且在整份应答内唯一（出值名会进同一个结果对象）。
      *
      * <p>位是**独立的结果键**（parser 把每个命名位单独放进结果对象），所以告警配在位上而不是父字段上：
      * 父字段那份是整个位掩码，与「进水阀开没开」不是一回事。</p>
      */
-    private static String validateBitList(ModbusTransactionResponseField field, String ibase, Set<String> seenField) {
+    private static String validateBitList(ModbusResponseField field, String ibase, Set<String> seenField) {
         if (field.bitList == null || field.bitList.isEmpty()) {
             return null;
         }
@@ -878,7 +878,7 @@ public final class ModbusServiceValidator {
         return reg.enumMap.containsValue(state);
     }
 
-    private static String validateValueList(ModbusTransactionResponseField field, String ibase) {
+    private static String validateValueList(ModbusResponseField field, String ibase) {
         if (field.valueList == null) {
             return null;
         }

@@ -6,13 +6,13 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldValue;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldValue;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -165,7 +165,7 @@ class ModbusServiceValidatorTest {
         lower.transactions.get(0).request.fc = "0f";
         lower.transactions.get(0).request.quantity = null;
         lower.transactions.get(0).request.fields = new ArrayList<>(List.of(
-                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+                ModbusRequests.field(1, "开机", 0, "bit", true)));
         lower.transactions.get(0).response = null;
         // 第二个方法还是读方法，从站一致，故此处的 fc 大小写不敏感是唯一被考的东西
         assertNull(ModbusServiceValidator.validate(lower));
@@ -195,7 +195,7 @@ class ModbusServiceValidatorTest {
     void readBitsUseTheBitsBound() {
         // 01/02 的 quantity 是位数，上限 2000 而不是 125
         ModbusService tooManyBits = service();
-        tooManyBits.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 2001);
+        tooManyBits.transactions.get(0).request = ModbusRequests.read("02", 0, 2001);
         assertEquals("invalid transactions[0].request.quantity: 2001 (must be 1..2000 bits)",
                 ModbusServiceValidator.validate(tooManyBits));
     }
@@ -204,7 +204,7 @@ class ModbusServiceValidatorTest {
     void acceptsBitRead() {
         // 读 16 个位 = 2 字节，正好是一个 uint16 字段
         ModbusService bits = service();
-        bits.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 16);
+        bits.transactions.get(0).request = ModbusRequests.read("02", 0, 16);
         assertNull(ModbusServiceValidator.validate(bits));
     }
 
@@ -212,7 +212,7 @@ class ModbusServiceValidatorTest {
     void rejectsFieldsOnReadFunctions() {
         ModbusService readWithFields = service();
         readWithFields.transactions.get(0).request.fields = new ArrayList<>(List.of(
-                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70)));
+                ModbusRequests.field(1, "设定温度", "uint16", 70)));
         assertEquals("invalid transactions[0].request.fields: not allowed on a read function (fc 03)",
                 ModbusServiceValidator.validate(readWithFields));
     }
@@ -231,11 +231,11 @@ class ModbusServiceValidatorTest {
 
     @Test
     void rejectsWriteWithoutFields() {
-        ModbusService noFields = writeService(ModbusTransactionRequests.write("06", 0));
+        ModbusService noFields = writeService(ModbusRequests.write("06", 0));
         assertEquals("transactions[0].request.fields is required (a write function needs the fields it writes)",
                 ModbusServiceValidator.validate(noFields));
 
-        ModbusService empty = writeService(ModbusTransactionRequests.write("10", 0));
+        ModbusService empty = writeService(ModbusRequests.write("10", 0));
         empty.transactions.get(0).request.fields = new ArrayList<>();
         assertEquals("transactions[0].request.fields is required (a write function needs the fields it writes)",
                 ModbusServiceValidator.validate(empty));
@@ -244,17 +244,17 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsManyFieldsOnSingleValueFunctions() {
         // fc 06 的帧里只有一个值，「第几个」无从谈起
-        ModbusService twoFields = writeService(ModbusTransactionRequests.write("06", 0,
-                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70),
-                ModbusTransactionRequests.field(2, "运行模式", "uint16", 1)));
+        ModbusService twoFields = writeService(ModbusRequests.write("06", 0,
+                ModbusRequests.field(1, "设定温度", "uint16", 70),
+                ModbusRequests.field(2, "运行模式", "uint16", 1)));
         assertEquals("invalid transactions[0].request.fields: fc 06 writes exactly one field, got 2",
                 ModbusServiceValidator.validate(twoFields));
     }
 
     @Test
     void rejectsOffsetOnSingleValueFunctions() {
-        ModbusService offset = writeService(ModbusTransactionRequests.write("05", 0,
-                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+        ModbusService offset = writeService(ModbusRequests.write("05", 0,
+                ModbusRequests.field(1, "开机", 0, "bit", true)));
         assertEquals("invalid transactions[0].request.fields[0].offset: 0 (fc 05 writes one value)",
                 ModbusServiceValidator.validate(offset));
     }
@@ -262,20 +262,20 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsWriteFormatOutsideTheFunctionCode() {
         // 05/0F 是位区
-        ModbusService register = writeService(ModbusTransactionRequests.write("05", 0,
-                ModbusTransactionRequests.field(1, "开机", "uint16", 1)));
+        ModbusService register = writeService(ModbusRequests.write("05", 0,
+                ModbusRequests.field(1, "开机", "uint16", 1)));
         assertEquals("invalid transactions[0].request.fields[0].format: uint16 (fc 05 writes bit)",
                 ModbusServiceValidator.validate(register));
 
         // 06 只写一个寄存器：32 位格式会被静默截掉一半
-        ModbusService wide = writeService(ModbusTransactionRequests.write("06", 0,
-                ModbusTransactionRequests.field(1, "设定温度", "float32", 70.0)));
+        ModbusService wide = writeService(ModbusRequests.write("06", 0,
+                ModbusRequests.field(1, "设定温度", "float32", 70.0)));
         assertEquals("invalid transactions[0].request.fields[0].format: float32 (fc 06 writes int16 uint16)",
                 ModbusServiceValidator.validate(wide));
 
         // 10 是寄存器区：位格式没有「写哪个位」可言（那些走 0F）
-        ModbusService bit = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "开机", 0, "bit", true)));
+        ModbusService bit = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "开机", 0, "bit", true)));
         assertEquals("invalid transactions[0].request.fields[0].format: bit (fc 10 writes "
                         + "float32 int16 int32 uint16 uint32)",
                 ModbusServiceValidator.validate(bit));
@@ -283,29 +283,29 @@ class ModbusServiceValidatorTest {
 
     @Test
     void rejectsDuplicatedWriteIndexAndName() {
-        ModbusService duplicatedIndex = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", 70),
-                ModbusTransactionRequests.field(1, "运行模式", 1, "uint16", 1)));
+        ModbusService duplicatedIndex = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "uint16", 70),
+                ModbusRequests.field(1, "运行模式", 1, "uint16", 1)));
         assertEquals("invalid transactions[0].request.fields[1].index: 1 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedIndex));
 
         // 重名比重复序号更隐蔽：invoke 的 values 拿名字取值，两个字段会抢同一个 key
-        ModbusService duplicatedName = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", 70),
-                ModbusTransactionRequests.field(2, "设定温度", 1, "uint16", 1)));
+        ModbusService duplicatedName = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "uint16", 70),
+                ModbusRequests.field(2, "设定温度", 1, "uint16", 1)));
         assertEquals("invalid transactions[0].request.fields[1].field: 设定温度 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedName));
     }
 
     @Test
     void rejectsByteOrderOnWideWriteField() {
-        ModbusService noOrder = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "int32", 700)));
+        ModbusService noOrder = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "int32", 700)));
         assertEquals("transactions[0].request.fields[0].byteOrder is required",
                 ModbusServiceValidator.validate(noOrder));
 
-        ModbusService badOrder = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "int32", "ABCDEFGH", 700)));
+        ModbusService badOrder = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "int32", "ABCDEFGH", 700)));
         assertEquals("invalid transactions[0].request.fields[0].byteOrder: ABCDEFGH",
                 ModbusServiceValidator.validate(badOrder));
     }
@@ -313,31 +313,31 @@ class ModbusServiceValidatorTest {
     @Test
     void acceptsContiguousWriteFields() {
         // 寄存器区：一个 uint16（1 个寄存器）+ 一个 int32（2 个），偏移 0、1
-        ModbusService registers = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "运行模式", 0, "uint16", 1),
-                ModbusTransactionRequests.field(2, "设定温度", 1, "int32", "ABCD", 700)));
+        ModbusService registers = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "运行模式", 0, "uint16", 1),
+                ModbusRequests.field(2, "设定温度", 1, "int32", "ABCD", 700)));
         assertNull(ModbusServiceValidator.validate(registers));
 
         // 位区：偏移恰好是 0..n-1
-        ModbusService bits = writeService(ModbusTransactionRequests.write("0F", 0,
-                ModbusTransactionRequests.field(1, "开机", 0, "bit", true),
-                ModbusTransactionRequests.field(2, "水泵", 1, "bit", false)));
+        ModbusService bits = writeService(ModbusRequests.write("0F", 0,
+                ModbusRequests.field(1, "开机", 0, "bit", true),
+                ModbusRequests.field(2, "水泵", 1, "bit", false)));
         assertNull(ModbusServiceValidator.validate(bits));
     }
 
     @Test
     void rejectsWriteFieldsWithGaps() {
         // fc 0F/10 的帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞可言
-        ModbusService gap = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "运行模式", 0, "uint16", 1),
-                ModbusTransactionRequests.field(2, "设定温度", 2, "uint16", 70)));
+        ModbusService gap = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "运行模式", 0, "uint16", 1),
+                ModbusRequests.field(2, "设定温度", 2, "uint16", 70)));
         assertEquals("invalid transactions[0].request.fields: register offset of field 设定温度 is 2 "
                         + "(must be 1, fields are ordered by index without gaps)",
                 ModbusServiceValidator.validate(gap));
 
-        ModbusService bitGap = writeService(ModbusTransactionRequests.write("0F", 0,
-                ModbusTransactionRequests.field(1, "开机", 0, "bit", true),
-                ModbusTransactionRequests.field(2, "水泵", 2, "bit", false)));
+        ModbusService bitGap = writeService(ModbusRequests.write("0F", 0,
+                ModbusRequests.field(1, "开机", 0, "bit", true),
+                ModbusRequests.field(2, "水泵", 2, "bit", false)));
         assertEquals("invalid transactions[0].request.fields: bit offset of field 水泵 is 2 "
                         + "(must be 1, fields are ordered by index without gaps)",
                 ModbusServiceValidator.validate(bitGap));
@@ -346,19 +346,19 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsBadDefaultWriteValue() {
         // 位只有 true/false：写 1 的人多半以为位就是 0/1
-        ModbusService notBoolean = writeService(ModbusTransactionRequests.write("05", 0,
-                ModbusTransactionRequests.field(1, "开机", "bit", 1)));
+        ModbusService notBoolean = writeService(ModbusRequests.write("05", 0,
+                ModbusRequests.field(1, "开机", "bit", 1)));
         assertEquals("invalid transactions[0].request.fields[0].value: 1 (a bit is true or false)",
                 ModbusServiceValidator.validate(notBoolean));
 
         // 整数格式不能带小数
-        ModbusService fractional = writeService(ModbusTransactionRequests.write("06", 0,
-                ModbusTransactionRequests.field(1, "设定温度", "int16", 1.5)));
+        ModbusService fractional = writeService(ModbusRequests.write("06", 0,
+                ModbusRequests.field(1, "设定温度", "int16", 1.5)));
         assertEquals("invalid transactions[0].request.fields[0].value: 1.5 (format int16 needs an integer)",
                 ModbusServiceValidator.validate(fractional));
 
-        ModbusService overflow = writeService(ModbusTransactionRequests.write("06", 0,
-                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70000)));
+        ModbusService overflow = writeService(ModbusRequests.write("06", 0,
+                ModbusRequests.field(1, "设定温度", "uint16", 70000)));
         assertEquals("invalid transactions[0].request.fields[0].value: 70000 (out of range for uint16)",
                 ModbusServiceValidator.validate(overflow));
     }
@@ -366,8 +366,8 @@ class ModbusServiceValidatorTest {
     @Test
     void acceptsNumericDefaultOnFloatField() {
         // float32 出的是任意有限数值，1.5 在这里是合法的（与 int16 那条正好相对）
-        ModbusService decimal = writeService(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "float32", "ABCD", 7.5)));
+        ModbusService decimal = writeService(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "float32", "ABCD", 7.5)));
         assertNull(ModbusServiceValidator.validate(decimal));
     }
 
@@ -383,7 +383,7 @@ class ModbusServiceValidatorTest {
                 ModbusServiceValidator.validate(wide));
 
         ModbusService narrow = service();
-        narrow.transactions.get(0).request = ModbusTransactionRequests.read("03", 0, 2);
+        narrow.transactions.get(0).request = ModbusRequests.read("03", 0, 2);
         assertEquals("invalid transactions[0].response: declares 2 bytes, but fc 03 with quantity 2 reads 4",
                 ModbusServiceValidator.validate(narrow));
     }
@@ -397,7 +397,7 @@ class ModbusServiceValidatorTest {
                 ModbusServiceValidator.validate(noResponse));
 
         ModbusService emptyResponse = service();
-        emptyResponse.transactions.get(0).response = ModbusTransactionResponses.of();
+        emptyResponse.transactions.get(0).response = ModbusResponses.of();
         assertEquals("transactions[0].response is required for a read function (a method with no field returns {})",
                 ModbusServiceValidator.validate(emptyResponse));
     }
@@ -406,7 +406,7 @@ class ModbusServiceValidatorTest {
     void rejectsResponseOnWriteFunction() {
         // 写应答是请求回显，没有「读到的值」可解析
         ModbusService echoed = writeService(singleRegister());
-        echoed.transactions.get(0).response = ModbusTransactionResponses.of(field("进水温度", "uint16", 2));
+        echoed.transactions.get(0).response = ModbusResponses.of(field("进水温度", "uint16", 2));
         assertEquals("invalid transactions[0].response: not allowed on a write function (the reply echoes the request)",
                 ModbusServiceValidator.validate(echoed));
     }
@@ -526,7 +526,7 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsFormatWidthMismatch() {
         ModbusService mismatched = service();
-        ModbusTransactionResponseField field = mismatched.transactions.get(0).response.fields.get(0);
+        ModbusResponseField field = mismatched.transactions.get(0).response.fields.get(0);
         field.format = "int8";     // int8 只占 1 字节
         assertEquals("invalid transactions[0].response.fields[0].bytes: 2 (format int8 needs 1)",
                 ModbusServiceValidator.validate(mismatched));
@@ -553,8 +553,8 @@ class ModbusServiceValidatorTest {
     @Test
     void stringFormatTakesAnyWidth() {
         ModbusService text = service();
-        text.transactions.get(0).request = ModbusTransactionRequests.read("03", 0, 4);   // 8 字节 = 4 个寄存器
-        ModbusTransactionResponseField field = text.transactions.get(0).response.fields.get(0);
+        text.transactions.get(0).request = ModbusRequests.read("03", 0, 4);   // 8 字节 = 4 个寄存器
+        ModbusResponseField field = text.transactions.get(0).response.fields.get(0);
         field.format = "string";
         field.bytes = 8;           // string 宽度不固定，由 bytes 决定，不做宽度比对
         assertNull(ModbusServiceValidator.validate(text));
@@ -563,8 +563,8 @@ class ModbusServiceValidatorTest {
     @Test
     void singleByteNeedsNoByteOrder() {
         ModbusService oneByte = service();
-        oneByte.transactions.get(0).request = ModbusTransactionRequests.read("02", 0, 8);   // 1 字节 = 8 个位
-        ModbusTransactionResponseField flag = oneByte.transactions.get(0).response.fields.get(0);
+        oneByte.transactions.get(0).request = ModbusRequests.read("02", 0, 8);   // 1 字节 = 8 个位
+        ModbusResponseField flag = oneByte.transactions.get(0).response.fields.get(0);
         flag.format = "uint8";
         flag.bytes = 1;
         flag.byteOrder = null;     // 单字节没有字节序可言
@@ -575,7 +575,7 @@ class ModbusServiceValidatorTest {
     void byteOrderIsRequiredForEveryMultiByteField() {
         // 现行规则是「bytes > 1 就必填」，string 也不例外（虽然 string 的取值并不用 byteOrder）
         ModbusService text = service();
-        ModbusTransactionResponseField field = text.transactions.get(0).response.fields.get(0);
+        ModbusResponseField field = text.transactions.get(0).response.fields.get(0);
         field.format = "string";
         field.bytes = 8;
         field.byteOrder = null;
@@ -600,7 +600,7 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsDuplicatedFieldNames() {
         ModbusService duplicated = service();
-        ModbusTransactionResponseField second = function(1).response.fields.get(0); // 序号不同、名字相同的第二个字段
+        ModbusResponseField second = function(1).response.fields.get(0); // 序号不同、名字相同的第二个字段
         second.index = 2;
         duplicated.transactions.get(0).response.fields.add(second);
         assertEquals("invalid transactions[0].response.fields[1].field: 进水温度 (duplicated)",
@@ -610,7 +610,7 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsBitListOffsetBeyondField() {
         ModbusService beyond = service();
-        ModbusTransactionResponseField field = beyond.transactions.get(0).response.fields.get(0);
+        ModbusResponseField field = beyond.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(16, "第17位"))); // bytes 2 → 只有 0..15
         assertEquals("invalid transactions[0].response.fields[0].bit-list[0].offset: 16 (field covers 16 bits)",
                 ModbusServiceValidator.validate(beyond));
@@ -619,14 +619,14 @@ class ModbusServiceValidatorTest {
     @Test
     void rejectsDuplicatedBitAndFieldNames() {
         ModbusService duplicatedOffset = service();
-        ModbusTransactionResponseField field = duplicatedOffset.transactions.get(0).response.fields.get(0);
+        ModbusResponseField field = duplicatedOffset.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(0, "第1位"), bit(0, "第2位")));
         assertEquals("invalid transactions[0].response.fields[0].bit-list[1].offset: 0 (duplicated)",
                 ModbusServiceValidator.validate(duplicatedOffset));
 
         // 位名与所在字段重名同样会互相覆盖
         ModbusService shadowed = service();
-        ModbusTransactionResponseField owner = shadowed.transactions.get(0).response.fields.get(0);
+        ModbusResponseField owner = shadowed.transactions.get(0).response.fields.get(0);
         owner.bitList = new ArrayList<>(List.of(bit(0, "进水温度")));
         assertEquals("invalid transactions[0].response.fields[0].bit-list[0].field: 进水温度 (duplicated)",
                 ModbusServiceValidator.validate(shadowed));
@@ -635,7 +635,7 @@ class ModbusServiceValidatorTest {
     @Test
     void acceptsBitListWithinField() {
         ModbusService bits = service();
-        ModbusTransactionResponseField field = bits.transactions.get(0).response.fields.get(0);
+        ModbusResponseField field = bits.transactions.get(0).response.fields.get(0);
         field.bitList = new ArrayList<>(List.of(bit(0, "进水阀"), bit(15, "报警")));
 
         assertNull(ModbusServiceValidator.validate(bits));
@@ -874,8 +874,8 @@ class ModbusServiceValidatorTest {
 
     @Test
     void invokeRequiresFieldsWithoutDefault() {
-        ModbusTransaction write = writeFunction(ModbusTransactionRequests.write("10", 0,
-                ModbusTransactionRequests.field(1, "设定温度", 0, "uint16", null)));
+        ModbusTransaction write = writeFunction(ModbusRequests.write("10", 0,
+                ModbusRequests.field(1, "设定温度", 0, "uint16", null)));
         assertEquals("values.设定温度 is required (this field has no default)",
                 ModbusServiceValidator.validateInvoke(write, null));
         assertNull(ModbusServiceValidator.validateInvoke(write, Map.of("设定温度", 70)));
@@ -904,8 +904,8 @@ class ModbusServiceValidatorTest {
 
     @Test
     void invokeChecksBitValues() {
-        ModbusTransaction write = writeFunction(ModbusTransactionRequests.write("05", 0,
-                ModbusTransactionRequests.field(1, "开机", "bit", true)));
+        ModbusTransaction write = writeFunction(ModbusRequests.write("05", 0,
+                ModbusRequests.field(1, "开机", "bit", true)));
         assertEquals("invalid values.开机: 1 (a bit is true or false)",
                 ModbusServiceValidator.validateInvoke(write, Map.of("开机", 1)));
         assertNull(ModbusServiceValidator.validateInvoke(write, Map.of("开机", false)));
@@ -936,7 +936,7 @@ class ModbusServiceValidatorTest {
     }
 
     /** 一份只含给定写方法的定义（写方法没有 response，也没有 interval / polling）。 */
-    private static ModbusService writeService(ModbusTransactionRequest request) {
+    private static ModbusService writeService(ModbusRequest request) {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
@@ -962,15 +962,15 @@ class ModbusServiceValidatorTest {
                     function.from.type = "command";
                     function.from.index = index;
         function.name = "读进水温度";
-        function.request = ModbusTransactionRequests.holding();
+        function.request = ModbusRequests.holding();
 
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+        ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusTransactionResponses.of(field);
+        function.response = ModbusResponses.of(field);
         return function;
     }
 
@@ -985,24 +985,24 @@ class ModbusServiceValidatorTest {
     }
 
     /** 最常用的那条写请求：fc 06 写一个寄存器，带缺省值。 */
-    private static ModbusTransactionRequest singleRegister() {
-        return ModbusTransactionRequests.write("06", 0,
-                ModbusTransactionRequests.field(1, "设定温度", "uint16", 70));
+    private static ModbusRequest singleRegister() {
+        return ModbusRequests.write("06", 0,
+                ModbusRequests.field(1, "设定温度", "uint16", 70));
     }
 
-    private static ModbusTransaction writeFunction(ModbusTransactionRequest request) {
+    private static ModbusTransaction writeFunction(ModbusRequest request) {
         return writeService(request).transactions.get(0);
     }
 
-    private static ModbusTransactionResponseFieldValue value(Long value, String description) {
-        ModbusTransactionResponseFieldValue entry = new ModbusTransactionResponseFieldValue();
+    private static ModbusResponseFieldValue value(Long value, String description) {
+        ModbusResponseFieldValue entry = new ModbusResponseFieldValue();
         entry.value = value;
         entry.description = description;
         return entry;
     }
 
-    private static ModbusTransactionResponseFieldBit bit(int offset, String field) {
-        ModbusTransactionResponseFieldBit entry = new ModbusTransactionResponseFieldBit();
+    private static ModbusResponseFieldBit bit(int offset, String field) {
+        ModbusResponseFieldBit entry = new ModbusResponseFieldBit();
         entry.offset = offset;
         entry.field = field;
         return entry;
@@ -1026,8 +1026,8 @@ class ModbusServiceValidatorTest {
         return alarm;
     }
 
-    private static ModbusTransactionResponseField field(String name, String format, Integer bytes) {
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+    private static ModbusResponseField field(String name, String format, Integer bytes) {
+        ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
         field.field = name;
         field.bytes = bytes;

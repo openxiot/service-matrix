@@ -4,8 +4,8 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -114,7 +114,7 @@ class ModbusLastPollingPlanTest {
     /** 取名字时把空名与空元素都滤掉：它们进不了影子，也就不该出现在「定义里有」这一侧。 */
     @Test
     void definedFieldsReadsFieldAndBitNames() {
-        ModbusTransactionResponseField word = field("status");
+        ModbusResponseField word = field("status");
         word.bitList = List.of(bit(0, "running"), bit(1, null));
 
         assertEquals(Set.of("status", "running"),
@@ -150,14 +150,14 @@ class ModbusLastPollingPlanTest {
         return shadow;
     }
 
-    private static ModbusTransactionResponseField field(String name) {
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+    private static ModbusResponseField field(String name) {
+        ModbusResponseField field = new ModbusResponseField();
         field.field = name;
         return field;
     }
 
-    private static ModbusTransactionResponseFieldBit bit(int offset, String name) {
-        ModbusTransactionResponseFieldBit bit = new ModbusTransactionResponseFieldBit();
+    private static ModbusResponseFieldBit bit(int offset, String name) {
+        ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
         bit.offset = offset;
         bit.field = name;
         return bit;

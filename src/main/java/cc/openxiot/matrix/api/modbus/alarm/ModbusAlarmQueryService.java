@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository.RangeFilter;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository.RangeFilter;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -40,7 +40,7 @@ public class ModbusAlarmQueryService {
     public static final int MAX_ALARM_LIMIT = 1_000;
 
     @Inject
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     /**
      * 告警清单的结果。
@@ -52,7 +52,7 @@ public class ModbusAlarmQueryService {
      * @param items     明细，按 {@code at} 倒序（最近的在前）
      * @param truncated true = 还有更早的没取回来（前端要提示「时间范围太宽」）
      */
-    public record AlarmResult(Date from, Date to, int limit, List<ModbusServiceAlarm> items,
+    public record AlarmResult(Date from, Date to, int limit, List<ModbusAlarm> items,
                               boolean truncated) {
     }
 
@@ -62,7 +62,7 @@ public class ModbusAlarmQueryService {
      *
      * @param id 非法 id 由调用方先挡（Panache 的 {@code findById(String)} 在构造 ObjectId 时就抛）
      */
-    public Uni<ModbusServiceAlarm> findById(ObjectId id) {
+    public Uni<ModbusAlarm> findById(ObjectId id) {
         return alarmRepo.findById(id);
     }
 
@@ -110,7 +110,7 @@ public class ModbusAlarmQueryService {
         }
         RangeFilter filter = new RangeFilter(transactionIndex, blankToNull(field), blankToNull(level),
                 open, handled, from, end);
-        List<Uni<List<ModbusServiceAlarm>>> queries = serviceIds.stream()
+        List<Uni<List<ModbusAlarm>>> queries = serviceIds.stream()
                 .map(id -> alarmRepo.findRange(id, filter, size + 1))
                 .toList();
 
@@ -128,22 +128,22 @@ public class ModbusAlarmQueryService {
      * <p>{@code at} 理论上不会缺（写入时必带），但真缺了也得排得出结果：按 0 算，倒序里落在最后 ——
      * 与故障合并同一条兜底。</p>
      */
-    static AlarmResult merge(Date from, Date to, int limit, List<ModbusServiceAlarm> rows) {
-        List<ModbusServiceAlarm> sorted = new ArrayList<>(rows);
+    static AlarmResult merge(Date from, Date to, int limit, List<ModbusAlarm> rows) {
+        List<ModbusAlarm> sorted = new ArrayList<>(rows);
         sorted.sort(Comparator.comparingLong(
-                (ModbusServiceAlarm alarm) -> alarm.at == null ? 0L : alarm.at.getTime()).reversed());
+                (ModbusAlarm alarm) -> alarm.at == null ? 0L : alarm.at.getTime()).reversed());
         boolean truncated = sorted.size() > limit;
         return new AlarmResult(from, to, limit,
                 List.copyOf(truncated ? sorted.subList(0, limit) : sorted), truncated);
     }
 
     /** 把 combine 的「每个服务一组」摊平成一个清单（Iterable 版 combine 的泛型被擦成了 List<?>）。 */
-    private static List<ModbusServiceAlarm> flatten(List<?> groups) {
-        List<ModbusServiceAlarm> merged = new ArrayList<>();
+    private static List<ModbusAlarm> flatten(List<?> groups) {
+        List<ModbusAlarm> merged = new ArrayList<>();
         for (Object group : groups) {
             if (group instanceof List<?> rows) {
                 for (Object row : rows) {
-                    if (row instanceof ModbusServiceAlarm alarm) {
+                    if (row instanceof ModbusAlarm alarm) {
                         merged.add(alarm);
                     }
                 }

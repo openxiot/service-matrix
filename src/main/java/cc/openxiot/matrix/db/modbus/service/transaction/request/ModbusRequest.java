@@ -24,7 +24,7 @@ import java.util.List;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "请求帧定义（invoke 时现组帧）")
-public class ModbusTransactionRequest {
+public class ModbusRequest {
 
     @Schema(description = "从站地址（帧首字节）；同一服务的各方法必须一致，1..247", examples = {"1"}, required = true)
     public Integer slaveId;
@@ -45,5 +45,5 @@ public class ModbusTransactionRequest {
     public Integer quantity;
 
     @Schema(description = "写方法的写入字段：决定数据区的内容与排列；读方法必须为空")
-    public List<ModbusTransactionRequestField> fields;
+    public List<ModbusRequestField> fields;
 }

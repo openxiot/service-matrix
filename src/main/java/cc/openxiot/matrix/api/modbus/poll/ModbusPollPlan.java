@@ -4,7 +4,7 @@ import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -52,7 +52,7 @@ public final class ModbusPollPlan {
     }
 
     /** 请求定义的功能码（{@code request} 缺失时返回 {@code null}，{@code isRead} 认它作非读）。 */
-    public static String functionFc(ModbusTransactionRequest request) {
+    public static String functionFc(ModbusRequest request) {
         return request == null ? null : request.fc;
     }
 

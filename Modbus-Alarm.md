@@ -11,7 +11,7 @@
 | 2 | 判定口径 `ModbusAlarmPolicy`（纯函数） | **已落地**（见第四、五节） |
 | 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **已落地：成立**（2026-09-14 staging 冒烟，见第七节） |
-| 4 | 告警文档 `ModbusServiceAlarm` + 仓储 + Codec | **已落地**（见第八节） |
+| 4 | 告警文档 `ModbusAlarm` + 仓储 + Codec | **已落地**（见第八节） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
 | 6 | 定义变更对账 / 删除级联 | **已落地**（见第五节「定义变更对账与删除级联」） |
 | 7 | 查询接口 `ModbusAlarmResource` | **已落地**（见第九节） |
@@ -468,7 +468,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 2. `{serviceId: 1, pollingIndex: 1, openKey: 1}` —— 采集侧查未恢复
 3. `{serviceId: 1, pollingIndex: 1, at: -1}` —— 列表查询
 
-**仓储**（`ModbusServiceAlarmRepository`）里没有一条「整文档替换」：行落下之后只有两种改动 ——
+**仓储**（`ModbusAlarmRepository`）里没有一条「整文档替换」：行落下之后只有两种改动 ——
 关闭（`recoveredAt` / `closeType`、`$unset openKey`）与处理（`handled` / `handledBy`），
 是**互不相交的字段**，各写各的 `$set`，谁也盖不掉谁。三条要点：
 
@@ -644,14 +644,14 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   `null 不出键`；`=` 的取值表状态（有 `state` 无 `threshold`）；字符串样本原样出去；
   汇总的计数（`open` 按 `recoveredAt` 数）与两个 tally 的排序；`level`/`text` 缺失归 `UNKNOWN`
   桶而不替用户编文本；空输入全零；`openKeyOf` 的拼法稳定（改了它，库里已有的开行就再也关不掉）。
-* `ModbusServiceAlarmRepositoryTest`（12 例，纯静态不连库）：三种异常形状都认、非 11000 的
+* `ModbusAlarmRepositoryTest`（12 例，纯静态不连库）：三种异常形状都认、非 11000 的
   写错误照常外传、cause 链包装能穿透、自引用 cause 会立刻停下、超长链有界。
   **它值得单独测**：整套并发推理压在「重复键被认出来、然后吞掉」上，判漏就是静默地产生
   两条开着的告警 —— 正是这个特性要避免的失效模式。
-  后 4 例钉住**写语句的形状与折算**（这些错了不会报错、只会悄悄不对）：关闭就是 `$unset openKey`；
-  关闭按整个开行标识 `$in` 一批出值、**不是**定位某条 `_id`；处理是 `{handled: {$ne: true}}` 上的
+  后 4 例钉住 **写语句的形状与折算**（这些错了不会报错、只会悄悄不对）：关闭就是 `$unset openKey`；
+  关闭按整个开行标识 `$in` 一批出值、 **不是**定位某条 `_id`；处理是 `{handled: {$ne: true}}` 上的
   CAS + 只 `$set` 两个字段（整文档替换会抹掉并行的关闭刚写的 `recoveredAt`）；
-  **投影里缺失的 `handled` 折算成「未处理」** —— 这一条写反了，**全部老数据**（没有 `handled` 键）
+  **投影里缺失的 `handled` 折算成「未处理」** —— 这一条写反了， **全部老数据**（没有 `handled` 键）
   都会被当成已处理，于是每轮采集都给它们关旧开新：稳态零写当场失效、列表每采一次翻一倍。
 * `ModbusAlarmPlanTest`（17 例，纯函数不连库）：还配着 ⇒ 不动（字段 / 位各自）；告警被关掉 ⇒ 关、
   告警配置整个没了 ⇒ 关、字段被删 ⇒ 关、方法被整个删 ⇒ 关、**字段改名**（旧名那条）⇒ 关、
@@ -682,11 +682,11 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 ### 2026-09-16
 
 * **第四个边沿：`handled == true` 也要关旧行、开新行**（第五、七、八、十、十一节随之改写）。
-  起因是一条**语义反了**的现场事实：「处理」的意思是「我知道了，**以后还有越线再提醒我**」，
+  起因是一条 **语义反了**的现场事实：「处理」的意思是「我知道了， **以后还有越线再提醒我**」，
   而不是「这事到此为止」；可在那之前，一条已处理而未恢复的行会一直挂在那儿挡住后续越限，
-  判定每轮都落在稳态零写那一支，用户再也收不到提醒。改动落在 `ModbusServiceAlarm`
+  判定每轮都落在稳态零写那一支，用户再也收不到提醒。改动落在 `ModbusAlarm`
   （加 `CLOSE_HANDLED`）、`ModbusAlarmPolicy`（`judge` 多一支 + `Decision` 多一张 `handledCloses`）、
-  `ModbusServiceAlarmRepository`（投影加 `handled`，值型从 `String` 变成 `OpenAlarmRule`）、
+  `ModbusAlarmRepository`（投影加 `handled`，值型从 `String` 变成 `OpenAlarmRule`）、
   `ModbusAlarmService.apply`（第四段关闭）。几处值得记下的口径：
   * **不动任何已落库的行**（这条规矩本轮一个字没破）：只加了**一个新的关行判据**，
     行上的定义快照、`handledBy`、`ruleId` 都不改写。旧行留着 `handled=true` 与它的处理人
@@ -697,7 +697,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     （一次截断 / 畸形的应答既不能关掉开着的行，也不能重报）。
   * **新类型 `OpenAlarmRule` 放在 `db` 包，不放在 `ModbusAlarmPolicy` 里**：判定要的资料从
     「出值名 → ruleId」变成「出值名 → (ruleId, handled)」。放 `api` 会新造一条 `db → api` 的
-    反向依赖（`ModbusServiceAlarmRepository` 目前一个 `api` 包都不 import，而现有箭头是
+    反向依赖（`ModbusAlarmRepository` 目前一个 `api` 包都不 import，而现有箭头是
     `ModbusAlarmPolicy` → `db.modbus.service.*`）。生产方与消费方都在 `db` 的同侧，签名两边都读得通。
   * **`Boolean.TRUE.equals(handled)`，不能写成 `row.handled`**：`handled` 可空（老数据、以及
     插入时的写法），空必须当**未处理** —— 与仓储自己的 CAS 过滤 `Filters.ne("handled", true)`
@@ -732,7 +732,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   起因是「一个出值只能配一条规则」表达不了分级的真实需求（温度：低于 20 告警 / 超过 26 提示 /
   超过 28 警告 / 超过 30 严重）。改动落在 `ModbusPollingResponseFieldAlarm`（加 `id`）、两处 `alarm` →
   `alarms` 数组、`ModbusAlarmPolicy`（选举 + `LEVEL_ORDER`）、`ModbusAlarmService`（`ruleId` +
-  写序）、`ModbusAlarmPlan`（判据细到规则）、`ModbusServiceAlarm`（`ruleId` + `CLOSE_SUPERSEDED`）。
+  写序）、`ModbusAlarmPlan`（判据细到规则）、`ModbusAlarm`（`ruleId` + `CLOSE_SUPERSEDED`）。
   几处值得记下的口径：
   * **为什么选「只留最严重的一条」反而动得少**：一个出值同时最多一条开着 ⇒ `openKey` **仍然是
     出值级**，唯一部分索引、仓储的 `closeByKeys` / `handle` / `ensureIndexes` **一个字没改**，
@@ -820,7 +820,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   * 单测：`ModbusAlarmQueryServiceTest`（7）+ `ModbusAlarmServiceTest` 补 6 例（`handle`）。
     全量 511 例中 510 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第六步落地：定义变更对账与删除级联**（`api/modbus/alarm/ModbusAlarmPlan` +
-  `ModbusAlarmReconciler`、`ModbusServiceAlarmRepository` 两个只投影坐标的查询、
+  `ModbusAlarmReconciler`、`ModbusAlarmRepository` 两个只投影坐标的查询、
   `ModbusServiceService` 的写入路径接线、`ModbusHistoryService.purge` 的第四个 `Uni`）。
   几处值得记下的口径：
   * **新建了一个 `ModbusAlarmReconciler`，没有把拾遗挂进 `ModbusPollReconciler`**
@@ -856,7 +856,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     `ModbusServiceServiceTest` 补 2。全量 469 例中 468 绿；唯一红色的仍是 `SpaceResourceTest`
     （`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第二步落地：告警文档、仓储与 Codec**（`db/modbus/alarm/ModbusServiceAlarm`、
-  `ModbusServiceAlarmRepository`、`codec/ModbusAlarmCodec`）。几处值得记下的口径：
+  `ModbusAlarmRepository`、`codec/ModbusAlarmCodec`）。几处值得记下的口径：
   * **唯一部分索引刻意没建**（只建了采集侧与列表两个）—— 两条理由见第七节：
     建了被 `recoverWithNull` 静默吞掉是「以为有护栏、其实没有」；建错（服务端忽略
     `partialFilterExpression`）会让已恢复的行撞唯一索引、**告警开始丢**。目前没有它也不产生脏数据，
@@ -867,7 +867,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     （点「处理」），前端得知道点的是哪一条。
   * **`isDuplicateKey` 认三种异常形状**，其中 `com.mongodb.DuplicateKeyException` 继承的是
     `WriteConcernException` 而非 `MongoWriteException`（容易想当然漏掉）。
-  * 单测：`ModbusAlarmCodecTest`（9）+ `ModbusServiceAlarmRepositoryTest`（8，纯静态）。
+  * 单测：`ModbusAlarmCodecTest`（9）+ `ModbusAlarmRepositoryTest`（8，纯静态）。
     全量 449 例中 448 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。
 * **第一步落地：配置模型与校验**（`ModbusPollingResponseFieldAlarm` + 两处 `alarm` 字段 +
   `ModbusPollingResponseFieldAlarmCodec` + `ModbusAlarmPolicy` + `ModbusServiceValidator.validateAlarm`）。

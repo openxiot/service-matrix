@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.history.codec;
+package cc.openxiot.matrix.db.modbus.shadow.codec;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import java.util.Date;
 
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
-import cc.openxiot.matrix.db.modbus.shadow.codec.ModbusShadowCodec;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 

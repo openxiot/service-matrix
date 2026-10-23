@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>但**后果等级不同**：历史多一行是信息，告警多一条是页面上同一件事出现两次、
  * 而未处理计数永远不对（用户处理了 A，B 还挂着）。所以插入走
- * {@link ModbusServiceAlarmRepository#insertOpen}（唯一部分索引 + 重复键吞掉），
+ * {@link ModbusAlarmRepository#insertOpen}（唯一部分索引 + 重复键吞掉），
  * 关闭走按整个开行标识的 {@code updateMany}。这些口径都在仓储里，本类只负责「判什么、什么时候判」。</p>
  *
  * <p>失败由调用方处置：{@code ModbusServiceService} 只记日志，既不改写 invoke 的成功响应、
@@ -54,7 +54,7 @@ public class ModbusAlarmService {
     private static final int MAX_REPORTED_SKIPS = 256;
 
     @Inject
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     @Inject
     Logger logger;
@@ -118,7 +118,7 @@ public class ModbusAlarmService {
      * @param who 处理人，取它的 {@code timestamp} 当处理时刻（与 {@code creator} / {@code updater} 同口径，
      *            不另开字段）
      */
-    public Uni<ModbusServiceAlarm> handle(ObjectId id, Person who) {
+    public Uni<ModbusAlarm> handle(ObjectId id, Person who) {
         if (id == null) {
             return Uni.createFrom().failure(new IllegalArgumentException("alarm id is required"));
         }
@@ -144,7 +144,7 @@ public class ModbusAlarmService {
      * 规则时，那条开着的行按 {@code SUPERSEDED} 关掉、胜者再开一条；那条规则没换但行**已被处理过**时，
      * 按 {@code HANDLED} 关掉、同样再开一条。而 {@code Uni.combine().all()}
      * 是**并发**的（不是按列表顺序依次执行），把两类动作一起发出去，插入会抢在关闭之前撞上
-     * {@code {openKey}} 那条唯一部分索引，被{@link ModbusServiceAlarmRepository#insertOpen}
+     * {@code {openKey}} 那条唯一部分索引，被{@link ModbusAlarmRepository#insertOpen}
      * 当成「别的副本先开了」**静默吞掉**（它本来就该吞 11000，从结果上看不出区别）——
      * 于是这个出值一条开着的都没有。下一轮采样会自愈（没有开行 ⇒ 重新开那个胜者），
      * 但那个窗口里告警是消失的，而轮询一停就永久丢。所以这里是两段：关闭先并发做完，再并发插。</p>
@@ -164,22 +164,22 @@ public class ModbusAlarmService {
         List<Uni<Void>> closes = new ArrayList<>();
         if (!decision.valueCloses().isEmpty()) {
             closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.valueCloses(),
-                    ModbusServiceAlarm.CLOSE_VALUE, now).replaceWithVoid());
+                    ModbusAlarm.CLOSE_VALUE, now).replaceWithVoid());
         }
         if (!decision.supersededCloses().isEmpty()) {
             closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.supersededCloses(),
-                    ModbusServiceAlarm.CLOSE_SUPERSEDED, now).replaceWithVoid());
+                    ModbusAlarm.CLOSE_SUPERSEDED, now).replaceWithVoid());
         }
         if (!decision.definitionCloses().isEmpty()) {
             closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.definitionCloses(),
-                    ModbusServiceAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
+                    ModbusAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
         }
         // 「已处理但还在越限」：关掉这一条，紧接着在 opens 里开一条同出值的新行（后者的 handled 为 false）。
         // 必须留在 closes 这一段里，理由见上面「先关、后插」—— 抢在关闭之前插会撞唯一索引被静默吞掉，
         // 而这里的代价比别处更大：用户刚处理完就什么都看不到了
         if (!decision.handledCloses().isEmpty()) {
             closes.add(alarmRepo.closeByKeys(serviceId, function.index, decision.handledCloses(),
-                    ModbusServiceAlarm.CLOSE_HANDLED, now).replaceWithVoid());
+                    ModbusAlarm.CLOSE_HANDLED, now).replaceWithVoid());
         }
 
         List<Uni<Void>> opens = new ArrayList<>();
@@ -215,7 +215,7 @@ public class ModbusAlarmService {
         for (ModbusAlarmPolicy.Skip skip : skips) {
             // 去重键细到**规则**：一个出值可以配一组规则，只报「这个出值判不了」的话，
             // 同一个出值里的第二条坏规则永远不会被报出来（字段改了名算新的，理由同前）
-            String key = ModbusServiceAlarm.openKeyOf(serviceId, function.index, skip.field())
+            String key = ModbusAlarm.openKeyOf(serviceId, function.index, skip.field())
                     + "#" + skip.alarm().id;
             if (!firstTime(reportedSkips, key, MAX_REPORTED_SKIPS)) {
                 continue;
@@ -241,9 +241,9 @@ public class ModbusAlarmService {
     }
 
     /** 触发那一刻的定义快照进告警行：定义是活的、行是不可变的历史（见 Modbus-Alarm.md 第八节）。 */
-    private static ModbusServiceAlarm rowOf(String serviceId, Integer transactionIndex,
-                                            ModbusAlarmPolicy.Open hit, Date at) {
-        ModbusServiceAlarm row = new ModbusServiceAlarm();
+    private static ModbusAlarm rowOf(String serviceId, Integer transactionIndex,
+                                     ModbusAlarmPolicy.Open hit, Date at) {
+        ModbusAlarm row = new ModbusAlarm();
         row.serviceId = serviceId;
         row.transactionIndex = transactionIndex;
         row.field = hit.field();
@@ -257,7 +257,7 @@ public class ModbusAlarmService {
         // 显式写 false（而不是留 null）：null 与 false 都算未处理，但页面上要显示一个确定的状态
         row.handled = false;
         row.sample = hit.sample();
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, hit.field());
+        row.openKey = ModbusAlarm.openKeyOf(serviceId, transactionIndex, hit.field());
         // 哪条规则开的（不下发）：下一轮据此判断「胜者还是不是它」，也供定义变更对账判这条还该不该开着
         row.ruleId = hit.alarm().id;
         return row;

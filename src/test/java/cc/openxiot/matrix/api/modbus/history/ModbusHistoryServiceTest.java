@@ -2,8 +2,8 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
@@ -15,7 +15,7 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequests;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -563,14 +563,14 @@ class ModbusHistoryServiceTest {
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
         function.name = "读进水温度";
-        function.request = ModbusTransactionRequests.holding();
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+        function.request = ModbusRequests.holding();
+        ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
         field.field = "进水温度";
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusTransactionResponses.of(field);
+        function.response = ModbusResponses.of(field);
         return function;
     }
 

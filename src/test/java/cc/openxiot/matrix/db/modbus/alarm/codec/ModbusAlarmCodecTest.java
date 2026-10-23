@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.db.modbus.alarm.codec;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -27,10 +27,10 @@ class ModbusAlarmCodecTest {
 
     @Test
     void encodesAFullRow() {
-        ModbusServiceAlarm alarm = open("进水温度", 85.0);
+        ModbusAlarm alarm = open("进水温度", 85.0);
         alarm.id = new ObjectId("65f0c0ffee0123456789abcd");
         alarm.recoveredAt = new Date(1_700_000_600_000L);
-        alarm.closeType = ModbusServiceAlarm.CLOSE_VALUE;
+        alarm.closeType = ModbusAlarm.CLOSE_VALUE;
         alarm.handled = true;
         alarm.handledBy = person("u-1", "张三");
 
@@ -64,7 +64,7 @@ class ModbusAlarmCodecTest {
 
     @Test
     void openKeyIsNeverEncoded() {
-        ModbusServiceAlarm alarm = open("进水温度", 85.0);
+        ModbusAlarm alarm = open("进水温度", 85.0);
         assertEquals("svc-1#2#进水温度", alarm.openKey);   // 行内确实带着它
 
         JsonObject o = ModbusAlarmCodec.encode(alarm);
@@ -77,10 +77,10 @@ class ModbusAlarmCodecTest {
     @Test
     void nullsAreOmittedNotWrittenAsNull() {
         // 没配过的东西不该凭空出现（与全仓 Codec 的「null 不出键」同口径）
-        JsonObject bare = ModbusAlarmCodec.encode(new ModbusServiceAlarm());
+        JsonObject bare = ModbusAlarmCodec.encode(new ModbusAlarm());
         assertTrue(bare.isEmpty());
 
-        ModbusServiceAlarm alarm = new ModbusServiceAlarm();
+        ModbusAlarm alarm = new ModbusAlarm();
         alarm.serviceId = "svc-1";
         alarm.field = "进水温度";
         alarm.at = AT;
@@ -95,7 +95,7 @@ class ModbusAlarmCodecTest {
     @Test
     void encodesTheValueListStateInsteadOfANumber() {
         // 带 value-list 的字段比的是描述字符串，快照里没有 threshold
-        ModbusServiceAlarm alarm = new ModbusServiceAlarm();
+        ModbusAlarm alarm = new ModbusAlarm();
         alarm.field = "水泵状态";
         alarm.compare = "=";
         alarm.state = "ON";
@@ -110,14 +110,14 @@ class ModbusAlarmCodecTest {
 
     @Test
     void encodeListKeepsOrder() {
-        ModbusServiceAlarm first = open("进水温度", 85.0);
-        ModbusServiceAlarm second = open("回水温度", 4.0);
+        ModbusAlarm first = open("进水温度", 85.0);
+        ModbusAlarm second = open("回水温度", 4.0);
 
         JsonArray arr = ModbusAlarmCodec.encode(List.of(first, second));
         assertEquals(2, arr.size());
         assertEquals("进水温度", arr.getJsonObject(0).getString("field"));
         assertEquals("回水温度", arr.getJsonObject(1).getString("field"));
-        assertTrue(ModbusAlarmCodec.encode((List<ModbusServiceAlarm>) null).isEmpty());
+        assertTrue(ModbusAlarmCodec.encode((List<ModbusAlarm>) null).isEmpty());
     }
 
     // ===== 汇总 =====
@@ -125,19 +125,19 @@ class ModbusAlarmCodecTest {
     @Test
     void summarizesCountsAndTallies() {
         // 三条：两条开着未处理（WARN/CRITICAL 各一，文本不同）、一条已恢复已处理（WARN，同一个文本）
-        ModbusServiceAlarm a = open("进水温度", 85.0);
+        ModbusAlarm a = open("进水温度", 85.0);
         a.level = "WARN";
         a.text = "温度过高";
 
-        ModbusServiceAlarm b = open("回水温度", 4.0);
+        ModbusAlarm b = open("回水温度", 4.0);
         b.level = "CRITICAL";
         b.text = "温度过低";
 
-        ModbusServiceAlarm c = open("进水温度", 20.0);
+        ModbusAlarm c = open("进水温度", 20.0);
         c.level = "WARN";
         c.text = "温度过高";
         c.recoveredAt = new Date(1_700_000_600_000L);
-        c.closeType = ModbusServiceAlarm.CLOSE_VALUE;
+        c.closeType = ModbusAlarm.CLOSE_VALUE;
         c.handled = true;
         c.handledBy = person("u-1", "张三");
         c.openKey = null;              // 已恢复：openKey 被 $unset 了
@@ -168,7 +168,7 @@ class ModbusAlarmCodecTest {
     void summaryBucketsMissingLevelAndTextWithoutInventingUserData() {
         // level / text 缺失只可能是更早的口径或脏数据（新存的定义被校验器挡住了必填）；
         // 归桶是为了让计数与 total 对得上，不是替用户编一个告警文本
-        ModbusServiceAlarm bare = new ModbusServiceAlarm();
+        ModbusAlarm bare = new ModbusAlarm();
         bare.at = AT;
 
         JsonObject summary = ModbusAlarmCodec.encodeSummary(List.of(bare));
@@ -195,14 +195,14 @@ class ModbusAlarmCodecTest {
     @Test
     void openKeyFormatIsStable() {
         // 判定（按出值名）与落库（按 key 关闭）靠这个拼法对上；改了它，库里已有的开行就再也关不掉
-        assertEquals("svc-1#2#进水温度", ModbusServiceAlarm.openKeyOf("svc-1", 2, "进水温度"));
+        assertEquals("svc-1#2#进水温度", ModbusAlarm.openKeyOf("svc-1", 2, "进水温度"));
     }
 
     // ===== 夹具 =====
 
     /** 一条未恢复、未处理的告警（字段名与样本给定）。 */
-    private static ModbusServiceAlarm open(String field, Object sample) {
-        ModbusServiceAlarm alarm = new ModbusServiceAlarm();
+    private static ModbusAlarm open(String field, Object sample) {
+        ModbusAlarm alarm = new ModbusAlarm();
         alarm.serviceId = "svc-1";
         alarm.transactionIndex = 2;
         alarm.field = field;
@@ -214,7 +214,7 @@ class ModbusAlarmCodecTest {
         alarm.at = AT;
         alarm.handled = false;
         alarm.sample = sample;
-        alarm.openKey = ModbusServiceAlarm.openKeyOf("svc-1", 2, field);
+        alarm.openKey = ModbusAlarm.openKeyOf("svc-1", 2, field);
         return alarm;
     }
 

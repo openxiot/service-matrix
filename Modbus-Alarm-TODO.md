@@ -49,15 +49,15 @@
 - [x] `db/modbus/alarm/ModbusServiceAlarm`：含触发那一刻的**定义快照**（`compare`/`threshold`/`state`/
       `level`/`text`/`unit`）—— 定义是活的、行是不可变的历史，只存引用会让改阈值悄悄改写历史告警的含义。
       另有 `CLOSE_VALUE` / `CLOSE_DEFINITION` 两个关闭方式常量与 `openKeyOf(...)`。
-- [x] `ModbusServiceAlarmRepository`（照 `ModbusServiceFailureRepository`）：索引（**只建了两个**，
-      见下）、`insertOpen`、`listOpenFields`、`closeByKeys`（`updateMany`）、`handle`（CAS，
-      **绝不 `replaceOne`**）、`deleteByServiceIds`、`findRange` + `RangeFilter`。
+- [x] `ModbusAlarmRepository`（照 `ModbusServiceFailureRepository`）：索引（ **只建了两个**，
+  见下）、`insertOpen`、`listOpenFields`、`closeByKeys`（`updateMany`）、`handle`（CAS，
+  **绝不 `replaceOne`**）、`deleteByServiceIds`、`findRange` + `RangeFilter`。
 - [x] `db/modbus/alarm/codec/ModbusAlarmCodec`：**只出不进**，`id` = `_id.toHexString()`，
       `openKey` **绝不下发**，时刻一律 epoch 毫秒，`handledBy` 走既有 `PersonCodec`；
       `encodeSummary` 出 `{total, open, unhandled, byLevel, byText}`。
 - [x] 单测：`ModbusAlarmCodecTest`（9 例：`null 不出键`、`openKey` 不出现、epoch 毫秒、
-      `=` 的取值表状态、汇总排序与归桶）+ `ModbusServiceAlarmRepositoryTest`（8 例：三种异常形状、
-      非 11000 照常外传、cause 链包装、自引用终止、超长链有界）。
+      `=` 的取值表状态、汇总排序与归桶）+ `ModbusAlarmRepositoryTest`（8 例：三种异常形状、
+  非 11000 照常外传、cause 链包装、自引用终止、超长链有界）。
 - [x] 唯一部分索引第 0 步冒烟通过后已补进 `ensureIndexes()`（现在 1、2、3 三个都建）。
       「先不建」的两条理由与实测台账见 `Modbus-Alarm.md` 第七节。
 - [x] 全量 449 例中 448 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
@@ -91,7 +91,7 @@
 * 「关闭是**按 key 的 `updateMany`**、不是定位某条 `_id`」——mock 观察不到 `Bson` 形状，
   改由 `ModbusServiceAlarmRepositoryTest.closingTargetsTheWholeOpenKeyNotOneRow` 断言过滤条件
   （第二步已落地）。这条写错了不会报错，只会「关不掉」，比报错的写难查得多。
-* 「重复键被吞掉」的**识别**那一半由 `ModbusServiceAlarmRepositoryTest` 钉住（三种异常形状）；
+* 「重复键被吞掉」的 **识别**那一半由 `ModbusAlarmRepositoryTest` 钉住（三种异常形状）；
   **吞**的那一半（`insertOpen` 把 11000 变成 `false`）要连库才能触发，
   归第七步的端到端验收。
 
@@ -202,8 +202,8 @@
       都读作**没配**，库里不留 `alarms: []` 也不留空壳规则。
 - [x] `ModbusAlarmPolicy`：`LEVEL_ORDER` / `rank` / 选举（只留级别最高的一条；同级取声明顺序
       靠后的；命中优先于判不了）；`SKIP` 日志去重键细到 `ruleId`。
-- [x] `ModbusServiceAlarm` 加 `ruleId`（**不下发**）与 `CLOSE_SUPERSEDED`；
-      **`openKey` 与那三个索引一个字没改** —— 「一个出值同时最多一条开着」由唯一部分索引强制。
+- [x] `ModbusAlarm` 加 `ruleId`（ **不下发**）与 `CLOSE_SUPERSEDED`；
+  **`openKey` 与那三个索引一个字没改** —— 「一个出值同时最多一条开着」由唯一部分索引强制。
 - [x] `ModbusAlarmService.apply` 改**两段写序（先关后插）**，并用 `InOrder` 钉住：
       `Uni.combine().all()` 是并发的，顺序只能由两段 `chain` 保证 —— 反了会撞唯一索引、
       被 `insertOpen` 静默吞掉，那个出值就一条开着的都没有。
@@ -268,7 +268,7 @@
 挂着挡住后续越限（判定每轮都落在稳态零写那一支），用户再也收不到提醒。
 完整口径见 `Modbus-Alarm.md` 第十三节 2026-09-16 那条，这里只列交付物与**刻意偏离**。
 
-- [x] `ModbusServiceAlarm` 加 `CLOSE_HANDLED = "HANDLED"`（页面文案「处理后再报」）。
+- [x] `ModbusAlarm` 加 `CLOSE_HANDLED = "HANDLED"`（页面文案「处理后再报」）。
 - [x] 新类型 `db/modbus/alarm/OpenAlarmRule(String ruleId, boolean handled)` ——
       判定要的资料从「出值名 → ruleId」变成「出值名 → (ruleId, handled)」。
       **放在 `db` 包而不是 `ModbusAlarmPolicy` 里**：放 `api` 会新造一条 `db → api` 的反向依赖。

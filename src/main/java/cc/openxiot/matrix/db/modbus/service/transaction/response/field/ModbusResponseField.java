@@ -20,7 +20,7 @@ import java.util.List;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "应答字段解析规则")
-public class ModbusTransactionResponseField {
+public class ModbusResponseField {
 
     @Schema(description = "字段序号（1 起自然数，同一应答内唯一）：决定该字段在数据区里的先后位置",
             examples = {"1"}, required = true)
@@ -49,11 +49,11 @@ public class ModbusTransactionResponseField {
     @Schema(description = "取值表：原始值命中 value 时，直接以对应 description 作为字段值（不再应用 scale）")
     @BsonProperty("value-list")
     @JsonProperty("value-list")
-    public List<ModbusTransactionResponseFieldValue> valueList;
+    public List<ModbusResponseFieldValue> valueList;
 
     @Schema(description = "位清单（01/02 位区）：把本字段覆盖的位区里的若干位各自作为一个 0/1 取值输出，"
             + "取值的 key 即各位的 field；本字段自身的值仍是整段位掩码")
     @BsonProperty("bit-list")
     @JsonProperty("bit-list")
-    public List<ModbusTransactionResponseFieldBit> bitList;
+    public List<ModbusResponseFieldBit> bitList;
 }

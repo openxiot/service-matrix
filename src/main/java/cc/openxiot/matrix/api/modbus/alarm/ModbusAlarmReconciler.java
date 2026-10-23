@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.quarkus.runtime.StartupEvent;
@@ -47,7 +47,7 @@ import java.util.List;
 public class ModbusAlarmReconciler {
 
     @Inject
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     @Inject
     ModbusServiceRepository serviceRepo;
@@ -100,7 +100,7 @@ public class ModbusAlarmReconciler {
         List<Uni<Void>> ops = new ArrayList<>(closes.size());
         for (ModbusAlarmPlan.Close close : closes) {
             ops.add(alarmRepo.closeByKeys(close.serviceId(), close.transactionIndex(), close.fields(),
-                    ModbusServiceAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
+                    ModbusAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
         }
         int fields = closes.stream().mapToInt(close -> close.fields().size()).sum();
         return Uni.combine().all().unis(ops).discardItems()

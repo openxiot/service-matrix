@@ -14,9 +14,9 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
@@ -404,7 +404,7 @@ public class ModbusServiceService {
      *
      * <p>帧在这里现组（含 CRC16）—— 读方法按 {@code start/quantity}，写方法按字段与
      * {@code values}（缺省回落字段的缺省值）。读写两条路走同一个
-     * {@link ModbusFrameCodec#encodeRequest(ModbusTransactionRequest, Map)}，不再需要前端算好一整串帧。</p>
+     * {@link ModbusFrameCodec#encodeRequest(ModbusRequest, Map)}，不再需要前端算好一整串帧。</p>
      */
     private static String requestFrame(
             ModbusService service,
@@ -569,7 +569,7 @@ public class ModbusServiceService {
                             : result.description());
         }
 
-        List<ModbusTransactionResponseField> fields = ModbusTransaction.responseFields(function);
+        List<ModbusResponseField> fields = ModbusTransaction.responseFields(function);
         if (fields.isEmpty()) {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();

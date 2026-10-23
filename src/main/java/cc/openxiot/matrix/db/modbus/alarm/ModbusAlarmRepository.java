@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@link ModbusServiceAlarm} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-alarms}）。
+ * {@link ModbusAlarm} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-alarms}）。
  *
  * <p>这个仓储里没有一条「整文档替换」：告警行一旦落下，此后只有两种改动 ——
  * 关闭（写 {@code recoveredAt} / {@code closeType}、{@code $unset} {@code openKey}）与
@@ -41,7 +41,7 @@ import java.util.Map;
  * 这消除了「幽灵告警永远关不掉」这个失效模式，也让采集热路径只需要「存在性」而不需要身份。</p>
  */
 @ApplicationScoped
-public class ModbusServiceAlarmRepository  {
+public class ModbusAlarmRepository {
 
     @Inject
     ReactiveMongoClient mongoClient;
@@ -49,12 +49,12 @@ public class ModbusServiceAlarmRepository  {
     /** MongoDB 的重复键错误码。 */
     private static final int DUPLICATE_KEY = 11000;
 
-    private ReactiveMongoCollection<ModbusServiceAlarm> collection() {
-        return mongoClient.getDatabase("modbus").getCollection("service-alarms", ModbusServiceAlarm.class);
+    private ReactiveMongoCollection<ModbusAlarm> collection() {
+        return mongoClient.getDatabase("modbus").getCollection("service-alarms", ModbusAlarm.class);
     }
 
     /** 按 id 查询单条告警（供详情/关闭入口用）。 */
-    public Uni<ModbusServiceAlarm> findById(ObjectId id) {
+    public Uni<ModbusAlarm> findById(ObjectId id) {
         return collection().find(Filters.eq("_id", id)).collect().first();
     }
 
@@ -122,11 +122,11 @@ public class ModbusServiceAlarmRepository  {
      *
      * <p>其它失败一律照常外传：调用方（采集链路）自己决定记日志还是咽下去。</p>
      */
-    public Uni<Boolean> insertOpen(ModbusServiceAlarm alarm) {
+    public Uni<Boolean> insertOpen(ModbusAlarm alarm) {
         if (alarm.id == null) { alarm.id = new ObjectId(); }
         return collection().insertOne(alarm)
                 .map(ignored -> true)
-                .onFailure(ModbusServiceAlarmRepository::isDuplicateKey)
+                .onFailure(ModbusAlarmRepository::isDuplicateKey)
                 .recoverWithItem(false);
     }
 
@@ -153,7 +153,7 @@ public class ModbusServiceAlarmRepository  {
                 .collect().asList()
                 .map(rows -> {
                     Map<String, OpenAlarmRule> open = new HashMap<>(rows.size());
-                    for (ModbusServiceAlarm row : rows) {
+                    for (ModbusAlarm row : rows) {
                         if (row.field != null) {
                             open.put(row.field, openRuleOf(row.ruleId, row.handled));
                         }
@@ -184,7 +184,7 @@ public class ModbusServiceAlarmRepository  {
      * 逐行判，所以得拿到 {@code transactionIndex} / {@code field} / {@code ruleId} 三样 ——
      * 与 {@link #mapOpenRuleByField}（采集热路径，只关心一个方法、只要出值名与规则标识）的用途不同。</p>
      */
-    public Uni<List<ModbusServiceAlarm>> listOpenByServiceId(String serviceId) {
+    public Uni<List<ModbusAlarm>> listOpenByServiceId(String serviceId) {
         if (serviceId == null) {
             return Uni.createFrom().item(List.of());
         }
@@ -202,7 +202,7 @@ public class ModbusServiceAlarmRepository  {
      * 那时不知道哪个服务被动过。开着的行本来就少（一次越限一条、恢复即关闭），
      * 所以这一次全表读的规模由「当前有多少告警开着」决定，不是由库的大小决定。</p>
      */
-    public Uni<List<ModbusServiceAlarm>> listAllOpen() {
+    public Uni<List<ModbusAlarm>> listAllOpen() {
         return collection()
                 .find(Filters.exists("openKey"),
                         new FindOptions().projection(
@@ -220,7 +220,7 @@ public class ModbusServiceAlarmRepository  {
      * {@code $unset}，不该被再关一次而覆盖掉它第一次的 {@code recoveredAt}。</p>
      *
      * @param fields    要关的出值名；空集合直接返回 0，不查库
-     * @param closeType {@link ModbusServiceAlarm#CLOSE_VALUE} 或 {@link ModbusServiceAlarm#CLOSE_DEFINITION}
+     * @param closeType {@link ModbusAlarm#CLOSE_VALUE} 或 {@link ModbusAlarm#CLOSE_DEFINITION}
      * @return 实际关闭的条数
      */
     public Uni<Long> closeByKeys(String serviceId, Integer transactionIndex, Collection<String> fields,
@@ -313,7 +313,7 @@ public class ModbusServiceAlarmRepository  {
      *
      * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
      */
-    public Uni<List<ModbusServiceAlarm>> findRange(String serviceId, RangeFilter filter, int limit) {
+    public Uni<List<ModbusAlarm>> findRange(String serviceId, RangeFilter filter, int limit) {
         List<Bson> filters = new ArrayList<>();
         filters.add(Filters.eq("serviceId", serviceId));
         if (filter.transactionIndex() != null) {
@@ -356,7 +356,7 @@ public class ModbusServiceAlarmRepository  {
      * {@code ModbusServiceFailureRepository#findRange} 同一个道理）。返回的对象只有
      * {@code serviceId} / {@code at} / {@code text} 有值，**不要当完整告警行用**。</p>
      */
-    public Uni<List<ModbusServiceAlarm>> findTimeline(String serviceId, Date from, Date to) {
+    public Uni<List<ModbusAlarm>> findTimeline(String serviceId, Date from, Date to) {
         return collection()
                 .find(Filters.and(Filters.eq("serviceId", serviceId),
                                 Filters.gte("at", from), Filters.lte("at", to)),

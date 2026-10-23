@@ -7,14 +7,14 @@ import cc.openxiot.matrix.db.modbus.config.codec.ModbusRegistryAlarmCodec;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.codec.ModbusTransactionCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.codec.ModbusTransactionResponseFieldCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequestField;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusTransactionRequestCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusTransactionRequestFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.codec.ModbusResponseFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequestField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusRequestCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusRequestFieldCodec;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -199,7 +199,7 @@ class ModbusServiceCodecTest {
         assertEquals(1, first.request.quantity.intValue());
         assertNull(first.request.fields);
 
-        ModbusTransactionResponseField field = first.response.fields.get(0);
+        ModbusResponseField field = first.response.fields.get(0);
         assertEquals(1, field.index.intValue());
         assertEquals("进水温度", field.field);
         assertEquals(2, field.bytes.intValue());
@@ -226,7 +226,7 @@ class ModbusServiceCodecTest {
         assertEquals("CRITICAL", temp.alarms.get(1).level);
         assertEquals("温度严重过高", temp.alarms.get(1).text);
 
-        ModbusTransactionResponseField state = service.transactions.get(1).response.fields.get(0);
+        ModbusResponseField state = service.transactions.get(1).response.fields.get(0);
         assertEquals("开关状态", state.field);
         assertEquals("ABCD", state.byteOrder);
         assertEquals(2, state.valueList.size());
@@ -237,7 +237,7 @@ class ModbusServiceCodecTest {
         assertNull(state.bitList);
 
         // 01 读位：位清单落在字段上（字段自身出整段位掩码）
-        ModbusTransactionResponseField coils = service.transactions.get(2).response.fields.get(0);
+        ModbusResponseField coils = service.transactions.get(2).response.fields.get(0);
         assertEquals("线圈状态", coils.field);
         assertEquals(2, coils.bitList.size());
         assertEquals(0, coils.bitList.get(0).offset.intValue());
@@ -257,7 +257,7 @@ class ModbusServiceCodecTest {
         assertEquals("进水阀未关闭", valve.alarms.get(0).text);
 
         // 写方法：数量由字段推出（quantity 不填），响应为空（写应答是请求回显）
-        ModbusTransactionRequest single = service.transactions.get(3).request;
+        ModbusRequest single = service.transactions.get(3).request;
         assertEquals("06", single.fc);
         assertEquals(1, single.start.intValue());
         assertNull(single.quantity);
@@ -268,7 +268,7 @@ class ModbusServiceCodecTest {
         assertEquals(70, ((Number) single.fields.get(0).value).intValue());
         assertNull(service.transactions.get(3).response);
 
-        ModbusTransactionRequest multiple = service.transactions.get(4).request;
+        ModbusRequest multiple = service.transactions.get(4).request;
         assertEquals("10", multiple.fc);
         assertEquals(2, multiple.fields.size());
         assertEquals(0, multiple.fields.get(0).offset.intValue());
@@ -376,7 +376,7 @@ class ModbusServiceCodecTest {
         // 写方法（fc 05/06/0F/10）：应答是请求回显，没有读值 —— 整个 response 键不出现，
         // 而不是留下 `response: {}` 或 `fields: []` 这种空壳
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
-        service.transactions.get(0).response = ModbusTransactionResponses.of();
+        service.transactions.get(0).response = ModbusResponses.of();
 
         JsonObject o = ModbusServiceCodec.encode(service);
         assertFalse(o.getJsonArray("transactions").getJsonObject(0).containsKey("response"));
@@ -456,18 +456,18 @@ class ModbusServiceCodecTest {
         assertTrue(ModbusServiceCodec.encode((List<ModbusService>) null).isEmpty());
         assertTrue(ModbusTransactionCodec.encode((ModbusTransaction) null).isEmpty());
         assertTrue(ModbusTransactionCodec.encode((List<ModbusTransaction>) null).isEmpty());
-        assertTrue(ModbusTransactionResponseFieldCodec.encode((ModbusTransactionResponseField) null).isEmpty());
-        assertTrue(ModbusTransactionResponseFieldCodec.encode((List<ModbusTransactionResponseField>) null).isEmpty());
-        assertTrue(ModbusTransactionRequestCodec.encode((ModbusTransactionRequest) null).isEmpty());
-        assertTrue(ModbusTransactionRequestFieldCodec.encode((ModbusTransactionRequestField) null).isEmpty());
+        assertTrue(ModbusResponseFieldCodec.encode((ModbusResponseField) null).isEmpty());
+        assertTrue(ModbusResponseFieldCodec.encode((List<ModbusResponseField>) null).isEmpty());
+        assertTrue(ModbusRequestCodec.encode((ModbusRequest) null).isEmpty());
+        assertTrue(ModbusRequestFieldCodec.encode((ModbusRequestField) null).isEmpty());
         assertNull(ModbusServiceCodec.decode(null));
         assertNull(ModbusTransactionCodec.decode((JsonObject) null));
         assertNull(ModbusTransactionCodec.decode((JsonArray) null));
-        assertNull(ModbusTransactionResponseFieldCodec.decode((JsonObject) null));
-        assertNull(ModbusTransactionResponseFieldCodec.decode((JsonArray) null));
-        assertNull(ModbusTransactionRequestCodec.decode(null));
-        assertNull(ModbusTransactionRequestFieldCodec.decode((JsonObject) null));
-        assertNull(ModbusTransactionRequestFieldCodec.decode((JsonArray) null));
+        assertNull(ModbusResponseFieldCodec.decode((JsonObject) null));
+        assertNull(ModbusResponseFieldCodec.decode((JsonArray) null));
+        assertNull(ModbusRequestCodec.decode(null));
+        assertNull(ModbusRequestFieldCodec.decode((JsonObject) null));
+        assertNull(ModbusRequestFieldCodec.decode((JsonArray) null));
         assertTrue(ModbusRegistryAlarmCodec.encode((ModbusRegistryAlarm) null).isEmpty());
         assertTrue(ModbusRegistryAlarmCodec.encode((List<ModbusRegistryAlarm>) null).isEmpty());
         // 两个重载都要显式转型（decode(null) 本身是有歧义的）

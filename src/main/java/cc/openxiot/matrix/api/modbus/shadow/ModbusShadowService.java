@@ -6,7 +6,7 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -97,7 +97,7 @@ public class ModbusShadowService {
                 if (fn == null || fn.index == null) {
                     continue;
                 }
-                for (ModbusTransactionResponseField f : ModbusTransaction.responseFields(fn)) {
+                for (ModbusResponseField f : ModbusTransaction.responseFields(fn)) {
                     if (f != null && f.field != null) {
                         owner.put(f.field, fn.index);
                     }

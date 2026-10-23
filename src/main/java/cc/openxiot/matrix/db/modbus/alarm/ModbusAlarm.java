@@ -34,7 +34,7 @@ import org.bson.types.ObjectId;
  */
 @RegisterForReflection
 @Schema(description = "Modbus 服务出值的一次阈值告警")
-public class ModbusServiceAlarm {
+public class ModbusAlarm {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)

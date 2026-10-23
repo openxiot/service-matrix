@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.modbus.history;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
@@ -13,7 +13,7 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -68,7 +68,7 @@ public class ModbusHistoryService {
 
     /** 只为级联删除而注入：告警行与历史同命 —— 服务没了，它再也没人能处理（见 {@link #purge}）。 */
     @Inject
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     @Inject
     Logger logger;
@@ -315,7 +315,7 @@ public class ModbusHistoryService {
         String message = messageOf(error);
         List<ModbusRegistryHistory> rows = new ArrayList<>();
         List<ModbusShadow> shadows = new ArrayList<>();
-        for (ModbusTransactionResponseField field : ModbusTransaction.responseFields(function)) {
+        for (ModbusResponseField field : ModbusTransaction.responseFields(function)) {
             if (field == null) {
                 continue;
             }

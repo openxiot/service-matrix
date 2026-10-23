@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.service.transaction.request.codec;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequestField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequestField;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -8,18 +8,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@link ModbusTransactionRequestField}（写入字段定义）与 JSON 的互转。
+ * {@link ModbusRequestField}（写入字段定义）与 JSON 的互转。
  *
  * <p>{@code value} 是异构的（位为布尔、寄存器为数值），编码原样写入、解码取原始类型
  * （{@code JsonObject#getValue} 给回 Boolean/Integer/Long/Double），不做归一 ——
  * 归一成 Double 会把「位」变成 0/1 数字，归一成字符串则违背本仓「不把协议语义压成字符串」的口径。</p>
  */
-public final class ModbusTransactionRequestFieldCodec {
+public final class ModbusRequestFieldCodec {
 
-    private ModbusTransactionRequestFieldCodec() {
+    private ModbusRequestFieldCodec() {
     }
 
-    public static JsonObject encode(ModbusTransactionRequestField field) {
+    public static JsonObject encode(ModbusRequestField field) {
         JsonObject o = new JsonObject();
         if (field == null) {
             return o;
@@ -45,21 +45,21 @@ public final class ModbusTransactionRequestFieldCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusTransactionRequestField> fields) {
+    public static JsonArray encode(List<ModbusRequestField> fields) {
         JsonArray arr = new JsonArray();
         if (fields != null) {
-            for (ModbusTransactionRequestField field : fields) {
+            for (ModbusRequestField field : fields) {
                 arr.add(encode(field));
             }
         }
         return arr;
     }
 
-    public static ModbusTransactionRequestField decode(JsonObject o) {
+    public static ModbusRequestField decode(JsonObject o) {
         if (o == null) {
             return null;
         }
-        ModbusTransactionRequestField field = new ModbusTransactionRequestField();
+        ModbusRequestField field = new ModbusRequestField();
         field.index = o.getInteger("index");
         field.field = o.getString("field");
         field.offset = o.getInteger("offset");
@@ -70,11 +70,11 @@ public final class ModbusTransactionRequestFieldCodec {
         return field;
     }
 
-    public static List<ModbusTransactionRequestField> decode(JsonArray arr) {
+    public static List<ModbusRequestField> decode(JsonArray arr) {
         if (arr == null) {
             return null;
         }
-        List<ModbusTransactionRequestField> fields = new ArrayList<>(arr.size());
+        List<ModbusRequestField> fields = new ArrayList<>(arr.size());
         for (int i = 0; i < arr.size(); i++) {
             fields.add(decode(arr.getJsonObject(i)));
         }

@@ -24,14 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusServiceAlarmRepository} 里那些**纯静态、不需要数据库**的部分：
+ * {@link ModbusAlarmRepository} 里那些**纯静态、不需要数据库**的部分：
  * 重复键的识别、关闭与处理的写语句形状、以及开行状态值的折算。
  *
  * <p>单独测它们是因为：这些地方写错了都不会报错，只是行为悄悄不对 ——
  * 判漏了重复键会静默产生两条开着的告警（{@code Modbus-Alarm.md} 第七节）；
  * 整文档替换会抹掉并行的关闭字段；把缺失的 {@code handled} 当成已处理会让稳态零写失效。</p>
  */
-class ModbusServiceAlarmRepositoryTest {
+class ModbusAlarmRepositoryTest {
 
     private static final ServerAddress ADDRESS = new ServerAddress("localhost");
     private static final ObjectId OID = new ObjectId("65f0c0ffee0123456789abcd");
@@ -39,45 +39,45 @@ class ModbusServiceAlarmRepositoryTest {
 
     @Test
     void recognizesDuplicateKeyWrite() {
-        assertTrue(ModbusServiceAlarmRepository.isDuplicateKey(write(11000)));
+        assertTrue(ModbusAlarmRepository.isDuplicateKey(write(11000)));
     }
 
     @Test
     void recognizesDuplicateKeyCommand() {
-        assertTrue(ModbusServiceAlarmRepository.isDuplicateKey(command(11000)));
+        assertTrue(ModbusAlarmRepository.isDuplicateKey(command(11000)));
     }
 
     @Test
     void recognizesDuplicateKeyConcern() {
         // 驱动那个「这就是重复键」的类型（com.mongodb.DuplicateKeyException）继承的是
         // WriteConcernException，**不是** MongoWriteException 的子类 —— 想当然会漏掉这一支
-        assertTrue(ModbusServiceAlarmRepository.isDuplicateKey(duplicateKey()));
+        assertTrue(ModbusAlarmRepository.isDuplicateKey(duplicateKey()));
     }
 
     @Test
     void digsThroughWrapping() {
         // 驱动或上层可能把原始异常包一层
-        assertTrue(ModbusServiceAlarmRepository.isDuplicateKey(
+        assertTrue(ModbusAlarmRepository.isDuplicateKey(
                 new IllegalStateException("write failed", write(11000))));
-        assertTrue(ModbusServiceAlarmRepository.isDuplicateKey(
+        assertTrue(ModbusAlarmRepository.isDuplicateKey(
                 new RuntimeException(new IllegalStateException(write(11000)))));
     }
 
     @Test
     void otherWriteErrorsAreNotDuplicateKeys() {
         // 别的写错误必须照常外传（调用方要记日志、要让那次评估失败），不能被当成「别人先开了」吞掉
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(write(121)));     // 文档校验失败
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(write(13)));
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(command(11601)));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(write(121)));     // 文档校验失败
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(write(13)));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(command(11601)));
         // 同族的写关注异常也只按错误码认，不按类型整类放行
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(concern(64)));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(concern(64)));
     }
 
     @Test
     void unrelatedFailuresAreNotDuplicateKeys() {
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(null));
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(new RuntimeException("boom")));
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(new java.io.IOException("read timed out")));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(null));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(new RuntimeException("boom")));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(new java.io.IOException("read timed out")));
     }
 
     @Test
@@ -85,9 +85,9 @@ class ModbusServiceAlarmRepositoryTest {
         // cause 自引用会让「顺着 cause 链走」变成死循环。JDK 的 initCause 已经拦掉了最直白的造法
         // （java.lang.IllegalArgumentException: Self-causation not permitted），但自定义的或
         // 反序列化出来的 Throwable 可以把自己报成 cause —— 判定的那道栏杆就是给这种输入准备的。
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(new SelfCaused()));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(new SelfCaused()));
         // 外面再包一层：得穿过「包装」那一层之后再停下
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(new RuntimeException("outer", new SelfCaused())));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(new RuntimeException("outer", new SelfCaused())));
     }
 
     @Test
@@ -98,17 +98,17 @@ class ModbusServiceAlarmRepositoryTest {
         for (int i = 0; i < 100; i++) {
             chain = new RuntimeException("wrap " + i, chain);
         }
-        assertFalse(ModbusServiceAlarmRepository.isDuplicateKey(chain));
+        assertFalse(ModbusAlarmRepository.isDuplicateKey(chain));
     }
 
     // ===== 写语句的形状 =====
 
     @Test
     void closingAnAlarmMeansUnsettingTheOpenKey() {
-        BsonDocument update = ModbusServiceAlarmRepository
-                .closeUpdate(AT, ModbusServiceAlarm.CLOSE_VALUE).toBsonDocument();
+        BsonDocument update = ModbusAlarmRepository
+                .closeUpdate(AT, ModbusAlarm.CLOSE_VALUE).toBsonDocument();
 
-        assertEquals(ModbusServiceAlarm.CLOSE_VALUE, update.getDocument("$set").getString("closeType").getValue());
+        assertEquals(ModbusAlarm.CLOSE_VALUE, update.getDocument("$set").getString("closeType").getValue());
         assertEquals(AT.getTime(), update.getDocument("$set").getDateTime("recoveredAt").getValue());
         // 这一条才是「关闭」本身：openKey 是状态（采集侧的判定、列表筛选、汇总的 open 计数都看它）。
         // 只写 recoveredAt 而不 $unset 它，这条会永远被算作「还开着」
@@ -117,7 +117,7 @@ class ModbusServiceAlarmRepositoryTest {
 
     @Test
     void closingTargetsTheWholeOpenKeyNotOneRow() {
-        BsonDocument filter = ModbusServiceAlarmRepository
+        BsonDocument filter = ModbusAlarmRepository
                 .closeFilter("svc-1", 2, List.of("进水温度", "回水温度")).toBsonDocument();
 
         // 按 serviceId + transactionIndex + 一批 field 关（$in 而不是某一个），不是定位到某条 _id
@@ -135,7 +135,7 @@ class ModbusServiceAlarmRepositoryTest {
         who.name = "张三";
         who.timestamp = AT;
 
-        BsonDocument update = ModbusServiceAlarmRepository.handleUpdate(who).toBsonDocument();
+        BsonDocument update = ModbusAlarmRepository.handleUpdate(who).toBsonDocument();
         // $set 而不是整文档替换：替换会把并行的「关闭」刚写的 recoveredAt / closeType 抹掉
         assertTrue(update.getDocument("$set").getBoolean("handled").getValue());
         BsonDocument handledBy = update.getDocument("$set").getDocument("handledBy");
@@ -146,7 +146,7 @@ class ModbusServiceAlarmRepositoryTest {
         assertFalse(update.containsKey("serviceId"));
         assertFalse(update.containsKey("at"));
 
-        BsonDocument filter = ModbusServiceAlarmRepository.handleFilter(OID).toBsonDocument();
+        BsonDocument filter = ModbusAlarmRepository.handleFilter(OID).toBsonDocument();
         assertEquals(OID, clause(filter, "_id").asObjectId().getValue());
         // CAS：重复点击只生效一次
         assertTrue(clause(filter, "handled").asDocument().getBoolean("$ne").getValue());
@@ -156,12 +156,12 @@ class ModbusServiceAlarmRepositoryTest {
     void missingHandledCountsAsUnhandled() {
         // 判定侧的状态值：这一条写错了不会报错，只会让**所有老数据**（handled 缺失）被当成
         // 「已经处理过」—— 于是每一轮采集都给它们关旧开新，稳态零写当场失效、告警列表每采一次翻一倍
-        assertFalse(ModbusServiceAlarmRepository.openRuleOf("r1", null).handled());
-        assertFalse(ModbusServiceAlarmRepository.openRuleOf("r1", false).handled());
-        assertTrue(ModbusServiceAlarmRepository.openRuleOf("r1", true).handled());
+        assertFalse(ModbusAlarmRepository.openRuleOf("r1", null).handled());
+        assertFalse(ModbusAlarmRepository.openRuleOf("r1", false).handled());
+        assertTrue(ModbusAlarmRepository.openRuleOf("r1", true).handled());
         // ruleId 原样带着：null 只可能出现在更早的数据里，判定侧与当前胜者比不相等时会走「被取代」
-        assertEquals("r1", ModbusServiceAlarmRepository.openRuleOf("r1", null).ruleId());
-        assertNull(ModbusServiceAlarmRepository.openRuleOf(null, false).ruleId());
+        assertEquals("r1", ModbusAlarmRepository.openRuleOf("r1", null).ruleId());
+        assertNull(ModbusAlarmRepository.openRuleOf(null, false).ruleId());
     }
 
     // ===== 夹具 =====

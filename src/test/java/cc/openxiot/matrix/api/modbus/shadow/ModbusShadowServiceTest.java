@@ -7,9 +7,9 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequests;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -182,14 +182,14 @@ class ModbusShadowServiceTest {
         ModbusTransaction fn = new ModbusTransaction();
         fn.index = index;
         fn.name = "读" + fieldName;
-        fn.request = ModbusTransactionRequests.holding();
-        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
+        fn.request = ModbusRequests.holding();
+        ModbusResponseField f = new ModbusResponseField();
         f.index = 1;
         f.field = fieldName;
         f.bytes = 2;
         f.format = "uint16";
         f.byteOrder = "ABCD";
-        fn.response = ModbusTransactionResponses.of(f);
+        fn.response = ModbusResponses.of(f);
         return fn;
     }
 

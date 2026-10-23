@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmQueryService.AlarmResult;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
@@ -99,17 +99,17 @@ class ModbusAlarmQueryServiceTest {
 
     // -- helpers --
 
-    private static ModbusServiceAlarm alarm(String serviceId, Long at) {
+    private static ModbusAlarm alarm(String serviceId, Long at) {
         return row(serviceId, at, null);
     }
 
     /** 已恢复的一条：合并仍按 at 排（见 {@link #mergeDoesNotCareAboutOpenOrHandled}）。 */
-    private static ModbusServiceAlarm closed(String serviceId, Long at) {
+    private static ModbusAlarm closed(String serviceId, Long at) {
         return row(serviceId, at, new Date(at + SECOND));
     }
 
-    private static ModbusServiceAlarm row(String serviceId, Long at, Date recoveredAt) {
-        ModbusServiceAlarm alarm = new ModbusServiceAlarm();
+    private static ModbusAlarm row(String serviceId, Long at, Date recoveredAt) {
+        ModbusAlarm alarm = new ModbusAlarm();
         alarm.serviceId = serviceId;
         alarm.transactionIndex = 1;
         alarm.field = "进水温度";

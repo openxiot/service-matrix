@@ -11,9 +11,9 @@ import java.util.List;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -101,11 +101,11 @@ class DashboardCatalogCodecTest {
     }
 
     private static ModbusService service() {
-        ModbusTransactionResponseFieldBit bit = new ModbusTransactionResponseFieldBit();
+        ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
 
-        ModbusTransactionResponseField field = new ModbusTransactionResponseField();
+        ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
         field.field = "温度";
         field.format = "int16";
@@ -118,7 +118,7 @@ class DashboardCatalogCodecTest {
                     function.from.index = 1;
                     function.index = 1;
         function.name = "读温度";
-        function.response = ModbusTransactionResponses.of(field);
+        function.response = ModbusResponses.of(field);
 
         ModbusService service = new ModbusService();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");

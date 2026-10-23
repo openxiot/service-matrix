@@ -5,7 +5,7 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Count;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.DeviceStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import org.bson.types.ObjectId;
@@ -216,8 +216,8 @@ class StatisticsQueryServiceTest {
         return service;
     }
 
-    private static ModbusServiceAlarm alarm(String text) {
-        ModbusServiceAlarm alarm = new ModbusServiceAlarm();
+    private static ModbusAlarm alarm(String text) {
+        ModbusAlarm alarm = new ModbusAlarm();
         alarm.text = text;
         alarm.at = new Date(T0);
         return alarm;

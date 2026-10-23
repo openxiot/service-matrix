@@ -35,9 +35,9 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
@@ -1068,7 +1068,7 @@ private void stubDefinition() {
      */
     private static ModbusService serviceDef(int transactionIndex, String primary, String unit, String second,
                                             String... bits) {
-        List<ModbusTransactionResponseField> fields = new ArrayList<>();
+        List<ModbusResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
             fields.add(field(second, "％", null));
@@ -1079,7 +1079,7 @@ private void stubDefinition() {
                     function.from.index = transactionIndex;
                     function.index = transactionIndex;
         function.name = primary;
-        function.response = ModbusTransactionResponses.of(fields);
+        function.response = ModbusResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
@@ -1113,15 +1113,15 @@ private void stubDefinition() {
         return reg;
     }
 
-    private static ModbusTransactionResponseField field(String name, String unit, List<String> bits) {
-        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
+    private static ModbusResponseField field(String name, String unit, List<String> bits) {
+        ModbusResponseField f = new ModbusResponseField();
         f.field = name;
         f.unit = unit;
         if (bits != null) {
-            List<ModbusTransactionResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusTransactionResponseFieldBit b = new ModbusTransactionResponseFieldBit();
+                ModbusResponseFieldBit b = new ModbusResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);

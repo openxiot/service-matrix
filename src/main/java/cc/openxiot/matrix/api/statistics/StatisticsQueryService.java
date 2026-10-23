@@ -4,8 +4,8 @@ import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -74,7 +74,7 @@ public class StatisticsQueryService {
     ModbusServiceRepository serviceRepo;
 
     @Inject
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     @Inject
     ModbusTransactionHistoryRepository pollingHistoryRepo;
@@ -171,7 +171,7 @@ public class StatisticsQueryService {
                     return Uni.combine().all().unis(devices, services).asTuple()
                             .chain(tuple -> {
                                 List<String> ids = serviceIds(tuple.getItem2());
-                                Uni<List<ModbusServiceAlarm>> alarms = mergeTimelines(ids.stream()
+                                Uni<List<ModbusAlarm>> alarms = mergeTimelines(ids.stream()
                                         .map(id -> alarmRepo.findTimeline(id, from, end)).toList());
                                 Uni<List<ModbusTransactionHistory>> failures = mergeTimelines(ids.stream()
                                         .map(id -> pollingHistoryRepo.findFailureTimeline(id, from, end)).toList());
@@ -317,9 +317,9 @@ public class StatisticsQueryService {
     }
 
     /** 一组告警的触发时刻（{@code at} 理论上不会缺，缺了也会被 {@link #hourly} 丢掉）。 */
-    private static List<Date> alarmTimes(List<ModbusServiceAlarm> alarms) {
+    private static List<Date> alarmTimes(List<ModbusAlarm> alarms) {
         List<Date> times = new ArrayList<>(alarms.size());
-        for (ModbusServiceAlarm alarm : alarms) {
+        for (ModbusAlarm alarm : alarms) {
             if (alarm != null) {
                 times.add(alarm.at);
             }
@@ -344,9 +344,9 @@ public class StatisticsQueryService {
      * <p>包可见是为了能单测「缺文本归 {@link #UNKNOWN} 桶」这一条 —— 它正是告警页 {@code byText}
      * 的桶名，两边不一致的话首页与告警页会对不上账。</p>
      */
-    static List<String> texts(List<ModbusServiceAlarm> alarms) {
+    static List<String> texts(List<ModbusAlarm> alarms) {
         List<String> texts = new ArrayList<>(alarms.size());
-        for (ModbusServiceAlarm alarm : alarms) {
+        for (ModbusAlarm alarm : alarms) {
             if (alarm != null) {
                 texts.add(textKey(alarm.text));
             }

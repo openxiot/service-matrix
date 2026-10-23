@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.db.modbus.alarm.codec;
 
 import cc.openxiot.common.person.codec.PersonCodec;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * {@link ModbusServiceAlarm} → JSON（告警列表接口用）：明细 + 汇总。
+ * {@link ModbusAlarm} → JSON（告警列表接口用）：明细 + 汇总。
  *
  * <p><b>只出不进</b>：告警是采集侧写进去的，不由请求体决定，所以没有 decode
  * （与 {@code ModbusServiceFailureCodec} 同口径）。</p>
@@ -34,7 +34,7 @@ public final class ModbusAlarmCodec {
     private ModbusAlarmCodec() {
     }
 
-    public static JsonObject encode(ModbusServiceAlarm alarm) {
+    public static JsonObject encode(ModbusAlarm alarm) {
         JsonObject o = new JsonObject();
         if (alarm == null) {
             return o;
@@ -97,10 +97,10 @@ public final class ModbusAlarmCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusServiceAlarm> alarms) {
+    public static JsonArray encode(List<ModbusAlarm> alarms) {
         JsonArray arr = new JsonArray();
         if (alarms != null) {
-            for (ModbusServiceAlarm alarm : alarms) {
+            for (ModbusAlarm alarm : alarms) {
                 arr.add(encode(alarm));
             }
         }
@@ -125,14 +125,14 @@ public final class ModbusAlarmCodec {
      * 两者本该等价（写侧同时维护），但万一哪天不等价，汇总不能和它汇总的那批行自相矛盾：
      * {@code recoveredAt} 是前端能看到、也是它据以渲染状态的那个字段。</p>
      */
-    public static JsonObject encodeSummary(List<ModbusServiceAlarm> alarms) {
-        List<ModbusServiceAlarm> rows = alarms == null ? List.of() : alarms;
+    public static JsonObject encodeSummary(List<ModbusAlarm> alarms) {
+        List<ModbusAlarm> rows = alarms == null ? List.of() : alarms;
         Map<String, Tally> byLevel = new LinkedHashMap<>();
         Map<String, Tally> byText = new LinkedHashMap<>();
         int open = 0;
         int unhandled = 0;
 
-        for (ModbusServiceAlarm alarm : rows) {
+        for (ModbusAlarm alarm : rows) {
             if (alarm == null) {
                 continue;
             }

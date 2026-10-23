@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
@@ -66,12 +66,12 @@ class ModbusAlarmServiceTest {
     private static final int FUNCTION_INDEX = 1;
 
     private ModbusAlarmService service;
-    private ModbusServiceAlarmRepository alarmRepo;
+    private ModbusAlarmRepository alarmRepo;
     private Logger logger;
 
     @BeforeEach
     void setUp() {
-        alarmRepo = mock(ModbusServiceAlarmRepository.class);
+        alarmRepo = mock(ModbusAlarmRepository.class);
         logger = mock(Logger.class);
 
         service = new ModbusAlarmService();
@@ -118,7 +118,7 @@ class ModbusAlarmServiceTest {
         ModbusRegistry field = field("进水温度", "℃", rule);
         service.evaluate(modbusService(field), function(), sample("进水温度", 85.5)).await().indefinitely();
 
-        ModbusServiceAlarm row = insertedRow();
+        ModbusAlarm row = insertedRow();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.transactionIndex.intValue());
         assertEquals("进水温度", row.field);
@@ -135,7 +135,7 @@ class ModbusAlarmServiceTest {
         assertEquals(85.5, row.sample);
         assertEquals(Boolean.FALSE, row.handled);
         // 开行标识：未恢复的行才有它，「这个出值当前开着吗」查的就是它
-        assertEquals(ModbusServiceAlarm.openKeyOf(SERVICE_ID, FUNCTION_INDEX, "进水温度"), row.openKey);
+        assertEquals(ModbusAlarm.openKeyOf(SERVICE_ID, FUNCTION_INDEX, "进水温度"), row.openKey);
         assertEquals(new Date().getTime() / 1000, row.at.getTime() / 1000, 60_000);
     }
 
@@ -148,7 +148,7 @@ class ModbusAlarmServiceTest {
         ModbusRegistry bits = bits("进水阀位", "进水阀", alarm("=", 1.0));
         service.evaluate(modbusService(bits), function(), sample("进水阀", 1)).await().indefinitely();
 
-        ModbusServiceAlarm row = insertedRow();
+        ModbusAlarm row = insertedRow();
         assertEquals("进水阀", row.field);
         assertNull(row.unit);
         assertEquals(1, row.sample);
@@ -167,7 +167,7 @@ class ModbusAlarmServiceTest {
         service.evaluate(modbusService(field("进水温度", rule)), function(),
                 sample("进水温度", 20.0)).await().indefinitely();
 
-        assertEquals(ModbusServiceAlarm.CLOSE_VALUE, closedType());
+        assertEquals(ModbusAlarm.CLOSE_VALUE, closedType());
         assertEquals(List.of("进水温度"), closedFields());
         verify(alarmRepo, never()).insertOpen(any());
     }
@@ -189,7 +189,7 @@ class ModbusAlarmServiceTest {
                         field("回水温度", rule)), function(),
                 sample("进水温度", 20.0).put("回水温度", 20.0)).await().indefinitely();
 
-        assertEquals(ModbusServiceAlarm.CLOSE_DEFINITION, closedType());
+        assertEquals(ModbusAlarm.CLOSE_DEFINITION, closedType());
         assertEquals(List.of("进水温度"), closedFields());
         verify(alarmRepo, never()).insertOpen(any());
     }
@@ -244,7 +244,7 @@ class ModbusAlarmServiceTest {
         service.evaluate(modbusService(field("进水温度", warn, critical)), function(),
                 sample("进水温度", 27.0)).await().indefinitely();
 
-        assertEquals(ModbusServiceAlarm.CLOSE_SUPERSEDED, closedType());
+        assertEquals(ModbusAlarm.CLOSE_SUPERSEDED, closedType());
         assertEquals(List.of("进水温度"), closedFields());
         assertEquals(warn.id, insertedRow().ruleId);
     }
@@ -270,7 +270,7 @@ class ModbusAlarmServiceTest {
 
         InOrder order = inOrder(alarmRepo);
         order.verify(alarmRepo).closeByKeys(eq(SERVICE_ID), eq(FUNCTION_INDEX), eq(List.of("进水温度")),
-                eq(ModbusServiceAlarm.CLOSE_SUPERSEDED), any());
+                eq(ModbusAlarm.CLOSE_SUPERSEDED), any());
         order.verify(alarmRepo).insertOpen(any());
     }
 
@@ -290,12 +290,12 @@ class ModbusAlarmServiceTest {
 
         InOrder order = inOrder(alarmRepo);
         order.verify(alarmRepo).closeByKeys(eq(SERVICE_ID), eq(FUNCTION_INDEX), eq(List.of("进水温度")),
-                eq(ModbusServiceAlarm.CLOSE_HANDLED), any());
+                eq(ModbusAlarm.CLOSE_HANDLED), any());
         order.verify(alarmRepo).insertOpen(any());
 
         // 新开的那条**显式**是未处理（不是留空）：要再点一次「处理」才算认领 —— 这正是这条改动的意思，
         // 也让「未处理」的两种表示（null 与 false）在库里不会混着出现
-        ModbusServiceAlarm row = insertedRow();
+        ModbusAlarm row = insertedRow();
         assertEquals(Boolean.FALSE, row.handled);
         assertEquals(rule.id, row.ruleId);
     }
@@ -400,13 +400,13 @@ class ModbusAlarmServiceTest {
     void handlingWritesTheReceiptAndReturnsTheUpdatedRow() {
         ObjectId id = new ObjectId();
         Person who = who();
-        ModbusServiceAlarm updated = alarmRow(id);
+        ModbusAlarm updated = alarmRow(id);
         updated.handled = true;
         updated.handledBy = who;
         when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(1L));
         when(alarmRepo.findById(id)).thenReturn(Uni.createFrom().item(updated));
 
-        ModbusServiceAlarm result = service.handle(id, who).await().indefinitely();
+        ModbusAlarm result = service.handle(id, who).await().indefinitely();
 
         // 返回的是**读回来的那一条**而不是拿入参拼的：页面就地替换这一行，字段一个都不能少
         assertSame(updated, result);
@@ -419,12 +419,12 @@ class ModbusAlarmServiceTest {
         // 用户要的结果（这条被处理了）已经成立，报错只会为一件恰好如愿的事弹一条红字
         ObjectId id = new ObjectId();
         Person who = who();
-        ModbusServiceAlarm handled = alarmRow(id);
+        ModbusAlarm handled = alarmRow(id);
         handled.handled = true;
         when(alarmRepo.handle(id, who)).thenReturn(Uni.createFrom().item(0L));
         when(alarmRepo.findById(id)).thenReturn(Uni.createFrom().item(handled));
 
-        ModbusServiceAlarm result = service.handle(id, who).await().indefinitely();
+        ModbusAlarm result = service.handle(id, who).await().indefinitely();
 
         assertSame(handled, result);
         // 但要说一声：不然「我点了怎么没反应」与「别人先处理了」在日志里也分不出来
@@ -490,8 +490,8 @@ class ModbusAlarmServiceTest {
         return org.mockito.ArgumentMatchers.any(Object[].class);
     }
 
-    private ModbusServiceAlarm insertedRow() {
-        ArgumentCaptor<ModbusServiceAlarm> captor = ArgumentCaptor.forClass(ModbusServiceAlarm.class);
+    private ModbusAlarm insertedRow() {
+        ArgumentCaptor<ModbusAlarm> captor = ArgumentCaptor.forClass(ModbusAlarm.class);
         verify(alarmRepo).insertOpen(captor.capture());
         return captor.getValue();
     }
@@ -510,8 +510,8 @@ class ModbusAlarmServiceTest {
     }
 
     /** 一条已恢复的告警行 —— 处理动作与「开着 / 恢复」无关，所以夹具不带 openKey。 */
-    private static ModbusServiceAlarm alarmRow(ObjectId id) {
-        ModbusServiceAlarm row = new ModbusServiceAlarm();
+    private static ModbusAlarm alarmRow(ObjectId id) {
+        ModbusAlarm row = new ModbusAlarm();
         row.id = id;
         row.serviceId = SERVICE_ID;
         row.transactionIndex = FUNCTION_INDEX;

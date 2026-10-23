@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
@@ -53,7 +53,7 @@ class ModbusAlarmReconcilerTest {
     ModbusServiceRepository serviceRepo;
 
     @Mock
-    ModbusServiceAlarmRepository alarmRepo;
+    ModbusAlarmRepository alarmRepo;
 
     @Mock
     Logger logger;
@@ -84,7 +84,7 @@ class ModbusAlarmReconcilerTest {
         ArgumentCaptor<String> closeType = ArgumentCaptor.forClass(String.class);
         verify(alarmRepo).closeByKeys(anyString(), any(), fields.capture(), closeType.capture(), any());
         assertEquals(List.of("进水温度"), List.copyOf(fields.getValue()));
-        assertEquals(ModbusServiceAlarm.CLOSE_DEFINITION, closeType.getValue(),
+        assertEquals(ModbusAlarm.CLOSE_DEFINITION, closeType.getValue(),
                 "对账关掉的原因只有一个：定义不再覆盖它（VALUE 是值回来时采集链路自己关的）");
     }
 
@@ -176,7 +176,7 @@ class ModbusAlarmReconcilerTest {
 
         ArgumentCaptor<String> closeType = ArgumentCaptor.forClass(String.class);
         verify(alarmRepo).closeByKeys(anyString(), any(), any(), closeType.capture(), any());
-        assertEquals(ModbusServiceAlarm.CLOSE_DEFINITION, closeType.getValue());
+        assertEquals(ModbusAlarm.CLOSE_DEFINITION, closeType.getValue());
     }
 
     @Test
@@ -255,18 +255,18 @@ class ModbusAlarmReconcilerTest {
         reconciler.reconcile(service).await().indefinitely();
     }
 
-    private void givenOpen(ModbusServiceAlarm... rows) {
+    private void givenOpen(ModbusAlarm... rows) {
         when(alarmRepo.listOpenByServiceId(anyString())).thenReturn(Uni.createFrom().item(List.of(rows)));
     }
 
-    private static ModbusServiceAlarm openRow(String serviceId, Integer transactionIndex, String field) {
-        ModbusServiceAlarm row = new ModbusServiceAlarm();
+    private static ModbusAlarm openRow(String serviceId, Integer transactionIndex, String field) {
+        ModbusAlarm row = new ModbusAlarm();
         row.serviceId = serviceId;
         row.transactionIndex = transactionIndex;
         row.field = field;
         // 开它的就是夹具定义里那条规则（id 同 RULE_ID）：判据是规则级，没有它这条行会被判成「不认识」
         row.ruleId = RULE_ID;
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, field);
+        row.openKey = ModbusAlarm.openKeyOf(serviceId, transactionIndex, field);
         return row;
     }
 

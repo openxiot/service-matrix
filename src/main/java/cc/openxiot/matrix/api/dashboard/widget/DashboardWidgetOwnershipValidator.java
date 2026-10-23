@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -339,7 +339,7 @@ public class DashboardWidgetOwnershipValidator {
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
     private static boolean hasField(ModbusTransaction function, String field) {
-        for (ModbusTransactionResponseField candidate : ModbusTransaction.responseFields(function)) {
+        for (ModbusResponseField candidate : ModbusTransaction.responseFields(function)) {
             if (candidate == null) {
                 continue;
             }
@@ -347,7 +347,7 @@ public class DashboardWidgetOwnershipValidator {
                 return true;
             }
             if (candidate.bitList != null) {
-                for (ModbusTransactionResponseFieldBit bit : candidate.bitList) {
+                for (ModbusResponseFieldBit bit : candidate.bitList) {
                     if (bit != null && field.equals(bit.field)) {
                         return true;
                     }

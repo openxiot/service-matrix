@@ -15,7 +15,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "位区里的具名位")
-public class ModbusTransactionResponseFieldBit {
+public class ModbusResponseFieldBit {
 
     @Schema(description = "位偏移（0 基，从位区起点算起；帧内 LSB-first：第 offset/8 字节的第 offset%8 位）",
             examples = {"0"}, required = true)

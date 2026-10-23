@@ -449,11 +449,11 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 ### 2026-09-16
 
 * **阈值告警的第四个边沿：`handled == true` 也关旧行、开新行**（`CLOSE_HANDLED`，页面文案
-  「处理后再报」）。起因是一条**语义反了**的现场事实：「处理」的意思是「我知道了，**以后还有
+  「处理后再报」）。起因是一条 **语义反了**的现场事实：「处理」的意思是「我知道了， **以后还有
   越线再提醒我**」，而不是「这事到此为止」；在那之前，一条已处理而未恢复的行会一直挂着挡住
   后续越限，判定每轮都落在稳态零写那一支，用户再也收不到提醒。改动只有四处：
-  `ModbusServiceAlarm`（加常量）、`ModbusAlarmPolicy`（`judge` 多一支 + `Decision` 多一张
-  `handledCloses`）、`ModbusServiceAlarmRepository`（投影加 `handled`，值型 `String` →
+  `ModbusAlarm`（加常量）、`ModbusAlarmPolicy`（`judge` 多一支 + `Decision` 多一张
+  `handledCloses`）、`ModbusAlarmRepository`（投影加 `handled`，值型 `String` →
   `OpenAlarmRule`）、`ModbusAlarmService.apply`（第四段关闭）。三条口径记在这里：
   * **不动任何已落库的行**：只加了新的关行判据，行上的定义快照 / `handledBy` / `ruleId` 都不改写。
     旧行留着 `handled=true` 与它的处理人（那是**当时**的记录），新行 `handled=false` 且不带
@@ -463,7 +463,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     全 `SKIP` 时什么都不做（截断 / 畸形的应答既不关也不重报）。
   * **`OpenAlarmRule` 放在 `db` 包**：判定要的资料从「出值名 → ruleId」变成「出值名 →
     (ruleId, handled)」。放 `api` 会新造一条 `db → api` 的反向依赖（现有的箭头是
-    `ModbusAlarmPolicy` → `db.modbus.service.*`，而 `ModbusServiceAlarmRepository` 一个 `api`
+    `ModbusAlarmPolicy` → `db.modbus.service.*`，而 `ModbusAlarmRepository` 一个 `api`
     包都不 import）。详见 `Modbus-Alarm.md` 第十三节 2026-09-16 那条。
 
 ### 2026-09-14
@@ -513,7 +513,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * 单测：`ModbusAlarmQueryServiceTest`（7）+ `ModbusAlarmServiceTest` 补 6 例（`handle`）。
     全量 511 例中 510 绿（唯一红色是 `SpaceResourceTest`，要连 Mongo 的环境性失败）。
 * **Modbus 阈值告警（第四步：定义变更对账与删除级联）**。`api/modbus/alarm/ModbusAlarmPlan`（新，
-  纯函数判据）+ `ModbusAlarmReconciler`（新，定义变更 / 启动两个时机）+ `ModbusServiceAlarmRepository`
+  纯函数判据）+ `ModbusAlarmReconciler`（新，定义变更 / 启动两个时机）+ `ModbusAlarmRepository`
   两个只投影坐标的查询 + `ModbusServiceService` 写入路径接线 + `ModbusHistoryService.purge` 第四个 `Uni`。
   几处值得记下的口径：
   * **拾遗另起一个 `ModbusAlarmReconciler`，没有挂进 `ModbusPollReconciler`**：轮询任务的对账挂在
@@ -571,9 +571,9 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   本机没有库所以读超时，与本次改动无关。
 
 * **Modbus 阈值告警（第二步：告警文档与仓储）**。`db/modbus/alarm/` 新包：
-  `ModbusServiceAlarm`（库 `modbus`、集合 `service-alarms`，**带触发那一刻的定义快照** ——
+  `ModbusAlarm`（库 `modbus`、集合 `service-alarms`， **带触发那一刻的定义快照** ——
   定义是活的、行是不可变的历史，只存引用会让改阈值悄悄改写历史告警的含义）、
-  `ModbusServiceAlarmRepository`、`codec/ModbusAlarmCodec`。这一步还没有写入者
+  `ModbusAlarmRepository`、`codec/ModbusAlarmCodec`。这一步还没有写入者
   （评估在下一步接进采集链路），落地的是「行长什么样、怎么关、怎么处理」这套口径：
   * **状态就是 `openKey` 有没有值**：未恢复时有它，恢复时 `$unset` 掉；不另存一份告警态，
     于是「这个出值当前开着吗」是一次带索引的存在性查询。
@@ -591,9 +591,9 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * **`encode` 每条都发 `id`**（有意偏离 `ModbusServiceFailureCodec`）：故障记录是纯日志、只能看，
     告警行有逐行动作（点「处理」）。`openKey` **绝不下发**：它把内部主键的拼法泄漏成接口契约，
     以后就改不动了。
-  测试：`ModbusAlarmCodecTest`（9 例）+ `ModbusServiceAlarmRepositoryTest`（8 例，纯静态）。
-  全量 449 例中 448 绿（唯一红色仍是上面那个要连 Mongo 的 `SpaceResourceTest`）。
-  设计见 `Modbus-Alarm.md`，余下步骤见 `Modbus-Alarm-TODO.md`。
+    测试：`ModbusAlarmCodecTest`（9 例）+ `ModbusAlarmRepositoryTest`（8 例，纯静态）。
+    全量 449 例中 448 绿（唯一红色仍是上面那个要连 Mongo 的 `SpaceResourceTest`）。
+    设计见 `Modbus-Alarm.md`，余下步骤见 `Modbus-Alarm-TODO.md`。
 
 * **整理：把「类型定义」与「接口层」分开 —— `typedef/modbus/{failure,frame}`、`api/modbus/service/{parser,validator}`**。
   纯搬家，行为不动（纯单测 378 例，搬前搬后同数同绿）。两地混层的理由：

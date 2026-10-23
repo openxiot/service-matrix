@@ -4,8 +4,8 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -44,12 +44,12 @@ public final class ModbusLastPollingPlan {
      * 一个方法在影子里会出现的**全部**键：{@code response.fields[].field} 加上各位展开的名字
      * {@code response.fields[].bitList[].field}（见 {@code ModbusResponseParser}：位名与字段名放进同一个结果对象）。
      */
-    public static Set<String> definedFields(List<ModbusTransactionResponseField> response) {
+    public static Set<String> definedFields(List<ModbusResponseField> response) {
         Set<String> defined = new HashSet<>();
         if (response == null) {
             return defined;
         }
-        for (ModbusTransactionResponseField field : response) {
+        for (ModbusResponseField field : response) {
             if (field == null) {
                 continue;
             }
@@ -59,7 +59,7 @@ public final class ModbusLastPollingPlan {
             if (field.bitList == null) {
                 continue;
             }
-            for (ModbusTransactionResponseFieldBit bit : field.bitList) {
+            for (ModbusResponseFieldBit bit : field.bitList) {
                 if (bit != null && bit.field != null && !bit.field.isBlank()) {
                     defined.add(bit.field);
                 }

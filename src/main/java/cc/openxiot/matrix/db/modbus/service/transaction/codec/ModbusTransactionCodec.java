@@ -2,8 +2,8 @@ package cc.openxiot.matrix.db.modbus.service.transaction.codec;
 
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusTransactionRequestCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.codec.ModbusTransactionResponseCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusRequestCodec;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.codec.ModbusResponseCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -53,7 +53,7 @@ public final class ModbusTransactionCodec {
             o.put("name", function.name);
         }
         if (function.request != null) {
-            o.put("request", ModbusTransactionRequestCodec.encode(function.request));
+            o.put("request", ModbusRequestCodec.encode(function.request));
         }
         if (function.interval != null) {
             o.put("interval", function.interval);
@@ -64,7 +64,7 @@ public final class ModbusTransactionCodec {
         // 没有应答字段（写方法）就整段不出键：与 request.fields 为空不出键同一约定，
         // 库里因此不会留下 `response: {}` 这种空壳
         if (!ModbusTransaction.responseFields(function).isEmpty()) {
-            o.put("response", ModbusTransactionResponseCodec.encode(function.response));
+            o.put("response", ModbusResponseCodec.encode(function.response));
         }
         return o;
     }
@@ -96,10 +96,10 @@ public final class ModbusTransactionCodec {
         // 方法自身的序号（身份）：与 from.index 分开解 —— from.index 只是溯源
         function.index = o.getInteger("index");
         function.name = o.getString("name");
-        function.request = ModbusTransactionRequestCodec.decode(o.getJsonObject("request"));
+        function.request = ModbusRequestCodec.decode(o.getJsonObject("request"));
         function.interval = o.getInteger("interval");
         function.polling = o.getBoolean("polling");
-        function.response = ModbusTransactionResponseCodec.decode(o.getJsonObject("response"));
+        function.response = ModbusResponseCodec.decode(o.getJsonObject("response"));
         return function;
     }
 

@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.service.transaction.response;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -26,9 +26,9 @@ import java.util.List;
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "Modbus 服务方法的应答定义")
-public class ModbusTransactionResponse {
+public class ModbusResponse {
 
     @Schema(description = "应答解析规则：按 index 顺序、以 bytes 依次累加偏移切分应答数据区；"
             + "读方法必须非空，写方法没有")
-    public List<ModbusTransactionResponseField> fields;
+    public List<ModbusResponseField> fields;
 }

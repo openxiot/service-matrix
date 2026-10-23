@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPlan.Close;
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
@@ -81,7 +81,7 @@ class ModbusAlarmPlanTest {
     void rowWithoutARuleIdIsLeftAlone() {
         // 说不上是哪条规则开的（只可能来自更早的数据）：判据无从比对，而关掉才是不可逆的那个动作。
         // 采集侧的胜者比对会把它按 SUPERSEDED 接手 —— 那才是能说清原因的那条路径
-        ModbusServiceAlarm row = row(SID, 1, "进水温度");
+        ModbusAlarm row = row(SID, 1, "进水温度");
         row.ruleId = null;
         assertTrue(ModbusAlarmPlan.plan(
                 List.of(service(field("进水温度", alarm(true)))), List.of(row)).isEmpty());
@@ -129,7 +129,7 @@ class ModbusAlarmPlanTest {
     void unknownServiceIsNeverTouched() {
         // 「这次没拿到它的定义」不是「它的告警陈旧」的证据。这条口径让写入路径（只传一个服务）
         // 与启动路径（传全部）行为一致 —— 否则写入路径会把别的服务的开行误关一片
-        ModbusServiceAlarm row = row(OTHER_SID, 1, "进水温度");
+        ModbusAlarm row = row(OTHER_SID, 1, "进水温度");
         assertTrue(ModbusAlarmPlan.plan(List.of(service(field("进水温度", alarm(true)))),
                 List.of(row)).isEmpty());
         // 服务列表为空（拿不到定义）时同理：一个都不动
@@ -179,7 +179,7 @@ class ModbusAlarmPlanTest {
         // 顺序稳定只是为了让日志与测试可读；真正要紧的是「同一批输入得到同一批输出」
         ModbusService one = service(SID, field("b"));
         ModbusService two = service(OTHER_SID, field("a"));
-        List<ModbusServiceAlarm> rows = List.of(
+        List<ModbusAlarm> rows = List.of(
                 row(OTHER_SID, 1, "a"), row(SID, 2, "b"), row(SID, 3, "c"));
 
         List<Close> closes = ModbusAlarmPlan.plan(List.of(one, two), rows);
@@ -201,7 +201,7 @@ class ModbusAlarmPlanTest {
 
     // ===== 夹具 =====
 
-    private static List<Close> plan(ModbusService service, ModbusServiceAlarm... rows) {
+    private static List<Close> plan(ModbusService service, ModbusAlarm... rows) {
         return ModbusAlarmPlan.plan(List.of(service), List.of(rows));
     }
 
@@ -209,17 +209,17 @@ class ModbusAlarmPlanTest {
         return closes.stream().flatMap(close -> close.fields().stream()).toList();
     }
 
-    private static ModbusServiceAlarm open(Integer transactionIndex, String field) {
+    private static ModbusAlarm open(Integer transactionIndex, String field) {
         return row(SID, transactionIndex, field);
     }
 
-    private static ModbusServiceAlarm row(String serviceId, Integer transactionIndex, String field) {
-        ModbusServiceAlarm row = new ModbusServiceAlarm();
+    private static ModbusAlarm row(String serviceId, Integer transactionIndex, String field) {
+        ModbusAlarm row = new ModbusAlarm();
         row.serviceId = serviceId;
         row.transactionIndex = transactionIndex;
         row.field = field;
         row.ruleId = RULE_ID;
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, field);
+        row.openKey = ModbusAlarm.openKeyOf(serviceId, transactionIndex, field);
         return row;
     }
 

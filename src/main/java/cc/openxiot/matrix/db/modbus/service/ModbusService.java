@@ -3,6 +3,7 @@ package cc.openxiot.matrix.db.modbus.service;
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -33,7 +34,7 @@ public class ModbusService {
      * 定义格式版本号：当前只认 2。
      *
      * <p>1 → 2 是 function 内部结构的演进：{@code request} 从「一整串 Modbus RTU 帧的 16 进制字符串」
-     * 改成了结构化定义（{@link cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusTransactionRequest}），
+     * 改成了结构化定义（{@link ModbusRequest}），
      * 写方法另外多出「写入字段 + 缺省值」。校验层按本常量**硬拒旧版本**：
      * 让旧口径的定义响亮地失败，而不是被读成 null 之后报一句含糊的「request is required」。</p>
      */

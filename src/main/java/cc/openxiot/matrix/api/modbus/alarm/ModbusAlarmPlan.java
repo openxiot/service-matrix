@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -110,7 +110,7 @@ public final class ModbusAlarmPlan {
      * <p>结果按 {@code (serviceId, transactionIndex)} 排好序，且每个方法只出现一次 ——
      * 关闭是按整个开行标识 {@code updateMany} 的，一个方法一条语句就够。</p>
      */
-    public static List<Close> plan(Collection<ModbusService> services, Collection<ModbusServiceAlarm> open) {
+    public static List<Close> plan(Collection<ModbusService> services, Collection<ModbusAlarm> open) {
         List<Close> closes = new ArrayList<>();
         if (services == null || open == null || open.isEmpty()) {
             return closes;
@@ -126,7 +126,7 @@ public final class ModbusAlarmPlan {
 
         // (serviceId, transactionIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
         Map<Key, Set<String>> stale = new LinkedHashMap<>();
-        for (ModbusServiceAlarm row : open) {
+        for (ModbusAlarm row : open) {
             if (row == null || row.serviceId == null || row.field == null || row.field.isBlank()
                     || row.ruleId == null) {
                 continue;   // 坐标不全、或说不上是哪条规则开的：见类注释，不在这里动

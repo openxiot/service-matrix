@@ -20,9 +20,9 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusTransactionResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusTransactionResponses;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -333,14 +333,14 @@ class WidgetOwnershipValidatorTest {
     }
 
     private static ModbusTransaction function(int index, String field, List<String> bits) {
-        ModbusTransactionResponseField f = new ModbusTransactionResponseField();
+        ModbusResponseField f = new ModbusResponseField();
         f.field = field;
         f.unit = "℃";
         if (bits != null) {
-            List<ModbusTransactionResponseFieldBit> bitList = new ArrayList<>();
+            List<ModbusResponseFieldBit> bitList = new ArrayList<>();
             int offset = 0;
             for (String bit : bits) {
-                ModbusTransactionResponseFieldBit b = new ModbusTransactionResponseFieldBit();
+                ModbusResponseFieldBit b = new ModbusResponseFieldBit();
                 b.offset = offset++;
                 b.field = bit;
                 bitList.add(b);
@@ -353,7 +353,7 @@ class WidgetOwnershipValidatorTest {
                     fn.from.index = index;
                     fn.index = index;
         fn.name = field;
-        fn.response = ModbusTransactionResponses.of(f);
+        fn.response = ModbusResponses.of(f);
         return fn;
     }
 
