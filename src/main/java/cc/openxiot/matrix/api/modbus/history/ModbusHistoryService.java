@@ -7,8 +7,6 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
@@ -57,9 +55,6 @@ public class ModbusHistoryService {
 
     /** 失败原因文本的长度上限：上游描述可能很长，而越长越容易让「同一条故障」被判成不同的两条。 */
     private static final int MAX_MESSAGE_LENGTH = 500;
-
-    @Inject
-    ModbusServiceLastPollingRepository shadowRepo;
 
     @Inject
     ModbusServiceHistoryRepository historyRepo;
@@ -115,8 +110,7 @@ public class ModbusHistoryService {
         } else {
             logger.info("history retention disabled, history is kept forever");
         }
-        shadowRepo.ensureIndexes()
-                .chain(ignored -> historyRepo.ensureIndexes(retentionSeconds))
+        historyRepo.ensureIndexes(retentionSeconds)
                 .chain(ignored -> pollingHistoryRepo.ensureIndexes(retentionSeconds))
                 .await().indefinitely();
     }
@@ -284,8 +278,7 @@ public class ModbusHistoryService {
             return Uni.createFrom().voidItem();
         }
         return Uni.combine().all()
-                .unis(shadowRepo.deleteByServiceIds(serviceIds),
-                        historyRepo.deleteByServiceIds(serviceIds),
+                .unis(historyRepo.deleteByServiceIds(serviceIds),
                         registryHistoryRepo.deleteByServiceIds(serviceIds),
                         registryShadowRepo.deleteByServiceIds(serviceIds),
                         pollingHistoryRepo.deleteByServiceIds(serviceIds),

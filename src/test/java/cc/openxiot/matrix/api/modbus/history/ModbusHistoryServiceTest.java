@@ -8,7 +8,6 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
@@ -71,7 +70,6 @@ class ModbusHistoryServiceTest {
     private static final String CRC_ERROR = "modbus response crc mismatch: 0103020064B9AE";
 
     private ModbusHistoryService service;
-    private ModbusServiceLastPollingRepository shadowRepo;
     private ModbusServiceHistoryRepository historyRepo;
     private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
     private ModbusServiceShadowRepository registryShadowRepo;
@@ -79,14 +77,12 @@ class ModbusHistoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        shadowRepo = mock(ModbusServiceLastPollingRepository.class);
         historyRepo = mock(ModbusServiceHistoryRepository.class);
         registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusServiceShadowRepository.class);
         pollingHistoryRepo = mock(ModbusServicePollingHistoryRepository.class);
 
         service = new ModbusHistoryService();
-        service.shadowRepo = shadowRepo;   // 保留：只剩 purge 在用，record/recordFailure 不再碰它
         service.historyRepo = historyRepo;
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;

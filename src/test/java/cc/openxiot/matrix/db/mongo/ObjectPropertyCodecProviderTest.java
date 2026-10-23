@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.common.person.Person;
 import com.mongodb.MongoClientSettings;
@@ -125,35 +125,38 @@ class ObjectPropertyCodecProviderTest {
         assertEquals(Double.class, decode(ModbusServiceHistory.class, encode(sample(42.0))).value.getClass());
     }
 
-    // ===== 影子 / 空间属性：Map<String, Object> 的每个值都走同一格 =====
+    // ===== 操作日志快照 / 空间属性：Map<String, Object> 的每个值都走同一格 =====
 
-    /** 影子的 {@code fields}：四类值（数值 / 描述 / 布尔 / 空）都能进能出。 */
+    /** 操作日志的 {@code fields}（成功调用的响应快照）：四类值（数值 / 描述 / 布尔 / 空）都能进能出。 */
     @Test
-    void shadowFieldsRoundTrip() {
-        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
-        shadow.id = new ObjectId();
-        shadow.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        shadow.pollingIndex = 1;
+    void snapshotFieldsRoundTrip() {
+        ModbusServicePollingHistory log = new ModbusServicePollingHistory();
+        log.id = new ObjectId();
+        log.serviceId = "6aa759bb4e45b0b6122d2ed5";
+        log.pollingIndex = 1;
+        log.operation = "read";
+        log.ok = Boolean.TRUE;
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("温度", 25);
         fields.put("状态", "运行");
         fields.put("告警", Boolean.FALSE);
         fields.put("空位", null);
-        shadow.fields = fields;
-        shadow.recordedAt = new Date(AT);
+        log.fields = fields;
+        log.at = new Date(AT);
 
-        ModbusServiceLastPolling read = decode(ModbusServiceLastPolling.class, encode(shadow));
+        ModbusServicePollingHistory read = decode(ModbusServicePollingHistory.class, encode(log));
 
         assertEquals(fields, read.fields);
-        assertEquals(new Date(AT), read.recordedAt);
-        assertNull(read.lastError, "最后一次调用是成功的，故障位不该有值");
+        assertEquals(new Date(AT), read.at);
+        assertNull(read.message, "成功调用的操作日志不该带失败明细");
+        assertNull(read.type, "成功调用的操作日志不该有失败分类");
     }
 
     /**
      * 看板卡片的 {@code config}：{@code Map<String, Object>} 里**再嵌 Map 与 List**
      * （{@code window} 是文档、{@code fields} 是数组），值还有 Integer / Long / Boolean。
      *
-     * <p>比 {@link #shadowFieldsRoundTrip} 深一层：那张卡上的每个值都是标量，而看板卡片的值
+     * <p>比 {@link #snapshotFieldsRoundTrip} 深一层：那张卡上的每个值都是标量，而看板卡片的值
      * **本身就是容器**。{@code WebDashboardWidget} 的「config 异构、不做结构化」这个设计
      * 整个压在「能原样读回」上 —— 读回来若变成了字符串或丢了一层，校验器与取数都会静默失灵。</p>
      */
