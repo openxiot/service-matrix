@@ -11,6 +11,7 @@ import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest
 import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -56,29 +57,29 @@ class ModbusShadowServiceTest {
                 shadow(1, 61.5, new Date(t0), null, null),
                 shadow(2, 35.0, new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
 
-        List<ModbusRegisterSnapshot> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
+        List<JsonObject> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
 
         // 只列可读寄存器（access R/RW），写寄存器不出现
         assertEquals(3, grid.size());
         // 有值 + 最近成功 → current
-        ModbusRegisterSnapshot temp = grid.get(0);
-        assertEquals("进水温度", temp.name);
-        assertEquals(61.5, temp.value);
-        assertEquals(1, temp.pollingIndex);
-        assertEquals(t0, temp.recordedAt.getTime());
-        assertEquals("current", temp.status);
+        JsonObject temp = grid.get(0);
+        assertEquals("进水温度", temp.getString("name"));
+        assertEquals(61.5, temp.getValue("value"));
+        assertEquals(1, temp.getInteger("pollingIndex"));
+        assertEquals(t0, temp.getLong("recordedAt"));
+        assertEquals("current", temp.getString("status"));
         // 有值 + 最近失败 → stale，值仍是最后已知值
-        ModbusRegisterSnapshot outTemp = grid.get(1);
-        assertEquals("出水温度", outTemp.name);
-        assertEquals(35.0, outTemp.value);
-        assertEquals("stale", outTemp.status);
-        assertEquals("no response", outTemp.lastError);
-        // 可读但从没被调用过 → no-data，无值、无方法归属
-        ModbusRegisterSnapshot pressure = grid.get(2);
-        assertEquals("压力", pressure.name);
-        assertNull(pressure.value);
-        assertNull(pressure.pollingIndex);
-        assertEquals("no-data", pressure.status);
+        JsonObject outTemp = grid.get(1);
+        assertEquals("出水温度", outTemp.getString("name"));
+        assertEquals(35.0, outTemp.getValue("value"));
+        assertEquals("stale", outTemp.getString("status"));
+        assertEquals("no response", outTemp.getString("lastError"));
+        // 可读但从没被调用过 → no-data，无值、无方法归属（null 字段不出键）
+        JsonObject pressure = grid.get(2);
+        assertEquals("压力", pressure.getString("name"));
+        assertFalse(pressure.containsKey("value"));
+        assertFalse(pressure.containsKey("pollingIndex"));
+        assertEquals("no-data", pressure.getString("status"));
     }
 
     @Test
@@ -88,7 +89,7 @@ class ModbusShadowServiceTest {
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
 
-        List<ModbusRegisterSnapshot> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
+        List<JsonObject> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
 
         assertTrue(grid.isEmpty());
     }
@@ -98,7 +99,7 @@ class ModbusShadowServiceTest {
         // 服务不存在：读取是投影，「能给多少给多少」，不因单个 id 失败
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().nullItem());
 
-        List<ModbusRegisterSnapshot> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
+        List<JsonObject> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
 
         assertTrue(grid.isEmpty());
     }
@@ -115,14 +116,14 @@ class ModbusShadowServiceTest {
                 shadow(1, 61.5, new Date(1_700_000_000_000L), null, null))));
         when(registryShadowRepo.listByServiceId(id2)).thenReturn(Uni.createFrom().item(List.of()));
 
-        Map<String, List<ModbusRegisterSnapshot>> grid =
+        Map<String, List<JsonObject>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, id2)).await().indefinitely();
 
         assertEquals(2, grid.size());
         assertEquals(3, grid.get(SERVICE_ID).size());
-        assertEquals("current", grid.get(SERVICE_ID).get(0).status);
+        assertEquals("current", grid.get(SERVICE_ID).get(0).getString("status"));
         assertEquals(3, grid.get(id2).size());
-        assertEquals("no-data", grid.get(id2).get(0).status);
+        assertEquals("no-data", grid.get(id2).get(0).getString("status"));
     }
 
     @Test
@@ -132,7 +133,7 @@ class ModbusShadowServiceTest {
         when(repo.findById(bogus)).thenReturn(Uni.createFrom().nullItem());
         when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
 
-        Map<String, List<ModbusRegisterSnapshot>> grid =
+        Map<String, List<JsonObject>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, bogus)).await().indefinitely();
 
         // 有效的那家正常出网格；不存在的按空网格

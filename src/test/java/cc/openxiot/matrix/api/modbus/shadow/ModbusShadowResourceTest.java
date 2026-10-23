@@ -24,6 +24,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -72,20 +73,20 @@ class ModbusShadowResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
     }
 
-    /** 一个服务一张网格：进水温度 current，压力 no-data。 */
-    private Map<String, List<ModbusRegisterSnapshot>> grid() {
-        ModbusRegisterSnapshot temp = new ModbusRegisterSnapshot();
-        temp.name = "进水温度";
-        temp.area = "holding";
-        temp.access = "R";
-        temp.pollingIndex = 1;
-        temp.value = 61.5;
-        temp.status = ModbusRegisterSnapshot.STATUS_CURRENT;
-        ModbusRegisterSnapshot pressure = new ModbusRegisterSnapshot();
-        pressure.name = "压力";
-        pressure.area = "input";
-        pressure.access = "R";
-        pressure.status = ModbusRegisterSnapshot.STATUS_NO_DATA;
+    /** 一个服务一张网格：进水温度 current，压力 no-data（寄存器条目键序同 {@code /shadows} 编码：name/area?/unit?/access/pollingIndex?/value?/status）。 */
+    private Map<String, List<JsonObject>> grid() {
+        JsonObject temp = new JsonObject()
+                .put("name", "进水温度")
+                .put("area", "holding")
+                .put("access", "R")
+                .put("pollingIndex", 1)
+                .put("value", 61.5)
+                .put("status", "current");
+        JsonObject pressure = new JsonObject()
+                .put("name", "压力")
+                .put("area", "input")
+                .put("access", "R")
+                .put("status", "no-data");
         return Map.of(SVC1, List.of(temp, pressure));
     }
 

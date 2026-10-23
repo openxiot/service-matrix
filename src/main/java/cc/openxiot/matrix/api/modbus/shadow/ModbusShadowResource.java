@@ -8,6 +8,7 @@ import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
@@ -101,13 +102,13 @@ public class ModbusShadowResource extends AbstractResource {
                 .map(list -> list.stream().map(s -> s.id.toHexString()).toList());
     }
 
-    /** 每张服务网格编码成 {@code {serviceId, registers}}，整体放进 {@code shadows} 对象（按入参顺序）。 */
-    private static JsonObject encodeShadows(Map<String, List<ModbusRegisterSnapshot>> grid) {
+    /** 每张服务网格组装成 {@code {serviceId, registers}}，整体放进 {@code shadows} 对象（按入参顺序）。 */
+    private static JsonObject encodeShadows(Map<String, List<JsonObject>> grid) {
         JsonObject shadows = new JsonObject();
         grid.forEach((serviceId, list) -> {
             JsonObject one = new JsonObject();
             one.put("serviceId", serviceId);
-            one.put("registers", ModbusRegisterSnapshotCodec.encode(list));
+            one.put("registers", new JsonArray(list));
             shadows.put(serviceId, one);
         });
         return shadows;

@@ -8,6 +8,7 @@ import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -47,7 +48,7 @@ public class ModbusShadowService {
      * <p>服务不存在 / 没有点表快照时返回空网格——读取是**投影**，「能给多少给多少」，
      * 不因单个 id 失败而报错（与设备影子的「按 did 取、能取到多少返回多少」同口径）。</p>
      */
-    public Uni<List<ModbusRegisterSnapshot>> registerCache(String serviceId) {
+    public Uni<List<JsonObject>> registerCache(String serviceId) {
         return repo.findById(serviceId)
                 .onItem().transformToUni(service -> service == null
                         ? Uni.createFrom().item(List.of())
@@ -62,7 +63,7 @@ public class ModbusShadowService {
      * <p>每个服务一张网格并行取；单个 {@code serviceId} 无效时那家为空网格、不拖垮整批。
      * 结果保持入参顺序。</p>
      */
-    public Uni<Map<String, List<ModbusRegisterSnapshot>>> registerCaches(List<String> serviceIds) {
+    public Uni<Map<String, List<JsonObject>>> registerCaches(List<String> serviceIds) {
         if (serviceIds == null || serviceIds.isEmpty()) {
             return Uni.createFrom().item(Map.of());
         }
@@ -80,8 +81,11 @@ public class ModbusShadowService {
      * 值来自逐寄存器的影子 {@code ModbusServiceShadow}（按 {@code registerIndex} 索引到该寄存器）；
      * 拿不到影子、或影子没有值 → {@code no-data}。方法归属 {@code pollingIndex} 仍由
      * {@code functions} 里应答字段名 == 寄存器点表名的那个方法解出（只作展示，不决定值）。
+     *
+     * <p>直接产出对外 JSON（{@code /shadows} 的形状，见 {@link #encodeRegister}）—— 点表投影是
+     * 读侧纯投影，不需要一份中间 DTO（原 {@code ModbusRegisterSnapshot} 已删除）。</p>
      */
-    private static List<ModbusRegisterSnapshot> mergeRegisterCache(
+    private static List<JsonObject> mergeRegisterCache(
             ModbusConfig config,
             List<ModbusPolling> functions,
             List<ModbusServiceShadow> shadows
@@ -110,7 +114,7 @@ public class ModbusShadowService {
             }
         }
 
-        List<ModbusRegisterSnapshot> out = new ArrayList<>();
+        List<JsonObject> out = new ArrayList<>();
         if (config == null || config.registries == null) {
             return out;
         }
@@ -122,29 +126,60 @@ public class ModbusShadowService {
             if (!"R".equals(access) && !"RW".equals(access)) {
                 continue;
             }
-            ModbusRegisterSnapshot snap = new ModbusRegisterSnapshot();
-            snap.name = reg.name;
-            snap.area = reg.area;
-            snap.dataType = reg.dataType;
-            snap.unit = reg.unit;
-            snap.access = access;
-            snap.pollingIndex = owner.get(reg.name);
             ModbusServiceShadow sh = reg.index == null ? null : byIndex.get(reg.index);
-            if (sh == null || sh.value == null) {
-                snap.status = ModbusRegisterSnapshot.STATUS_NO_DATA;
-            } else {
-                snap.value = sh.value;
-                snap.recordedAt = sh.recordedAt;
-                if (sh.lastError == null) {
-                    snap.status = ModbusRegisterSnapshot.STATUS_CURRENT;
-                } else {
-                    snap.status = ModbusRegisterSnapshot.STATUS_STALE;
-                    snap.lastError = sh.lastError;
-                    snap.errorAt = sh.errorAt;
-                }
-            }
-            out.add(snap);
+            out.add(sh == null || sh.value == null
+                    ? encodeRegister(reg, access, owner.get(reg.name), STATUS_NO_DATA,
+                            null, null, null, null)
+                    : sh.lastError == null
+                            ? encodeRegister(reg, access, owner.get(reg.name), STATUS_CURRENT,
+                                    sh.value, sh.recordedAt, null, null)
+                            : encodeRegister(reg, access, owner.get(reg.name), STATUS_STALE,
+                                    sh.value, sh.recordedAt, sh.lastError, sh.errorAt));
         }
         return out;
     }
+
+    /**
+     * 一只寄存器投影的对外 JSON，键序与原 {@code ModbusRegisterSnapshotCodec} 逐字一致：
+     * {@code name, area?, dataType?, unit?, access, pollingIndex?, value?, recordedAt?, status,
+     * lastError?, errorAt?}。null 的字段不出键（前端判「有没有缓存」看 {@code value} 在不在）。
+     */
+    private static JsonObject encodeRegister(ModbusRegistry reg, String access, Integer pollingIndex,
+                                             String status, Object value, java.util.Date recordedAt,
+                                             String lastError, java.util.Date errorAt) {
+        JsonObject o = new JsonObject();
+        o.put("name", reg.name);
+        if (reg.area != null) {
+            o.put("area", reg.area);
+        }
+        if (reg.dataType != null) {
+            o.put("dataType", reg.dataType);
+        }
+        if (reg.unit != null) {
+            o.put("unit", reg.unit);
+        }
+        o.put("access", access);
+        if (pollingIndex != null) {
+            o.put("pollingIndex", pollingIndex);
+        }
+        if (value != null) {
+            o.put("value", value);
+        }
+        if (recordedAt != null) {
+            o.put("recordedAt", recordedAt.getTime());
+        }
+        o.put("status", status);
+        if (lastError != null) {
+            o.put("lastError", lastError);
+        }
+        if (errorAt != null) {
+            o.put("errorAt", errorAt.getTime());
+        }
+        return o;
+    }
+
+    /** 缓存态：正常 / 陈旧（失败后值不再更新）/ 无数据（从没采到）。见 {@link #encodeRegister} 的 status。 */
+    private static final String STATUS_CURRENT = "current";
+    private static final String STATUS_STALE = "stale";
+    private static final String STATUS_NO_DATA = "no-data";
 }
