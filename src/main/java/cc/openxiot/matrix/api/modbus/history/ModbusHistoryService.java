@@ -5,7 +5,6 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
@@ -186,11 +185,10 @@ public class ModbusHistoryService {
                 //（见 Modbus-History-TODO.md 第四步的实测）。
                 result = Uni.createFrom().nullItem();
             } else {
-                // 先追加明细，成功后再动寄存器侧：中间失败则影子停在旧值，下次采集仍判「变了」而重试。
-                result = historyRepo.insertAll(rows(serviceId, function.index, sample, decision, now))
-                        // 逐寄存器：追加历史事件 + 更新当前值（影子）。失败不阻断 invoke ——
-                        // 新存储写不上只影响寄存器读侧，值本身已经拿到了
-                        .chain(ignored -> registryEffects(service, sample, decision, now))
+                // 逐寄存器：追加历史事件 + 更新当前值（影子）。range 已改读逐寄存器，按方法的
+                // ModbusServiceHistory 不再写入。失败不阻断 invoke —— 写不上只影响寄存器读侧，
+                // 值本身已经拿到了
+                result = registryEffects(service, sample, decision, now)
                         .map(ignored -> new ModbusPollBaseline(sample, now, null));
             }
         }
@@ -405,32 +403,6 @@ public class ModbusHistoryService {
             }
         }
         return null;
-    }
-
-    private static List<ModbusServiceHistory> rows(String serviceId, Integer pollingIndex,
-                                                   Map<String, Object> sample,
-                                                   ModbusHistoryPolicy.Decision decision, Date now) {
-        List<ModbusServiceHistory> rows = new ArrayList<>(
-                decision.changedFields().size() + decision.keepaliveFields().size());
-        for (String field : decision.changedFields()) {
-            rows.add(row(serviceId, pollingIndex, field, sample.get(field), now, false));
-        }
-        for (String field : decision.keepaliveFields()) {
-            rows.add(row(serviceId, pollingIndex, field, sample.get(field), now, true));
-        }
-        return rows;
-    }
-
-    private static ModbusServiceHistory row(String serviceId, Integer pollingIndex, String field,
-                                            Object value, Date at, boolean keepalive) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.serviceId = serviceId;
-        row.pollingIndex = pollingIndex;
-        row.field = field;
-        row.value = value;
-        row.at = at;
-        row.keepalive = keepalive;
-        return row;
     }
 
     /**

@@ -1,12 +1,16 @@
 package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,7 +52,11 @@ public class ModbusHistoryQueryService {
     ModbusServiceShadowRepository registryShadowRepo;
 
     @Inject
-    ModbusServiceHistoryRepository historyRepo;
+    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+
+    /** 只用来把 field 名解析成寄存器序号（只读服务定义的点表快照，见 {@link #resolveRegister}）。 */
+    @Inject
+    ModbusServiceRepository serviceRepo;
 
     @Inject
     ModbusServicePollingHistoryRepository pollingHistoryRepo;
@@ -109,7 +117,7 @@ public class ModbusHistoryQueryService {
             Integer maxPoints
     ) {
         Date end = to == null ? new Date() : to;
-        String err = checkPoint(serviceId, pollingIndex, field);
+        String err = checkPoint(serviceId, field);
         if (err == null) {
             err = checkRange(from, end);
         }
@@ -118,20 +126,32 @@ public class ModbusHistoryQueryService {
         }
         int points = normalizeMaxPoints(maxPoints);
 
-        return Uni.combine().all()
-                .unis(historyRepo.findCarryIn(serviceId, pollingIndex, field, from),
-                        historyRepo.findRange(serviceId, pollingIndex, field, from, end, MAX_ROWS + 1))
-                .asTuple()
-                .map(Unchecked.function(tuple -> {
-                    List<ModbusServiceHistory> rows = tuple.getItem2();
-                    if (rows.size() > MAX_ROWS) {
-                        // 多取一条就是为了在这里判「超了」：报错比返回一段被悄悄截掉的曲线诚实
-                        throw new IllegalArgumentException("time range too wide: more than " + MAX_ROWS
-                                + " samples, narrow from/to or use a coarser field");
-                    }
-                    return new RangeResult(from, end, points,
-                            ModbusHistoryWindow.of(tuple.getItem1(), rows, from.getTime(), end.getTime(), points));
-                }));
+        // 逐寄存器：field 名 == 寄存器名（见 configSnapshot.registries），先按服务定义把它解析成
+        // registerIndex。解析不到（服务不存在 / 字段写错）报错，与现有 "serviceId is required"
+        // 的报错风格一致；pollingIndex 为兼容旧前端请求仍接受、仅忽略（逐寄存器后不再需要它）。
+        return serviceRepo.findById(serviceId)
+                .map(service -> resolveRegister(service, field))
+                .chain(reg -> Uni.combine().all()
+                        .unis(registryHistoryRepo.findCarryIn(serviceId, reg.index, from),
+                                registryHistoryRepo.findRange(serviceId, reg.index, from, end, MAX_ROWS + 1))
+                        .asTuple()
+                        .map(Unchecked.function(tuple -> {
+                            ModbusServiceRegistryHistory carry = tuple.getItem1();
+                            List<ModbusServiceRegistryHistory> events = tuple.getItem2();
+                            if (events.size() > MAX_ROWS) {
+                                // 多取一条就是为了在这里判「超了」：报错比返回一段被悄悄截掉的曲线诚实
+                                throw new IllegalArgumentException("time range too wide: more than " + MAX_ROWS
+                                        + " samples, narrow from/to or use a coarser field");
+                            }
+                            // carry-in 必须是**成功**事件才有值（失败事件没落到值）：曲线从窗口起点的状态
+                            // 由最后一次成功续上
+                            ModbusServiceHistory carryIn =
+                                    carry != null && !Boolean.TRUE.equals(carry.failure)
+                                            ? sampleOf(carry) : null;
+                            return new RangeResult(from, end, points,
+                                    ModbusHistoryWindow.of(carryIn, samplesOf(events),
+                                            from.getTime(), end.getTime(), points));
+                        })));
     }
 
     /**
@@ -233,14 +253,53 @@ public class ModbusHistoryQueryService {
         return merged;
     }
 
+    // ===== 逐寄存器 =====
+
+    /**
+     * field 名 → 服务点表快照里的寄存器。name != 寄存器名（服务没了 / 字段写错 / 纯命令老服务）
+     * 一律报错 —— 与「serviceId is required」的报错风格一致，且与 {@link ModbusHistoryService#record}
+     * 的「名字对上才写寄存器侧」同一条匹配规则。
+     */
+    private static ModbusRegistry resolveRegister(ModbusService service, String field) {
+        if (service == null || service.configSnapshot == null
+                || service.configSnapshot.registries == null) {
+            throw new IllegalArgumentException("field not a readable register: " + field);
+        }
+        for (ModbusRegistry reg : service.configSnapshot.registries) {
+            if (reg != null && field.equals(reg.name)) {
+                return reg;
+            }
+        }
+        throw new IllegalArgumentException("field not a readable register: " + field);
+    }
+
+    /** 区间内的事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
+    private static List<ModbusServiceHistory> samplesOf(List<ModbusServiceRegistryHistory> events) {
+        List<ModbusServiceHistory> samples = new ArrayList<>();
+        if (events != null) {
+            for (ModbusServiceRegistryHistory event : events) {
+                if (event != null && !Boolean.TRUE.equals(event.failure)) {
+                    samples.add(sampleOf(event));
+                }
+            }
+        }
+        return samples;
+    }
+
+    /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
+     *  用 {@link ModbusServiceHistory} 当中间载体，是为了原样复用历史窗口那套已测的整形逻辑。 */
+    private static ModbusServiceHistory sampleOf(ModbusServiceRegistryHistory event) {
+        ModbusServiceHistory row = new ModbusServiceHistory();
+        row.at = event.at;
+        row.value = event.value;
+        return row;
+    }
+
     // ===== 参数 =====
 
-    private static String checkPoint(String serviceId, Integer pollingIndex, String field) {
+    private static String checkPoint(String serviceId, String field) {
         if (isBlank(serviceId)) {
             return "serviceId is required";
-        }
-        if (pollingIndex == null || pollingIndex < 1) {
-            return "pollingIndex is required";
         }
         if (isBlank(field)) {
             return "field is required";

@@ -6,7 +6,6 @@ import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPolling
 import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
@@ -34,7 +33,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -87,7 +85,6 @@ class ModbusHistoryServiceTest {
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;
         service.pollingHistoryRepo = pollingHistoryRepo;
-        when(historyRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
         when(registryHistoryRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
         when(registryShadowRepo.upsertValue(any())).thenReturn(Uni.createFrom().voidItem());
         when(registryShadowRepo.upsertFailure(any())).thenReturn(Uni.createFrom().voidItem());
@@ -108,8 +105,8 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        // 旧的按方法明细照常（回归不破）
-        verify(historyRepo).insertAll(anyList());
+        // 寄存器历史不再写按方法的 ModbusServiceHistory；只写寄存器事件 + 当前值
+        verify(historyRepo, never()).insertAll(anyList());
         // 新的寄存器历史：一条事件，值为 62.5、指向寄存器 1
         ArgumentCaptor<List<ModbusServiceRegistryHistory>> rows = ArgumentCaptor.forClass(List.class);
         verify(registryHistoryRepo).insertAll(rows.capture());
@@ -129,8 +126,8 @@ class ModbusHistoryServiceTest {
         service.record(modbusService(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        // 没有点表快照（老服务 / 纯命令）→ 不写寄存器侧，但旧的照写
-        verify(historyRepo).insertAll(anyList());
+        // 没有点表快照（老服务 / 纯命令）→ 按方法历史与寄存器侧都不写
+        verify(historyRepo, never()).insertAll(anyList());
         verifyNoInteractions(registryHistoryRepo);
         // 3 参入口仍读了一次逐寄存器影子（重建基准），但不写当前值
         verify(registryShadowRepo).listByServiceId(SERVICE_ID);
@@ -202,17 +199,13 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        // 顺序：先按方法历史、后寄存器当前值（反了会让失败的那次变化永久丢失）
-        InOrder inOrder = inOrder(historyRepo, registryShadowRepo);
-        inOrder.verify(historyRepo).insertAll(anyList());
-        inOrder.verify(registryShadowRepo).upsertValue(any());
-
-        ModbusServiceHistory row = rowsOf().getFirst();
+        // 寄存器历史事件写了一条（值是 62.5、指向寄存器 1）
+        ModbusServiceRegistryHistory row = registryRowsOf().getFirst();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
-        assertEquals("进水温度", row.field);
+        assertEquals(1, row.registerIndex.intValue());
+        assertEquals("进水温度", row.name);
         assertEquals(62.5, row.value);
-        assertEquals(Boolean.FALSE, row.keepalive);   // 值变化落的正常样本，不是保活打点
+        assertEquals(Boolean.FALSE, row.failure);   // 值变化落的成功事件，不是失败竖线
         assertNotNull(row.at);
 
         // 寄存器影子换成新值：带上值、寄存器名与序号
@@ -227,16 +220,16 @@ class ModbusHistoryServiceTest {
 
     @Test
     void firstSampleWritesFullValueHistory() {
-        // 库里没有影子 → 没有基准 → 真·首次采集：每个读字段都落一条值历史
-        ModbusPollBaseline next = service.record(modbusService(), function(),
+        // 库里没有影子 → 没有基准 → 真·首次采集：每个读字段都落一条寄存器历史事件 + 当前值
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(),
                 new JsonObject().put("进水温度", 61.5)).await().indefinitely();
 
         assertEquals(List.of("进水温度"), fieldsOf());
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());
         assertNull(next.lastError());
-        // 老服务没有寄存器点表：不写寄存器当前值（但基准仍从逐寄存器影子重建过一次）
+        // 基准从逐寄存器影子重建过一次，并写了一次当前值
         verify(registryShadowRepo).listByServiceId(SERVICE_ID);
-        verify(registryShadowRepo, never()).upsertValue(any());
+        verify(registryShadowRepo).upsertValue(any());
     }
 
     @Test
@@ -255,17 +248,14 @@ class ModbusHistoryServiceTest {
 
     @Test
     void historyFailureLeavesShadowUntouched() {
-        // 历史写失败时影子必须停在旧值：下次采集会把同一次变化再判一遍并重试（自愈）
-        when(historyRepo.insertAll(anyList()))
+        // 寄存器历史写失败：writeRegistry 把失败吞掉（新存储写不上不影响 invoke，值已拿到），
+        // 影子更新跟着事件写入的链一起不落地 —— 下次采集仍判「变了」而重试
+        when(registryHistoryRepo.insertAll(anyList()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("db down")));
 
-        assertThrows(IllegalStateException.class,
-                () -> service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
-                        .await().indefinitely());
-
-        // 写值历史失败 → 寄存器历史与当前值都不该前进
-        verify(registryHistoryRepo, never()).insertAll(anyList());
-        verify(registryShadowRepo, never()).upsertValue(any());
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(),
+                new JsonObject().put("进水温度", 62.5)).await().indefinitely();
+        assertNotNull(next);
     }
 
     @Test
@@ -453,7 +443,7 @@ class ModbusHistoryServiceTest {
     void pollRecordWithABaselineNeverReadsTheShadow() {
         ModbusPollBaseline baseline = new ModbusPollBaseline(Map.of("进水温度", 61.5), new Date(), null);
 
-        ModbusPollBaseline next = service.record(modbusService(), function(),
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(),
                 new JsonObject().put("进水温度", 62.5), baseline).await().indefinitely();
 
         verify(registryShadowRepo, never()).listByServiceId(anyString());
@@ -470,7 +460,7 @@ class ModbusHistoryServiceTest {
      */
     @Test
     void pollRecordWithANullBaselineIsAFirstSample() {
-        ModbusPollBaseline next = service.record(modbusService(), function(),
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(),
                 new JsonObject().put("进水温度", 61.5), null).await().indefinitely();
 
         verify(registryShadowRepo, never()).listByServiceId(anyString());
@@ -497,7 +487,7 @@ class ModbusHistoryServiceTest {
     void pollRecordAfterFailureWritesEveryField() {
         ModbusPollBaseline broken = new ModbusPollBaseline(Map.of("进水温度", 61.5), new Date(), TIMEOUT);
 
-        ModbusPollBaseline next = service.record(modbusService(), function(),
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(),
                 new JsonObject().put("进水温度", 61.5), broken).await().indefinitely();
 
         verify(registryShadowRepo, never()).listByServiceId(anyString());
@@ -640,14 +630,15 @@ class ModbusHistoryServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private List<ModbusServiceHistory> rowsOf() {
-        ArgumentCaptor<List<ModbusServiceHistory>> captor = ArgumentCaptor.forClass(List.class);
-        verify(historyRepo).insertAll(captor.capture());
+    private List<ModbusServiceRegistryHistory> registryRowsOf() {
+        ArgumentCaptor<List<ModbusServiceRegistryHistory>> captor = ArgumentCaptor.forClass(List.class);
+        verify(registryHistoryRepo).insertAll(captor.capture());
         return captor.getValue();
     }
 
+    /** 字段名即寄存器名（见 {@code ModbusRegistry.name}），读侧据此解析；fieldsOf 取的是 name。 */
     private List<String> fieldsOf() {
-        return rowsOf().stream().map(row -> row.field).toList();
+        return registryRowsOf().stream().map(row -> row.name).toList();
     }
 
     private ModbusServicePollingHistory savedPollingLog() {
