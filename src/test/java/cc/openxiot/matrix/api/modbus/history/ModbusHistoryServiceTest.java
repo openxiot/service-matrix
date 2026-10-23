@@ -10,6 +10,12 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
 import io.smallrye.mutiny.Uni;
@@ -65,19 +71,72 @@ class ModbusHistoryServiceTest {
     private ModbusServiceLastPollingRepository shadowRepo;
     private ModbusServiceHistoryRepository historyRepo;
     private ModbusServiceFailureRepository failureRepo;
+    private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+    private ModbusServiceShadowRepository registryShadowRepo;
 
     @BeforeEach
     void setUp() {
         shadowRepo = mock(ModbusServiceLastPollingRepository.class);
         historyRepo = mock(ModbusServiceHistoryRepository.class);
         failureRepo = mock(ModbusServiceFailureRepository.class);
+        registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
+        registryShadowRepo = mock(ModbusServiceShadowRepository.class);
 
         service = new ModbusHistoryService();
         service.shadowRepo = shadowRepo;
         service.historyRepo = historyRepo;
         service.failureRepo = failureRepo;
+        service.registryHistoryRepo = registryHistoryRepo;
+        service.registryShadowRepo = registryShadowRepo;
+        when(registryHistoryRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
+        when(registryShadowRepo.upsertValue(any())).thenReturn(Uni.createFrom().voidItem());
+        when(registryShadowRepo.upsertFailure(any())).thenReturn(Uni.createFrom().voidItem());
         service.deadband = 0;
         service.keepAliveSeconds = 600;
+    }
+
+    /**
+     * 寄存器中心的新路径（expand）：服务带了可读寄存器的点表快照时，成功/失败的采集
+     * 除旧的按方法历史外，还把每只寄存器的历史事件与当前值（影子）写进新存储。
+     */
+    @Test
+    void registryWrite_success_appendsRegistryHistoryAndUpsertsShadow() {
+        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(shadow(new ObjectId(), sample("进水温度", 61.5), new Date())));
+        when(historyRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
+        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
+                .await().indefinitely();
+
+        // 旧的按方法明细与影子照常（回归不破）
+        verify(historyRepo).insertAll(anyList());
+        // 新的寄存器历史：一条事件，值为 62.5、指向寄存器 1
+        ArgumentCaptor<List<ModbusServiceRegistryHistory>> rows = ArgumentCaptor.forClass(List.class);
+        verify(registryHistoryRepo).insertAll(rows.capture());
+        ModbusServiceRegistryHistory event = rows.getValue().getFirst();
+        assertEquals(1, event.registerIndex.intValue());
+        assertEquals("进水温度", event.name);
+        assertEquals(62.5, event.value);
+        assertEquals(Boolean.FALSE, event.failure);
+        // 寄存器当前值 upsert 一次（清故障态）
+        verify(registryShadowRepo).upsertValue(any());
+    }
+
+    @Test
+    void registryWrite_oldServiceWithoutRegistries_skipsNewWrites() {
+        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(shadow(new ObjectId(), sample("进水温度", 61.5), new Date())));
+        when(historyRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
+        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        service.record(modbusService(), function(), new JsonObject().put("进水温度", 62.5))
+                .await().indefinitely();
+
+        // 没有点表快照（老服务 / 纯命令）→ 不写寄存器侧，但旧的照写
+        verify(historyRepo).insertAll(anyList());
+        verifyNoInteractions(registryHistoryRepo);
+        verifyNoInteractions(registryShadowRepo);
     }
 
     @Test
@@ -504,6 +563,22 @@ class ModbusHistoryServiceTest {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(SERVICE_ID);
         service.name = "1 号冷水机组";
+        return service;
+    }
+
+    /** 带点表快照（含一只可读寄存器「进水温度」）的服务：走寄存器中心的新写入路径。 */
+    private static ModbusService modbusServiceWithRegistries() {
+        ModbusService service = modbusService();
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.index = 1;
+        reg.name = "进水温度";
+        reg.address = 0;
+        reg.area = "holding";
+        reg.access = "R";
+        reg.unit = "℃";
+        ModbusConfig config = new ModbusConfig();
+        config.registries = java.util.List.of(reg);
+        service.configSnapshot = config;
         return service;
     }
 

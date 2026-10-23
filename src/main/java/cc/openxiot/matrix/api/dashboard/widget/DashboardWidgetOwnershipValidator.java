@@ -25,7 +25,8 @@ import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (serviceId, pollingIndex, field)} 三元组是否真实存在。
+ * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code pollingIndex} 方法序号不再需要，
+ * 字段按 {@code findFunctionByField} 在服务定义里解析）。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
  * 结构错误是「这份 body 根本不成形」，一次请求只能报一个；归属错误是「某一张卡指向了不存在
@@ -90,7 +91,7 @@ public class DashboardWidgetOwnershipValidator {
      *
      * <p>读的都是提交上来的 body（含编辑器里尚未保存的草稿），所以对形状只做防御性读取、
      * 不重复结构校验 —— 该报的错由调用方先跑一遍
-     * {@link WebDashboardWidgetStructureValidator} 负责。这里是「假定形状合法，只判归属」。</p>
+     * {@link DashboardWidgetStructureValidator} 负责。这里是「假定形状合法，只判归属」。</p>
      */
     public Uni<Map<String, String>> errorsByWidget(SpaceEntity space, List<? extends DashboardWidgetView> widgets) {
         Map<String, String> errors = new LinkedHashMap<>();
@@ -184,10 +185,11 @@ public class DashboardWidgetOwnershipValidator {
             switch (widget.type() == null ? "" : widget.type()) {
                 case "service" -> {
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
-                    if (serviceId == null || pollingIndex == null) {
+                    if (serviceId == null) {
                         continue;
                     }
+                    // 老卡带 pollingIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
+                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
                     addServiceId(serviceIds, serviceId);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
                         serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollingIndex, field));
@@ -200,7 +202,7 @@ public class DashboardWidgetOwnershipValidator {
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
                     Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
                     String field = DashboardWidgetConfigs.str(config.get("field"));
-                    if (serviceId == null || pollingIndex == null || field == null) {
+                    if (serviceId == null || field == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
@@ -279,12 +281,39 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
             return "service does not belong to this space: " + ref.serviceId();
         }
-        ModbusPolling function = findFunction(service, ref.pollingIndex());
-        if (function == null) {
-            return "function not found: " + ref.pollingIndex();
+        // 老卡带 pollingIndex（方法序号）：按那个方法的应答字段校验，行为不变。
+        if (ref.pollingIndex() != null) {
+            ModbusPolling function = findFunction(service, ref.pollingIndex());
+            if (function == null) {
+                return "function not found: " + ref.pollingIndex();
+            }
+            if (!hasField(function, ref.field())) {
+                return "field not found: " + ref.field();
+            }
+            return null;
         }
-        if (!hasField(function, ref.field())) {
+        // 新卡不存方法号：字段（寄存器）必须能在某个读方法的应答里解析到 —— 答不上来就取不到数
+        if (findFunctionByField(service, ref.field()) == null) {
             return "field not found: " + ref.field();
+        }
+        return null;
+    }
+
+    /**
+     * 按字段名找「载着它的读方法」，不限定某个方法序号。字段名认两类：应答直接定义的字段、
+     * 以及位区里每个位自己的名字 —— 与 {@link #hasField} 对单个方法的判定同一份名单。
+     *
+     * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
+     * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
+     */
+    private static ModbusPolling findFunctionByField(ModbusService service, String field) {
+        if (service == null || service.functions == null) {
+            return null;
+        }
+        for (ModbusPolling function : service.functions) {
+            if (function != null && hasField(function, field)) {
+                return function;
+            }
         }
         return null;
     }
@@ -344,7 +373,7 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (serviceId, pollingIndex, field) 引用；服务卡片的每个字段各一条。 */
+    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。pollingIndex 仅老卡带，可为 null。 */
     private record ServiceRef(int index, String widgetId, String serviceId, Integer pollingIndex, String field) {
     }
 

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -23,15 +24,17 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
@@ -80,10 +83,13 @@ class WidgetDataServiceTest {
     DashboardWidgetOwnershipValidator ownershipValidator;
 
     @InjectMock
-    ModbusHistoryQueryService historyQueryService;
+    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
 
     @InjectMock
     ModbusServiceRepository serviceRepo;
+
+    @InjectMock
+    ModbusServiceShadowRepository registryShadowRepo;
 
     @InjectMock
     ManipulationService manipulationService;
@@ -94,11 +100,9 @@ class WidgetDataServiceTest {
     @Inject
     DashboardWidgetDataService service;
 
-    /** 区间查询要返回的样本：用例往这里塞，下面的答案每次调用时现读（见 {@code stubDefaults}）。 */
-    private final List<ModbusServiceHistory> rangeRows = new ArrayList<>();
-
-    /** 失败查询要返回的时刻：同上。 */
-    private final List<Date> failureTimes = new ArrayList<>();
+    /** 区间查询要返回的寄存器事件：成功（带 value）与失败（{@code failure=true}）混在一起，
+     *  由服务自己筛开 —— 值曲线与失败竖线同一条源。下面那两桩答案每次调用时现读。 */
+    private final List<ModbusServiceRegistryHistory> events = new ArrayList<>();
 
     /**
      * 默认没有归属问题、也没有影子与服务定义；要测什么的用例各自再 stub 一次。
@@ -109,25 +113,18 @@ class WidgetDataServiceTest {
     @BeforeEach
     void stubDefaults() {
         when(ownershipValidator.errorsByWidget(any(), anyList())).thenReturn(Uni.createFrom().item(Map.of()));
-        when(historyQueryService.currentValues(anyString())).thenReturn(Uni.createFrom().item(List.of()));
         when(serviceRepo.findById(anyString())).thenReturn(Uni.createFrom().nullItem());
+        when(registryShadowRepo.listByServiceId(anyString())).thenReturn(Uni.createFrom().item(List.of()));
         when(manipulationService.getShadows(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new JsonArray()));
         when(deviceRepo.findByDeviceIds(anyList())).thenReturn(Uni.createFrom().item(List.of()));
-        // 区间与失败清单用 doAnswer 注册，而不是 when(...).thenAnswer(...)：when 那套写法在**重新**
+        // 曲线事件用 doAnswer 注册，而不是 when(...).thenAnswer(...)：when 那套写法在**重新**
         // 打桩时会把上一次注册的答案先跑一遍（参数全是 null），于是一个按 from/to 现算的答案会在
         // 打桩那一刻就炸掉。用 doAnswer 则先立桩、后调用，已经有了的桩不会被跑。用例只往
-        // rangeRows / failureTimes 里塞数据，答案每次调用时现读。
-        doAnswer(invocation -> {
-            Date from = invocation.getArgument(3);
-            Date to = invocation.getArgument(4);
-            Integer asked = invocation.getArgument(5);
-            int maxPoints = asked == null ? ModbusHistoryQueryService.DEFAULT_MAX_POINTS : asked;
-            return Uni.createFrom().item(rangeResult(ModbusHistoryWindow.of(null, List.copyOf(rangeRows),
-                    from.getTime(), to.getTime(), maxPoints), from, to, maxPoints));
-        }).when(historyQueryService).range(anyString(), any(), anyString(), any(), any(), any());
-        doAnswer(invocation -> Uni.createFrom().item(failuresOf(failureTimes)))
-                .when(historyQueryService).failures(anyString(), any(), any(), any(), any(), any());
+        // events 里塞数据，答案每次调用时现读。carry-in 默认没有（区间起点前无事件）。
+        when(registryHistoryRepo.findCarryIn(anyString(), any(), any())).thenReturn(Uni.createFrom().nullItem());
+        doAnswer(invocation -> Uni.createFrom().item(List.copyOf(events)))
+                .when(registryHistoryRepo).findRange(anyString(), any(), any(), any(), anyInt());
     }
 
     // ===== 空与基本形状 =====
@@ -494,7 +491,6 @@ class WidgetDataServiceTest {
 
         JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
 
-        assertEquals(1, data.getInteger("pollingIndex").intValue());
         assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
         JsonObject row = data.getJsonArray("fields").getJsonObject(0);
         assertEquals("温度", row.getString("field"));
@@ -503,18 +499,43 @@ class WidgetDataServiceTest {
         assertFalse(row.getBoolean("bit"));
     }
 
-    /**
-     * 尚未采集：这个 function 没有影子。**只给 pollingIndex** ——
-     * 「有没有 recordedAt」就是这一态的判据（前端据此渲染「尚未采集」），
-     * 而一行都没有值可显示的空 fields 不是信息。
-     */
+    /** 新卡不存方法序号：字段（寄存器）按名解析到读方法再取数，结果与带方法的老卡一致。 */
     @Test
-    void render_serviceCard_neverCollectedHasOnlyFunctionIndex() {
+    void render_serviceCard_withoutPollingIndex_resolvesField() {
+        stubService(shadow(1, Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
+
+        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
+
+        JsonObject row = data.getJsonArray("fields").getJsonObject(0);
+        assertEquals("温度", row.getString("field"));
+        assertEquals(23.5, row.getDouble("value").doubleValue());
+        assertEquals("℃", row.getString("unit"));
+        assertFalse(row.getBoolean("bit"));
+        assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
+    }
+
+    /** 新卡尚未采集：字段能解析但那个方法没有影子，只回 fields 的空与无 recordedAt（判据同老卡）。 */
+    @Test
+    void render_serviceCard_withoutPollingIndex_neverCollected() {
         stubService(null, serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
+        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
 
-        assertTrue(data.containsKey("pollingIndex"));
+        assertFalse(data.containsKey("recordedAt"));
+        assertFalse(data.containsKey("fields"));
+    }
+
+    /**
+     * 尚未采集：一只影子都没有。「有没有 recordedAt」就是这一态的判据（前端据此渲染
+     * 「尚未采集」），而一行都没有值可显示的空 fields 不是信息。
+     */
+    @Test
+    void render_serviceCard_neverCollectedHasOnlyNoData() {
+        stubService(null, serviceDef(1, "温度", "℃", null));
+
+        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
+
+        assertFalse(data.containsKey("pollingIndex"));
         assertFalse(data.containsKey("recordedAt"));
         assertFalse(data.containsKey("fields"));
         assertFalse(data.containsKey("error"));
@@ -598,7 +619,7 @@ class WidgetDataServiceTest {
 
         render(serviceCard("w1", 1, List.of("温度")), serviceCard("w2", 1, List.of("温度")));
 
-        verify(historyQueryService, times(1)).currentValues("svc-1");
+        verify(registryShadowRepo, times(1)).listByServiceId("svc-1");
     }
 
     /**
@@ -608,7 +629,7 @@ class WidgetDataServiceTest {
     @Test
     void render_serviceFetchFailureBlacksOnlyThatCard() {
         stubOverview();
-        when(historyQueryService.currentValues("svc-1"))
+        when(registryShadowRepo.listByServiceId("svc-1"))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo timeout")));
         when(serviceRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
@@ -623,7 +644,7 @@ class WidgetDataServiceTest {
     /** 丢掉了 message 的失败（NPE 之类）也要给出一句话，不能是空白原因。 */
     @Test
     void render_serviceFetchFailureWithoutMessageFallsBackToTheClassName() {
-        when(historyQueryService.currentValues("svc-1"))
+        when(registryShadowRepo.listByServiceId("svc-1"))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException()));
         when(serviceRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
@@ -760,7 +781,7 @@ class WidgetDataServiceTest {
     @Test
     void render_serviceFieldCurve_historyShape() {
         stubDefinition();
-        rangeRows.add(sample(1_700_000_000_000L, 23.5));
+        events.add(registryEvent(1_700_000_000_000L, 23.5, false));
 
         JsonObject data = data(render(curve("w1", last(24))), 0);
 
@@ -793,9 +814,9 @@ class WidgetDataServiceTest {
     void render_serviceFieldCurve_downsampledPointsAreBuckets() {
         stubDefinition();
         // 3 条样本、只要 2 个点 → 折成桶，前端据 downsampled 按桶解码（三个统计量）
-        rangeRows.add(sample(1_700_000_000_000L, 1.0));
-        rangeRows.add(sample(1_700_000_600_000L, 2.0));
-        rangeRows.add(sample(1_700_001_200_000L, 3.0));
+        events.add(registryEvent(1_700_000_000_000L, 1.0, false));
+        events.add(registryEvent(1_700_000_600_000L, 2.0, false));
+        events.add(registryEvent(1_700_001_200_000L, 3.0, false));
 
         JsonObject data = data(render(curve("w1", last(24), config("maxPoints", 2))), 0);
 
@@ -807,7 +828,7 @@ class WidgetDataServiceTest {
     @Test
     void render_serviceFieldCurve_bitIsStepWithoutUnit() {
         stubDefinition();
-        rangeRows.add(sample(1_700_000_000_000L, 1));
+        events.add(registryEvent(1_700_000_000_000L, 1, false));
 
         JsonObject data = data(render(curve("w1", last(24), config("field", "进水阀"))), 0);
 
@@ -818,11 +839,12 @@ class WidgetDataServiceTest {
     }
 
     @Test
-    void render_serviceFieldCurve_failuresAreMillisOfTheMethod() {
+    void render_serviceFieldCurve_failuresAreMillisOfTheEvent() {
         stubDefinition();
-        rangeRows.add(sample(1_700_000_000_000L, 1));
-        failureTimes.add(ERROR_AT);
-        failureTimes.add(AT);
+        events.add(registryEvent(1_700_000_000_000L, 1, false));
+        // 失败事件不带值：它与值曲线**同一条源**（findRange 一次取回，服务筛开）
+        events.add(registryEvent(ERROR_AT.getTime(), null, true));
+        events.add(registryEvent(AT.getTime(), null, true));
 
         JsonObject data = data(render(curve("w1", last(24))), 0);
         JsonArray times = data.getJsonArray("failures");
@@ -830,65 +852,42 @@ class WidgetDataServiceTest {
         assertEquals(2, times.size());
         assertEquals(ERROR_AT.getTime(), times.getLong(0).longValue());
         assertEquals(AT.getTime(), times.getLong(1).longValue());
-        // 失败是**方法**的事，与字段无关：查的时候带上了方法序号（同一个方法的几条曲线共用一次）
-        verify(historyQueryService).failures(eq(SERVICE_ID), eq(1), any(), any(), any(), any());
-    }
-
-    /**
-     * 失败清单取不到**不让这张卡失败**：竖线是曲线上的辅助信息，为它把整条曲线换成一张错误卡
-     * 是拿主要信息换次要信息。而参数真坏了时 {@code range} 那一路（同一个窗口）会一起坏，
-     * 卡片仍然会失败并说出原因 —— 所以这里的静默不会把「配置错了」伪装成「这段时间没失败过」。
-     */
-    @Test
-    void render_serviceFieldCurve_missingFailuresIsNotFatal() {
-        stubDefinition();
-        rangeRows.add(sample(1_700_000_000_000L, 1));
-        doAnswer(invocation -> Uni.createFrom().failure(new IllegalStateException("mongo down")))
-                .when(historyQueryService).failures(anyString(), any(), any(), any(), any(), any());
-
-        JsonObject data = data(render(curve("w1", last(24))), 0);
-        assertEquals(0, data.getJsonArray("failures").size());
-        assertEquals(1, data.getJsonArray("points").size());
+        // 失败是**寄存器**的事：竖线来自它的失败事件，不再单独发一次失败查询
     }
 
     @Test
-    void render_serviceFieldCurve_failureBlacksOnlyItsCard() {
+    void render_serviceFieldCurve_invalidWindowBlacksOnlyItsCard() {
         stubDefinition();
-        // 只有 12h 那条窗口撞上限（与 overview 那一路同一条窄口径：样本超 MAX_ROWS 的窗口报错）
+        // 只有 12h 那条窗口撞上限：寄存器历史查询报错，只该黑掉落在它上面的那张卡
         doAnswer(invocation -> {
-            Date from = invocation.getArgument(3);
-            Date to = invocation.getArgument(4);
+            Date to = invocation.getArgument(3);
+            Date from = invocation.getArgument(2);
             if (to.getTime() - from.getTime() == 12 * HOUR) {
-                return Uni.createFrom().failure(
-                        new IllegalArgumentException("time range too wide: more than 20000 samples"));
+                return Uni.createFrom().failure(new IllegalArgumentException("window must not exceed 31 days"));
             }
-            return Uni.createFrom().item(rangeResult(ModbusHistoryWindow.of(null,
-                    List.of(sample(1_700_000_000_000L, 1)), from.getTime(), to.getTime(), 500),
-                    from, to, 500));
-        }).when(historyQueryService).range(anyString(), any(), anyString(), any(), any(), any());
+            return Uni.createFrom().item(List.of());
+        }).when(registryHistoryRepo).findRange(anyString(), any(), any(), any(), anyInt());
 
         DashboardWidgetDataService.WidgetData data = render(curve("good", last(24)), curve("bad", last(12)));
 
         assertTrue(data.widgets().get(0).success());
         assertFalse(data.widgets().get(1).success());
-        assertEquals("time range too wide: more than 20000 samples", data.widgets().get(1).message());
+        assertEquals("window must not exceed 31 days", data.widgets().get(1).message());
     }
 
     /**
-     * 同一条曲线只查一次；**点数不同就是两条曲线** —— 只按「点位 × 窗口」去重会让其中一张卡
+     * 同一条曲线只查一次；**点数不同就是两条曲线** —— 只按「寄存器 × 窗口」去重会让其中一张卡
      * 拿到另一张的点数，而它看起来完全正常（本来就是一组合法的采样）。
      */
     @Test
     void render_curvesAreDedupedByPointCountToo() {
         stubDefinition();
-        rangeRows.add(sample(1_700_000_000_000L, 1));
+        events.add(registryEvent(1_700_000_000_000L, 1, false));
 
         render(curve("a", last(24)), curve("b", last(24)),
                 curve("c", last(24), config("maxPoints", 2000)));
 
-        verify(historyQueryService, times(2)).range(anyString(), any(), anyString(), any(), any(), any());
-        // 失败按**方法**去重：同一个方法的三条曲线共用一次查询（画的是同一条竖线）
-        verify(historyQueryService, times(1)).failures(anyString(), any(), any(), any(), any(), any());
+        verify(registryHistoryRepo, times(2)).findRange(anyString(), any(), any(), any(), anyInt());
     }
 
     // ===== helpers =====
@@ -905,14 +904,17 @@ class WidgetDataServiceTest {
         return curve(id, window, Map.of());
     }
 
-    private static ModbusServiceHistory sample(long at, Object value) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.serviceId = SERVICE_ID;
-        row.pollingIndex = 1;
-        row.field = "温度";
-        row.at = new Date(at);
-        row.value = value;
-        return row;
+    /** 一次寄存器历史事件：成功带 {@code value}，失败带 {@code failure=true} 不带值。 */
+    private static ModbusServiceRegistryHistory registryEvent(long at, Object value, boolean failure) {
+        ModbusServiceRegistryHistory event = new ModbusServiceRegistryHistory();
+        event.serviceId = SERVICE_ID;
+        event.registerIndex = 1;
+        event.name = "温度";
+        event.unit = "℃";
+        event.at = new Date(at);
+        event.failure = failure;
+        event.value = value;
+        return event;
     }
 
 
@@ -1009,36 +1011,42 @@ class WidgetDataServiceTest {
                 "pollingIndex", pollingIndex, "fields", fields));
     }
 
-    private void stubService(ModbusServiceLastPolling shadow, ModbusService definition) {
-        when(historyQueryService.currentValues(SERVICE_ID))
-                .thenReturn(Uni.createFrom().item(shadow == null ? List.of() : List.of(shadow)));
-        when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
+    /** 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。 */
+    private static WebDashboardWidget serviceCardRegisters(String id, String... fields) {
+        return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID, "fields", List.of(fields)));
     }
 
-    /** 服务定义：方法与「温度」（带单位），位区里有一个「进水阀」。曲线卡要的 unit / step 从这来。 */
-    private void stubDefinition() {
-        when(serviceRepo.findById(SERVICE_ID))
-                .thenReturn(Uni.createFrom().item(serviceDef(1, "温度", "℃", null, "进水阀")));
-    }
-
-    private static ModbusHistoryQueryService.RangeResult rangeResult(ModbusHistoryWindow.Window window,
-                                                                    Date from, Date to, int maxPoints) {
-        return new ModbusHistoryQueryService.RangeResult(from, to, maxPoints, window);
-    }
-
-    private static ModbusHistoryQueryService.FailureResult failuresOf(List<Date> at) {
-        List<ModbusServiceFailure> items = new ArrayList<>();
-        for (Date time : at) {
-            ModbusServiceFailure failure = new ModbusServiceFailure();
-            failure.serviceId = SERVICE_ID;
-            failure.pollingIndex = 1;
-            failure.message = "modbus timeout";
-            failure.at = time;
-            items.add(failure);
+    /**
+ * 服务卡：stub 服务定义 + 逐寄存器影子。入参仍是一个 {@code ModbusServiceLastPolling}（承载
+ * 「字段 → 值」与失败态），convert 成服务定义里每只寄存器的影子：字段名 == 寄存器名，没有该
+ * 字段 = 那只寄存器还没采到（value 空，卡片据此显示 {@code -}）。
+ */
+private void stubService(ModbusServiceLastPolling shadow, ModbusService definition) {
+    List<ModbusServiceShadow> shadows = new ArrayList<>();
+    if (shadow != null && definition != null && definition.configSnapshot != null
+            && definition.configSnapshot.registries != null) {
+        for (ModbusRegistry reg : definition.configSnapshot.registries) {
+            ModbusServiceShadow s = new ModbusServiceShadow();
+            s.serviceId = SERVICE_ID;
+            s.registerIndex = reg.index;
+            s.name = reg.name;
+            s.unit = reg.unit;
+            s.value = shadow.fields == null ? null : shadow.fields.get(reg.name);
+            s.recordedAt = shadow.recordedAt;
+            s.lastError = shadow.lastError;
+            s.errorAt = shadow.errorAt;
+            shadows.add(s);
         }
-        // from / to 那两个字段这里用不上（卡片不读它们），给个占位即可
-        return new ModbusHistoryQueryService.FailureResult(AT, AT, 200, items, false);
     }
+    when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(shadows));
+    when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
+}
+
+/** 服务定义：方法与「温度」（带单位），位区里有一个「进水阀」。曲线卡要的 unit / step 从这来。 */
+private void stubDefinition() {
+    when(serviceRepo.findById(SERVICE_ID))
+            .thenReturn(Uni.createFrom().item(serviceDef(1, "温度", "℃", null, "进水阀")));
+}
 
     /** 一条影子。{@code lastError} / {@code errorAt} 为 null 表示这个 function 没失败过。 */
     private static ModbusServiceLastPolling shadow(int pollingIndex, Map<String, Object> fields,
@@ -1076,7 +1084,32 @@ class WidgetDataServiceTest {
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
         definition.functions = List.of(function);
+        // 点表快照的寄存器：主字段、次字段、位各是一只可读寄存器（服务卡按名字解析到它的 index）
+        List<ModbusRegistry> registries = new ArrayList<>();
+        int index = 1;
+        registries.add(register(index++, primary, unit, "holding"));
+        if (second != null) {
+            registries.add(register(index++, second, "％", "holding"));
+        }
+        for (String bit : bits) {
+            registries.add(register(index++, bit, "", "coil"));
+        }
+        ModbusConfig config = new ModbusConfig();
+        config.registries = registries;
+        definition.configSnapshot = config;
         return definition;
+    }
+
+    /** 一只可读寄存器：卡片把配置的字段名解析到它、并读它 index 对应的影子。 */
+    private static ModbusRegistry register(int index, String name, String unit, String area) {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.index = index;
+        reg.name = name;
+        reg.unit = unit;
+        reg.area = area;
+        reg.access = "R";
+        reg.address = index - 1;
+        return reg;
     }
 
     private static ModbusPollingResponseField field(String name, String unit, List<String> bits) {

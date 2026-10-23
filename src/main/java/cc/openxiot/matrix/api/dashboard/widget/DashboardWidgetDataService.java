@@ -1,18 +1,20 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
+import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cn.geekcity.xiot.spec.status.Status;
@@ -71,7 +73,10 @@ public class DashboardWidgetDataService {
     DashboardWidgetOwnershipValidator ownershipValidator;
 
     @Inject
-    ModbusHistoryQueryService historyQueryService;
+    ModbusServiceRegistryHistoryRepository registryHistoryRepo;
+
+    @Inject
+    ModbusServiceShadowRepository registryShadowRepo;
 
     /**
      * 只用来取服务定义（每个字段的 {@code unit} 与「是不是位」）。
@@ -108,6 +113,18 @@ public class DashboardWidgetDataService {
      */
     private static final long FALLBACK_WINDOW_MS = 3_600_000L;
 
+    /** 一条字段曲线一次区间查询可取回的寄存器事件数上限。
+     *  看板曲线本来就要降采样到 {@code maxPoints}（默认 500），所以这里不必像历史页那样
+     *  超限即报错 —— 取回这一段内的事件交给 {@link ModbusHistoryWindow} 折叠，超出的按最新丢弃。
+     *  上限只为了挡住「一个月 × 秒级采集」把内存撑爆的角落。 */
+    private static final int MAX_EVENTS = 20_000;
+
+    /** 返回点数上限的缺省值（卡片配置没给 {@code maxPoints} 时）。与历史页同口径。 */
+    private static final int DEFAULT_MAX_POINTS = 500;
+
+    /** 返回点数上限（配置超出即按封顶计：这只是个性能提示，不值得为它让请求失败）。 */
+    private static final int MAX_MAX_POINTS = 2_000;
+
     /** 一屏的取数结果：每张卡片一条，顺序与请求里的卡片一致。 */
     public record WidgetData(String spaceId, Date from, Date to, List<Item> widgets) {
     }
@@ -143,50 +160,58 @@ public class DashboardWidgetDataService {
 
         // 1) 按窗口归并：需要 overview 的卡片落在哪一个窗口上（不需要的走兜底窗口，
         //    它们本来就不会读时间相关的字段，但仍要归并成同一次查询）；顺带收拢
-        //    另几路要的 id —— 同一个服务/设备/点位被几张卡引用只取一次
+        //    另几路要的 id —— 同一个服务/设备被几张卡引用只取一次
         Map<String, Window> windows = new LinkedHashMap<>();
         List<String> serviceIds = new ArrayList<>();
         List<String> dids = new ArrayList<>();
-        Map<String, CurveQuery> curves = new LinkedHashMap<>();
-        Map<String, FailureQuery> failures = new LinkedHashMap<>();
         for (DashboardWidgetView widget : widgets) {
             Source source = sourceOf(widget);
             if (source == Source.OVERVIEW) {
                 Window window = windowOf(widget, now, fallbackFrom);
                 windows.computeIfAbsent(window.key(), ignored -> window);
-            } else if (source == Source.SERVICE) {
+            } else if (source == Source.SERVICE || source == Source.FIELD) {
                 collect(configString(widget.config(), "serviceId"), serviceIds);
             } else if (source == Source.DEVICE) {
                 collect(configString(widget.config(), "did"), dids);
-            } else if (source == Source.FIELD) {
-                // 服务定义与服务卡共用同一批取数（曲线的 unit / step 就来自定义）：
-                // 同一个服务在本屏只读一次定义，代价是只画曲线的服务也顺带取了它的影子
-                collect(configString(widget.config(), "serviceId"), serviceIds);
-                Window window = windowOf(widget, now, fallbackFrom);
-                CurveQuery curve = CurveQuery.of(widget, window);
-                if (curve != null) {
-                    curves.computeIfAbsent(curve.key(), ignored -> curve);
-                }
-                FailureQuery failure = FailureQuery.of(widget, window);
-                if (failure != null) {
-                    failures.computeIfAbsent(failure.key(), ignored -> failure);
-                }
             }
         }
 
         // 2) 先判归属，再取数。**这一步是安全边界，不是优化**：`serviceId` / `did` 是用户填的，
         //    只按 id 查（`Modbus-History.md` 当前的写法）就意味着拿到别人的 id 就能读别人的数据。
         //    已存布局同样要判 —— 保存时校验过，但那张卡片引用的服务可能在那之后被删掉了。
+        //
+        //    先取服务定义，再据此把字段曲线/服务卡配置的字段名解析回点表里的寄存器：卡片配置
+        //    不存方法序号，字段（寄存器）就靠这个名字在 configSnapshot.registries 里解析到 index
+        //    才知道取哪只寄存器的影子/历史。
         return ownershipValidator.errorsByWidget(space, widgets)
-                .chain(errors -> Uni.combine().all()
-                        .unis(fetchOverviews(spaceId, windows), fetchServices(serviceIds),
-                                fetchDevices(space.rootSpaceId(), dids), fetchCurves(curves),
-                                fetchFailures(failures))
-                        .asTuple()
-                        .map(tuple -> build(spaceId, widgets,
-                                new Sources(tuple.getItem1(), tuple.getItem2(), tuple.getItem3(),
-                                        tuple.getItem4(), tuple.getItem5()),
-                                errors, fallbackFrom, now)));
+                .chain(errors -> fetchServices(serviceIds)
+                        .chain(services -> {
+                            Map<String, CurveQuery> curves = new LinkedHashMap<>();
+                            for (DashboardWidgetView widget : widgets) {
+                                if (sourceOf(widget) != Source.FIELD) {
+                                    continue;
+                                }
+                                CurveQuery curve = CurveQuery.of(widget, windowOf(widget, now, fallbackFrom), services);
+                                if (curve != null) {
+                                    curves.computeIfAbsent(curve.key(), ignored -> curve);
+                                }
+                            }
+                            return Uni.combine().all()
+                                    .unis(fetchOverviews(spaceId, windows),
+                                            fetchDevices(space.rootSpaceId(), dids),
+                                            fetchCurves(curves))
+                                    .asTuple()
+                                    .map(tuple -> build(spaceId, widgets,
+                                            buildSources(tuple.getItem1(), services, tuple.getItem2(),
+                                                    tuple.getItem3()),
+                                            errors, fallbackFrom, now));
+                        }));
+    }
+
+    /** 拼 {@link Sources}：服务的取数在外层已拿到（解析曲线/字段的寄存器与元数据要用），单独传入。 */
+    private static Sources buildSources(Map<String, Fetched> overviews, Map<String, ServiceFetched> services,
+                                        DeviceFetched devices, Map<String, CurveFetched> curves) {
+        return new Sources(overviews, services, devices, curves);
     }
 
     /** 收一个非空的 id 进去，已经收过的跳过（保持首次出现的顺序）。 */
@@ -209,7 +234,7 @@ public class DashboardWidgetDataService {
         SERVICE,
         /** 设备影子 + 设备型号：设备卡。 */
         DEVICE,
-        /** 点位的历史序列 + 该方法的失败时刻：字段曲线（{@code line(serviceField)}）。 */
+        /** 寄存器的历史事件序列（成功值 → 值曲线，失败事件 → 竖线，同一条源）：字段曲线（{@code line(serviceField)}）。 */
         FIELD,
         /** 还没接数据源的卡片类型，或写坏的 {@code source} / {@code dimension}。 */
         NONE
@@ -324,9 +349,9 @@ public class DashboardWidgetDataService {
         Map<String, Uni<ServiceFetched>> queries = new LinkedHashMap<>();
         for (String serviceId : serviceIds) {
             queries.put(serviceId, Uni.combine().all()
-                    .unis(historyQueryService.currentValues(serviceId), serviceRepo.findById(serviceId))
+                    .unis(registryShadowRepo.listByServiceId(serviceId), serviceRepo.findById(serviceId))
                     .asTuple()
-                    .map(tuple -> new ServiceFetched(shadowsByFunction(tuple.getItem1()),
+                    .map(tuple -> new ServiceFetched(registryShadowsByIndex(tuple.getItem1()),
                             tuple.getItem2(), null))
                     .onFailure().recoverWithItem(
                             failure -> new ServiceFetched(Map.of(), null, messageOf(failure))));
@@ -335,64 +360,76 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 逐点位取历史序列（曲线卡）。**一个点位的失败不整份失败**：与 {@link #fetchServices}
+     * 逐寄存器取历史事件序列（曲线卡）。**一个寄存器读失败不整份失败**：与 {@link #fetchServices}
      * 同一条理由 —— {@code andFailFast} 会把一次失败放大成一屏全黑，而这里最常见的失败是
-     * **配置问题**（窗口太宽、样本超 {@code MAX_ROWS}），它本就只该黑掉引用它的那一张卡。
-     * 消息原样带上，卡片自己会说清是哪条曲线、为什么。
+     * 配置问题（窗口非法），它本就只该黑掉引用它的那一张卡。消息原样带上，卡片自己会说清
+     * 是哪条曲线、为什么。
+     *
+     * <p>一次区间查询同时带回成功与失败事件，在内存里筛开：成功的排成值曲线（配合 carry-in 与
+     * 降采样，见 {@link ModbusHistoryWindow}），失败事件的时刻做成竖线 —— **值与竖线同一条源**
+     * （不再像旧模型那样交叉查 {@code service-histories} 的两张表）。</p>
      */
     private Uni<Map<String, CurveFetched>> fetchCurves(Map<String, CurveQuery> curves) {
         Map<String, Uni<CurveFetched>> queries = new LinkedHashMap<>();
         curves.forEach((key, curve) -> queries.put(key,
-                historyQueryService.range(curve.serviceId(), curve.pollingIndex(), curve.field(),
-                                curve.window().from(), curve.window().to(), curve.maxPoints())
-                        .map(result -> new CurveFetched(ModbusHistoryRangeCodec.encode(
-                                curve.serviceId(), curve.pollingIndex(), curve.field(), result), null))
+                Uni.combine().all()
+                        .unis(registryHistoryRepo.findCarryIn(curve.serviceId(), curve.registerIndex(),
+                                        curve.window().from()),
+                                registryHistoryRepo.findRange(curve.serviceId(), curve.registerIndex(),
+                                        curve.window().from(), curve.window().to(), MAX_EVENTS))
+                        .asTuple()
+                        .map(tuple -> {
+                            List<Date> failures = new ArrayList<>();
+                            List<ModbusServiceHistory> samples = new ArrayList<>();
+                            for (ModbusServiceRegistryHistory event : tuple.getItem2()) {
+                                if (event == null) {
+                                    continue;
+                                }
+                                if (Boolean.TRUE.equals(event.failure)) {
+                                    if (event.at != null) {
+                                        failures.add(event.at);
+                                    }
+                                } else {
+                                    samples.add(sampleOf(event));
+                                }
+                            }
+                            // carry-in 必须是**成功**事件才有值（失败事件没落到值）：
+                            // 失败那次读接下来仍持续旧值，曲线从窗口起点的状态由最后一次成功续上
+                            ModbusServiceRegistryHistory carryIn = tuple.getItem1();
+                            ModbusServiceHistory carryInSample =
+                                    carryIn != null && !Boolean.TRUE.equals(carryIn.failure)
+                                            ? sampleOf(carryIn) : null;
+                            long from = curve.window().from().getTime();
+                            long to = curve.window().to().getTime();
+                            ModbusHistoryWindow.Window window = ModbusHistoryWindow.of(
+                                    carryInSample, samples, from, to, curve.maxPoints());
+                            JsonObject body = ModbusHistoryRangeCodec.encode(curve.serviceId(),
+                                    curve.registerIndex(), curve.field(),
+                                    curve.window().from(), curve.window().to(), curve.maxPoints(), window);
+                            return new CurveFetched(body, failures, null);
+                        })
                         .onFailure().recoverWithItem(
-                                failure -> new CurveFetched(null, messageOf(failure)))));
+                                failure -> new CurveFetched(null, List.of(), messageOf(failure)))));
         return joinAll(queries);
     }
 
-    /**
-     * 逐方法取采集失败的时刻（曲线图上那些竖虚线）。
-     *
-     * <p><b>取不到时给空清单，不让这张卡失败</b> —— 竖线是曲线上的辅助信息，为它把整条曲线
-     * 换成一张错误卡是拿主要信息换次要信息。而参数真的坏了（窗口非法、类型不认）时
-     * {@code range} 那一路用的是同一个窗口，会一起坏，卡片仍然会失败并说出原因，
-     * 所以这里的静默不会把「配置错了」伪装成「这段时间没失败过」。</p>
-     */
-    private Uni<Map<String, JsonArray>> fetchFailures(Map<String, FailureQuery> failures) {
-        Map<String, Uni<JsonArray>> queries = new LinkedHashMap<>();
-        failures.forEach((key, query) -> queries.put(key,
-                historyQueryService.failures(query.serviceId(), query.pollingIndex(), null,
-                                query.window().from(), query.window().to(), null)
-                        .map(result -> failureTimes(result.items()))
-                        .onFailure().recoverWithItem(failure -> new JsonArray())));
-        return joinAll(queries);
+    /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
+     *  用 {@link ModbusServiceHistory} 当中间载体，是为了原样复用历史窗口那套已测的整形逻辑，
+     *  不必为看板单独泛型化它。 */
+    private static ModbusServiceHistory sampleOf(ModbusServiceRegistryHistory event) {
+        ModbusServiceHistory row = new ModbusServiceHistory();
+        row.at = event.at;
+        row.value = event.value;
+        return row;
     }
 
-    /**
-     * 失败记录 → 时刻清单。**只取 {@code at}**：图上画的是一条竖线，
-     * 失败的类型、原因、远端码都在历史页那张表里，这里用不上（§5.4 的曲线卡只画曲线）。
-     */
-    private static JsonArray failureTimes(List<ModbusServiceFailure> items) {
-        JsonArray times = new JsonArray();
-        if (items != null) {
-            for (ModbusServiceFailure item : items) {
-                if (item != null && item.at != null) {
-                    times.add(item.at.getTime());
-                }
-            }
-        }
-        return times;
-    }
-
-    /** 影子按 {@code pollingIndex} 索引（一个服务下每个方法至多一条影子）。 */
-    private static Map<Integer, ModbusServiceLastPolling> shadowsByFunction(List<ModbusServiceLastPolling> shadows) {
-        Map<Integer, ModbusServiceLastPolling> byIndex = new HashMap<>();
+    /** 寄存器影子按 {@code registerIndex} 索引（一个服务下每只寄存器一条，见 {@code ModbusServiceShadow}）。 */
+    private static Map<Integer, ModbusServiceShadow> registryShadowsByIndex(List<ModbusServiceShadow> shadows) {
+        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
         if (shadows != null) {
-            for (ModbusServiceLastPolling shadow : shadows) {
-                if (shadow != null && shadow.pollingIndex != null) {
-                    byIndex.put(shadow.pollingIndex, shadow);
+            for (ModbusServiceShadow shadow : shadows) {
+                if (shadow != null && shadow.registerIndex != null) {
+                    byIndex.put(shadow.registerIndex, shadow);
                 }
             }
         }
@@ -531,7 +568,7 @@ public class DashboardWidgetDataService {
             return payload == null ? Item.failed(id, unsupportedDetail(widget)) : Item.ok(id, payload);
         }
         if (sourceOf(widget) == Source.FIELD) {
-            CurveQuery query = CurveQuery.of(widget, window);
+            CurveQuery query = CurveQuery.of(widget, window, sources.services());
             CurveFetched curve = query == null ? null : sources.curves().get(query.key());
             if (curve == null) {
                 return Item.failed(id, "no data");
@@ -548,7 +585,7 @@ public class DashboardWidgetDataService {
             if (service.error() != null) {
                 return Item.failed(id, service.error());
             }
-            return Item.ok(id, fieldData(query, curve, service, sources.failures()));
+            return Item.ok(id, fieldData(query, curve, service));
         }
         if (sourceOf(widget) == Source.NONE) {
             // 「还没接」而不是「配置错了」：写坏的 source / dimension 走这条，说得具体些
@@ -687,27 +724,32 @@ public class DashboardWidgetDataService {
      * 与历史页那条路逐字同一份形状）+ 三样展示元数据。
      *
      * <ul>
-     *   <li>{@code unit} / {@code step}：取自服务定义（服务端手里本来就有那一份，同服务卡）。
-     *       {@code step} = 「是不是一个位」：位的曲线该走阶梯线（0 一直保持到下一次翻转），
-     *       直连会画出根本不存在的中间值。判据与历史页的 {@code fieldRef} 同一处
-     *       （{@code service.fields.ts}）；</li>
-     *   <li>{@code failures}：这个方法在窗口内的采集失败时刻，图上画成竖虚线。</li>
+     *   <li>{@code unit} / {@code step}：取自**寄存器点表快照**（服务端手里本来就有那一份，同服务卡）。
+     *       {@code step} = 「是不是一个位」（coil / discrete）：位的曲线该走阶梯线（0 一直保持到
+     *       下一次翻转），直连会画出根本不存在的中间值；</li>
+     *   <li>{@code failures}：这只寄存器在窗口内的采集失败时刻，图上画成竖虚线 —— 与值曲线同一条源
+     *       （{@code fetchCurves} 把成功值排成点、失败事件收成这条清单）。</li>
      * </ul>
      *
      * <p><b>不看 {@code showFailureShadow}</b>：那是「画不画」的展示决策，取数层不与它耦合 ——
      * 清单照取，画不画由前端定。让服务端按开关跳过这次查询，换来的是「改一次开关要重新取数」，
      * 而这份清单本来就是跟着窗口一起取回来的，省不下什么。</p>
      */
-    private static JsonObject fieldData(CurveQuery query, CurveFetched curve, ServiceFetched service,
-                                        Map<String, JsonArray> failures) {
-        FieldMeta meta = fieldMeta(findFunction(service.service(), query.pollingIndex()), query.field());
+    private static JsonObject fieldData(CurveQuery query, CurveFetched curve, ServiceFetched service) {
+        ModbusRegistry reg = registerOf(service.service(), query.field());
         // 这份响应体是这次取数现编的（`fetchCurves` 里每个去重键一份），就地缀上三样即可
         JsonObject data = curve.range();
-        data.put("unit", meta.unit());
-        data.put("step", meta.bit());
-        data.put("failures", failures.getOrDefault(
-                FailureQuery.keyOf(query.serviceId(), query.pollingIndex(), query.window()),
-                new JsonArray()));
+        data.put("unit", reg == null || reg.unit == null ? "" : reg.unit);
+        data.put("step", isBitArea(reg));
+        // 竖线要的是毫秒数（前端按 number[] 画），不能把 Date 对象原样塞进 JsonArray ——
+        // 那样 Vert.x 会把它当未知类型包一层，会在 getLong 时 Cast 掉
+        JsonArray failures = new JsonArray();
+        for (Date at : curve.failureTimes()) {
+            if (at != null) {
+                failures.add(at.getTime());
+            }
+        }
+        data.put("failures", failures);
         return data;
     }
 
@@ -742,19 +784,53 @@ public class DashboardWidgetDataService {
      * {@code unit} / {@code bit} 取自服务定义（服务端手里本来就有那一份），可翻译的解释
      * （位值说「开/关」、枚举描述）仍留在前端 —— 见 §D5 与本次修订（十）。</p>
      */
+    /**
+     * 服务卡的 data：{@code {recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
+     *
+     * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>：每只寄存器的最新值就是它的影子
+     * （{@code ModbusServiceShadow}），从没成功读过的寄存器**没有影子**。配置的寄存器一条都没采过时
+     * 不给 {@code fields}，前端据此渲染「尚未采集」。</p>
+     *
+     * <p>{@code recordedAt} / {@code error} 属于**整个服务卡**：取各参与寄存器影子里**最近一次**成功
+     * 采集的那一份做代表（值仍逐寄存器取自各自的影子），所以时间只有一处。</p>
+     *
+     * <p>按 {@code config.fields} 的**配置顺序**产出；{@code unit} / {@code bit} 取自寄存器定义。
+     * 旧卡的 {@code pollingIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
+     */
     private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
-        Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
-        if (pollingIndex == null) {
-            return null;
+        List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
+        JsonObject data = new JsonObject();
+        JsonArray rows = new JsonArray();
+        ModbusServiceShadow representative = null;
+        for (String name : configured) {
+            ModbusRegistry reg = registerOf(fetched.service(), name);
+            if (reg == null || reg.index == null) {
+                continue;
+            }
+            ModbusServiceShadow shadow = fetched.registryShadows().get(reg.index);
+            JsonObject row = new JsonObject().put("field", name);
+            if (shadow != null && shadow.value != null) {
+                row.put("value", shadow.value);
+            }
+            row.put("unit", reg.unit == null ? "" : reg.unit);
+            row.put("bit", isBitArea(reg));
+            rows.add(row);
+            if (newer(shadow, representative)) {
+                representative = shadow;
+            }
         }
-        ModbusServiceLastPolling shadow = fetched.shadows().get(pollingIndex);
-        JsonObject data = new JsonObject().put("pollingIndex", pollingIndex);
+        if (representative != null) {
+            data.put("fields", rows);
+            attachTiming(data, representative);
+        }
+        return data;
+    }
+
+    /** 影子上的采集时刻 / 失败信息 → 卡片 data（「最后一次成功采集」的整体属性）。 */
+    private static void attachTiming(JsonObject data, ModbusServiceShadow shadow) {
         if (shadow == null) {
-            return data;
+            return;
         }
-        data.put("fields", fieldRows(findFunction(fetched.service(), pollingIndex),
-                DashboardWidgetConfigs.strList(config.get("fields")),
-                shadow.fields == null ? null : new JsonObject(shadow.fields)));
         if (shadow.recordedAt != null) {
             data.put("recordedAt", shadow.recordedAt.getTime());
         }
@@ -764,77 +840,39 @@ public class DashboardWidgetDataService {
         if (shadow.errorAt != null) {
             data.put("errorAt", shadow.errorAt.getTime());
         }
-        return data;
     }
 
-    /**
-     * 配置里那几个字段各成一行，带上它们的 {@code unit} 与「是不是位」。
-     *
-     * <p>这一轮没取到值的字段**不带 {@code value}**（不是补 0、也不是补 null）：前端据此显示
-     * {@code -}，「没有这个键」与「值是 0」是两回事，后者是真实的读数。</p>
-     */
-    private static JsonArray fieldRows(ModbusPolling function, List<String> configured,
-                                       JsonObject values) {
-        JsonArray rows = new JsonArray();
-        for (String name : configured) {
-            JsonObject row = new JsonObject().put("field", name);
-            Object value = values == null ? null : values.getValue(name);
-            if (value != null) {
-                row.put("value", value);
-            }
-            FieldMeta meta = fieldMeta(function, name);
-            row.put("unit", meta.unit());
-            row.put("bit", meta.bit());
-            rows.add(row);
+    /** 取「成功采集时间更晚」的那份影子做代表；候选没影子 / 没时间不给。 */
+    private static boolean newer(ModbusServiceShadow candidate, ModbusServiceShadow current) {
+        if (candidate == null || candidate.recordedAt == null) {
+            return false;
         }
-        return rows;
+        return current == null || current.recordedAt == null
+                || candidate.recordedAt.getTime() > current.recordedAt.getTime();
     }
 
-    /**
-     * 一个字段名在服务定义里的展示元数据。**先找父字段、再找位**，与归属校验的
-     * {@code DashboardWidgetOwnershipValidator.hasField} 同一顺序：位名是用户自己填的，可能与别的字段重名，
-     * 先命中父字段才对。
-     *
-     * <p>找不到时给「无单位、非位」：正常路径上到不了（字段名在保存时已校验过），
-     * 但如果服务定义在那之后改了，这里也不该把卡片渲染成空白 —— 按名字把值照原样显示出来，
-     * 是能给的最后一个诚实答案。</p>
-     */
-    private static FieldMeta fieldMeta(ModbusPolling function, String name) {
-        List<ModbusPollingResponseField> fields = ModbusPolling.responseFields(function);
-        for (ModbusPollingResponseField field : fields) {
-            if (field != null && name.equals(field.field)) {
-                return new FieldMeta(field.unit == null ? "" : field.unit, false);
-            }
-        }
-        for (ModbusPollingResponseField field : fields) {
-            if (field == null || field.bitList == null) {
-                continue;
-            }
-            for (ModbusPollingResponseFieldBit bit : field.bitList) {
-                if (bit != null && name.equals(bit.field)) {
-                    // 位没有单位：与历史页 fieldRef 对位的 `unit: ''` 一致
-                    return new FieldMeta("", true);
-                }
-            }
-        }
-        return new FieldMeta("", false);
-    }
-
-    /**
-     * 按 {@code index} 找方法。与 {@code DashboardWidgetOwnershipValidator} / {@code ModbusServiceService}
-     * 里那两个同名私有方法同一段逻辑（那两处的签名一个收 {@code Integer}、一个收 {@code int}）——
-     * 三次出现仍是各写一份：为 8 行扫描去动两个正在工作的类，风险比收益大。
-     */
-    private static ModbusPolling findFunction(ModbusService service, Integer index) {
-        if (service == null || service.functions == null || index == null) {
+    /** 字段名 → 服务点表快照里的寄存器；没配快照 / 名字对不上给 null。 */
+    private static ModbusRegistry registerOf(ModbusService service, String fieldName) {
+        if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
             return null;
         }
-        for (ModbusPolling function : service.functions) {
-            if (function != null && index.equals(function.index)) {
-                return function;
+        for (ModbusRegistry reg : service.configSnapshot.registries) {
+            if (reg != null && fieldName.equals(reg.name)) {
+                return reg;
             }
         }
         return null;
+    }
+
+    /** 位区（coil / discrete）的寄存器：值是 0/1，卡片走阶梯（bit 标记）。凡不可读的不该配在卡片上。 */
+    private static boolean isBitArea(ModbusRegistry reg) {
+        return reg != null && ("coil".equals(reg.area) || "discrete".equals(reg.area));
+    }
+
+    /** 从取数结果里取服务定义；服务没取到（失败/不存在）给 {@code null}。 */
+    private static ModbusService serviceOf(Map<String, ServiceFetched> services, String serviceId) {
+        ServiceFetched fetched = services == null ? null : services.get(serviceId);
+        return fetched == null ? null : fetched.service();
     }
 
     /**
@@ -911,85 +949,68 @@ public class DashboardWidgetDataService {
     /**
      * 一屏取数的全部结果，按各自的去重键索引。
      *
-     * <p>五张表放一起递下去，是为了让 {@link #build} / {@link #item} 收一个参数而不是五个：
+     * <p>四张表放一起递下去，是为了让 {@link #build} / {@link #item} 收一个参数而不是四个：
      * 每加一路数据源就多一个位置参数，而下标/顺序错了的编译期表现只是「类型对不上」——
      * 两个同为 {@code Map<String, ?>} 的参数调换了位置，编译器一声不吭。</p>
      */
     private record Sources(Map<String, Fetched> overviews, Map<String, ServiceFetched> services,
-                           DeviceFetched devices, Map<String, CurveFetched> curves,
-                           Map<String, JsonArray> failures) {
+                           DeviceFetched devices, Map<String, CurveFetched> curves) {
     }
 
     /**
-     * 一条字段曲线的取数请求：某个点位在某段窗口上要多少个点。
+     * 一条字段曲线的取数请求：某只寄存器在某段窗口上要多少个点。
      *
      * <p><b>去重键里必须带 {@code maxPoints}</b>：要 200 个点与要 2000 个点是两次不同的查询
-     * （降不降采样、桶多粗都不一样）。只按「点位 × 窗口」去重，会让其中一张卡拿到另一张的点数
+     * （降不降采样、桶多粗都不一样）。只按「寄存器 × 窗口」去重，会让其中一张卡拿到另一张的点数
      * —— 而它看起来完全正常，因为它本来就是一组合法的采样。</p>
      */
-    private record CurveQuery(String serviceId, Integer pollingIndex, String field, Window window,
+    private record CurveQuery(String serviceId, Integer registerIndex, String field, Window window,
                               int maxPoints) {
 
         String key() {
-            return serviceId + "#" + pollingIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
+            return serviceId + "#" + registerIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
         }
 
         /**
-         * 从卡片配置里读。三元组缺一就给 {@code null}（{@code WebDashboardWidgetStructureValidator} 已经拦过，
-         * 这里是兜底：服务端加过一个必填项又撤掉时，老布局会带着不完整的配置躺在库里）。
+         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 pollingIndex）。
+         * {@code serviceId} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
+         * 都给 {@code null} —— 拿不到寄存器序号就无从查这段窗口的历史。
          */
-        static CurveQuery of(DashboardWidgetView widget, Window window) {
+        static CurveQuery of(DashboardWidgetView widget, Window window, Map<String, ServiceFetched> services) {
             Map<String, Object> config = widget.config();
             String serviceId = configString(config, "serviceId");
-            Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
             String field = configString(config, "field");
-            if (serviceId == null || pollingIndex == null || field == null) {
+            if (serviceId == null || field == null || services == null) {
+                return null;
+            }
+            ModbusRegistry reg = registerOf(serviceOf(services, serviceId), field);
+            if (reg == null || reg.index == null) {
                 return null;
             }
             Integer maxPoints = DashboardWidgetConfigs.intVal(config.get("maxPoints"));
-            // 缺省由 queryService 那侧归一（夹到 [1, 2000]），这里只给「没配」的那档
-            return new CurveQuery(serviceId, pollingIndex, field, window,
-                    maxPoints == null ? ModbusHistoryQueryService.DEFAULT_MAX_POINTS : maxPoints);
+            // 夹到 [1, MAX_MAX_POINTS]：点数只是性能提示，不值得为超出让请求失败
+            int points = maxPoints == null ? DEFAULT_MAX_POINTS : maxPoints;
+            points = Math.min(Math.max(points, 1), MAX_MAX_POINTS);
+            return new CurveQuery(serviceId, reg.index, field, window, points);
         }
     }
 
     /**
-     * 一个方法在窗口内的采集失败。
+     * 一条曲线的取数结果：响应体 + 窗口内的失败时刻（竖线用）+ 错误文案。
      *
-     * <p><b>键里没有 {@code field}</b>：一次失败是整个方法的事（帧都读不通时哪个字段都没读到，
-     * 见 {@code ModbusServiceFailure}），所以同一个方法的几条曲线画的是同一条竖线，
-     * 共用一次查询。</p>
+     * <p>{@code failureTimes} 与值曲线**同一条源**取回（见 {@link #fetchCurves}），
+     * 所以失败清单跟着曲线一起出，卡片失败时也一起没有 —— 不再像旧模型那样单独一路去查失败表。</p>
      */
-    private record FailureQuery(String serviceId, Integer pollingIndex, Window window) {
-
-        String key() {
-            return keyOf(serviceId, pollingIndex, window);
-        }
-
-        static String keyOf(String serviceId, Integer pollingIndex, Window window) {
-            return serviceId + "#" + pollingIndex + "#" + window.key();
-        }
-
-        /** 从卡片配置里读（方法序号缺了就给 {@code null}：没有它也无从查失败）。 */
-        static FailureQuery of(DashboardWidgetView widget, Window window) {
-            String serviceId = configString(widget.config(), "serviceId");
-            Integer pollingIndex = DashboardWidgetConfigs.intVal(widget.config().get("pollingIndex"));
-            return serviceId == null || pollingIndex == null
-                    ? null : new FailureQuery(serviceId, pollingIndex, window);
-        }
-    }
-
-    /** 一条曲线的取数结果：要么有响应体，要么有错误文案。空响应体是不可能的（没有点也是合法结果）。 */
-    private record CurveFetched(JsonObject range, String error) {
+    private record CurveFetched(JsonObject range, List<Date> failureTimes, String error) {
     }
 
     /**
-     * 一个服务的取数结果：该服务各方法当前的影子（按 pollingIndex）、服务定义、以及错误文案。
+     * 一个服务的取数结果：该服务各寄存器的当前值（按 registerIndex）、服务定义、以及错误文案。
      *
-     * <p>定义与影子一起取：定义用来产出每个字段的 {@code unit} / {@code bit}，两者缺一个卡片
-     * 都画不出来，分两次取只会多一个中间状态。</p>
+     * <p>定义与影子一起取：定义用来把配置的字段名解析到寄存器、并产出 {@code unit} / {@code bit}，
+     * 两者缺一个卡片都画不出来，分两次取只会多一个中间状态。</p>
      */
-    private record ServiceFetched(Map<Integer, ModbusServiceLastPolling> shadows, ModbusService service,
+    private record ServiceFetched(Map<Integer, ModbusServiceShadow> registryShadows, ModbusService service,
                                   String error) {
     }
 
@@ -1001,9 +1022,5 @@ public class DashboardWidgetDataService {
      */
     private record DeviceFetched(Map<String, DeviceEntity> devices, Map<String, JsonObject> shadows,
                                  String error) {
-    }
-
-    /** 一个字段的展示元数据：单位，以及它是不是一个位（位值前端说「开/关」）。 */
-    private record FieldMeta(String unit, boolean bit) {
     }
 }

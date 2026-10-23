@@ -186,12 +186,10 @@ public final class DashboardWidgetStructureValidator {
             }
             return null;
         }
-        // serviceField：三元组必须齐全。字段是否存在由 DashboardWidgetOwnershipValidator 查库确认。
+        // serviceField：服务 + 寄存器字段（不再存方法序号 pollingIndex，由取数时解析）。
+        // 字段是否真实存在由 DashboardWidgetOwnershipValidator 查库确认。
         if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
-        }
-        if (DashboardWidgetConfigs.intVal(config.get("pollingIndex")) == null) {
-            return "config.pollingIndex must be a number";
         }
         if (DashboardWidgetConfigs.str(config.get("field")) == null) {
             return "config.field is required";
@@ -245,9 +243,6 @@ public final class DashboardWidgetStructureValidator {
     private static String validateService(Map<String, Object> config) {
         if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";
-        }
-        if (DashboardWidgetConfigs.intVal(config.get("pollingIndex")) == null) {
-            return "config.pollingIndex must be a number";
         }
         Object raw = config.get("fields");
         if (!(raw instanceof List<?> fields)) {

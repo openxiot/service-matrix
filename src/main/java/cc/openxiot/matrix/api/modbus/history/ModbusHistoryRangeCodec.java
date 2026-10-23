@@ -5,6 +5,8 @@ import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
+import java.util.Date;
+
 /**
  * 区间曲线（{@code /history/range}）的响应体编码：
  * {@code {serviceId, pollingIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
@@ -24,7 +26,7 @@ public final class ModbusHistoryRangeCodec {
     }
 
     /**
-     * 编码一个点位的区间查询结果。
+     * 编码一个点位的区间查询结果（历史页那条路，包着 {@code RangeResult} 调用下面的底层方法）。
      *
      * <p>{@code serviceId} / {@code pollingIndex} / {@code field} 由调用方传进来，而不是从
      * {@link ModbusHistoryQueryService.RangeResult} 里取：那个记录只有「这两个时刻之间、要多少个点」，
@@ -37,7 +39,30 @@ public final class ModbusHistoryRangeCodec {
             String field,
             ModbusHistoryQueryService.RangeResult result
     ) {
-        ModbusHistoryWindow.Window window = result.window();
+        return encode(serviceId, pollingIndex, field,
+                result.from(), result.to(), result.maxPoints(), result.window());
+    }
+
+    /**
+     * 编码一次区间查询结果。看板的字段曲线（{@code DashboardWidgetDataService}）也走这里
+     * （数据源换成逐寄存器历史 {@code ModbusServiceRegistryHistory}，但响应是同一份形状、同一套
+     * {@code points} / {@code carryIn} / {@code downsampled} 分流）—— 两条消费方共用同一个
+     * {@code ModbusHistoryCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
+     * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线**。</p>
+     *
+     * <p>{@code identity} 在历史页那条路是方法序号（{@code pollingIndex}），在看板那条路是寄存器序号
+     * （{@code registerIndex}）—— 二者都只是请求里那份标识的回显，前端画图只用
+     * {@code points} / {@code carryIn}，不按它取数据。</p>
+     */
+    public static JsonObject encode(
+            String serviceId,
+            Integer identity,
+            String field,
+            Date from,
+            Date to,
+            int maxPoints,
+            ModbusHistoryWindow.Window window
+    ) {
         JsonArray points = new JsonArray();
         if (window.downsampled()) {
             for (ModbusHistoryWindow.Bucket bucket : window.buckets()) {
@@ -51,11 +76,11 @@ public final class ModbusHistoryRangeCodec {
 
         JsonObject body = new JsonObject()
                 .put("serviceId", serviceId)
-                .put("pollingIndex", pollingIndex)
+                .put("pollingIndex", identity)
                 .put("field", field)
-                .put("from", result.from().getTime())
-                .put("to", result.to().getTime())
-                .put("maxPoints", result.maxPoints())
+                .put("from", from.getTime())
+                .put("to", to.getTime())
+                .put("maxPoints", maxPoints)
                 .put("downsampled", window.downsampled())
                 .put("total", window.samples().size())
                 .put("points", points);
