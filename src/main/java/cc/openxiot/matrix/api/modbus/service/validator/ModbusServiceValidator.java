@@ -6,11 +6,11 @@ import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequestField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequestField;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 
 import java.util.ArrayList;
@@ -132,7 +132,7 @@ public final class ModbusServiceValidator {
         if (registryAlarmErr != null) {
             return registryAlarmErr;
         }
-        return validateFunctions(service.transactions, service.slaveId);
+        return validateFunctions(service.polls, service.slaveId);
     }
 
     /** 依赖设备的调用坐标：invoke 前也要查一遍（文档可能来自更早的口径）。 */
@@ -155,18 +155,18 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    private static String validateFunctions(List<ModbusTransaction> functions, Integer serviceSlaveId) {
+    private static String validateFunctions(List<ModbusPoll> functions, Integer serviceSlaveId) {
         if (functions == null) {
-            return "transactions is required";
+            return "polls is required";
         }
         Set<Integer> seenIndex = new HashSet<>();
         for (int i = 0; i < functions.size(); i++) {
-            ModbusTransaction function = functions.get(i);
-            String base = "transactions[" + i + "]";
+            ModbusPoll function = functions.get(i);
+            String base = "polls[" + i + "]";
             if (function == null) {
                 return base + " is null";
             }
-            // 方法身份：index 必填、>=1、同服务唯一 —— 轮询身份（modbus.polls.transactionIndex）、
+            // 方法身份：index 必填、>=1、同服务唯一 —— 轮询身份（modbus.polls.pollIndex）、
             // 告警/影子的方法键都读它
             if (function.index == null) {
                 return base + ".index is required";
@@ -181,7 +181,7 @@ public final class ModbusServiceValidator {
             // 来源：from 必填、type.type ∈ {registry, command}；from.index 仅作**溯源**
             // （指向 config 的 ModbusRegistry#index / ModbusCommand#index）—— 可选、给了必须 >=1，
             // 但**不**强制唯一（它不是方法身份，允许同服务的 command/registry 溯源到同一 config 序号）
-            ModbusTransactionFrom type = function.from;
+            ModbusPollFrom type = function.from;
             if (type == null) {
                 return base + ".from is required";
             }
@@ -233,10 +233,10 @@ public final class ModbusServiceValidator {
             }
             // registry 的应答解析规则不能没有：读方法缺 response 是静默失效（返回 {}），
             // 而 registry 的 request/response 都是前端从点表展开的，空应答只能是端点表时漏了。
-            if (registry && ModbusTransaction.responseFields(function).isEmpty()) {
+            if (registry && ModbusPoll.responseFields(function).isEmpty()) {
                 return base + ".response is required for a registry poll (the register-derived read block must declare fields)";
             }
-            String responseErr = validateFields(ModbusTransaction.responseFields(function), base);
+            String responseErr = validateFields(ModbusPoll.responseFields(function), base);
             if (responseErr != null) {
                 return responseErr;
             }
@@ -411,8 +411,8 @@ public final class ModbusServiceValidator {
      *   <li>写方法必须没有 {@code response}：写应答是请求回显，解析规则无从谈起。</li>
      * </ul>
      */
-    private static String validateRequestResponse(ModbusTransaction function, String base, boolean read) {
-        List<ModbusResponseField> fields = ModbusTransaction.responseFields(function);
+    private static String validateRequestResponse(ModbusPoll function, String base, boolean read) {
+        List<ModbusResponseField> fields = ModbusPoll.responseFields(function);
         if (!read) {
             if (!fields.isEmpty()) {
                 return "invalid " + base + ".response: not allowed on a write function (the reply echoes the request)";
@@ -449,7 +449,7 @@ public final class ModbusServiceValidator {
      *
      * @param format 已归一的小写格式（{@code bit} 或寄存器格式）
      * @param bits   {@code format} 是不是位格式
-     * @param vbase  出错文案里的取值位置，如 {@code transactions[0].request.fields[1].value}
+     * @param vbase  出错文案里的取值位置，如 {@code polls[0].request.fields[1].value}
      */
     private static String validateWriteValue(Object value, String format, boolean bits, String vbase) {
         if (value == null) {
@@ -499,7 +499,7 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 自动轮询开关（{@link ModbusTransaction#polling}）：缺省 / false 都不必校验 ——
+     * 自动轮询开关（{@link ModbusPoll#polling}）：缺省 / false 都不必校验 ——
      * 没开轮询时 {@code interval} 只是一份没生效的配置（false 的用法就是「留着周期、先不跑」）。
      *
      * <p>{@code true} 有两条要求，都在这里说清楚：<b>只允许读方法</b>（写方法开轮询 = 让定时器
@@ -507,7 +507,7 @@ public final class ModbusServiceValidator {
      * 前者以前是间接成立的（{@code polling=true} 要求 {@code interval}，而 {@code interval}
      * 不允许配在写方法上），绕了一层，读代码的人看不出「写方法一律不许轮询」这条规矩。</p>
      */
-    private static String validatePolling(ModbusTransaction function, String base) {
+    private static String validatePolling(ModbusPoll function, String base) {
         if (!Boolean.TRUE.equals(function.polling)) {
             return null;
         }
@@ -523,13 +523,13 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 自动调用周期（{@link ModbusTransaction#interval}，秒）：缺省 = 没配周期。
-     * 配了周期不等于会跑 —— 跑不跑看 {@link ModbusTransaction#polling}（缺省 = 有周期即跑）。
+     * 自动调用周期（{@link ModbusPoll#interval}，秒）：缺省 = 没配周期。
+     * 配了周期不等于会跑 —— 跑不跑看 {@link ModbusPoll#polling}（缺省 = 有周期即跑）。
      *
      * <p><b>只允许读方法</b>（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端
      * 周期性地往寄存器里写值，是危险动作，不能由定时器发起。</p>
      */
-    private static String validateInterval(ModbusTransaction function, String base) {
+    private static String validateInterval(ModbusPoll function, String base) {
         Integer interval = function.interval;
         if (interval == null) {
             return null;
@@ -552,7 +552,7 @@ public final class ModbusServiceValidator {
      * <p>功能码直接读 {@code request.fc}：结构化了就是这一处白拿的好处 —— 以前要从请求帧里
      * {@code parseHex(request)[1]} 取第二个字节，还得为库里的脏数据包一层 try/catch。</p>
      */
-    private static boolean isReadFunction(ModbusTransaction function) {
+    private static boolean isReadFunction(ModbusPoll function) {
         return function.request != null && ModbusFrameCodec.isRead(function.request.fc);
     }
 
@@ -570,7 +570,7 @@ public final class ModbusServiceValidator {
      *
      * @param values 可为 null（读方法，或写方法的字段全都带缺省值）
      */
-    public static String validateInvoke(ModbusTransaction function, Map<String, Object> values) {
+    public static String validateInvoke(ModbusPoll function, Map<String, Object> values) {
         if (function == null || function.request == null) {
             return "request is not set";
         }

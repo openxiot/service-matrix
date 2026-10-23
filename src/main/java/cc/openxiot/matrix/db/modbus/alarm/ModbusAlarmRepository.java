@@ -65,9 +65,9 @@ public class ModbusAlarmRepository {
      * <ol>
      *   <li>{@code {openKey: 1}} <b>unique + partial</b> —— 并发护栏（见 {@link #insertOpen}）。
      *       已实证可用，见下面的冒烟台账。</li>
-     *   <li>{@code (serviceId, transactionIndex, openKey)} —— 采集侧每轮查「这个出值开着吗」
+     *   <li>{@code (serviceId, pollIndex, openKey)} —— 采集侧每轮查「这个出值开着吗」
      *       （见 {@link #mapOpenRuleByField}），一个方法配 3 个字段也只查一次。</li>
-     *   <li>{@code (serviceId, transactionIndex, at)} —— 列表查询，前两段等值 + {@code at} 倒序。</li>
+     *   <li>{@code (serviceId, pollIndex, at)} —— 列表查询，前两段等值 + {@code at} 倒序。</li>
      * </ol>
      *
      * <h4>1 号索引的冒烟台账（2026-09-14，staging）</h4>
@@ -103,8 +103,8 @@ public class ModbusAlarmRepository {
                                 .name("openKey_unique_partial")
                                 .unique(true)
                                 .partialFilterExpression(Filters.exists("openKey")))
-                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "transactionIndex", "openKey")))
-                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "transactionIndex", "at")))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "pollIndex", "openKey")))
+                .chain(ignored -> collection().createIndex(Indexes.ascending("serviceId", "pollIndex", "at")))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
@@ -143,11 +143,11 @@ public class ModbusAlarmRepository {
      *
      * <p>{@code handled} 的缺失转换见 {@link #openRuleOf}：null 与 false 在判定上完全一样。</p>
      */
-    public Uni<Map<String, OpenAlarmRule>> mapOpenRuleByField(String serviceId, Integer transactionIndex) {
+    public Uni<Map<String, OpenAlarmRule>> mapOpenRuleByField(String serviceId, Integer pollIndex) {
         return collection()
                 .find(Filters.and(
                                 Filters.eq("serviceId", serviceId),
-                                Filters.eq("transactionIndex", transactionIndex),
+                                Filters.eq("pollIndex", pollIndex),
                                 Filters.exists("openKey")),
                         new FindOptions().projection(Projections.include("field", "ruleId", "handled")))
                 .collect().asList()
@@ -181,7 +181,7 @@ public class ModbusAlarmRepository {
      * 某个服务下**所有方法**当前开着的告警行（未恢复），只投影对账要用的坐标。
      *
      * <p>定义变更对账用（{@code ModbusAlarmReconciler}）：它要按「新定义里还有没有这条规则」
-     * 逐行判，所以得拿到 {@code transactionIndex} / {@code field} / {@code ruleId} 三样 ——
+     * 逐行判，所以得拿到 {@code pollIndex} / {@code field} / {@code ruleId} 三样 ——
      * 与 {@link #mapOpenRuleByField}（采集热路径，只关心一个方法、只要出值名与规则标识）的用途不同。</p>
      */
     public Uni<List<ModbusAlarm>> listOpenByServiceId(String serviceId) {
@@ -191,7 +191,7 @@ public class ModbusAlarmRepository {
         return collection()
                 .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.exists("openKey")),
                         new FindOptions().projection(
-                                Projections.include("serviceId", "transactionIndex", "field", "ruleId")))
+                                Projections.include("serviceId", "pollIndex", "field", "ruleId")))
                 .collect().asList();
     }
 
@@ -206,14 +206,14 @@ public class ModbusAlarmRepository {
         return collection()
                 .find(Filters.exists("openKey"),
                         new FindOptions().projection(
-                                Projections.include("serviceId", "transactionIndex", "field", "ruleId")))
+                                Projections.include("serviceId", "pollIndex", "field", "ruleId")))
                 .collect().asList();
     }
 
     /**
      * 关闭一批出值的告警（值回到正常、或新定义已不再配它）。
      *
-     * <p>条件是**整个开行标识**（{@code serviceId} + {@code transactionIndex} + {@code field} +
+     * <p>条件是**整个开行标识**（{@code serviceId} + {@code pollIndex} + {@code field} +
      * {@code openKey} 存在），不是某条 {@code _id}；{@code updateMany} 因此天然幂等 ——
      * 两个评估者同时关闭同一出值，第二个匹配 0 条，不算失败。
      * 过滤条件里那个 {@code exists("openKey")} 不是多余的：已恢复的行 {@code openKey} 已被
@@ -223,12 +223,12 @@ public class ModbusAlarmRepository {
      * @param closeType {@link ModbusAlarm#CLOSE_VALUE} 或 {@link ModbusAlarm#CLOSE_DEFINITION}
      * @return 实际关闭的条数
      */
-    public Uni<Long> closeByKeys(String serviceId, Integer transactionIndex, Collection<String> fields,
+    public Uni<Long> closeByKeys(String serviceId, Integer pollIndex, Collection<String> fields,
                                  String closeType, Date at) {
         if (fields == null || fields.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
-        return collection().updateMany(closeFilter(serviceId, transactionIndex, fields), closeUpdate(at, closeType))
+        return collection().updateMany(closeFilter(serviceId, pollIndex, fields), closeUpdate(at, closeType))
                 .map(UpdateResult::getModifiedCount);
     }
 
@@ -238,10 +238,10 @@ public class ModbusAlarmRepository {
      * <p>抽成静态是为了能单测（本仓库的库测试要连 Mongo）：这个条件写错了不会报错，
      * 只会「关不掉」—— 一条永远关不掉的告警比一条报错的写难查得多。</p>
      */
-    static Bson closeFilter(String serviceId, Integer transactionIndex, Collection<String> fields) {
+    static Bson closeFilter(String serviceId, Integer pollIndex, Collection<String> fields) {
         return Filters.and(
                 Filters.eq("serviceId", serviceId),
-                Filters.eq("transactionIndex", transactionIndex),
+                Filters.eq("pollIndex", pollIndex),
                 Filters.in("field", fields),
                 Filters.exists("openKey"));
     }
@@ -316,8 +316,8 @@ public class ModbusAlarmRepository {
     public Uni<List<ModbusAlarm>> findRange(String serviceId, RangeFilter filter, int limit) {
         List<Bson> filters = new ArrayList<>();
         filters.add(Filters.eq("serviceId", serviceId));
-        if (filter.transactionIndex() != null) {
-            filters.add(Filters.eq("transactionIndex", filter.transactionIndex()));
+        if (filter.pollIndex() != null) {
+            filters.add(Filters.eq("pollIndex", filter.pollIndex()));
         }
         if (filter.field() != null && !filter.field().isBlank()) {
             filters.add(Filters.eq("field", filter.field()));
@@ -352,7 +352,7 @@ public class ModbusAlarmRepository {
      *   <li><b>不排序</b>：统计在内存里分桶，顺序没有意义；{@link #findRange} 那个倒序是清单页要的。</li>
      * </ul>
      *
-     * <p>索引 {@code (serviceId, transactionIndex, at)} 上这里只有第一段用得上（与故障清单的
+     * <p>索引 {@code (serviceId, pollIndex, at)} 上这里只有第一段用得上（与故障清单的
      * {@code ModbusServiceFailureRepository#findRange} 同一个道理）。返回的对象只有
      * {@code serviceId} / {@code at} / {@code text} 有值，**不要当完整告警行用**。</p>
      */
@@ -380,7 +380,7 @@ public class ModbusAlarmRepository {
      * @param open    {@code true} 只看未恢复、{@code false} 只看已恢复、{@code null} 都要
      * @param handled 同上，针对「是否已处理」
      */
-    public record RangeFilter(Integer transactionIndex, String field, String level,
+    public record RangeFilter(Integer pollIndex, String field, String level,
                               Boolean open, Boolean handled, Date from, Date to) {
     }
 

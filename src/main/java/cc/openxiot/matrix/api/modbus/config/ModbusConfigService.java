@@ -366,7 +366,7 @@ public class ModbusConfigService {
         }
         // (area, address) 唯一：同区内同一地址重复会让隐式读对同一个物理位发两次读、两次命名
         Set<String> seen = new HashSet<>();
-        // index 唯一：它是 ModbusTransactionFrom.index 的引用来源、也是前后端对这条寄存器的稳定身份，
+        // index 唯一：它是 ModbusPollFrom.index 的引用来源、也是前后端对这条寄存器的稳定身份，
         // 重复会让「由哪条寄存器展开」对不上号
         Set<Integer> seenIndex = new HashSet<>();
         for (int i = 0; i < registries.size(); i++) {
@@ -375,7 +375,7 @@ public class ModbusConfigService {
             if (r == null) {
                 return base + " is null";
             }
-            // 序号（供 ModbusTransactionFrom.index 引用）：必填、1 起、同表唯一
+            // 序号（供 ModbusPollFrom.index 引用）：必填、1 起、同表唯一
             if (r.index == null) {
                 return base + ".index is required";
             }

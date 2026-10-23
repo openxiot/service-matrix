@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.common.person.Person;
 import com.mongodb.MongoClientSettings;
@@ -130,10 +130,10 @@ class ObjectPropertyCodecProviderTest {
     /** 操作日志的 {@code fields}（成功调用的响应快照）：四类值（数值 / 描述 / 布尔 / 空）都能进能出。 */
     @Test
     void snapshotFieldsRoundTrip() {
-        ModbusTransactionHistory log = new ModbusTransactionHistory();
+        ModbusPollHistory log = new ModbusPollHistory();
         log.id = new ObjectId();
         log.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        log.transactionIndex = 1;
+        log.pollIndex = 1;
         log.operation = "read";
         log.ok = Boolean.TRUE;
         Map<String, Object> fields = new LinkedHashMap<>();
@@ -144,7 +144,7 @@ class ObjectPropertyCodecProviderTest {
         log.fields = fields;
         log.at = new Date(AT);
 
-        ModbusTransactionHistory read = decode(ModbusTransactionHistory.class, encode(log));
+        ModbusPollHistory read = decode(ModbusPollHistory.class, encode(log));
 
         assertEquals(fields, read.fields);
         assertEquals(new Date(AT), read.at);
@@ -222,7 +222,7 @@ class ObjectPropertyCodecProviderTest {
         widget.size = "HALF";
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("serviceId", "6aa759bb4e45b0b6122d2ed5");
-        config.put("transactionIndex", 1);
+        config.put("pollIndex", 1);
         config.put("fields", List.of("temp", "status.bit0"));
         config.put("showUnit", Boolean.TRUE);
         widget.config = config;

@@ -5,8 +5,8 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -54,7 +54,7 @@ public class ModbusShadowService {
                         ? Uni.createFrom().item(List.of())
                         : registryShadowRepo.listByServiceId(serviceId)
                                 .map(shadows -> mergeRegisterCache(
-                                        service.configSnapshot, service.transactions, shadows)));
+                                        service.configSnapshot, service.polls, shadows)));
     }
 
     /**
@@ -79,7 +79,7 @@ public class ModbusShadowService {
     /**
      * 归并本核。可读寄存器 = 点表 {@code access ∈ {R, RW}} 的那些（写寄存器没有缓存值）。
      * 值来自逐寄存器的影子 {@code ModbusShadow}（按 {@code registerIndex} 索引到该寄存器）；
-     * 拿不到影子、或影子没有值 → {@code no-data}。方法归属 {@code transactionIndex} 仍由
+     * 拿不到影子、或影子没有值 → {@code no-data}。方法归属 {@code pollIndex} 仍由
      * {@code functions} 里应答字段名 == 寄存器点表名的那个方法解出（只作展示，不决定值）。
      *
      * <p>直接产出对外 JSON（{@code /shadows} 的形状，见 {@link #encodeRegister}）—— 点表投影是
@@ -87,17 +87,17 @@ public class ModbusShadowService {
      */
     private static List<JsonObject> mergeRegisterCache(
             ModbusConfig config,
-            List<ModbusTransaction> functions,
+            List<ModbusPoll> functions,
             List<ModbusShadow> shadows
     ) {
         // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
         Map<String, Integer> owner = new HashMap<>();
         if (functions != null) {
-            for (ModbusTransaction fn : functions) {
+            for (ModbusPoll fn : functions) {
                 if (fn == null || fn.index == null) {
                     continue;
                 }
-                for (ModbusResponseField f : ModbusTransaction.responseFields(fn)) {
+                for (ModbusResponseField f : ModbusPoll.responseFields(fn)) {
                     if (f != null && f.field != null) {
                         owner.put(f.field, fn.index);
                     }
@@ -141,10 +141,10 @@ public class ModbusShadowService {
 
     /**
      * 一只寄存器投影的对外 JSON，键序与原 {@code ModbusRegisterSnapshotCodec} 逐字一致：
-     * {@code name, area?, dataType?, unit?, access, transactionIndex?, value?, recordedAt?, status,
+     * {@code name, area?, dataType?, unit?, access, pollIndex?, value?, recordedAt?, status,
      * lastError?, errorAt?}。null 的字段不出键（前端判「有没有缓存」看 {@code value} 在不在）。
      */
-    private static JsonObject encodeRegister(ModbusRegistry reg, String access, Integer transactionIndex,
+    private static JsonObject encodeRegister(ModbusRegistry reg, String access, Integer pollIndex,
                                              String status, Object value, java.util.Date recordedAt,
                                              String lastError, java.util.Date errorAt) {
         JsonObject o = new JsonObject();
@@ -159,8 +159,8 @@ public class ModbusShadowService {
             o.put("unit", reg.unit);
         }
         o.put("access", access);
-        if (transactionIndex != null) {
-            o.put("transactionIndex", transactionIndex);
+        if (pollIndex != null) {
+            o.put("pollIndex", pollIndex);
         }
         if (value != null) {
             o.put("value", value);

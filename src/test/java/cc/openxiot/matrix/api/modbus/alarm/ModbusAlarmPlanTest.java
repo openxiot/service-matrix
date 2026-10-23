@@ -169,8 +169,8 @@ class ModbusAlarmPlanTest {
         // 方法 1：两个陈旧出值合成一条，字段名有序；「进水温度」还配着告警，不在里面
         assertEquals(List.of("压力", "回水温度"), closes.get(0).fields());
         assertEquals(List.of("出水温度"), closes.get(1).fields());
-        assertEquals(1, closes.get(0).transactionIndex().intValue());
-        assertEquals(2, closes.get(1).transactionIndex().intValue());
+        assertEquals(1, closes.get(0).pollIndex().intValue());
+        assertEquals(2, closes.get(1).pollIndex().intValue());
         assertEquals(SID, closes.get(0).serviceId());
     }
 
@@ -184,7 +184,7 @@ class ModbusAlarmPlanTest {
 
         List<Close> closes = ModbusAlarmPlan.plan(List.of(one, two), rows);
         assertEquals(List.of(SID, SID, OTHER_SID), closes.stream().map(Close::serviceId).toList());
-        assertEquals(List.of(2, 3, 1), closes.stream().map(Close::transactionIndex).toList());
+        assertEquals(List.of(2, 3, 1), closes.stream().map(Close::pollIndex).toList());
     }
 
     @Test
@@ -195,8 +195,8 @@ class ModbusAlarmPlanTest {
                 List.of(row(SID, 1, "a"), row(SID, null, "b")));
 
         assertEquals(2, closes.size());
-        assertNull(closes.get(0).transactionIndex());
-        assertEquals(1, closes.get(1).transactionIndex().intValue());
+        assertNull(closes.get(0).pollIndex());
+        assertEquals(1, closes.get(1).pollIndex().intValue());
     }
 
     // ===== 夹具 =====
@@ -209,17 +209,17 @@ class ModbusAlarmPlanTest {
         return closes.stream().flatMap(close -> close.fields().stream()).toList();
     }
 
-    private static ModbusAlarm open(Integer transactionIndex, String field) {
-        return row(SID, transactionIndex, field);
+    private static ModbusAlarm open(Integer pollIndex, String field) {
+        return row(SID, pollIndex, field);
     }
 
-    private static ModbusAlarm row(String serviceId, Integer transactionIndex, String field) {
+    private static ModbusAlarm row(String serviceId, Integer pollIndex, String field) {
         ModbusAlarm row = new ModbusAlarm();
         row.serviceId = serviceId;
-        row.transactionIndex = transactionIndex;
+        row.pollIndex = pollIndex;
         row.field = field;
         row.ruleId = RULE_ID;
-        row.openKey = ModbusAlarm.openKeyOf(serviceId, transactionIndex, field);
+        row.openKey = ModbusAlarm.openKeyOf(serviceId, pollIndex, field);
         return row;
     }
 

@@ -3,9 +3,9 @@ package cc.openxiot.matrix.api.modbus.service.parser;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldValue;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldValue;
 import io.vertx.core.json.JsonObject;
 
 import java.nio.charset.StandardCharsets;
@@ -22,7 +22,7 @@ import java.util.List;
  *                              └─ 按 response.fields[].index 升序、以 bytes 依次累加偏移切分 ─┘
  * </pre>
  *
- * <p>帧的合法性（长度 / 异常码 / CRC16）与 {@code ModbusTransaction#request} 同口径，
+ * <p>帧的合法性（长度 / 异常码 / CRC16）与 {@code ModbusPoll#request} 同口径，
  * 复用 {@link ModbusFrameCodec} 的字节序与 CRC 原语，不再另写一套。</p>
  *
  * <p>取值：原始值命中 {@code value-list} 时输出其 description（不再应用 scale）；否则输出

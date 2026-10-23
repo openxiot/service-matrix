@@ -2,8 +2,8 @@ package cc.openxiot.matrix.db.modbus.service;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
@@ -60,10 +60,10 @@ public class ModbusService {
     public DeviceOn device = new DeviceOn();
 
     @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写），"
-            + "来源（type 上的 type 字段：command 显式命令 / registry 寄存器块读）见 ModbusTransactionFrom；"
-            + "方法序号（身份）在 ModbusTransaction 的 index",
+            + "来源（type 上的 type 字段：command 显式命令 / registry 寄存器块读）见 ModbusPollFrom；"
+            + "方法序号（身份）在 ModbusPoll 的 index",
             required = true)
-    public List<ModbusTransaction> transactions;
+    public List<ModbusPoll> polls;
 
     @Schema(description = "创建者/创建时间")
     public Person creator;

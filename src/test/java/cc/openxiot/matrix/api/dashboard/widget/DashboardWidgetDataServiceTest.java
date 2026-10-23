@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -35,9 +35,9 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
@@ -500,7 +500,7 @@ class WidgetDataServiceTest {
 
     /** 新卡不存方法序号：字段（寄存器）按名解析到读方法再取数，结果与带方法的老卡一致。 */
     @Test
-    void render_serviceCard_withoutTransactionIndex_resolvesField() {
+    void render_serviceCard_withoutPollIndex_resolvesField() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
 
         JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
@@ -515,7 +515,7 @@ class WidgetDataServiceTest {
 
     /** 新卡尚未采集：字段能解析但那个方法没有影子，只回 fields 的空与无 recordedAt（判据同老卡）。 */
     @Test
-    void render_serviceCard_withoutTransactionIndex_neverCollected() {
+    void render_serviceCard_withoutPollIndex_neverCollected() {
         stubService(null, serviceDef(1, "温度", "℃", null));
 
         JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
@@ -534,7 +534,7 @@ class WidgetDataServiceTest {
 
         JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
 
-        assertFalse(data.containsKey("transactionIndex"));
+        assertFalse(data.containsKey("pollIndex"));
         assertFalse(data.containsKey("recordedAt"));
         assertFalse(data.containsKey("fields"));
         assertFalse(data.containsKey("error"));
@@ -786,7 +786,7 @@ class WidgetDataServiceTest {
 
         // 曲线这一段就是 /history/range 的响应体：前端两条路共用同一个 decodeRange
         assertEquals(SERVICE_ID, data.getString("serviceId"));
-        assertEquals(1, data.getInteger("transactionIndex").intValue());
+        assertEquals(1, data.getInteger("pollIndex").intValue());
         assertEquals("温度", data.getString("field"));
         assertEquals(24 * HOUR, data.getLong("to") - data.getLong("from"));
         assertEquals(500, data.getInteger("maxPoints").intValue());
@@ -894,7 +894,7 @@ class WidgetDataServiceTest {
     /** 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。 */
     private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
-                "transactionIndex", 1, "field", "温度", "window", window);
+                "pollIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
     }
@@ -1005,9 +1005,9 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList())).thenReturn(Uni.createFrom().item(array));
     }
 
-    private static WebDashboardWidget serviceCard(String id, int transactionIndex, List<String> fields) {
+    private static WebDashboardWidget serviceCard(String id, int pollIndex, List<String> fields) {
         return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
-                "transactionIndex", transactionIndex, "fields", fields));
+                "pollIndex", pollIndex, "fields", fields));
     }
 
     /** 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。 */
@@ -1066,25 +1066,25 @@ private void stubDefinition() {
      * 一个方法：{@code primary} 是主字段（带单位），{@code bit} 是它位区里的一个位名
      * （没有单位）。两者可以都给 —— 那正是「位名与父字段并存」的实际情况。
      */
-    private static ModbusService serviceDef(int transactionIndex, String primary, String unit, String second,
+    private static ModbusService serviceDef(int pollIndex, String primary, String unit, String second,
                                             String... bits) {
         List<ModbusResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
             fields.add(field(second, "％", null));
         }
-        ModbusTransaction function = new ModbusTransaction();
-                    function.from = new ModbusTransactionFrom();
+        ModbusPoll function = new ModbusPoll();
+                    function.from = new ModbusPollFrom();
                     function.from.type = "command";
-                    function.from.index = transactionIndex;
-                    function.index = transactionIndex;
+                    function.from.index = pollIndex;
+                    function.index = pollIndex;
         function.name = primary;
         function.response = ModbusResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
-        definition.transactions = List.of(function);
+        definition.polls = List.of(function);
         // 点表快照的寄存器：主字段、次字段、位各是一只可读寄存器（服务卡按名字解析到它的 index）
         List<ModbusRegistry> registries = new ArrayList<>();
         int index = 1;

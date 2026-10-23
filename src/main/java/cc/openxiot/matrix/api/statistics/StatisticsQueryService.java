@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
@@ -42,8 +42,8 @@ import java.util.function.Function;
  * （{@code device.space.spaceId} 逐空间取再拍平去重），所以「服务总量」与告警页看到的范围一致。</p>
  *
  * <p><b>告警 / 故障</b>：逐个 serviceId 各查一次再在内存里归并，**不用
- * {@code Filters.in("serviceId", …)}** —— 两个集合的索引都是 {@code (serviceId, transactionIndex, at)}，
- * 跨服务查会丢掉索引前缀（与 {@code ModbusTransactionHistoryService} 的说明同一条）。</p>
+ * {@code Filters.in("serviceId", …)}** —— 两个集合的索引都是 {@code (serviceId, pollIndex, at)}，
+ * 跨服务查会丢掉索引前缀（与 {@code ModbusPollHistoryService} 的说明同一条）。</p>
  *
  * <p><b>不做聚合管道</b>：全后端的 {@code Aggregates} / {@code $group} 零命中，分桶与归并一律在内存里做
  * （与 {@code ModbusHistoryWindow} 的降采样、{@code ModbusAlarmCodec.encodeSummary} 的计数同一路线），
@@ -77,7 +77,7 @@ public class StatisticsQueryService {
     ModbusAlarmRepository alarmRepo;
 
     @Inject
-    ModbusTransactionHistoryRepository pollingHistoryRepo;
+    ModbusPollHistoryRepository pollingHistoryRepo;
 
     @Inject
     SpaceService spaceService;
@@ -173,7 +173,7 @@ public class StatisticsQueryService {
                                 List<String> ids = serviceIds(tuple.getItem2());
                                 Uni<List<ModbusAlarm>> alarms = mergeTimelines(ids.stream()
                                         .map(id -> alarmRepo.findTimeline(id, from, end)).toList());
-                                Uni<List<ModbusTransactionHistory>> failures = mergeTimelines(ids.stream()
+                                Uni<List<ModbusPollHistory>> failures = mergeTimelines(ids.stream()
                                         .map(id -> pollingHistoryRepo.findFailureTimeline(id, from, end)).toList());
                                 return Uni.combine().all().unis(alarms, failures).asTuple()
                                         .map(rows -> new Overview(from, end,
@@ -328,9 +328,9 @@ public class StatisticsQueryService {
     }
 
     /** 一组失败调用的发生时刻。 */
-    private static List<Date> failureTimes(List<ModbusTransactionHistory> failures) {
+    private static List<Date> failureTimes(List<ModbusPollHistory> failures) {
         List<Date> times = new ArrayList<>(failures.size());
-        for (ModbusTransactionHistory failure : failures) {
+        for (ModbusPollHistory failure : failures) {
             if (failure != null) {
                 times.add(failure.at);
             }

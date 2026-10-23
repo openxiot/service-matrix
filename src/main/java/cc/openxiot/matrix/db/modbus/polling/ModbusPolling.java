@@ -12,7 +12,7 @@ import org.bson.types.ObjectId;
  *
  * <p>运行时状态（{@code nextRunAt} / 租约 / 上次结果）**不写进 {@code ModbusService} 定义文档**：
  * 那是接口直接返回的、空间图投影查询也在用的文档，混进实时状态会让「读定义」变成「读实时状态」。
- * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, transactionIndex)}。</p>
+ * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, pollIndex)}。</p>
  *
  * <p>只有**读方法、有 {@code interval}、{@code polling != false}** 才入表（口径见 {@code ModbusPollPlan}）；
  * 定义改了由对账（{@code ModbusPollReconciler}）跟着改，服务删了跟着删。
@@ -37,15 +37,15 @@ public class ModbusPolling {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusTransaction.index）", examples = {"1"}, required = true)
-    public Integer transactionIndex;
+    @Schema(description = "方法序号（ModbusPoll.index）", examples = {"1"}, required = true)
+    public Integer pollIndex;
 
     /** 冗余一份：调度要按设备分组（同一条 RS485 串行），不必每次回查服务定义；它同时是分片键的候选。 */
     @Schema(description = "父设备 did：同一个 did 下的方法必须串行（同一条 RS485 总线）", required = true)
     public String did;
 
     /** 冗余一份：调度循环不必每次都持有定义文档。 */
-    @Schema(description = "调用周期（秒），来自 ModbusTransaction.interval", examples = {"10"}, required = true)
+    @Schema(description = "调用周期（秒），来自 ModbusPoll.interval", examples = {"10"}, required = true)
     public Integer interval;
 
     @Schema(description = "下一次该跑的时刻（epoch 毫秒，UTC）。落库是必须的：否则一次滚动发布会把所有任务挤到同一秒爆发")

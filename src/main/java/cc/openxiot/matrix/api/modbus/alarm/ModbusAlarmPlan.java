@@ -61,17 +61,17 @@ public final class ModbusAlarmPlan {
     /**
      * 一次要关的残留：某个服务、某个方法上的一批出值（{@code closeType = DEFINITION}）。
      *
-     * @param transactionIndex 方法序号；**可能是 null**（行里没有的话），此时只有
+     * @param pollIndex 方法序号；**可能是 null**（行里没有的话），此时只有
      *                      「这个方法已从定义里删掉」这一种解释 —— 也一样要关
      */
-    public record Close(String serviceId, Integer transactionIndex, List<String> fields) {
+    public record Close(String serviceId, Integer pollIndex, List<String> fields) {
     }
 
     /**
      * 新定义里**配着启用告警**的全部规则：{@code 出值名(寄存器名) → 该出值上启用的规则标识}。
      *
      * <p>告警属寄存器（寄存器中心），不属 function 应答字段，故这里直接从
-     * {@code configSnapshot.registries[]} 的 {@code alarms} 收，不再按 function/transactionIndex 分组。</p>
+     * {@code configSnapshot.registries[]} 的 {@code alarms} 收，不再按 function/pollIndex 分组。</p>
      *
      * <p>启用着却没有 {@code id} 的规则（校验器挡着新数据，只可能是老数据）收不进来：
      * 它开出来的行 {@code ruleId} 也是 null，同样落进「行上没有 ruleId ⇒ 不动」那条。</p>
@@ -107,7 +107,7 @@ public final class ModbusAlarmPlan {
      * 这批开着的告警行里，哪些该按 {@code DEFINITION} 关掉。不需要动的**不出现在结果里**
      * （调用方据此零写操作，启动时稳态就是零写）。
      *
-     * <p>结果按 {@code (serviceId, transactionIndex)} 排好序，且每个方法只出现一次 ——
+     * <p>结果按 {@code (serviceId, pollIndex)} 排好序，且每个方法只出现一次 ——
      * 关闭是按整个开行标识 {@code updateMany} 的，一个方法一条语句就够。</p>
      */
     public static List<Close> plan(Collection<ModbusService> services, Collection<ModbusAlarm> open) {
@@ -124,7 +124,7 @@ public final class ModbusAlarmPlan {
             covered.put(service.id.toHexString(), configuredRules(service));
         }
 
-        // (serviceId, transactionIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
+        // (serviceId, pollIndex) → 该关的出值名；TreeSet 让同一批的字段名稳定有序
         Map<Key, Set<String>> stale = new LinkedHashMap<>();
         for (ModbusAlarm row : open) {
             if (row == null || row.serviceId == null || row.field == null || row.field.isBlank()
@@ -139,19 +139,19 @@ public final class ModbusAlarmPlan {
             if (ids != null && ids.contains(row.ruleId)) {
                 continue;   // 新定义里还有这条规则且启用着，留着 —— 它归值判定管
             }
-            stale.computeIfAbsent(new Key(row.serviceId, row.transactionIndex), key -> new TreeSet<>())
+            stale.computeIfAbsent(new Key(row.serviceId, row.pollIndex), key -> new TreeSet<>())
                     .add(row.field);
         }
 
         stale.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> closes.add(new Close(entry.getKey().serviceId(),
-                        entry.getKey().transactionIndex(), List.copyOf(entry.getValue()))));
+                        entry.getKey().pollIndex(), List.copyOf(entry.getValue()))));
         return closes;
     }
 
-    /** 分组键。{@code transactionIndex} 可以是 null（Comparator 显式处理，不靠 {@code Integer} 的自然序）。 */
-    private record Key(String serviceId, Integer transactionIndex) implements Comparable<Key> {
+    /** 分组键。{@code pollIndex} 可以是 null（Comparator 显式处理，不靠 {@code Integer} 的自然序）。 */
+    private record Key(String serviceId, Integer pollIndex) implements Comparable<Key> {
 
         @Override
         public int compareTo(Key other) {
@@ -159,11 +159,11 @@ public final class ModbusAlarmPlan {
             if (byService != 0) {
                 return byService;
             }
-            if (transactionIndex == null || other.transactionIndex == null) {
+            if (pollIndex == null || other.pollIndex == null) {
                 // null 排在前（没有序号的行最可疑，日志里先看到它）
-                return transactionIndex == other.transactionIndex ? 0 : (transactionIndex == null ? -1 : 1);
+                return pollIndex == other.pollIndex ? 0 : (pollIndex == null ? -1 : 1);
             }
-            return Integer.compare(transactionIndex, other.transactionIndex);
+            return Integer.compare(pollIndex, other.pollIndex);
         }
     }
 }

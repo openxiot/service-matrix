@@ -73,13 +73,13 @@ class ModbusShadowResourceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalArgumentException("Not a member of the space")));
     }
 
-    /** 一个服务一张网格：进水温度 current，压力 no-data（寄存器条目键序同 {@code /shadows} 编码：name/area?/unit?/access/transactionIndex?/value?/status）。 */
+    /** 一个服务一张网格：进水温度 current，压力 no-data（寄存器条目键序同 {@code /shadows} 编码：name/area?/unit?/access/pollIndex?/value?/status）。 */
     private Map<String, List<JsonObject>> grid() {
         JsonObject temp = new JsonObject()
                 .put("name", "进水温度")
                 .put("area", "holding")
                 .put("access", "R")
-                .put("transactionIndex", 1)
+                .put("pollIndex", 1)
                 .put("value", 61.5)
                 .put("status", "current");
         JsonObject pressure = new JsonObject()

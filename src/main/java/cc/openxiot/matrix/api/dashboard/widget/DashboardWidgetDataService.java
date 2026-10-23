@@ -38,7 +38,7 @@ import java.util.Map;
  * {@link ModbusShadowCodec}（当前值，按 serviceId 去重），设备卡走
  * {@link ManipulationService#getShadows}（按 did 去重、**一屏一次调用**），
  * 字段曲线走 {@link ModbusRegistryHistoryService#range}（按「点位 × 窗口 × 点数」去重）
- * 与其配套的 {@link ModbusTransactionHistoryService#failures}（按「方法 × 窗口」去重）。</p>
+ * 与其配套的 {@link ModbusPollHistoryService#failures}（按「方法 × 窗口」去重）。</p>
  *
  * <h3>取数分组：**只给真正读它的卡片取**</h3>
  * <p>{@code overview} 是按窗口分组的，所以「哪些卡片需要 overview」决定了要发几次查询。
@@ -633,7 +633,7 @@ public class DashboardWidgetDataService {
      * <p><b>{@code alarms.today} 的 value 不在这里算</b>：「今日」= 用户本地时区的 00:00 之后，
      * 而服务端不知道用户时区（也不该按服务器时区猜）。所以这类卡片下发 {@code hourly} 与窗口终点
      * {@code to}，由前端按本地 00:00 求和 —— 与现有 dashboard 页的做法逐字一致
-     * （{@code dashboard.transactions.ts} 的 {@code sumSince(hourly, dayStart(o.to))}）。
+     * （{@code dashboard.polls.ts} 的 {@code sumSince(hourly, dayStart(o.to))}）。
      * 这也是 §D5「服务端只返回原始值」的直接结果。</p>
      */
     private static JsonObject statData(Map<String, Object> config, StatisticsQueryService.Overview overview) {
@@ -759,12 +759,12 @@ public class DashboardWidgetDataService {
 
     /**
      * 服务卡的 data：
-     * {@code {transactionIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
+     * {@code {pollIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>，不是某个状态字段：影子就是
      * 「最后一次成功的采集」，一个从没成功过的方法**根本不会有影子**
      * （{@link ModbusShadowCodec} 的说法）。所以没有影子时只给
-     * {@code transactionIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
+     * {@code pollIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
      * 一行都没有值可显示的空壳不是信息。</p>
      *
      * <p>{@code recordedAt} 属于**整个 function**，不是每个字段各自的：同一张卡的字段必须来自
@@ -790,7 +790,7 @@ public class DashboardWidgetDataService {
      * 采集的那一份做代表（值仍逐寄存器取自各自的影子），所以时间只有一处。</p>
      *
      * <p>按 {@code config.fields} 的**配置顺序**产出；{@code unit} / {@code bit} 取自寄存器定义。
-     * 旧卡的 {@code transactionIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
+     * 旧卡的 {@code pollIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
         List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
@@ -967,7 +967,7 @@ public class DashboardWidgetDataService {
         }
 
         /**
-         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 transactionIndex）。
+         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 pollIndex）。
          * {@code serviceId} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
          * 都给 {@code null} —— 拿不到寄存器序号就无从查这段窗口的历史。
          */

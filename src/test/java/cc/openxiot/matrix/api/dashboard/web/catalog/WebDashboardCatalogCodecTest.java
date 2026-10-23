@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,9 +11,9 @@ import java.util.List;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -78,7 +78,7 @@ class DashboardCatalogCodecTest {
         assertEquals("6512f3a4b5c6d7e8f9a0b1c5", service.getString("id"));
         assertEquals("1 号冷水机组", service.getString("name"));
 
-        JsonObject field = service.getJsonArray("transactions").getJsonObject(0)
+        JsonObject field = service.getJsonArray("polls").getJsonObject(0)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         // 编辑器判「是不是数值」靠 format、「几位小数/单位」靠 unit，两者都必须在
         assertEquals("温度", field.getString("field"));
@@ -112,8 +112,8 @@ class DashboardCatalogCodecTest {
         field.unit = "℃";
         field.bitList = List.of(bit);
 
-        ModbusTransaction function = new ModbusTransaction();
-                    function.from = new ModbusTransactionFrom();
+        ModbusPoll function = new ModbusPoll();
+                    function.from = new ModbusPollFrom();
                     function.from.type = "command";
                     function.from.index = 1;
                     function.index = 1;
@@ -124,7 +124,7 @@ class DashboardCatalogCodecTest {
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
         service.name = "1 号冷水机组";
         service.device = new DeviceOn();
-        service.transactions = List.of(function);
+        service.polls = List.of(function);
         return service;
     }
 }

@@ -11,7 +11,7 @@ import org.bson.types.ObjectId;
 /**
  * 一次阈值告警（库 {@code modbus}、集合 {@code service-alarms}）。
  *
- * <p>在此之前只知道「采到没采到」（失败与否在操作日志 {@code ModbusTransactionHistory.ok} 上），
+ * <p>在此之前只知道「采到没采到」（失败与否在操作日志 {@code ModbusPollHistory.ok} 上），
  * 这张表记的是**采到了但值不对**：读方法的出值越过用户配的阈值就落一条，前端列出来、点「处理」回执。
  * 判定口径见 {@link cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy}，设计见 {@code Modbus-Alarm.md}。</p>
  *
@@ -77,8 +77,8 @@ public class ModbusAlarm {
     @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
     public String serviceId;
 
-    @Schema(description = "方法序号（ModbusTransaction.index）", examples = {"1"}, required = true)
-    public Integer transactionIndex;
+    @Schema(description = "方法序号（ModbusPoll.index）", examples = {"1"}, required = true)
+    public Integer pollIndex;
 
     @Schema(description = "出值名：字段名（response.fields[].field），或位区里某个具名位（bit-list[].field）"
             + "—— 位是独立的结果键，所以它出现在这里与字段平级", examples = {"进水温度"}, required = true)
@@ -136,7 +136,7 @@ public class ModbusAlarm {
 
     // ===== 内部，不下发 =====
 
-    @Schema(description = "未恢复时才有：serviceId#transactionIndex#field。唯一部分索引建在它上面（并发护栏），"
+    @Schema(description = "未恢复时才有：serviceId#pollIndex#field。唯一部分索引建在它上面（并发护栏），"
             + "**绝不下发给前端**", hidden = true)
     public String openKey;
 
@@ -150,7 +150,7 @@ public class ModbusAlarm {
      * 该出值的开行标识。未恢复的行带它、已恢复的行把它 {@code $unset} 掉 ——
      * 于是「有一个 openKey 等于它的行」与「这个出值正在告警」是同一件事。
      */
-    public static String openKeyOf(String serviceId, Integer transactionIndex, String field) {
-        return serviceId + "#" + transactionIndex + "#" + field;
+    public static String openKeyOf(String serviceId, Integer pollIndex, String field) {
+        return serviceId + "#" + pollIndex + "#" + field;
     }
 }

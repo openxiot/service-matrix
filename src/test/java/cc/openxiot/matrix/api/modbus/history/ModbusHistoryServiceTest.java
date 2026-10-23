@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
@@ -15,7 +15,7 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
  *
  * <ul>
  *   <li>值没变时**值历史/影子一个数据库操作都不做** —— 这条是整套成本模型的落点，破了就等于没优化；
- *       例外是操作日志（{@code ModbusTransactionHistory}）：它每调用一条、**跟值变没变无关**，
+ *       例外是操作日志（{@code ModbusPollHistory}）：它每调用一条、**跟值变没变无关**，
  *       是用户拍板接受的写路径放大（靠保留策略兜底）。</li>
  *   <li>**先写明细（历史 / 失败记录）、再更新影子** —— 反过来会让失败的那次变化永久丢失。</li>
  *   <li>明细写失败时**影子必须停在旧态** —— 下次采集才能把同一次变化重判并重试。</li>
@@ -68,13 +68,13 @@ class ModbusHistoryServiceTest {
     private ModbusHistoryService service;
     private ModbusRegistryHistoryRepository registryHistoryRepo;
     private ModbusShadowRepository registryShadowRepo;
-    private ModbusTransactionHistoryRepository pollingHistoryRepo;
+    private ModbusPollHistoryRepository pollingHistoryRepo;
 
     @BeforeEach
     void setUp() {
         registryHistoryRepo = mock(ModbusRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusShadowRepository.class);
-        pollingHistoryRepo = mock(ModbusTransactionHistoryRepository.class);
+        pollingHistoryRepo = mock(ModbusPollHistoryRepository.class);
 
         service = new ModbusHistoryService();
         service.registryHistoryRepo = registryHistoryRepo;
@@ -132,11 +132,11 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        ArgumentCaptor<ModbusTransactionHistory> log = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
+        ArgumentCaptor<ModbusPollHistory> log = ArgumentCaptor.forClass(ModbusPollHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusTransactionHistory row = log.getValue();
+        ModbusPollHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.transactionIndex);
+        assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.TRUE, row.ok);
         assertEquals("read", row.operation);
         assertNull(row.type);
@@ -169,11 +169,11 @@ class ModbusHistoryServiceTest {
     void opLog_failure_recordsTypeAndRemoteCode() {
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
-        ArgumentCaptor<ModbusTransactionHistory> log = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
+        ArgumentCaptor<ModbusPollHistory> log = ArgumentCaptor.forClass(ModbusPollHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusTransactionHistory row = log.getValue();
+        ModbusPollHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.transactionIndex);
+        assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.FALSE, row.ok);
         assertEquals("read", row.operation);
         assertNull(row.fields);
@@ -273,9 +273,9 @@ class ModbusHistoryServiceTest {
         inOrder.verify(pollingHistoryRepo).insert(any());
 
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
-        ModbusTransactionHistory row = savedPollingLog();
+        ModbusPollHistory row = savedPollingLog();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.transactionIndex.intValue());
+        assertEquals(FUNCTION_INDEX, row.pollIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
         assertEquals(408, row.remoteCode);
         assertEquals(TIMEOUT, row.message);
@@ -312,7 +312,7 @@ class ModbusHistoryServiceTest {
 
         service.recordFailure(modbusService(), function(), crcMismatch()).await().indefinitely();
 
-        ModbusTransactionHistory row = savedPollingLog();
+        ModbusPollHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(row.type));
         assertEquals(CRC_ERROR, row.message);
         assertNull(row.remoteCode);   // CRC 不符没有远端码 —— 有码的是从站异常与父设备报错
@@ -341,7 +341,7 @@ class ModbusHistoryServiceTest {
         service.recordFailure(modbusService(), function(), new IllegalStateException("connection reset"))
                 .await().indefinitely();
 
-        ModbusTransactionHistory row = savedPollingLog();
+        ModbusPollHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.UNKNOWN.name(), row.type);
         assertNull(row.remoteCode);
         assertEquals("connection reset", row.message);   // 明细照旧保留，分类不确定不等于信息丢失
@@ -556,9 +556,9 @@ class ModbusHistoryServiceTest {
         return service;
     }
 
-    private static ModbusTransaction function() {
-        ModbusTransaction function = new ModbusTransaction();
-                    function.from = new ModbusTransactionFrom();
+    private static ModbusPoll function() {
+        ModbusPoll function = new ModbusPoll();
+                    function.from = new ModbusPollFrom();
                     function.from.type = "command";
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
@@ -626,8 +626,8 @@ class ModbusHistoryServiceTest {
         return registryRowsOf().stream().map(row -> row.name).toList();
     }
 
-    private ModbusTransactionHistory savedPollingLog() {
-        ArgumentCaptor<ModbusTransactionHistory> captor = ArgumentCaptor.forClass(ModbusTransactionHistory.class);
+    private ModbusPollHistory savedPollingLog() {
+        ArgumentCaptor<ModbusPollHistory> captor = ArgumentCaptor.forClass(ModbusPollHistory.class);
         verify(pollingHistoryRepo).insert(captor.capture());
         return captor.getValue();
     }

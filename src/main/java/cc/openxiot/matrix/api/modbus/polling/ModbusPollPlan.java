@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -38,7 +38,7 @@ public final class ModbusPollPlan {
     }
 
     /** 该不该入表：三条口径见类注释。 */
-    public static boolean shouldPoll(ModbusTransaction function) {
+    public static boolean shouldPoll(ModbusPoll function) {
         if (function == null || function.index == null) {
             return false;
         }
@@ -57,7 +57,7 @@ public final class ModbusPollPlan {
     }
 
     /**
-     * 一份定义 → 该服务的任务清单（{@code transactionIndex} 升序，不改动入参），
+     * 一份定义 → 该服务的任务清单（{@code pollIndex} 升序，不改动入参），
      * 输入是**未落库**的 {@link ModbusPolling}（{@code _id} 由**这里**生成，插入时原样落库）。
      *
      * <p>{@code _id} 不等插入回写（回写时机由驱动/编解码器决定，不是这条链路能假定的）：
@@ -74,25 +74,25 @@ public final class ModbusPollPlan {
                                            int jitterPercent, RandomGenerator random) {
         List<ModbusPolling> tasks = new ArrayList<>();
         if (service == null || service.id == null || did == null || did.isBlank()
-                || service.transactions == null) {
+                || service.polls == null) {
             return tasks;
         }
         String serviceId = service.id.toHexString();
-        for (ModbusTransaction function : service.transactions) {
+        for (ModbusPoll function : service.polls) {
             if (!shouldPoll(function)) {
                 continue;
             }
             ModbusPolling task = new ModbusPolling();
             task.id = new ObjectId();
             task.serviceId = serviceId;
-            task.transactionIndex = function.index;
+            task.pollIndex = function.index;
             task.did = did;
             task.interval = function.interval;
             task.nextRunAt = new Date(ModbusPollSchedule.insertRunAt(now, function.interval,
                     jitterPercent, random));
             tasks.add(task);
         }
-        tasks.sort((left, right) -> Integer.compare(left.transactionIndex, right.transactionIndex));
+        tasks.sort((left, right) -> Integer.compare(left.pollIndex, right.pollIndex));
         return tasks;
     }
 }

@@ -60,7 +60,7 @@ public class ModbusRegistryHistoryService {
      */
     public Uni<RangeResult> range(
             String serviceId,
-            Integer transactionIndex,
+            Integer pollIndex,
             String field,
             Date from,
             Date to,
@@ -78,7 +78,7 @@ public class ModbusRegistryHistoryService {
 
         // 逐寄存器：field 名 == 寄存器名（见 configSnapshot.registries），先按服务定义把它解析成
         // registerIndex。解析不到（服务不存在 / 字段写错）报错，与现有 "serviceId is required"
-        // 的报错风格一致；transactionIndex 为兼容旧前端请求仍接受、仅忽略（逐寄存器后不再需要它）。
+        // 的报错风格一致；pollIndex 为兼容旧前端请求仍接受、仅忽略（逐寄存器后不再需要它）。
         return serviceRepo.findById(serviceId)
                 .map(service -> resolveRegister(service, field))
                 .chain(reg -> Uni.combine().all()

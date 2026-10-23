@@ -6,9 +6,9 @@ import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code transactionIndex} 方法序号不再需要，
+ * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code pollIndex} 方法序号不再需要，
  * 字段按 {@code findFunctionByField} 在服务定义里解析）。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
@@ -188,11 +188,11 @@ public class DashboardWidgetOwnershipValidator {
                     if (serviceId == null) {
                         continue;
                     }
-                    // 老卡带 transactionIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
-                    Integer transactionIndex = DashboardWidgetConfigs.intVal(config.get("transactionIndex"));
+                    // 老卡带 pollIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
+                    Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
                     addServiceId(serviceIds, serviceId);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, transactionIndex, field));
+                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollIndex, field));
                     }
                 }
                 case "line" -> {
@@ -200,13 +200,13 @@ public class DashboardWidgetOwnershipValidator {
                         continue;
                     }
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    Integer transactionIndex = DashboardWidgetConfigs.intVal(config.get("transactionIndex"));
+                    Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
                     String field = DashboardWidgetConfigs.str(config.get("field"));
                     if (serviceId == null || field == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
-                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, transactionIndex, field));
+                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollIndex, field));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
@@ -281,11 +281,11 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
             return "service does not belong to this space: " + ref.serviceId();
         }
-        // 老卡带 transactionIndex（方法序号）：按那个方法的应答字段校验，行为不变。
-        if (ref.transactionIndex() != null) {
-            ModbusTransaction function = findFunction(service, ref.transactionIndex());
+        // 老卡带 pollIndex（方法序号）：按那个方法的应答字段校验，行为不变。
+        if (ref.pollIndex() != null) {
+            ModbusPoll function = findFunction(service, ref.pollIndex());
             if (function == null) {
-                return "function not found: " + ref.transactionIndex();
+                return "function not found: " + ref.pollIndex();
             }
             if (!hasField(function, ref.field())) {
                 return "field not found: " + ref.field();
@@ -306,11 +306,11 @@ public class DashboardWidgetOwnershipValidator {
      * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
      * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
      */
-    private static ModbusTransaction findFunctionByField(ModbusService service, String field) {
-        if (service == null || service.transactions == null) {
+    private static ModbusPoll findFunctionByField(ModbusService service, String field) {
+        if (service == null || service.polls == null) {
             return null;
         }
-        for (ModbusTransaction function : service.transactions) {
+        for (ModbusPoll function : service.polls) {
             if (function != null && hasField(function, field)) {
                 return function;
             }
@@ -318,11 +318,11 @@ public class DashboardWidgetOwnershipValidator {
         return null;
     }
 
-    private static ModbusTransaction findFunction(ModbusService service, Integer index) {
-        if (service.transactions == null) {
+    private static ModbusPoll findFunction(ModbusService service, Integer index) {
+        if (service.polls == null) {
             return null;
         }
-        for (ModbusTransaction function : service.transactions) {
+        for (ModbusPoll function : service.polls) {
             if (function != null && index.equals(function.index)) {
                 return function;
             }
@@ -338,8 +338,8 @@ public class DashboardWidgetOwnershipValidator {
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
-    private static boolean hasField(ModbusTransaction function, String field) {
-        for (ModbusResponseField candidate : ModbusTransaction.responseFields(function)) {
+    private static boolean hasField(ModbusPoll function, String field) {
+        for (ModbusResponseField candidate : ModbusPoll.responseFields(function)) {
             if (candidate == null) {
                 continue;
             }
@@ -373,8 +373,8 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。transactionIndex 仅老卡带，可为 null。 */
-    private record ServiceRef(int index, String widgetId, String serviceId, Integer transactionIndex, String field) {
+    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。pollIndex 仅老卡带，可为 null。 */
+    private record ServiceRef(int index, String widgetId, String serviceId, Integer pollIndex, String field) {
     }
 
     /** 一张设备卡片的引用。 */

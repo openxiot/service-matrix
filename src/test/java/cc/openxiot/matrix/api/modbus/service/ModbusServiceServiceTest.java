@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.service;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,9 +30,9 @@ import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -308,7 +308,7 @@ class ModbusServiceServiceTest {
         // 写方法（fc 06）：帧按字段 + invoke 给的值**现组**，应答是请求回显 —— 返回空对象。
         // 回显写入值会被 ModbusHistoryService 当成一次采集样本灌进历史曲线（它的口径是
         // 「values 非空即为一次采样」），所以这里必须是空的。
-        ModbusTransaction write = writeFunction(null);
+        ModbusPoll write = writeFunction(null);
         givenService(modbusService(), write);
         givenParentResult(parentResult(Status.COMPLETED, null, "0106000100C8D99C"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
@@ -325,7 +325,7 @@ class ModbusServiceServiceTest {
     @Test
     void writeMethodFallsBackToTheDefaultValue() {
         // 没给值的字段回落定义里的缺省值：那 138 条带死值的点表写命令才能开箱即用
-        ModbusTransaction write = writeFunction(100);
+        ModbusPoll write = writeFunction(100);
         givenService(modbusService(), write);
         givenParentResult(parentResult(Status.COMPLETED, null, "010600010064D9E1"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
@@ -456,8 +456,8 @@ class ModbusServiceServiceTest {
 
     // ===== 夹具 =====
 
-    private void givenService(ModbusService value, ModbusTransaction function) {
-        value.transactions = List.of(function);
+    private void givenService(ModbusService value, ModbusPoll function) {
+        value.polls = List.of(function);
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(value));
     }
 
@@ -505,7 +505,7 @@ class ModbusServiceServiceTest {
         service.version = ModbusService.VERSION;
         service.configSnapshot = configSnapshot();
         service.slaveId = slaveId;
-        service.transactions = List.of(function());
+        service.polls = List.of(function());
         return service;
     }
 
@@ -520,9 +520,9 @@ class ModbusServiceServiceTest {
         return new ModbusPollBaseline(Map.of("进水温度", 61.5), null, lastError);
     }
 
-    private static ModbusTransaction function() {
-        ModbusTransaction function = new ModbusTransaction();
-                    function.from = new ModbusTransactionFrom();
+    private static ModbusPoll function() {
+        ModbusPoll function = new ModbusPoll();
+                    function.from = new ModbusPollFrom();
                     function.from.type = "command";
                     function.from.index = FUNCTION_INDEX;
                     function.index = FUNCTION_INDEX;
@@ -540,8 +540,8 @@ class ModbusServiceServiceTest {
     }
 
     /** 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。 */
-    private static ModbusTransaction writeFunction(Integer defaultValue) {
-        ModbusTransaction write = function();
+    private static ModbusPoll writeFunction(Integer defaultValue) {
+        ModbusPoll write = function();
         write.request = ModbusRequests.write("06", 1,
                 ModbusRequests.field(1, "写入值", "uint16", defaultValue));
         write.response = null;

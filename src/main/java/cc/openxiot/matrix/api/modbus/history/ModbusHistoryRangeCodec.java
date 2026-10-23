@@ -7,7 +7,7 @@ import java.util.Date;
 
 /**
  * 区间曲线（{@code /history/range}）的响应体编码：
- * {@code {serviceId, transactionIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
+ * {@code {serviceId, pollIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
  *
  * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code DashboardWidgetDataService}）下发的是**同一份形状**，
  * 只是另外缀上 {@code unit} / {@code step} / {@code failures}。前端两条路共用同一个
@@ -26,7 +26,7 @@ public final class ModbusHistoryRangeCodec {
     /**
      * 编码一个点位的区间查询结果（历史页那条路，包着 {@code RangeResult} 调用下面的底层方法）。
      *
-     * <p>{@code serviceId} / {@code transactionIndex} / {@code field} 由调用方传进来，而不是从
+     * <p>{@code serviceId} / {@code pollIndex} / {@code field} 由调用方传进来，而不是从
      * {@link cc.openxiot.matrix.api.modbus.history.registry.ModbusRegistryHistoryService.RangeResult} 里取：
      * 那个记录只有「这两个时刻之间、要多少个点」，
      * 是哪条曲线由调用方（HTTP 的查询参数，或看板那张卡的配置）决定 —— 而且请求里那份是**字符串**，
@@ -34,11 +34,11 @@ public final class ModbusHistoryRangeCodec {
      */
     public static JsonObject encode(
             String serviceId,
-            Integer transactionIndex,
+            Integer pollIndex,
             String field,
             cc.openxiot.matrix.api.modbus.history.registry.ModbusRegistryHistoryService.RangeResult result
     ) {
-        return encode(serviceId, transactionIndex, field,
+        return encode(serviceId, pollIndex, field,
                 result.from(), result.to(), result.maxPoints(), result.window());
     }
 
@@ -49,7 +49,7 @@ public final class ModbusHistoryRangeCodec {
      * {@code ModbusHistoryCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
      * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线**。</p>
      *
-     * <p>{@code identity} 在历史页那条路是方法序号（{@code transactionIndex}），在看板那条路是寄存器序号
+     * <p>{@code identity} 在历史页那条路是方法序号（{@code pollIndex}），在看板那条路是寄存器序号
      * （{@code registerIndex}）—— 二者都只是请求里那份标识的回显，前端画图只用
      * {@code points} / {@code carryIn}，不按它取数据。</p>
      */
@@ -75,7 +75,7 @@ public final class ModbusHistoryRangeCodec {
 
         JsonObject body = new JsonObject()
                 .put("serviceId", serviceId)
-                .put("transactionIndex", identity)
+                .put("pollIndex", identity)
                 .put("field", field)
                 .put("from", from.getTime())
                 .put("to", to.getTime())

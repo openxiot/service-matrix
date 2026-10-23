@@ -186,7 +186,7 @@ public final class DashboardWidgetStructureValidator {
             }
             return null;
         }
-        // serviceField：服务 + 寄存器字段（不再存方法序号 transactionIndex，由取数时解析）。
+        // serviceField：服务 + 寄存器字段（不再存方法序号 pollIndex，由取数时解析）。
         // 字段是否真实存在由 DashboardWidgetOwnershipValidator 查库确认。
         if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
             return "config.serviceId is required";

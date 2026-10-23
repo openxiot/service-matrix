@@ -14,9 +14,9 @@ import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
@@ -274,10 +274,10 @@ public class ModbusServiceService {
     public Uni<JsonObject> invoke(
             String ownerId,
             String serviceId,
-            Integer transactionIndex,
+            Integer pollIndex,
             Map<String, Object> values
     ) {
-        return invoke(ownerId, serviceId, transactionIndex, values, null);
+        return invoke(ownerId, serviceId, pollIndex, values, null);
     }
 
     /**
@@ -294,16 +294,16 @@ public class ModbusServiceService {
     public Uni<JsonObject> invokePolled(
             String ownerId,
             String serviceId,
-            Integer transactionIndex,
+            Integer pollIndex,
             ModbusPollBaselines baselines
     ) {
-        return invoke(ownerId, serviceId, transactionIndex, null, baselines);
+        return invoke(ownerId, serviceId, pollIndex, null, baselines);
     }
 
     private Uni<JsonObject> invoke(
             String ownerId,
             String serviceId,
-            Integer transactionIndex,
+            Integer pollIndex,
             Map<String, Object> values,
             ModbusPollBaselines baselines
     ) {
@@ -311,27 +311,27 @@ public class ModbusServiceService {
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
-        if (transactionIndex == null || transactionIndex < 1) {
+        if (pollIndex == null || pollIndex < 1) {
             return Uni.createFrom().failure(new IllegalArgumentException("function is required"));
         }
 
         return repo.findById(serviceId).onItem()
                 .transformToUni(service -> service == null
                         ? Uni.createFrom().failure(new IllegalArgumentException("modbus service not found: " + serviceId))
-                        : invokeFunction(ownerId, service, transactionIndex, values, baselines));
+                        : invokeFunction(ownerId, service, pollIndex, values, baselines));
     }
 
     private Uni<JsonObject> invokeFunction(
             String ownerId,
             ModbusService service,
-            int transactionIndex,
+            int pollIndex,
             Map<String, Object> values,
             ModbusPollBaselines baselines
     ) {
-        ModbusTransaction function = findFunction(service, transactionIndex);
+        ModbusPoll function = findFunction(service, pollIndex);
         if (function == null) {
             // 方法不存在是请求写错了，不算「执行失败」：没有可归因的 function，不进故障记录
-            return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + transactionIndex));
+            return Uni.createFrom().failure(new IllegalArgumentException("modbus service function not found: index=" + pollIndex));
         }
 
         // 入参对账同样在这里做（execute 之前）：缺值 / 未知字段名 / 给读方法传值都是**调用方的请求错误**，
@@ -358,7 +358,7 @@ public class ModbusServiceService {
     private Uni<JsonObject> execute(
             String ownerId,
             ModbusService service,
-            ModbusTransaction function,
+            ModbusPoll function,
             Map<String, Object> values,
             ModbusPollBaselines baselines
     ) {
@@ -408,7 +408,7 @@ public class ModbusServiceService {
      */
     private static String requestFrame(
             ModbusService service,
-            ModbusTransaction function,
+            ModbusPoll function,
             Map<String, Object> values
     ) {
         DeviceOn device = service.device;
@@ -446,7 +446,7 @@ public class ModbusServiceService {
      */
     private Uni<Void> recordHistory(
             ModbusService service,
-            ModbusTransaction function,
+            ModbusPoll function,
             JsonObject values,
             ModbusPollBaselines baselines
     ) {
@@ -482,7 +482,7 @@ public class ModbusServiceService {
      * <p>没有内存基准、也不扩影子：判定需要的「哪些出值开着」只能从告警表读，
      * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
      */
-    private Uni<Void> evaluateAlarms(ModbusService service, ModbusTransaction function, JsonObject values) {
+    private Uni<Void> evaluateAlarms(ModbusService service, ModbusPoll function, JsonObject values) {
         return alarmService.evaluate(service, function, values)
                 .onFailure().invoke(e -> logger.warnv(
                         "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
@@ -502,7 +502,7 @@ public class ModbusServiceService {
      */
     private Uni<Void> recordFailure(
             ModbusService service,
-            ModbusTransaction function,
+            ModbusPoll function,
             Throwable error,
             ModbusPollBaselines baselines
     ) {
@@ -557,7 +557,7 @@ public class ModbusServiceService {
     }
 
     /** 父设备应答 → 方法返回值。 */
-    private static JsonObject decodeFields(ModbusTransaction function, ActionOperation result) {
+    private static JsonObject decodeFields(ModbusPoll function, ActionOperation result) {
         if (result == null) {
             throw ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "no response from parent device");
         }
@@ -569,7 +569,7 @@ public class ModbusServiceService {
                             : result.description());
         }
 
-        List<ModbusResponseField> fields = ModbusTransaction.responseFields(function);
+        List<ModbusResponseField> fields = ModbusPoll.responseFields(function);
         if (fields.isEmpty()) {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();
@@ -590,11 +590,11 @@ public class ModbusServiceService {
                 "no frame in parent device response, status=" + result.status());
     }
 
-    private static ModbusTransaction findFunction(ModbusService service, int index) {
-        if (service.transactions == null) {
+    private static ModbusPoll findFunction(ModbusService service, int index) {
+        if (service.polls == null) {
             return null;
         }
-        return service.transactions.stream()
+        return service.polls.stream()
                 .filter(function -> function != null
                         && function.index != null && function.index.equals(index))
                 .findFirst()
@@ -623,7 +623,7 @@ public class ModbusServiceService {
         // 顶层从站地址与 device/functions 同级，patch 缺省时保留既有值（别看成不可改）
         merged.slaveId = patch.slaveId != null ? patch.slaveId : existing.slaveId;
         merged.device = patch.device != null ? patch.device : existing.device;
-        merged.transactions = patch.transactions != null ? patch.transactions : existing.transactions;
+        merged.polls = patch.polls != null ? patch.polls : existing.polls;
         return merged;
     }
 }

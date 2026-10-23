@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>断言的重点不是「排了个序」，而是**逐服务先按 {@code limit + 1} 截一刀再合并，得到的确实是
  * 全局前 limit 条** —— 这是那套接口敢只查一次就下结论的依据；另加「截断标志」与「同一时刻怎么排」
- * 两处边界。与 {@code ModbusTransactionHistoryServiceTest} 同结构，两处的口径本该一致。</p>
+ * 两处边界。与 {@code ModbusPollHistoryServiceTest} 同结构，两处的口径本该一致。</p>
  */
 class ModbusAlarmQueryServiceTest {
 
@@ -111,7 +111,7 @@ class ModbusAlarmQueryServiceTest {
     private static ModbusAlarm row(String serviceId, Long at, Date recoveredAt) {
         ModbusAlarm alarm = new ModbusAlarm();
         alarm.serviceId = serviceId;
-        alarm.transactionIndex = 1;
+        alarm.pollIndex = 1;
         alarm.field = "进水温度";
         alarm.level = "WARN";
         alarm.text = "温度过高";

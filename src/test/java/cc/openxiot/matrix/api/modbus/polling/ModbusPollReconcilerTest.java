@@ -1,13 +1,13 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -175,15 +175,15 @@ class ModbusPollReconcilerTest {
         space.rootId = SPACE_ID;
         device.space = space;
         service.device = device;
-        ModbusTransaction function = new ModbusTransaction();
-                    function.from = new ModbusTransactionFrom();
+        ModbusPoll function = new ModbusPoll();
+                    function.from = new ModbusPollFrom();
                     function.from.type = "command";
                     function.from.index = 1;
                     function.index = 1;
         function.interval = 30;
         function.polling = Boolean.TRUE;
         function.request = ModbusRequests.holding();
-        service.transactions = List.of(function);
+        service.polls = List.of(function);
         return service;
     }
 
@@ -198,7 +198,7 @@ class ModbusPollReconcilerTest {
         ModbusPolling row = new ModbusPolling();
         row.id = id;
         row.serviceId = SID;
-        row.transactionIndex = 1;
+        row.pollIndex = 1;
         row.did = DID;
         row.interval = 30;
         row.nextRunAt = new Date(NOW);

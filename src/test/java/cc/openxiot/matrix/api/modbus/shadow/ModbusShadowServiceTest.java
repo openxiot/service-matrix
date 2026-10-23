@@ -6,10 +6,10 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -65,7 +65,7 @@ class ModbusShadowServiceTest {
         JsonObject temp = grid.get(0);
         assertEquals("进水温度", temp.getString("name"));
         assertEquals(61.5, temp.getValue("value"));
-        assertEquals(1, temp.getInteger("transactionIndex"));
+        assertEquals(1, temp.getInteger("pollIndex"));
         assertEquals(t0, temp.getLong("recordedAt"));
         assertEquals("current", temp.getString("status"));
         // 有值 + 最近失败 → stale，值仍是最后已知值
@@ -78,14 +78,14 @@ class ModbusShadowServiceTest {
         JsonObject pressure = grid.get(2);
         assertEquals("压力", pressure.getString("name"));
         assertFalse(pressure.containsKey("value"));
-        assertFalse(pressure.containsKey("transactionIndex"));
+        assertFalse(pressure.containsKey("pollIndex"));
         assertEquals("no-data", pressure.getString("status"));
     }
 
     @Test
     void registerCacheWithoutSnapshotReturnsEmpty() {
         ModbusService svc = service();
-        svc.transactions = List.of(readFunction(1, "进水温度"));
+        svc.polls = List.of(readFunction(1, "进水温度"));
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
 
@@ -143,9 +143,9 @@ class ModbusShadowServiceTest {
 
     // ---- 夹具 ----
 
-    private void givenService(List<ModbusTransaction> functions) {
+    private void givenService(List<ModbusPoll> functions) {
         ModbusService svc = service();
-        svc.transactions = functions;
+        svc.polls = functions;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
     }
 
@@ -178,8 +178,8 @@ class ModbusShadowServiceTest {
         return cfg;
     }
 
-    private static ModbusTransaction readFunction(int index, String fieldName) {
-        ModbusTransaction fn = new ModbusTransaction();
+    private static ModbusPoll readFunction(int index, String fieldName) {
+        ModbusPoll fn = new ModbusPoll();
         fn.index = index;
         fn.name = "读" + fieldName;
         fn.request = ModbusRequests.holding();

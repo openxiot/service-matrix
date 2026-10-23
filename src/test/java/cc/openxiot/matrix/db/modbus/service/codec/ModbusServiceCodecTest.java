@@ -6,15 +6,15 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusRegistryAlarmCodec;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.transaction.codec.ModbusTransactionCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.service.transaction.response.field.codec.ModbusResponseFieldCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequestField;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusRequestCodec;
-import cc.openxiot.matrix.db.modbus.service.transaction.request.codec.ModbusRequestFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.poll.codec.ModbusPollCodec;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.service.poll.response.field.codec.ModbusResponseFieldCodec;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequestField;
+import cc.openxiot.matrix.db.modbus.service.poll.request.codec.ModbusRequestCodec;
+import cc.openxiot.matrix.db.modbus.service.poll.request.codec.ModbusRequestFieldCodec;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -68,7 +68,7 @@ class ModbusServiceCodecTest {
                 "lifecycle": "development"
               },
               "device": { "did": "did-1", "siid": 1, "aiid": 1, "argument": 1 },
-              "transactions": [
+              "polls": [
                 {
                   "index": 1,
                   "from": { "type": "command", "index": 1 },
@@ -163,7 +163,7 @@ class ModbusServiceCodecTest {
         assertNull(ModbusServiceValidator.validate(service));
         assertEquals(ModbusService.VERSION, service.version.intValue());
         // 四种写方法（05 单线圈 / 06 单寄存器 / 0F 多位 / 10 多寄存器）各一个，读方法四个
-        assertEquals(4, service.transactions.stream().filter(f -> ModbusTransaction.responseFields(f).isEmpty()).count());
+        assertEquals(4, service.polls.stream().filter(f -> ModbusPoll.responseFields(f).isEmpty()).count());
     }
 
     @Test
@@ -184,9 +184,9 @@ class ModbusServiceCodecTest {
         assertEquals(1, service.device.aiid.intValue());
         assertEquals(1, service.device.argument.intValue());
 
-        assertEquals(5, service.transactions.size());
-        ModbusTransaction first = service.transactions.get(0);
-        assertEquals(1, first.index.intValue());   // 方法身份（modbus.polls.transactionIndex 读它）
+        assertEquals(5, service.polls.size());
+        ModbusPoll first = service.polls.get(0);
+        assertEquals(1, first.index.intValue());   // 方法身份（modbus.polls.pollIndex 读它）
         assertEquals("读进水温度", first.name);
         assertEquals(5, first.interval.intValue());   // 服务端自动调用周期（秒）
         assertEquals(Boolean.TRUE, first.polling);    // 自动轮询开关
@@ -226,7 +226,7 @@ class ModbusServiceCodecTest {
         assertEquals("CRITICAL", temp.alarms.get(1).level);
         assertEquals("温度严重过高", temp.alarms.get(1).text);
 
-        ModbusResponseField state = service.transactions.get(1).response.fields.get(0);
+        ModbusResponseField state = service.polls.get(1).response.fields.get(0);
         assertEquals("开关状态", state.field);
         assertEquals("ABCD", state.byteOrder);
         assertEquals(2, state.valueList.size());
@@ -237,7 +237,7 @@ class ModbusServiceCodecTest {
         assertNull(state.bitList);
 
         // 01 读位：位清单落在字段上（字段自身出整段位掩码）
-        ModbusResponseField coils = service.transactions.get(2).response.fields.get(0);
+        ModbusResponseField coils = service.polls.get(2).response.fields.get(0);
         assertEquals("线圈状态", coils.field);
         assertEquals(2, coils.bitList.size());
         assertEquals(0, coils.bitList.get(0).offset.intValue());
@@ -257,7 +257,7 @@ class ModbusServiceCodecTest {
         assertEquals("进水阀未关闭", valve.alarms.get(0).text);
 
         // 写方法：数量由字段推出（quantity 不填），响应为空（写应答是请求回显）
-        ModbusRequest single = service.transactions.get(3).request;
+        ModbusRequest single = service.polls.get(3).request;
         assertEquals("06", single.fc);
         assertEquals(1, single.start.intValue());
         assertNull(single.quantity);
@@ -266,9 +266,9 @@ class ModbusServiceCodecTest {
         assertEquals("int16", single.fields.get(0).format);
         assertNull(single.fields.get(0).offset);        // fc 06 帧里没有「第几个」
         assertEquals(70, ((Number) single.fields.get(0).value).intValue());
-        assertNull(service.transactions.get(3).response);
+        assertNull(service.polls.get(3).response);
 
-        ModbusRequest multiple = service.transactions.get(4).request;
+        ModbusRequest multiple = service.polls.get(4).request;
         assertEquals("10", multiple.fc);
         assertEquals(2, multiple.fields.size());
         assertEquals(0, multiple.fields.get(0).offset.intValue());
@@ -300,7 +300,7 @@ class ModbusServiceCodecTest {
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
 
         // 实体里叫 valueList，出去必须是示例文件里的 value-list
-        JsonObject state = o.getJsonArray("transactions").getJsonObject(1)
+        JsonObject state = o.getJsonArray("polls").getJsonObject(1)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         JsonArray valueList = state.getJsonArray("value-list");
         assertEquals(2, valueList.size());
@@ -308,7 +308,7 @@ class ModbusServiceCodecTest {
         assertEquals(0L, valueList.getJsonObject(0).getLong("value").longValue());
 
         // 实体里叫 bitList，出去必须是示例文件里的 bit-list
-        JsonObject coils = o.getJsonArray("transactions").getJsonObject(2)
+        JsonObject coils = o.getJsonArray("polls").getJsonObject(2)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         JsonArray bitList = coils.getJsonArray("bit-list");
         assertEquals(2, bitList.size());
@@ -339,11 +339,11 @@ class ModbusServiceCodecTest {
         assertEquals("=", bitAlarm.getString("compare"));
 
         // 没配告警的字段不再有「alarms」键（空键不出现的行为归 emptyOrBogusAlarmArraysDoNotSurviveDecoding）
-        JsonObject firstField = o.getJsonArray("transactions").getJsonObject(0)
+        JsonObject firstField = o.getJsonArray("polls").getJsonObject(0)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
         assertFalse(firstField.containsKey("alarms"));
         // 位清单上的位也不再有 alarms 键
-        JsonObject bit = o.getJsonArray("transactions").getJsonObject(2)
+        JsonObject bit = o.getJsonArray("polls").getJsonObject(2)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0)
                 .getJsonArray("bit-list").getJsonObject(0);
         assertFalse(bit.containsKey("alarms"));
@@ -376,21 +376,21 @@ class ModbusServiceCodecTest {
         // 写方法（fc 05/06/0F/10）：应答是请求回显，没有读值 —— 整个 response 键不出现，
         // 而不是留下 `response: {}` 或 `fields: []` 这种空壳
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
-        service.transactions.get(0).response = ModbusResponses.of();
+        service.polls.get(0).response = ModbusResponses.of();
 
         JsonObject o = ModbusServiceCodec.encode(service);
-        assertFalse(o.getJsonArray("transactions").getJsonObject(0).containsKey("response"));
+        assertFalse(o.getJsonArray("polls").getJsonObject(0).containsKey("response"));
 
         // 反过来：解出来就是 null，和「本来没配」完全同形
         assertNull(ModbusServiceCodec.decode(ModbusServiceCodec.encode(service))
-                .transactions.get(0).response);
+                .polls.get(0).response);
     }
 
     @Test
     void responseFieldsLiveUnderTheResponseObject() {
         // 对外的 JSON 形状：response 是对象，字段表在 response.fields 下（与 request.fields 对称）
         ModbusService service = ModbusServiceCodec.decode(new JsonObject(EXAMPLE));
-        JsonObject first = ModbusServiceCodec.encode(service).getJsonArray("transactions").getJsonObject(0);
+        JsonObject first = ModbusServiceCodec.encode(service).getJsonArray("polls").getJsonObject(0);
 
         assertTrue(first.containsKey("response"));
         assertEquals(1, first.getJsonObject("response").getJsonArray("fields").size());
@@ -454,15 +454,15 @@ class ModbusServiceCodecTest {
         assertTrue(ModbusServiceCodec.encodeBrief((List<ModbusService>) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((ModbusService) null).isEmpty());
         assertTrue(ModbusServiceCodec.encode((List<ModbusService>) null).isEmpty());
-        assertTrue(ModbusTransactionCodec.encode((ModbusTransaction) null).isEmpty());
-        assertTrue(ModbusTransactionCodec.encode((List<ModbusTransaction>) null).isEmpty());
+        assertTrue(ModbusPollCodec.encode((ModbusPoll) null).isEmpty());
+        assertTrue(ModbusPollCodec.encode((List<ModbusPoll>) null).isEmpty());
         assertTrue(ModbusResponseFieldCodec.encode((ModbusResponseField) null).isEmpty());
         assertTrue(ModbusResponseFieldCodec.encode((List<ModbusResponseField>) null).isEmpty());
         assertTrue(ModbusRequestCodec.encode((ModbusRequest) null).isEmpty());
         assertTrue(ModbusRequestFieldCodec.encode((ModbusRequestField) null).isEmpty());
         assertNull(ModbusServiceCodec.decode(null));
-        assertNull(ModbusTransactionCodec.decode((JsonObject) null));
-        assertNull(ModbusTransactionCodec.decode((JsonArray) null));
+        assertNull(ModbusPollCodec.decode((JsonObject) null));
+        assertNull(ModbusPollCodec.decode((JsonArray) null));
         assertNull(ModbusResponseFieldCodec.decode((JsonObject) null));
         assertNull(ModbusResponseFieldCodec.decode((JsonArray) null));
         assertNull(ModbusRequestCodec.decode(null));
