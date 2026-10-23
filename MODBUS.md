@@ -730,10 +730,10 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     （`record` 整体替换 `fields`，最坏拖到保活周期就自愈）。
   * 测试：新增 66 个纯单测（`ModbusPollScheduleTest` / `ModbusPollPlanTest` / `ModbusPollWheelTest` /
     `ModbusPollBaselinesTest` / `ModbusLastPollingPlanTest` + 两个既有测试文件的扩充），另加
-    `ModbusPollResourceTest`（`@QuarkusTest`，查询接口 + 鉴权 + 空运行时状态，5 例）。
+    `ModbusPollingResourceTest`（`@QuarkusTest`，查询接口 + 鉴权 + 空运行时状态，5 例）。
     **`@QuarkusTest` 本机是可以跑的**：只要连库的东西都 `@InjectMock` 掉（`DeviceResourceTest` /
-    `ModbusConfigResourceTest` / `ModbusServiceResourceTest` / `ModbusPollResourceTest` 四个共 49 例全绿）；
-    跑不了的只有**真的要连 Mongo** 的那些（`SpaceResourceTest.getGraph_succeeds`）。
+    `ModbusConfigResourceTest` / `ModbusServiceResourceTest` / `ModbusPollingResourceTest` 四个共 49 例全绿）；
+    跑不了的只有 **真的要连 Mongo** 的那些（`SpaceResourceTest.getGraph_succeeds`）。
     纯单测 305 例，合计 354 例。
   * **仍未做**：ACA 侧 `maxReplicas=1` 由 ops 保证（代码只提供开关与那条启动日志），
     并发上限 20 与 DTU 实际承载是否匹配需要一次实测 —— 两件都记在

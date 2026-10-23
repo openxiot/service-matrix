@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import org.bson.types.ObjectId;
 
 /**

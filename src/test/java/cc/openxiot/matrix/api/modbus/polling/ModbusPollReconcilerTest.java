@@ -1,10 +1,10 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;

@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -15,8 +15,8 @@ import static org.mockito.Mockito.when;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
@@ -43,7 +43,7 @@ import java.util.List;
  * <p>全部走 {@code @InjectMock}，不连 Mongo。</p>
  */
 @QuarkusTest
-class ModbusPollResourceTest {
+class ModbusPollingResourceTest {
 
     private static final String SID = "6512f3a4b5c6d7e8f9a0b1c2";
     private static final String SPACE_ID = "6512f3a4b5c6d7e8f9a0b1c3";
@@ -120,7 +120,7 @@ class ModbusPollResourceTest {
         when(scheduler.lastTickAt()).thenReturn(NOW);
 
         given()
-                .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.spaceId", equalTo(SPACE_ID))
@@ -150,7 +150,7 @@ class ModbusPollResourceTest {
         when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
 
         given()
-                .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("data.enabled", equalTo(false))
                 .body("data.queueSize", equalTo(0))
@@ -168,7 +168,7 @@ class ModbusPollResourceTest {
         when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of()));
 
         given()
-                .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.items", hasSize(0));
@@ -180,7 +180,7 @@ class ModbusPollResourceTest {
         denySpaceMember();
 
         given()
-                .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
@@ -194,7 +194,7 @@ class ModbusPollResourceTest {
         when(spaceService.getById(SPACE_ID)).thenReturn(Uni.createFrom().nullItem());
 
         given()
-                .when().get("/matrix/v1/modbus/poll/{spaceId}", SPACE_ID)
+                .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 

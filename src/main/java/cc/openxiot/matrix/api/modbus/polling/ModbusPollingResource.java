@@ -1,13 +1,13 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
-import cc.openxiot.matrix.db.modbus.poll.codec.ModbusPollingCodec;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
+import cc.openxiot.matrix.db.modbus.polling.codec.ModbusPollingCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -44,11 +44,11 @@ import java.util.Map;
  * 两个部署，问到 api 副本时 {@code items} 照旧是对的（读库），但 {@code queueSize} 一定是 0
  * —— 它不跑调度。看「谁在采」要问 poller 那个副本，或者看每条任务的 {@code leaseOwner}。</p>
  */
-@Path("/matrix/v1/modbus/poll")
+@Path("/matrix/v1/modbus/polling")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "Modbus Poll", description = "Modbus 轮询任务 API")
+@Tag(name = "Modbus Polling", description = "Modbus 轮询任务 API")
 @RequestScoped
-public class ModbusPollResource extends AbstractResource {
+public class ModbusPollingResource extends AbstractResource {
 
     @Inject
     Logger logger;

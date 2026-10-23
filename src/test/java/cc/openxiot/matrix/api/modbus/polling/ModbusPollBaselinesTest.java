@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import org.junit.jupiter.api.Test;

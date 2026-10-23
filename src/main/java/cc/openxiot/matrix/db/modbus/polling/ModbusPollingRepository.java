@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.poll;
+package cc.openxiot.matrix.db.modbus.polling;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;

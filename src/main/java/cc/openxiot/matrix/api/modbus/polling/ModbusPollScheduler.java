@@ -1,10 +1,10 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;

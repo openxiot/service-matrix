@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.db.modbus.poll.codec;
+package cc.openxiot.matrix.db.modbus.polling.codec;
 
-import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 

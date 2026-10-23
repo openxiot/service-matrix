@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
+import cc.openxiot.matrix.api.modbus.polling.ModbusLastPollingPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusTransactionHistory;

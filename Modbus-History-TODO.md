@@ -106,9 +106,9 @@
 落实位置（2026-09-13）：`db/modbus/poll/`（`ModbusPoll` + 仓储 + Codec）与 `api/modbus/poll/`
 （纯函数件 `ModbusPollPlan` / `ModbusPollSchedule` / `ModbusLastPollingPlan`、`ModbusPollWheel` 时间轮、
 `ModbusPollBaselines` 内存基准、`ModbusPollReconciler` 对账、`ModbusPollScheduler` 调度循环、
-`ModbusPollResource` 查询接口）；`ModbusHistoryService` 加了一对「基准由调用方给」的入口。
+`ModbusPollingResource` 查询接口）；`ModbusHistoryService` 加了一对「基准由调用方给」的入口。
 纯单测 66 个（schedule / plan / wheel / baselines / shadowPlan 五个新文件 + 两个既有文件扩充）全绿；
-`@QuarkusTest` 的 `ModbusPollResourceTest` 5 个也**本机跑绿**（把连库的 bean 全 `@InjectMock` 掉即可，
+`@QuarkusTest` 的 `ModbusPollingResourceTest` 5 个也**本机跑绿**（把连库的 bean 全 `@InjectMock` 掉即可，
 见 `MODBUS.md` 变更记录）—— 早先「本机跑不了 `@QuarkusTest`」的说法只对**真的要连 Mongo** 的那几个成立。
 
 ## 第四步：运维与容量

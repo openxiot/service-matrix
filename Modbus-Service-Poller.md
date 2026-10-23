@@ -303,7 +303,7 @@ modbus.polls
    → `ModbusPollWheel` + `ModbusPollScheduler`（+ `ModbusPollSchedule` 时间算法、`claim` 抢租约）。
 4. 内存基准接进 `ModbusHistoryService`（第四节）+ 失败状态 + 抖动 + 超时 + 优雅停机。
    → `ModbusPollBaselines` + `record` / `recordFailure` 的 4 参入口 + `ShutdownEvent`。
-5. 观测（第八节）。→ `ModbusPollResource`（`GET /matrix/v1/modbus/poll/{spaceId}`）。
+5. 观测（第八节）。→ `ModbusPollingResource`（`GET /matrix/v1/modbus/poll/{spaceId}`）。
 6. 影子对账：定义变更（改了 `response`、删了方法）后，按当前定义清掉影子里
    **不再存在**的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
    → `ModbusLastPollingPlan` + 写入路径 / 启动全量扫。

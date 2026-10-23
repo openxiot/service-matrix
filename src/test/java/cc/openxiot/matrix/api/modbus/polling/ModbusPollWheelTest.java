@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.poll;
+package cc.openxiot.matrix.api.modbus.polling;
 
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
