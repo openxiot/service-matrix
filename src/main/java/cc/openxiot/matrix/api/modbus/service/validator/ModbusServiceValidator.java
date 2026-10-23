@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.service.validator;
 
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.service.params.PollOnce;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
@@ -557,7 +558,7 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * invoke 入参（{@link cc.openxiot.matrix.api.modbus.service.params.InvokeModbusServiceRequest#values}）
+     * invoke 入参（{@link PollOnce#values}）
      * 与写方法的字段定义对账。
      *
      * <p><b>读方法给了 values 要报错</b>：静默忽略一个用户以为生效了的载荷，比报错糟得多。</p>

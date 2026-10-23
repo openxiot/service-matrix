@@ -397,7 +397,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     嵌套类跟着父类走全名，是为了 **每个名字都能从上一级推出来**（省下的那几个字不值一次猜测）。
     Codec 与测试随类名同步（`ModbusPollingCodec` / `ModbusPollingRequestCodec` / …），
     **包名不动**（`db.modbus.service.function.*`：它确实是「服务的方法」，读起来仍成立）。
-    `InvokeModbusServiceRequest`（invoke 接口的请求体，与上面这几个类无关） **不改名**。
+    `PollOnce`（invoke 接口的请求体，与上面这几个类无关） **不改名**。
     `ModbusService` / `ModbusServiceService` / `ModbusServiceResource` / `ModbusServiceValidator` /
     `ModbusServiceHistory` / `ModbusServiceFailure` 这批「服务一级」的名字也不动。
   * **`function.response` 从裸数组包成对象**（`ModbusPollingResponse`，内含 `fields[]`）。原来

@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.params.InvokeModbusServiceRequest;
+import cc.openxiot.matrix.api.modbus.service.params.PollOnce;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
@@ -169,7 +169,7 @@ public class ModbusServiceResource extends AbstractResource {
 
     /**
      * 调用一个方法：body
-     * {@code {"service": "<服务 id>", "function": <方法序号>, "values": {...}}}。
+     * {@code {"service": "<服务 id>", "pollIndex": <轮询序号>, "values": {...}}}。
      * 返回该方法的「字段 → 值」（写方法为空对象）。
      *
      * <p>{@code values}（字段名 → 原始值）只有写方法用得上：未给值的字段回落其定义的缺省值，
@@ -186,15 +186,15 @@ public class ModbusServiceResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> invoke(
             @PathParam("spaceId") String spaceId,
-            InvokeModbusServiceRequest req
+            PollOnce req
     ) {
         if (req == null) {
             return Uni.createFrom().item(OxResponse.error("body is required"));
         }
         logger.infov("invoke modbus service, space: {0}, service: {1}, function: {2}, values: {3}",
-                spaceId, req.service, req.function, req.values == null ? "-" : req.values.keySet());
+                spaceId, req.service, req.pollIndex, req.values == null ? "-" : req.values.keySet());
         return requireSpaceMember(spaceId)
-                .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.function, req.values))
+                .chain(space -> service.invoke(space.rootSpaceId(), req.service, req.pollIndex, req.values))
                 .map(OxResponse::ok)
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

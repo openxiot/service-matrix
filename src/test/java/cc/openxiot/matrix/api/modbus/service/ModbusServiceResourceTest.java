@@ -233,7 +233,7 @@ class ModbusServiceResourceTest {
                 .thenReturn(Uni.createFrom().item(new JsonObject().put("进水温度", 61.5)));
 
         given().contentType("application/json")
-                .body(new JsonObject().put("service", SID).put("function", 1).encode())
+                .body(new JsonObject().put("service", SID).put("pollIndex", 1).encode())
                 .when().post("/matrix/v1/modbus/service/invoke/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
@@ -246,7 +246,7 @@ class ModbusServiceResourceTest {
         denySpaceMember();
 
         given().contentType("application/json")
-                .body(new JsonObject().put("service", SID).put("function", 1).encode())
+                .body(new JsonObject().put("service", SID).put("pollIndex", 1).encode())
                 .when().post("/matrix/v1/modbus/service/invoke/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(false));
