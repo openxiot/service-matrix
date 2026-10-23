@@ -6,7 +6,6 @@ import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPolling
 import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
@@ -68,20 +67,17 @@ class ModbusHistoryServiceTest {
     private static final String CRC_ERROR = "modbus response crc mismatch: 0103020064B9AE";
 
     private ModbusHistoryService service;
-    private ModbusServiceHistoryRepository historyRepo;
     private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
     private ModbusServiceShadowRepository registryShadowRepo;
     private ModbusServicePollingHistoryRepository pollingHistoryRepo;
 
     @BeforeEach
     void setUp() {
-        historyRepo = mock(ModbusServiceHistoryRepository.class);
         registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusServiceShadowRepository.class);
         pollingHistoryRepo = mock(ModbusServicePollingHistoryRepository.class);
 
         service = new ModbusHistoryService();
-        service.historyRepo = historyRepo;
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;
         service.pollingHistoryRepo = pollingHistoryRepo;
@@ -105,8 +101,6 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        // 寄存器历史不再写按方法的 ModbusServiceHistory；只写寄存器事件 + 当前值
-        verify(historyRepo, never()).insertAll(anyList());
         // 新的寄存器历史：一条事件，值为 62.5、指向寄存器 1
         ArgumentCaptor<List<ModbusServiceRegistryHistory>> rows = ArgumentCaptor.forClass(List.class);
         verify(registryHistoryRepo).insertAll(rows.capture());
@@ -126,8 +120,7 @@ class ModbusHistoryServiceTest {
         service.record(modbusService(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        // 没有点表快照（老服务 / 纯命令）→ 按方法历史与寄存器侧都不写
-        verify(historyRepo, never()).insertAll(anyList());
+        // 没有点表快照（老服务 / 纯命令）→ 寄存器侧不写
         verifyNoInteractions(registryHistoryRepo);
         // 3 参入口仍读了一次逐寄存器影子（重建基准），但不写当前值
         verify(registryShadowRepo).listByServiceId(SERVICE_ID);
@@ -165,8 +158,7 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 61.5))
                 .await().indefinitely();
 
-        // 值历史 / 寄存器历史 / 影子当前值都不写
-        verifyNoInteractions(historyRepo);
+        // 寄存器历史 / 影子当前值都不写
         verify(registryHistoryRepo, never()).insertAll(anyList());
         verify(registryShadowRepo, never()).upsertValue(any());
         // 操作日志照记
@@ -241,7 +233,6 @@ class ModbusHistoryServiceTest {
         service.record(modbusService(), function(), new JsonObject().put("进水温度", 61.5))
                 .await().indefinitely();
 
-        verifyNoInteractions(historyRepo);
         verify(registryHistoryRepo, never()).insertAll(anyList());
         verify(registryShadowRepo, never()).upsertValue(any());
     }
@@ -264,7 +255,6 @@ class ModbusHistoryServiceTest {
         // 基准仍读这一次（无故障则没有要清的）；没故障时不落历史也不建影子。
         service.record(modbusService(), function(), new JsonObject()).await().indefinitely();
 
-        verifyNoInteractions(historyRepo);
         verify(registryShadowRepo, never()).upsertValue(any());
         verify(pollingHistoryRepo).insert(any());
     }
@@ -414,7 +404,6 @@ class ModbusHistoryServiceTest {
 
         ModbusPollBaseline next = service.record(modbusService(), function(), new JsonObject()).await().indefinitely();
 
-        verifyNoInteractions(historyRepo);
         assertNull(next.lastError());
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());   // 上次成功的值原样留着
         verify(registryShadowRepo, never()).upsertValue(any());
@@ -429,7 +418,6 @@ class ModbusHistoryServiceTest {
         ModbusPollBaseline next = service.record(modbusService(), function(), new JsonObject()).await().indefinitely();
 
         assertNull(next);
-        verifyNoInteractions(historyRepo);
         verify(registryShadowRepo, never()).upsertValue(any());
     }
 
@@ -478,7 +466,6 @@ class ModbusHistoryServiceTest {
                 new JsonObject().put("进水温度", 61.5), baseline).await().indefinitely();
 
         assertNull(next);
-        verifyNoInteractions(historyRepo);
         verify(registryShadowRepo, never()).upsertValue(any());
     }
 

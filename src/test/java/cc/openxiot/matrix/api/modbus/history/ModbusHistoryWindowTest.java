@@ -2,7 +2,6 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Bucket;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Window;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
@@ -30,8 +29,8 @@ class ModbusHistoryWindowTest {
 
     @Test
     void smallRangeReturnsRawSamplesUntouched() {
-        List<ModbusServiceHistory> rows = List.of(sample(T0, 1), sample(T0 + MINUTE, 2));
-        ModbusServiceHistory carryIn = sample(T0 - HOUR, 0);
+        List<ModbusHistorySample> rows = List.of(sample(T0, 1), sample(T0 + MINUTE, 2));
+        ModbusHistorySample carryIn = sample(T0 - HOUR, 0);
 
         Window window = ModbusHistoryWindow.of(carryIn, rows, T0, T0 + HOUR, 500);
 
@@ -56,7 +55,7 @@ class ModbusHistoryWindowTest {
     @Test
     void sampleCountAtTheLimitStaysRaw() {
         // 边界：正好等于 maxPoints 时不折叠（判定是「超过才折」）
-        List<ModbusServiceHistory> rows = List.of(sample(T0, 1), sample(T0 + MINUTE, 2));
+        List<ModbusHistorySample> rows = List.of(sample(T0, 1), sample(T0 + MINUTE, 2));
 
         assertFalse(ModbusHistoryWindow.of(null, rows, T0, T0 + HOUR, 2).downsampled());
         assertTrue(ModbusHistoryWindow.of(null, rows, T0, T0 + HOUR, 1).downsampled());
@@ -140,7 +139,7 @@ class ModbusHistoryWindowTest {
     @Test
     void carryInJoinsTheStepFunction() {
         // 区间起点之前最近的那条样本，是区间开头那一刻的状态：不带它，第一个桶的均值会漏掉开头那一段
-        List<ModbusServiceHistory> rows = List.of(sample(T0 + 30 * MINUTE, 100), sample(T0 + 90 * MINUTE, 60));
+        List<ModbusHistorySample> rows = List.of(sample(T0 + 30 * MINUTE, 100), sample(T0 + 90 * MINUTE, 60));
         long to = T0 + 2 * HOUR;
 
         Bucket withCarryIn = ModbusHistoryWindow.of(sample(T0 - HOUR, 50), rows, T0, to, 1).buckets().get(0);
@@ -206,11 +205,8 @@ class ModbusHistoryWindowTest {
 
     // ===== 夹具 =====
 
-    /** 只填窗口会用到的两个字段：点位身份（serviceId / pollingIndex / field）由仓储的查询决定。 */
-    private static ModbusServiceHistory sample(long at, Object value) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.at = new Date(at);
-        row.value = value;
-        return row;
+    /** 只填窗口会用到的两个字段；点位身份由数据源的查询决定，窗口不关心。 */
+    private static ModbusHistorySample sample(long at, Object value) {
+        return new ModbusHistorySample(new Date(at), value);
     }
 }

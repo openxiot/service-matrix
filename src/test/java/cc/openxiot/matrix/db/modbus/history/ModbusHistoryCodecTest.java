@@ -1,8 +1,9 @@
 package cc.openxiot.matrix.db.modbus.history;
 
+import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
+import cc.openxiot.matrix.api.modbus.history.ModbusHistorySampleCodec;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Bucket;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -98,7 +99,7 @@ class ModbusHistoryCodecTest {
     void bucketAlwaysCarriesEveryKeyEvenWhenStatisticsAreNull() {
         // 非数值点位折叠后没有极值可言，但**键必须在**（值为 null）：
         // 前端画图时按键直接读，不该为「这一桶恰好没有数值」写分支
-        JsonObject json = ModbusServiceHistoryCodec.encode(
+        JsonObject json = ModbusHistorySampleCodec.encode(
                 new Bucket(T0, T0 + 1000, 3, "ON", "OFF", null, null, null));
 
         assertEquals(T0, json.getLong("at"));
@@ -114,13 +115,12 @@ class ModbusHistoryCodecTest {
     }
 
     @Test
-    void normalSampleOmitsKeepalive() {
-        // 缺省即 false：保活打点是少数，不该让每个点都带一个恒为 false 的键
-        JsonObject normal = ModbusServiceHistoryCodec.encode(sample(T0, 61.5, null));
-        assertFalse(normal.containsKey("keepalive"));
-
-        JsonObject keepalive = ModbusServiceHistoryCodec.encode(sample(T0, 61.5, true));
-        assertTrue(keepalive.getBoolean("keepalive"));
+    void sampleCarriesAtAndValueOnly() {
+        // 样本是内存载体：只出 at / value 两列，没有也不再可能有 keepalive
+        JsonObject sample = ModbusHistorySampleCodec.encode(filterSample(T0, 61.5));
+        assertEquals(T0, sample.getLong("at").longValue());
+        assertEquals(61.5, sample.getDouble("value"));
+        assertFalse(sample.containsKey("keepalive"));
     }
 
     // ===== 当前值 =====
@@ -165,11 +165,8 @@ class ModbusHistoryCodecTest {
         return row;
     }
 
-    private static ModbusServiceHistory sample(long at, Object value, Boolean keepalive) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.at = new Date(at);
-        row.value = value;
-        row.keepalive = keepalive;
-        return row;
+    /** 一个样例样本：只填 codec 会读的两列。 */
+    private static ModbusHistorySample filterSample(long at, Object value) {
+        return new ModbusHistorySample(new Date(at), value);
     }
 }

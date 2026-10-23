@@ -2,7 +2,6 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
@@ -145,7 +144,7 @@ public class ModbusHistoryQueryService {
                             }
                             // carry-in 必须是**成功**事件才有值（失败事件没落到值）：曲线从窗口起点的状态
                             // 由最后一次成功续上
-                            ModbusServiceHistory carryIn =
+                            ModbusHistorySample carryIn =
                                     carry != null && !Boolean.TRUE.equals(carry.failure)
                                             ? sampleOf(carry) : null;
                             return new RangeResult(from, end, points,
@@ -274,8 +273,8 @@ public class ModbusHistoryQueryService {
     }
 
     /** 区间内的事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
-    private static List<ModbusServiceHistory> samplesOf(List<ModbusServiceRegistryHistory> events) {
-        List<ModbusServiceHistory> samples = new ArrayList<>();
+    private static List<ModbusHistorySample> samplesOf(List<ModbusServiceRegistryHistory> events) {
+        List<ModbusHistorySample> samples = new ArrayList<>();
         if (events != null) {
             for (ModbusServiceRegistryHistory event : events) {
                 if (event != null && !Boolean.TRUE.equals(event.failure)) {
@@ -287,12 +286,9 @@ public class ModbusHistoryQueryService {
     }
 
     /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
-     *  用 {@link ModbusServiceHistory} 当中间载体，是为了原样复用历史窗口那套已测的整形逻辑。 */
-    private static ModbusServiceHistory sampleOf(ModbusServiceRegistryHistory event) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.at = event.at;
-        row.value = event.value;
-        return row;
+     *  用内存样本 {@link ModbusHistorySample} 当中间载体，与看板字段曲线那条路共用同一套已测的整形逻辑。 */
+    private static ModbusHistorySample sampleOf(ModbusServiceRegistryHistory event) {
+        return new ModbusHistorySample(event.at, event.value);
     }
 
     // ===== 参数 =====

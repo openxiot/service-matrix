@@ -5,7 +5,6 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
@@ -55,11 +54,8 @@ public class ModbusHistoryService {
     /** 失败原因文本的长度上限：上游描述可能很长，而越长越容易让「同一条故障」被判成不同的两条。 */
     private static final int MAX_MESSAGE_LENGTH = 500;
 
-    @Inject
-    ModbusServiceHistoryRepository historyRepo;
-
-    /** 寄存器中心的新存储：逐寄存器的历史事件与当前值（影子）。在现有写路径之上叠加（expand），
-     *  待寄存器读侧就绪后再收口旧存储。 */
+    /** 寄存器中心的新存储：逐寄存器的历史事件与当前值（影子）。已停写的按方法历史
+     *  {@code service-histories}（{@code ModbusServiceHistory}）不再写入、也在这里删了仓库。 */
     @Inject
     ModbusServiceRegistryHistoryRepository registryHistoryRepo;
 
@@ -94,7 +90,9 @@ public class ModbusHistoryService {
      * （见 Modbus-History.md 第六节）。
      *
      * <p><b>缺省就是开着的</b>（90 天）：不设 env 也会生效，部署起来就开始删 90 天前的明细。
-     * 想先观察就显式设 0。只给 {@code service-histories}：故障记录与影子不设（理由见文档同一节）。</p>
+     * 想先观察就显式设 0。落到**操作日志**（{@code service-polling-histories}，按采集频率线性增长）：
+     * 已停写的按方法历史 {@code service-histories} 不再新增、它的 TTL 一并删了；影子不设
+     * （理由见文档同一节）。</p>
      */
     @ConfigProperty(name = "modbus.history.retention-days", defaultValue = "90")
     int retentionDays;
@@ -109,8 +107,7 @@ public class ModbusHistoryService {
         } else {
             logger.info("history retention disabled, history is kept forever");
         }
-        historyRepo.ensureIndexes(retentionSeconds)
-                .chain(ignored -> pollingHistoryRepo.ensureIndexes(retentionSeconds))
+        pollingHistoryRepo.ensureIndexes(retentionSeconds)
                 .await().indefinitely();
     }
 
@@ -276,8 +273,7 @@ public class ModbusHistoryService {
             return Uni.createFrom().voidItem();
         }
         return Uni.combine().all()
-                .unis(historyRepo.deleteByServiceIds(serviceIds),
-                        registryHistoryRepo.deleteByServiceIds(serviceIds),
+                .unis(registryHistoryRepo.deleteByServiceIds(serviceIds),
                         registryShadowRepo.deleteByServiceIds(serviceIds),
                         pollingHistoryRepo.deleteByServiceIds(serviceIds),
                         alarmRepo.deleteByServiceIds(serviceIds))

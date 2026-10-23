@@ -1,7 +1,5 @@
 package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -69,7 +67,7 @@ public final class ModbusHistoryWindow {
      * @param buckets     降采样后的桶，按时间升序、已去掉空桶（{@code downsampled} 为 true 时才是要返回的点）
      * @param downsampled true = 用 {@code buckets}，false = 用 {@code samples}
      */
-    public record Window(ModbusServiceHistory carryIn, List<ModbusServiceHistory> samples,
+    public record Window(ModbusHistorySample carryIn, List<ModbusHistorySample> samples,
                          List<Bucket> buckets, boolean downsampled) {
     }
 
@@ -87,9 +85,9 @@ public final class ModbusHistoryWindow {
      * @param to        区间终点（epoch 毫秒），必须大于 from
      * @param maxPoints 返回的点数上限；样本数不超过它时返回原始点，超过则降采样
      */
-    public static Window of(ModbusServiceHistory carryIn, List<ModbusServiceHistory> samples,
+    public static Window of(ModbusHistorySample carryIn, List<ModbusHistorySample> samples,
                             long from, long to, int maxPoints) {
-        List<ModbusServiceHistory> rows = samples == null ? List.of() : samples;
+        List<ModbusHistorySample> rows = samples == null ? List.of() : samples;
         // 点不多就直接给原始点：这一段本来就是「每个拐点都要看见」的精细区间，折叠只会让前端丢掉拐点
         if (rows.size() <= maxPoints) {
             return new Window(carryIn, rows, List.of(), false);
@@ -99,7 +97,7 @@ public final class ModbusHistoryWindow {
         int bucketCount = (int) Math.max(1L, Math.min(maxPoints, ceilDiv(to - from, bucketMillis)));
 
         int[] count = new int[bucketCount];
-        for (ModbusServiceHistory row : rows) {
+        for (ModbusHistorySample row : rows) {
             if (row != null && row.at != null) {
                 count[bucketOf(row.at.getTime(), from, bucketMillis, bucketCount)]++;
             }
@@ -165,12 +163,12 @@ public final class ModbusHistoryWindow {
     }
 
     /** 阶梯函数的各段：carry-in 在最前（它的起点在窗口之前，会被裁到窗口内）。 */
-    private static List<Step> steps(ModbusServiceHistory carryIn, List<ModbusServiceHistory> rows) {
+    private static List<Step> steps(ModbusHistorySample carryIn, List<ModbusHistorySample> rows) {
         List<Step> steps = new ArrayList<>(rows.size() + 1);
         if (carryIn != null && carryIn.at != null) {
             steps.add(new Step(carryIn.at.getTime(), carryIn.value));
         }
-        for (ModbusServiceHistory row : rows) {
+        for (ModbusHistorySample row : rows) {
             if (row != null && row.at != null) {
                 steps.add(new Step(row.at.getTime(), row.value));
             }

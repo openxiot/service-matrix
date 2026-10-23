@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
+import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
@@ -9,7 +10,6 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
@@ -380,7 +380,7 @@ public class DashboardWidgetDataService {
                         .asTuple()
                         .map(tuple -> {
                             List<Date> failures = new ArrayList<>();
-                            List<ModbusServiceHistory> samples = new ArrayList<>();
+                            List<ModbusHistorySample> samples = new ArrayList<>();
                             for (ModbusServiceRegistryHistory event : tuple.getItem2()) {
                                 if (event == null) {
                                     continue;
@@ -396,7 +396,7 @@ public class DashboardWidgetDataService {
                             // carry-in 必须是**成功**事件才有值（失败事件没落到值）：
                             // 失败那次读接下来仍持续旧值，曲线从窗口起点的状态由最后一次成功续上
                             ModbusServiceRegistryHistory carryIn = tuple.getItem1();
-                            ModbusServiceHistory carryInSample =
+                            ModbusHistorySample carryInSample =
                                     carryIn != null && !Boolean.TRUE.equals(carryIn.failure)
                                             ? sampleOf(carryIn) : null;
                             long from = curve.window().from().getTime();
@@ -414,13 +414,9 @@ public class DashboardWidgetDataService {
     }
 
     /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
-     *  用 {@link ModbusServiceHistory} 当中间载体，是为了原样复用历史窗口那套已测的整形逻辑，
-     *  不必为看板单独泛型化它。 */
-    private static ModbusServiceHistory sampleOf(ModbusServiceRegistryHistory event) {
-        ModbusServiceHistory row = new ModbusServiceHistory();
-        row.at = event.at;
-        row.value = event.value;
-        return row;
+     *  用内存样本 {@link ModbusHistorySample} 当中间载体，与历史区间那条路共用同一套已测的整形逻辑。 */
+    private static ModbusHistorySample sampleOf(ModbusServiceRegistryHistory event) {
+        return new ModbusHistorySample(event.at, event.value);
     }
 
     /** 寄存器影子按 {@code registerIndex} 索引（一个服务下每只寄存器一条，见 {@code ModbusServiceShadow}）。 */

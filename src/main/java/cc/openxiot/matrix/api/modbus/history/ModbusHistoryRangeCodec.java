@@ -1,7 +1,5 @@
 package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -17,7 +15,7 @@ import java.util.Date;
  * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线** —— 图还是画得出来，
  * 只是窗口开头缺一截，看着像那段时间没采到。</p>
  *
- * <p>与 {@link ModbusServiceHistoryCodec} 的分工：那个把库实体（样本 / 桶）编成 JSON，
+ * <p>与 {@link ModbusHistorySampleCodec} 的分工：那个把样本 / 桶编成 JSON，
  * 这个把**一次区间查询的整体结果**编成响应体 —— 键名、点集形态的分流、缺省全在这一层。</p>
  */
 public final class ModbusHistoryRangeCodec {
@@ -66,11 +64,11 @@ public final class ModbusHistoryRangeCodec {
         JsonArray points = new JsonArray();
         if (window.downsampled()) {
             for (ModbusHistoryWindow.Bucket bucket : window.buckets()) {
-                points.add(ModbusServiceHistoryCodec.encode(bucket));
+                points.add(ModbusHistorySampleCodec.encode(bucket));
             }
         } else {
-            for (ModbusServiceHistory sample : window.samples()) {
-                points.add(ModbusServiceHistoryCodec.encode(sample));
+            for (ModbusHistorySample sample : window.samples()) {
+                points.add(ModbusHistorySampleCodec.encode(sample));
             }
         }
 
@@ -86,7 +84,7 @@ public final class ModbusHistoryRangeCodec {
                 .put("points", points);
         // 没有更早的样本时不出键（与 Codec 里「null 不出键」同口径）：它不是一条空样本
         if (window.carryIn() != null) {
-            body.put("carryIn", ModbusServiceHistoryCodec.encode(window.carryIn()));
+            body.put("carryIn", ModbusHistorySampleCodec.encode(window.carryIn()));
         }
         return body;
     }

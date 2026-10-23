@@ -4,7 +4,7 @@ import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.common.person.Person;
@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 再用 {@code BsonDocumentWriter} / {@code BsonDocumentReader} 走一遍编解码 ——
  * 这条路径与真落库时驱动走的是同一条。</p>
  *
- * <p>现网就是这么炸的：{@code ModbusServiceHistory.value} 声明成 {@code Object}，编码第一步
+ * <p>现网就是这么炸的：{@code ModbusServiceRegistryHistory.value} 声明成 {@code Object}，编码第一步
  * {@code Can't find a codec for CodecCacheKey{clazz=class java.lang.Object, types=null}}，
  * 于是 {@code service-histories} 一条样本也没写进去过。{@link #withoutTheProviderTheSameWriteFails()}
  * 把那个失败形态钉在这里。</p>
@@ -80,49 +80,49 @@ class ObjectPropertyCodecProviderTest {
 
     @Test
     void integerValueIsWrittenAsItsRuntimeType() {
-        ModbusServiceHistory sample = sample(42);
+        ModbusServiceRegistryHistory sample = sample(42);
 
         BsonDocument doc = encode(sample);
 
         assertEquals(new BsonInt32(42), doc.get("value"));
         assertEquals(new BsonString("6aa759bb4e45b0b6122d2ed5"), doc.get("serviceId"));
-        assertEquals(1, doc.getInt32("pollingIndex").getValue());
-        assertTrue(!doc.containsKey("keepalive"), "null 不落键：正常样本身上不该出现 keepalive");
+        assertEquals(1, doc.getInt32("registerIndex").getValue());
+        assertTrue(!doc.containsKey("message"), "null 不落键：成功事件身上不该出现 message");
 
-        ModbusServiceHistory read = decode(ModbusServiceHistory.class, doc);
+        ModbusServiceRegistryHistory read = decode(ModbusServiceRegistryHistory.class, doc);
         assertInstanceOf(Integer.class, read.value);
         assertEquals(42, read.value);
-        assertEquals("温度", read.field);
+        assertEquals("温度", read.name);
         assertEquals(new Date(AT), read.at);
-        assertNull(read.keepalive);
+        assertNull(read.failure);
     }
 
     /** 另外三种形态：{@code value-list} 的 description、位展开的 0|1、以及没有值。 */
     @Test
     void theOtherValueShapesRoundTrip() {
-        assertEquals("运行", decode(ModbusServiceHistory.class, encode(sample("运行"))).value);
-        assertEquals(Boolean.TRUE, decode(ModbusServiceHistory.class, encode(sample(Boolean.TRUE))).value);
-        assertEquals(3.5, decode(ModbusServiceHistory.class, encode(sample(3.5))).value);
-        assertEquals(new Date(AT), decode(ModbusServiceHistory.class, encode(sample(new Date(AT)))).value);
-        assertNull(decode(ModbusServiceHistory.class, encode(sample(null))).value);
+        assertEquals("运行", decode(ModbusServiceRegistryHistory.class, encode(sample("运行"))).value);
+        assertEquals(Boolean.TRUE, decode(ModbusServiceRegistryHistory.class, encode(sample(Boolean.TRUE))).value);
+        assertEquals(3.5, decode(ModbusServiceRegistryHistory.class, encode(sample(3.5))).value);
+        assertEquals(new Date(AT), decode(ModbusServiceRegistryHistory.class, encode(sample(new Date(AT)))).value);
+        assertNull(decode(ModbusServiceRegistryHistory.class, encode(sample(null))).value);
     }
 
     /** 值里嵌数组 / 嵌文档一样要能落（空间的 {@code attributes} 里就可能放数组）。 */
     @Test
     void nestedContainersRecurse() {
         assertEquals(List.of(1, "运行", Boolean.TRUE),
-                decode(ModbusServiceHistory.class, encode(sample(List.of(1, "运行", Boolean.TRUE)))).value);
+                decode(ModbusServiceRegistryHistory.class, encode(sample(List.of(1, "运行", Boolean.TRUE)))).value);
         assertEquals(new Document("上限", 60).append("别名", "高温"),
-                decode(ModbusServiceHistory.class,
+                decode(ModbusServiceRegistryHistory.class,
                         encode(sample(new Document("上限", 60).append("别名", "高温")))).value);
     }
 
     /** 数值读回来的类由 BSON 类型决定：int32 → Integer、int64 → Long、double → Double。 */
     @Test
     void numbersComeBackAsTheTypeTheBsonTypeMaps() {
-        assertEquals(Integer.class, decode(ModbusServiceHistory.class, encode(sample(42))).value.getClass());
-        assertEquals(Long.class, decode(ModbusServiceHistory.class, encode(sample(42L))).value.getClass());
-        assertEquals(Double.class, decode(ModbusServiceHistory.class, encode(sample(42.0))).value.getClass());
+        assertEquals(Integer.class, decode(ModbusServiceRegistryHistory.class, encode(sample(42))).value.getClass());
+        assertEquals(Long.class, decode(ModbusServiceRegistryHistory.class, encode(sample(42L))).value.getClass());
+        assertEquals(Double.class, decode(ModbusServiceRegistryHistory.class, encode(sample(42.0))).value.getClass());
     }
 
     // ===== 操作日志快照 / 空间属性：Map<String, Object> 的每个值都走同一格 =====
@@ -335,24 +335,24 @@ class ObjectPropertyCodecProviderTest {
      */
     @Test
     void withoutTheProviderTheSameWriteFails() {
-        Codec<ModbusServiceHistory> codec = registryWith().get(ModbusServiceHistory.class);
+        Codec<ModbusServiceRegistryHistory> codec = registryWith().get(ModbusServiceRegistryHistory.class);
         BsonDocumentWriter writer = new BsonDocumentWriter(new BsonDocument());
 
         CodecConfigurationException error = assertThrows(CodecConfigurationException.class,
                 () -> codec.encode(writer, sample(42), EncoderContext.builder().build()));
 
-        assertTrue(error.getMessage().contains("Failed to encode 'ModbusServiceHistory'"), error.getMessage());
+        assertTrue(error.getMessage().contains("Failed to encode 'ModbusServiceRegistryHistory'"), error.getMessage());
         assertTrue(error.getMessage().contains("java.lang.Object"), error.getMessage());
     }
 
     // ===== 夹具 =====
 
-    private static ModbusServiceHistory sample(Object value) {
-        ModbusServiceHistory sample = new ModbusServiceHistory();
+    private static ModbusServiceRegistryHistory sample(Object value) {
+        ModbusServiceRegistryHistory sample = new ModbusServiceRegistryHistory();
         sample.id = new ObjectId();
         sample.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        sample.pollingIndex = 1;
-        sample.field = "温度";
+        sample.registerIndex = 1;
+        sample.name = "温度";
         sample.value = value;
         sample.at = new Date(AT);
         return sample;

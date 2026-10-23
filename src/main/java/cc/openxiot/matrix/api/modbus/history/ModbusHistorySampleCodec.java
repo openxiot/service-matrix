@@ -1,14 +1,12 @@
-package cc.openxiot.matrix.db.modbus.history.codec;
+package cc.openxiot.matrix.api.modbus.history;
 
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import io.vertx.core.json.JsonObject;
 
 /**
- * 历史样本 → JSON（历史区间接口用），两种形态：
+ * 历史样本 → JSON（区间曲线接口用），两种形态：
  *
  * <ul>
- *   <li>{@link #encode(ModbusServiceHistory)}：原始样本 {@code {at, value, keepalive}}。</li>
+ *   <li>{@link #encode(ModbusHistorySample)}：原始样本 {@code {at, value}}。</li>
  *   <li>{@link #encode(ModbusHistoryWindow.Bucket)}：降采样桶
  *       {@code {at, until, count, first, last, min, max, avg}}。</li>
  * </ul>
@@ -18,14 +16,18 @@ import io.vertx.core.json.JsonObject;
  * （{@code value-list} 的 description、字符串）上**为 null**：那类值没有大小可言，折叠后只剩
  * {@code first} / {@code last}（与 {@code ModbusHistoryPolicy} 里「非数值精确比较」同一口径）。</p>
  *
+ * <p>样本只出 {@code {at, value}}：这里的样本是内存载体 {@link ModbusHistorySample}（由寄存器事件
+ * {@code ModbusServiceRegistryHistory} 转来，只取窗口化要用的两列），没有保活标记可出。
+ * 原先 {@code ModbusServiceHistory} 上的 {@code keepalive} 已随那套停写的按方法历史一起消亡。</p>
+ *
  * <p>只出不进：历史是采集写进去的，不由请求体决定，所以没有 decode。</p>
  */
-public final class ModbusServiceHistoryCodec {
+public final class ModbusHistorySampleCodec {
 
-    private ModbusServiceHistoryCodec() {
+    private ModbusHistorySampleCodec() {
     }
 
-    public static JsonObject encode(ModbusServiceHistory sample) {
+    public static JsonObject encode(ModbusHistorySample sample) {
         JsonObject o = new JsonObject();
         if (sample == null) {
             return o;
@@ -35,10 +37,6 @@ public final class ModbusServiceHistoryCodec {
         }
         if (sample.value != null) {
             o.put("value", sample.value);
-        }
-        // 缺省即 false（正常样本），只在是保活打点时才出键
-        if (Boolean.TRUE.equals(sample.keepalive)) {
-            o.put("keepalive", true);
         }
         return o;
     }
