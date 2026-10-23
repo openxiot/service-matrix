@@ -140,7 +140,7 @@ public class ModbusServiceAlarm {
             + "**绝不下发给前端**", hidden = true)
     public String openKey;
 
-    @Schema(description = "触发这条的是哪条规则（配置里的 ModbusPollingResponseFieldAlarm.id）。"
+    @Schema(description = "触发这条的是哪条规则（配置里的 ModbusRegistryAlarm.id）。"
             + "「这条开着的行是不是还该开着」要靠它与当前胜者比对 —— "
             + "**内部标识，绝不下发给前端**：行上的定义快照已经够前端说清「触发条件」，"
             + "与 openKey 同一条规矩", hidden = true)

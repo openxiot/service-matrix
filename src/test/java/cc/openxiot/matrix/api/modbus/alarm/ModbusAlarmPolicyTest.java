@@ -1,16 +1,11 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Decision;
+import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.ModbusFieldRule;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Open;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Verdict;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequests;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -54,7 +49,7 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void equalsComparesTheValueListName() {
-        ModbusPollingResponseFieldAlarm byName = alarm("=", null, "ON");
+        ModbusRegistryAlarm byName = alarm("=", null, "ON");
 
         assertEquals(Verdict.HIT, ModbusAlarmPolicy.hit("ON", byName));
         assertEquals(Verdict.MISS, ModbusAlarmPolicy.hit("OFF", byName));
@@ -66,46 +61,46 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void comparesTheParsedValueNotTheRawRegister() {
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
         // 点表 scale=0.1：寄存器 805 解析出来是 80.5，用户的阈值 80 是工程单位（曲线画的也是解析值）
-        assertEquals(1, ModbusAlarmPolicy.decide(function, sample("进水温度", 80.5), open()).opens().size());
+        assertEquals(1, ModbusAlarmPolicy.decide(rules, sample("进水温度", 80.5), open()).opens().size());
         // 寄存器 750 ⇒ 解析值 75.0 ⇒ 没越限。比原始值的话 750 > 80 会误报，这条把它钉住
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 75.0), open()).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 75.0), open()).isEmpty());
     }
 
     // ===== 四种边沿格 =====
 
     @Test
     void fourEdgeCells() {
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
         // 无 → HIT：开一条
-        Decision opened = ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open());
+        Decision opened = ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0), open());
         assertEquals(List.of("进水温度"), opened.opens().stream().map(Open::field).toList());
         assertEquals(81.0, ((Number) opened.opens().get(0).sample()).doubleValue());
         assertSame(rule, opened.opens().get(0).alarm());
 
         // 有 → HIT 且**还是那条规则**：什么都不做 —— 稳态零写，这是「一次越限一条」的落点
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open("进水温度", rule)).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0), open("进水温度", rule)).isEmpty());
 
         // 有 → MISS：按值关闭
-        Decision closed = ModbusAlarmPolicy.decide(function, sample("进水温度", 79.0), open("进水温度", rule));
+        Decision closed = ModbusAlarmPolicy.decide(rules, sample("进水温度", 79.0), open("进水温度", rule));
         assertEquals(List.of("进水温度"), closed.valueCloses());
 
         // 无 → MISS：什么都不做
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 79.0), open()).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 79.0), open()).isEmpty());
     }
 
     @Test
     void oneSampleCanOpenAndCloseAtOnce() {
-        ModbusPollingResponseFieldAlarm high = alarm(">", 80.0, null);
-        ModbusPollingResponseFieldAlarm low = alarm("<", 5.0, null);
-        ModbusPolling function = function(field("进水温度", high), field("回水温度", low));
+        ModbusRegistryAlarm high = alarm(">", 80.0, null);
+        ModbusRegistryAlarm low = alarm("<", 5.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", high), field("回水温度", low));
 
-        Decision decision = ModbusAlarmPolicy.decide(function,
+        Decision decision = ModbusAlarmPolicy.decide(rules,
                 sample("进水温度", 85.0, "回水温度", 9.0), open("回水温度", low));
 
         assertEquals(List.of("进水温度"), decision.opens().stream().map(Open::field).toList());
@@ -119,12 +114,12 @@ class ModbusAlarmPolicyTest {
     void onlyTheMostSevereRuleOpens() {
         // 用户配的那一组：低于 20 提示 / 超过 26 警告 / 超过 30 严重。31℃ 同时命中后两条，
         // 但只产生**一条**告警 —— 严重的那条
-        ModbusPollingResponseFieldAlarm info = level(alarm("<", 20.0, null), "INFO");
-        ModbusPollingResponseFieldAlarm warn = level(alarm(">", 26.0, null), "WARN");
-        ModbusPollingResponseFieldAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
-        ModbusPolling function = function(field("进水温度", info, warn, critical));
+        ModbusRegistryAlarm info = level(alarm("<", 20.0, null), "INFO");
+        ModbusRegistryAlarm warn = level(alarm(">", 26.0, null), "WARN");
+        ModbusRegistryAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", info, warn, critical));
 
-        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 31.0), open());
+        Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", 31.0), open());
 
         assertEquals(1, decision.opens().size());
         assertSame(critical, decision.opens().get(0).alarm());
@@ -135,12 +130,12 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void escalationSupersedesTheOpenRow() {
-        ModbusPollingResponseFieldAlarm warn = level(alarm(">", 26.0, null), "WARN");
-        ModbusPollingResponseFieldAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
-        ModbusPolling function = function(field("进水温度", warn, critical));
+        ModbusRegistryAlarm warn = level(alarm(">", 26.0, null), "WARN");
+        ModbusRegistryAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", warn, critical));
 
         // 27℃ 时按「警告」开着，值升到 31℃ ⇒ 那条关闭（**不是**值恢复）、严重那条接手
-        Decision escalated = ModbusAlarmPolicy.decide(function, sample("进水温度", 31.0),
+        Decision escalated = ModbusAlarmPolicy.decide(rules, sample("进水温度", 31.0),
                 open("进水温度", warn));
 
         assertEquals(List.of("进水温度"), escalated.supersededCloses());
@@ -153,11 +148,11 @@ class ModbusAlarmPolicyTest {
     @Test
     void deescalationIsSupersededNotRecovery() {
         // 降级方向的真实原因**不是**值恢复正常：27℃ 仍然越限，记成 VALUE 是谎话
-        ModbusPollingResponseFieldAlarm warn = level(alarm(">", 26.0, null), "WARN");
-        ModbusPollingResponseFieldAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
-        ModbusPolling function = function(field("进水温度", warn, critical));
+        ModbusRegistryAlarm warn = level(alarm(">", 26.0, null), "WARN");
+        ModbusRegistryAlarm critical = level(alarm(">", 30.0, null), "CRITICAL");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", warn, critical));
 
-        Decision deescalated = ModbusAlarmPolicy.decide(function, sample("进水温度", 27.0),
+        Decision deescalated = ModbusAlarmPolicy.decide(rules, sample("进水温度", 27.0),
                 open("进水温度", critical));
 
         assertEquals(List.of("进水温度"), deescalated.supersededCloses());
@@ -171,8 +166,8 @@ class ModbusAlarmPolicyTest {
         // 同级并列是个说不出什么道理、但必须确定的裁决：取**声明顺序里靠后**的那条。
         // 选它的理由是它由用户掌控 —— 想换就把另一条往下挪。不为此加「同级去重」校验：
         // 低侧 + 高侧那种配置（低于 20 严重 / 超过 30 严重）永远不可能同时命中
-        ModbusPollingResponseFieldAlarm first = level(alarm(">", 30.0, null), "CRITICAL");
-        ModbusPollingResponseFieldAlarm second = level(alarm(">", 28.0, null), "CRITICAL");
+        ModbusRegistryAlarm first = level(alarm(">", 30.0, null), "CRITICAL");
+        ModbusRegistryAlarm second = level(alarm(">", 28.0, null), "CRITICAL");
 
         assertSame(second, firstOpen(decision(field("进水温度", first, second), 31.0, open())));
         // 换个顺序就换一条赢：裁决完全由用户的排列决定
@@ -182,17 +177,17 @@ class ModbusAlarmPolicyTest {
     @Test
     void retuningTheSameRuleDoesNotChurn() {
         // 规则身份是 id，改阈值不动它 —— 于是「把阈值从 80 改成 60」不会把开着的告警关掉重开
-        ModbusPollingResponseFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
-        ModbusPollingResponseFieldAlarm retuned = withId(alarm(">", 60.0, null), "r1");
+        ModbusRegistryAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        ModbusRegistryAlarm retuned = withId(alarm(">", 60.0, null), "r1");
 
         // 80 到 81、60 到 81 都命中同一条规则 ⇒ 一次写操作都不该有
-        Decision decision = ModbusAlarmPolicy.decide(function(field("进水温度", retuned)),
+        Decision decision = ModbusAlarmPolicy.decide(fieldRules(field("进水温度", retuned)),
                 sample("进水温度", 81.0), open("进水温度", rule));
         assertTrue(decision.isEmpty());
 
         // 反过来：标识变了就是**另一条**规则（删掉旧规则、加一条新的），那条开着的一样要让位
-        ModbusPollingResponseFieldAlarm rebuilt = withId(alarm(">", 60.0, null), "r2");
-        Decision replaced = ModbusAlarmPolicy.decide(function(field("进水温度", rebuilt)),
+        ModbusRegistryAlarm rebuilt = withId(alarm(">", 60.0, null), "r2");
+        Decision replaced = ModbusAlarmPolicy.decide(fieldRules(field("进水温度", rebuilt)),
                 sample("进水温度", 81.0), open("进水温度", rule));
         assertEquals(List.of("进水温度"), replaced.supersededCloses());
         assertEquals(1, replaced.opens().size());
@@ -205,10 +200,10 @@ class ModbusAlarmPolicyTest {
         // 「处理」的意思是「我知道了，以后还有越线再提醒我」，不是「这事到此为止」：
         // 开着的那条已处理过、而这条规则**还在命中**时，关掉它（HANDLED）并另开一条未处理的新行。
         // 不这么做的话这一行会一直挂着，把后续每一次越线全挡在门外
-        ModbusPollingResponseFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
-        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0),
+        Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0),
                 openHandled("进水温度", rule));
 
         assertEquals(List.of("进水温度"), decision.handledCloses());
@@ -223,19 +218,19 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void handledOnlyReopensWhileTheValueStillCrosses() {
-        ModbusPollingResponseFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
         // 处理过的那条 + 值已回到正常：关它的理由是**值恢复**（这才是实情），不是「处理过」
-        Decision recovered = ModbusAlarmPolicy.decide(function, sample("进水温度", 79.0),
+        Decision recovered = ModbusAlarmPolicy.decide(rules, sample("进水温度", 79.0),
                 openHandled("进水温度", rule));
         assertEquals(List.of("进水温度"), recovered.valueCloses());
         assertTrue(recovered.handledCloses().isEmpty());
         assertTrue(recovered.opens().isEmpty());
 
         // 处理过的那条 + 这一帧拿不出可比的值（全 SKIP）：什么都不做 —— 截断的应答既不关也不重报
-        ModbusPollingResponseFieldAlarm broken = withId(alarm("??", 80.0, null), "broken");
-        Decision brokenFrame = ModbusAlarmPolicy.decide(function(field("进水温度", broken)),
+        ModbusRegistryAlarm broken = withId(alarm("??", 80.0, null), "broken");
+        Decision brokenFrame = ModbusAlarmPolicy.decide(fieldRules(field("进水温度", broken)),
                 sample("进水温度", 81.0), openHandled("进水温度", broken));
         assertTrue(brokenFrame.isEmpty());
     }
@@ -244,10 +239,10 @@ class ModbusAlarmPolicyTest {
     void aChangedRuleIsSupersededEvenIfTheRowWasHandled() {
         // 换了规则**又**恰好处理过：只记 SUPERSEDED（更具体的原因）。按 HANDLED 再关一次是重复记账，
         // 而且会把「是谁接手了」这件事说成「被人处理过」
-        ModbusPollingResponseFieldAlarm old = withId(alarm(">", 80.0, null), "r1");
-        ModbusPollingResponseFieldAlarm winner = withId(level(alarm(">", 60.0, null), "CRITICAL"), "r2");
+        ModbusRegistryAlarm old = withId(alarm(">", 80.0, null), "r1");
+        ModbusRegistryAlarm winner = withId(level(alarm(">", 60.0, null), "CRITICAL"), "r2");
 
-        Decision decision = ModbusAlarmPolicy.decide(function(field("进水温度", winner)),
+        Decision decision = ModbusAlarmPolicy.decide(fieldRules(field("进水温度", winner)),
                 sample("进水温度", 81.0), openHandled("进水温度", old));
 
         assertEquals(List.of("进水温度"), decision.supersededCloses());
@@ -260,26 +255,26 @@ class ModbusAlarmPolicyTest {
     void eachHandlingYieldsAtMostOneNewRow() {
         // 重报是**人驱动**的：没人再点「处理」，第二帧就回到稳态零写。
         // 上限因此是「越限次数 + 人工处理次数」，不会自激（Modbus-Alarm.md 第十节）
-        ModbusPollingResponseFieldAlarm rule = withId(alarm(">", 80.0, null), "r1");
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = withId(alarm(">", 80.0, null), "r1");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
         Map<String, OpenAlarmRule> open = openHandled("进水温度", rule);
 
-        Decision first = ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open);
+        Decision first = ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0), open);
         assertEquals(List.of("进水温度"), first.handledCloses());
         apply(first, open);
         // 新开的那条是未处理的，所以下一帧没有边沿可走
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0), open).isEmpty());
     }
 
     @Test
     void aHitBeatsASkipInTheSameField() {
         // 同一出值的规则之间可能一条 HIT、另一条判不了（定义与值形态对不上；校验器挡新数据、老数据可能出现）。
         // 有胜者就按胜者走，判不了的那条只进日志
-        ModbusPollingResponseFieldAlarm hit = alarm(">", 80.0, null);
-        ModbusPollingResponseFieldAlarm broken = withId(alarm("??", 80.0, null), "broken");
-        ModbusPolling function = function(field("进水温度", hit, broken));
+        ModbusRegistryAlarm hit = alarm(">", 80.0, null);
+        ModbusRegistryAlarm broken = withId(alarm("??", 80.0, null), "broken");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", hit, broken));
 
-        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 85.0), open());
+        Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", 85.0), open());
 
         assertEquals(1, decision.opens().size());
         assertSame(hit, decision.opens().get(0).alarm());
@@ -306,13 +301,13 @@ class ModbusAlarmPolicyTest {
     void noDebounceSoEveryCrossingIsItsOwnAlarm() {
         // 「不回差、不持续时长」是明确的选择：在阈值附近抖动，每次穿越各记一条永不删除的告警。
         // 将来要加回差，必须先改掉这条测试 —— 让它成为有意为之的决定，而不是顺手加的补丁。
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
         Map<String, OpenAlarmRule> open = new HashMap<>();
         List<Boolean> opened = new ArrayList<>();
 
         for (double value : new double[]{81.0, 79.0, 81.0, 79.0, 81.0}) {
-            Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", value), open);
+            Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", value), open);
             opened.add(!decision.opens().isEmpty());
             apply(decision, open);
         }
@@ -324,13 +319,13 @@ class ModbusAlarmPolicyTest {
     @Test
     void restartDoesNotDuplicateAnOpenAlarm() {
         // 重启或换副本后的第一条样本：库里已有一条开着的告警（还是这条规则开的），值仍越限 ⇒ 不产生第二条
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 95.0), open("进水温度", rule)).isEmpty());
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 95.0), open("进水温度", rule)).isEmpty());
 
         // 值已正常 ⇒ 关闭
         assertEquals(List.of("进水温度"),
-                ModbusAlarmPolicy.decide(function, sample("进水温度", 20.0), open("进水温度", rule))
+                ModbusAlarmPolicy.decide(rules, sample("进水温度", 20.0), open("进水温度", rule))
                         .valueCloses());
     }
 
@@ -349,22 +344,22 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void skipNeverClosesAnOpenAlarm() {
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
         // 键不在本次采样里（这一帧截断了）
-        Decision truncated = ModbusAlarmPolicy.decide(function, sample("别的字段", 1), open("进水温度", rule));
+        Decision truncated = ModbusAlarmPolicy.decide(rules, sample("别的字段", 1), open("进水温度", rule));
         assertTrue(truncated.isEmpty());
         assertEquals(1, truncated.skips().size());
 
         // 值是 NaN
-        Decision nan = ModbusAlarmPolicy.decide(function, sample("进水温度", Double.NaN),
+        Decision nan = ModbusAlarmPolicy.decide(rules, sample("进水温度", Double.NaN),
                 open("进水温度", rule));
         assertTrue(nan.isEmpty());
         assertEquals(1, nan.skips().size());
 
         // 键在、值为 null
-        Decision nullValue = ModbusAlarmPolicy.decide(function, sample("进水温度", null),
+        Decision nullValue = ModbusAlarmPolicy.decide(rules, sample("进水温度", null),
                 open("进水温度", rule));
         assertTrue(nullValue.isEmpty());
         assertEquals(1, nullValue.skips().size());
@@ -374,11 +369,11 @@ class ModbusAlarmPolicyTest {
     void notComparableIsReportedNotSilent() {
         // 判不了必须留下痕迹：它意味着**这条告警配置当前不工作**，而「配了却不工作、还没有声音」
         // 正是这个特性要消灭的失效模式。判定器只管把材料交出来，怎么记是调用方的事。
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
 
         // 这一帧里没有这个出值：sample 为 null
-        Decision truncated = ModbusAlarmPolicy.decide(function, sample("别的字段", 1), open());
+        Decision truncated = ModbusAlarmPolicy.decide(rules, sample("别的字段", 1), open());
         assertEquals(1, truncated.skips().size());
         assertEquals("进水温度", truncated.skips().get(0).field());
         assertNull(truncated.skips().get(0).sample());
@@ -388,27 +383,27 @@ class ModbusAlarmPolicyTest {
 
         // 定义比数、运行期给了字符串（老数据 / 设备固件与点表不符）
         Decision mismatched = ModbusAlarmPolicy.decide(
-                function(field("进水温度", alarm(">", 80.0, null))), sample("进水温度", "ON"), open());
+                fieldRules(field("进水温度", alarm(">", 80.0, null))), sample("进水温度", "ON"), open());
         assertEquals(1, mismatched.skips().size());
         assertEquals("ON", mismatched.skips().get(0).sample());
 
         // 没配告警、配了但关掉、判得出来：都不是「判不了」，一条都不报
-        assertTrue(ModbusAlarmPolicy.decide(function(field("进水温度")), sample("进水温度", "ON"), open())
+        assertTrue(ModbusAlarmPolicy.decide(fieldRules(field("进水温度")), sample("进水温度", "ON"), open())
                 .skips().isEmpty());
-        assertTrue(ModbusAlarmPolicy.decide(function(field("进水温度", disabled())), sample("进水温度", "ON"), open())
+        assertTrue(ModbusAlarmPolicy.decide(fieldRules(field("进水温度", disabled())), sample("进水温度", "ON"), open())
                 .skips().isEmpty());
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 81.0), open()).skips().isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 81.0), open()).skips().isEmpty());
     }
 
     @Test
     void everyRuleReportsItsOwnSkip() {
         // 一个出值可以配一组规则，所以「哪一条判不了」也要分别报出来 ——
         // 日志的去重键因此细到规则，否则同一出值的第二条坏规则永远不会被报出来
-        ModbusPollingResponseFieldAlarm first = withId(alarm("??", 80.0, null), "broken-1");
-        ModbusPollingResponseFieldAlarm second = withId(alarm("??", 90.0, null), "broken-2");
-        ModbusPolling function = function(field("进水温度", first, second));
+        ModbusRegistryAlarm first = withId(alarm("??", 80.0, null), "broken-1");
+        ModbusRegistryAlarm second = withId(alarm("??", 90.0, null), "broken-2");
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", first, second));
 
-        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 85.0), open());
+        Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", 85.0), open());
 
         assertTrue(decision.isEmpty());
         assertEquals(List.of("broken-1", "broken-2"),
@@ -421,37 +416,35 @@ class ModbusAlarmPolicyTest {
 
     @Test
     void openCarriesTheUnitSnapshotAndBitsHaveNone() {
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPollingResponseField withUnit = field("进水温度", rule);
-        withUnit.unit = "℃";
-        assertEquals("℃", ModbusAlarmPolicy.decide(function(withUnit), sample("进水温度", 81.0), open())
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        ModbusFieldRule withUnit = field("进水温度", "℃", rule);
+        assertEquals("℃", ModbusAlarmPolicy.decide(fieldRules(withUnit), sample("进水温度", 81.0), open())
                 .opens().get(0).unit());
 
-        // 位没有自己的单位：父字段那个（比如 ℃）贴到 0/1 的位上只会让列表里出现「1 ℃」
-        ModbusPollingResponseField bits = bits("进水阀位", "进水阀", alarm("=", 1.0, null));
-        bits.unit = "℃";
-        assertNull(ModbusAlarmPolicy.decide(function(bits), sample("进水阀", 1), open()).opens().get(0).unit());
+        // 位没有自己的单位：父寄存器那个（比如 ℃）贴到 0/1 的位上只会让列表里出现「1 ℃」
+        assertNull(ModbusAlarmPolicy.decide(fieldRules(bits("进水阀位", "进水阀", alarm("=", 1.0, null))),
+                sample("进水阀", 1), open()).opens().get(0).unit());
     }
 
     // ===== 定义变更的对账 =====
 
     @Test
     void definitionCloseOnlyForKeysPresentInTheSample() {
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
 
         // 采样里没有这个键：分不清是「定义删了它」还是「这一帧截断了」，宁可留着也不能凭空恢复
-        Decision truncated = ModbusAlarmPolicy.decide(function(field("进水温度", rule)),
+        Decision truncated = ModbusAlarmPolicy.decide(fieldRules(field("进水温度", rule)),
                 sample("别的字段", 1), open("进水温度", rule));
         assertTrue(truncated.isEmpty());
 
         // 采样里有、但新定义已不再给它配告警（关掉了，或字段被删了）⇒ 定义不再覆盖它了，关掉
-        Decision switchedOff = ModbusAlarmPolicy.decide(function(field("进水温度")),
+        Decision switchedOff = ModbusAlarmPolicy.decide(fieldRules(field("进水温度")),
                 sample("进水温度", 20.0), open("进水温度", rule));
         assertEquals(List.of("进水温度"), switchedOff.definitionCloses());
         assertTrue(switchedOff.valueCloses().isEmpty());
 
         // 字段被整个删掉：新定义里连这个字段都没有，同样关掉
-        Decision fieldGone = ModbusAlarmPolicy.decide(function(field("回水温度")),
+        Decision fieldGone = ModbusAlarmPolicy.decide(fieldRules(field("回水温度")),
                 sample("进水温度", 20.0), open("进水温度", rule));
         assertEquals(List.of("进水温度"), fieldGone.definitionCloses());
     }
@@ -460,11 +453,11 @@ class ModbusAlarmPolicyTest {
     void allRulesDisabledIsADefinitionCloseNotAValueClose() {
         // 规则全停用了：配置留着、但没有任何规则参与判定 ⇒ 这条已开着的行再也判定不到，按定义关掉。
         // 与「值回到正常」分开，是因为这一帧的值可能仍然越限 —— 记 VALUE 是谎话
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPollingResponseFieldAlarm off = disabled();
-        ModbusPolling function = function(field("进水温度", off));
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        ModbusRegistryAlarm off = disabled();
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", off));
 
-        Decision decision = ModbusAlarmPolicy.decide(function, sample("进水温度", 95.0), open("进水温度", rule));
+        Decision decision = ModbusAlarmPolicy.decide(rules, sample("进水温度", 95.0), open("进水温度", rule));
 
         assertEquals(List.of("进水温度"), decision.definitionCloses());
         assertTrue(decision.valueCloses().isEmpty());
@@ -475,42 +468,42 @@ class ModbusAlarmPolicyTest {
     @Test
     void definitionCloseDoesNotTouchValueJudgedKeys() {
         // 配了告警、采样里有、但本次既没开也没关：不能因为「没动作」被 DEFINITION 逻辑误关掉
-        ModbusPollingResponseFieldAlarm rule = alarm(">", 80.0, null);
-        ModbusPolling function = function(field("进水温度", rule));
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 79.0), open("进水温度", rule))
+        ModbusRegistryAlarm rule = alarm(">", 80.0, null);
+        List<ModbusFieldRule> rules = fieldRules(field("进水温度", rule));
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 79.0), open("进水温度", rule))
                 .valueCloses().contains("进水温度"));
-        assertTrue(ModbusAlarmPolicy.decide(function, sample("进水温度", 85.0), open("进水温度", rule)).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(rules, sample("进水温度", 85.0), open("进水温度", rule)).isEmpty());
     }
 
     // ===== 位 =====
 
     @Test
     void bitAlarmIsZeroOrOne() {
-        ModbusPollingResponseFieldAlarm rule = alarm("=", 1.0, null);
-        ModbusPolling function = function(bits("进水阀位", "进水阀", rule));
+        ModbusRegistryAlarm rule = alarm("=", 1.0, null);
+        List<ModbusFieldRule> rules = fieldRules(bits("进水阀位", "进水阀", rule));
 
-        Decision opened = ModbusAlarmPolicy.decide(function, sample("进水阀", 1), open());
+        Decision opened = ModbusAlarmPolicy.decide(rules, sample("进水阀", 1), open());
         assertEquals(List.of("进水阀"), opened.opens().stream().map(Open::field).toList());
 
         // 位是独立的结果键：父字段那份整段掩码与它无关
         assertEquals(List.of("进水阀"),
-                ModbusAlarmPolicy.decide(function, sample("进水阀", 0), open("进水阀", rule)).valueCloses());
+                ModbusAlarmPolicy.decide(rules, sample("进水阀", 0), open("进水阀", rule)).valueCloses());
     }
 
     @Test
     void bitsCarryTheirOwnRuleGroup() {
         // 一位一组规则：= 0 提示、= 1 严重 —— 与字段上的那组彼此独立
-        ModbusPollingResponseFieldAlarm off = level(alarm("=", 0.0, null), "INFO");
-        ModbusPollingResponseFieldAlarm on = level(alarm("=", 1.0, null), "CRITICAL");
-        ModbusPolling function = function(bits("进水阀位", "进水阀", off, on));
+        ModbusRegistryAlarm off = level(alarm("=", 0.0, null), "INFO");
+        ModbusRegistryAlarm on = level(alarm("=", 1.0, null), "CRITICAL");
+        List<ModbusFieldRule> rules = fieldRules(bits("进水阀位", "进水阀", off, on));
 
         // 0 只命中「= 0」那条：同时命中才轮得到选举，单单命中一条时级别高低无所谓
-        Decision zero = ModbusAlarmPolicy.decide(function, sample("进水阀", 0), open());
+        Decision zero = ModbusAlarmPolicy.decide(rules, sample("进水阀", 0), open());
         assertEquals(1, zero.opens().size());
         assertSame(off, zero.opens().get(0).alarm());
 
         // 变成 1：另一条接手，那条开着的按 SUPERSEDED 关（值没有回到正常，是换了一条规则）
-        Decision one = ModbusAlarmPolicy.decide(function, sample("进水阀", 1), open("进水阀", off));
+        Decision one = ModbusAlarmPolicy.decide(rules, sample("进水阀", 1), open("进水阀", off));
         assertEquals(List.of("进水阀"), one.supersededCloses());
         assertSame(on, one.opens().get(0).alarm());
     }
@@ -520,26 +513,26 @@ class ModbusAlarmPolicyTest {
     @Test
     void hasEnabledAlarmIsTheFreeGate() {
         assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(null));
-        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(function()));
-        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(function(field("进水温度"))));
-        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(function(field("进水温度", disabled()))));
-        assertTrue(ModbusAlarmPolicy.hasEnabledAlarm(function(field("进水温度", alarm(">", 80.0, null)))));
+        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(fieldRules()));
+        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(fieldRules(field("进水温度"))));
+        assertFalse(ModbusAlarmPolicy.hasEnabledAlarm(fieldRules(field("进水温度", disabled()))));
+        assertTrue(ModbusAlarmPolicy.hasEnabledAlarm(fieldRules(field("进水温度", alarm(">", 80.0, null)))));
 
         // 一组里只要有一条启用着就算
         assertTrue(ModbusAlarmPolicy.hasEnabledAlarm(
-                function(field("进水温度", disabled(), alarm(">", 80.0, null)))));
+                fieldRules(field("进水温度", disabled(), alarm(">", 80.0, null)))));
 
         // 位上的告警也算：位是独立的结果键，配在位上
         assertTrue(ModbusAlarmPolicy.hasEnabledAlarm(
-                function(bits("进水阀位", "进水阀", alarm("=", 1.0, null)))));
+                fieldRules(bits("进水阀位", "进水阀", alarm("=", 1.0, null)))));
     }
 
     @Test
     void emptyResponseDecidesNothing() {
-        assertTrue(ModbusAlarmPolicy.decide(function(), sample("进水温度", 99.0), open()).isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(fieldRules(), sample("进水温度", 99.0), open()).isEmpty());
         assertTrue(ModbusAlarmPolicy.decide(null, sample("进水温度", 99.0), open()).isEmpty());
         // 空定义也就没有「判不了」：skips 只能来自配了告警的出值
-        assertTrue(ModbusAlarmPolicy.decide(function(), sample("进水温度", 99.0), open()).skips().isEmpty());
+        assertTrue(ModbusAlarmPolicy.decide(fieldRules(), sample("进水温度", 99.0), open()).skips().isEmpty());
         assertTrue(ModbusAlarmPolicy.decide(null, sample("进水温度", 99.0), open()).skips().isEmpty());
     }
 
@@ -557,53 +550,42 @@ class ModbusAlarmPolicyTest {
                 open.put(opened.field(), new OpenAlarmRule(opened.alarm().id, false)));
     }
 
-    private static Decision decision(ModbusPollingResponseField field, double value, Map<String, OpenAlarmRule> open) {
-        return ModbusAlarmPolicy.decide(function(field), sample(field.field, value), open);
+    private static Decision decision(ModbusFieldRule field, double value, Map<String, OpenAlarmRule> open) {
+        return ModbusAlarmPolicy.decide(List.of(field), sample(field.field(), value), open);
     }
 
-    private static ModbusPollingResponseFieldAlarm firstOpen(Decision decision) {
+    private static ModbusRegistryAlarm firstOpen(Decision decision) {
         assertEquals(1, decision.opens().size());
         return decision.opens().get(0).alarm();
     }
 
-    private static ModbusPolling function(ModbusPollingResponseField... fields) {
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
-                    function.from.type = "command";
-                    function.from.index = 1;
-                    function.index = 1;
-        function.name = "读进水温度";
-        function.request = ModbusPollingRequests.holding();
-        function.response = ModbusPollingResponses.of(fields);
-        return function;
+    private static List<ModbusFieldRule> fieldRules(ModbusFieldRule... fieldRules) {
+        return new ArrayList<>(List.of(fieldRules));
     }
 
-    /** 只带告警的字段：policy 不看 index / format / scale，那些是 parser 与校验器的事。 */
-    private static ModbusPollingResponseField field(String name, ModbusPollingResponseFieldAlarm... alarms) {
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
-        field.field = name;
-        field.alarms = new ArrayList<>(List.of(alarms));
-        return field;
+    /** 只带告警的出值规则：policy 不看 index / format / scale，那些是 parser 与校验器的事。 */
+    private static ModbusFieldRule field(String name, ModbusRegistryAlarm... alarms) {
+        return field(name, null, alarms);
     }
 
-    private static ModbusPollingResponseField bits(String name, String bitName, ModbusPollingResponseFieldAlarm... alarms) {
-        ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
-        bit.offset = 0;
-        bit.field = bitName;
-        bit.alarms = new ArrayList<>(List.of(alarms));
+    /** 只带告警、带单位的出值规则（单位快照进告警行）。 */
+    private static ModbusFieldRule field(String name, String unit, ModbusRegistryAlarm... alarms) {
+        return new ModbusFieldRule(name, new ArrayList<>(List.of(alarms)), unit);
+    }
 
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
-        field.field = name;
-        field.bitList = new ArrayList<>(List.of(bit));
-        return field;
+    /**
+     * 位组的出值：位是独立的结果键，规则上的 field 即位的 field（bits 时单位一律为空）。
+     */
+    private static ModbusFieldRule bits(String name, String bitName, ModbusRegistryAlarm... alarms) {
+        return new ModbusFieldRule(bitName, new ArrayList<>(List.of(alarms)), null);
     }
 
     /**
      * 一条规则。<b>标识由内容生成</b>：参数相同的两条规则算同一条 ——
      * 测试里「这条行还是那条规则开的」因此不需要到处手写 id。要别的身份用 {@link #withId}。
      */
-    private static ModbusPollingResponseFieldAlarm alarm(String compare, Double threshold, String state) {
-        ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
+    private static ModbusRegistryAlarm alarm(String compare, Double threshold, String state) {
+        ModbusRegistryAlarm alarm = new ModbusRegistryAlarm();
         alarm.id = compare + threshold + "/" + state;
         alarm.enabled = true;
         alarm.compare = compare;
@@ -614,20 +596,20 @@ class ModbusAlarmPolicyTest {
         return alarm;
     }
 
-    private static ModbusPollingResponseFieldAlarm disabled() {
-        ModbusPollingResponseFieldAlarm alarm = alarm(">", 80.0, null);
+    private static ModbusRegistryAlarm disabled() {
+        ModbusRegistryAlarm alarm = alarm(">", 80.0, null);
         alarm.enabled = false;
         return alarm;
     }
 
     /** 改标识：用来表达「还是那条规则，只是配置改了」，或者「这是另一条规则」。 */
-    private static ModbusPollingResponseFieldAlarm withId(ModbusPollingResponseFieldAlarm alarm, String id) {
+    private static ModbusRegistryAlarm withId(ModbusRegistryAlarm alarm, String id) {
         alarm.id = id;
         return alarm;
     }
 
     /** 改级别（选举看它）。 */
-    private static ModbusPollingResponseFieldAlarm level(ModbusPollingResponseFieldAlarm alarm, String level) {
+    private static ModbusRegistryAlarm level(ModbusRegistryAlarm alarm, String level) {
         alarm.level = level;
         return alarm;
     }
@@ -653,7 +635,7 @@ class ModbusAlarmPolicyTest {
     private static Map<String, OpenAlarmRule> openWith(boolean handled, Object... pairs) {
         Map<String, OpenAlarmRule> open = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
-            ModbusPollingResponseFieldAlarm rule = (ModbusPollingResponseFieldAlarm) pairs[i + 1];
+            ModbusRegistryAlarm rule = (ModbusRegistryAlarm) pairs[i + 1];
             open.put((String) pairs[i], new OpenAlarmRule(rule.id, handled));
         }
         return open;

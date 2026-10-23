@@ -1,11 +1,9 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -38,8 +36,8 @@ import java.util.TreeSet;
  *
  * <h2>判据只有一条：新定义里还有没有「这条开行所依据的那条规则」</h2>
  *
- * <p>即：该出值（{@code response.fields[].field}，或 {@code response.fields[].bitList[].field} —— 位是独立的结果键）
- * 上，还有没有一条**启用着的、{@code id} 等于这行 {@code ruleId}** 的规则。字段改名、方法序号变了、
+ * <p>即：该出值（寄存器中心里的 {@code configSnapshot.registries[].name} —— 寄存器名是唯一的结果键）
+ * 上，还有没有一条**启用着的、{@code id} 等于这行 {@code ruleId}** 的规则。寄存器改名、寄存器被删、
  * 字段被删、那条规则被删、规则被停用 —— 都表现为「这条规则在新定义里找不到」，一视同仁。</p>
  *
  * <p><b>为什么细到规则、而不是停在出值</b>：一个出值能配一组规则，判定时只留最严重的一条开着。
@@ -70,51 +68,35 @@ public final class ModbusAlarmPlan {
     }
 
     /**
-     * 新定义里**配着启用告警**的全部规则：{@code pollingIndex → {出值名 → 该出值上启用的规则标识}}。
+     * 新定义里**配着启用告警**的全部规则：{@code 出值名(寄存器名) → 该出值上启用的规则标识}。
      *
-     * <p>写方法（{@code response} 为空）进来是空集 —— 告警只许配在读方法上，写方法的应答是请求回显、
-     * 没有读值，所以它上面任何开行都是残留。</p>
+     * <p>告警属寄存器（寄存器中心），不属 function 应答字段，故这里直接从
+     * {@code configSnapshot.registries[]} 的 {@code alarms} 收，不再按 function/pollingIndex 分组。</p>
      *
      * <p>启用着却没有 {@code id} 的规则（校验器挡着新数据，只可能是老数据）收不进来：
      * 它开出来的行 {@code ruleId} 也是 null，同样落进「行上没有 ruleId ⇒ 不动」那条。</p>
      */
-    static Map<Integer, Map<String, Set<String>>> configuredRules(ModbusService service) {
-        Map<Integer, Map<String, Set<String>>> byIndex = new HashMap<>();
-        if (service == null || service.functions == null) {
-            return byIndex;
+    static Map<String, Set<String>> configuredRules(ModbusService service) {
+        Map<String, Set<String>> keys = new HashMap<>();
+        if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
+            return keys;
         }
-        for (ModbusPolling function : service.functions) {
-            if (function == null || function.index == null) {
+        for (ModbusRegistry reg : service.configSnapshot.registries) {
+            if (reg == null || reg.name == null) {
                 continue;
             }
-            Map<String, Set<String>> keys = new HashMap<>();
-            for (ModbusPollingResponseField field : ModbusPolling.responseFields(function)) {
-                if (field == null) {
-                    continue;
-                }
-                // 位与字段进的是同一个结果对象，所以两种键平级收进来（与 parser 同口径）
-                addRuleIds(keys, field.field, field.alarms);
-                if (field.bitList == null) {
-                    continue;
-                }
-                for (ModbusPollingResponseFieldBit bit : field.bitList) {
-                    if (bit != null) {
-                        addRuleIds(keys, bit.field, bit.alarms);
-                    }
-                }
-            }
-            byIndex.put(function.index, keys);
+            addRuleIds(keys, reg.name, reg.alarms);
         }
-        return byIndex;
+        return keys;
     }
 
-    /** 把一个出值上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
+    /** 把一个出值（寄存器）上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
     private static void addRuleIds(Map<String, Set<String>> keys, String field,
-                                   List<ModbusPollingResponseFieldAlarm> alarms) {
+                                   List<ModbusRegistryAlarm> alarms) {
         if (field == null || alarms == null) {
             return;
         }
-        for (ModbusPollingResponseFieldAlarm alarm : alarms) {
+        for (ModbusRegistryAlarm alarm : alarms) {
             if (ModbusAlarmPolicy.isEnabled(alarm) && alarm.id != null) {
                 keys.computeIfAbsent(field, ignored -> new HashSet<>()).add(alarm.id);
             }
@@ -134,7 +116,7 @@ public final class ModbusAlarmPlan {
             return closes;
         }
 
-        Map<String, Map<Integer, Map<String, Set<String>>>> covered = new HashMap<>();
+        Map<String, Map<String, Set<String>>> covered = new HashMap<>();
         for (ModbusService service : services) {
             if (service == null || service.id == null) {
                 continue;
@@ -149,12 +131,11 @@ public final class ModbusAlarmPlan {
                     || row.ruleId == null) {
                 continue;   // 坐标不全、或说不上是哪条规则开的：见类注释，不在这里动
             }
-            Map<Integer, Map<String, Set<String>>> byIndex = covered.get(row.serviceId);
-            if (byIndex == null) {
+            Map<String, Set<String>> rules = covered.get(row.serviceId);
+            if (rules == null) {
                 continue;   // 不认识的服务：见类注释，保守不动
             }
-            Map<String, Set<String>> rules = row.pollingIndex == null ? null : byIndex.get(row.pollingIndex);
-            Set<String> ids = rules == null ? null : rules.get(row.field);
+            Set<String> ids = rules.get(row.field);
             if (ids != null && ids.contains(row.ruleId)) {
                 continue;   // 新定义里还有这条规则且启用着，留着 —— 它归值判定管
             }

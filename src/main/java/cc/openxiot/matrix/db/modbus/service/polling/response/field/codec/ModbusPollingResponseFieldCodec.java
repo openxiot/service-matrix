@@ -50,11 +50,6 @@ public final class ModbusPollingResponseFieldCodec {
         if (field.bitList != null) {
             o.put("bit-list", ModbusPollingResponseFieldBitCodec.encode(field.bitList));
         }
-        // 空数组与「元素全是空壳」都不出键：库里不会留下 `alarms: []` 这种噪音，
-        // 与 decode 把空数组读成 null 是同一件事的两面
-        if (field.alarms != null && !field.alarms.isEmpty()) {
-            o.put("alarms", ModbusPollingResponseFieldAlarmCodec.encode(field.alarms));
-        }
         return o;
     }
 
@@ -82,7 +77,6 @@ public final class ModbusPollingResponseFieldCodec {
         field.unit = o.getString("unit");
         field.valueList = ModbusPollingResponseFieldValueCodec.decode(o.getJsonArray("value-list"));
         field.bitList = ModbusPollingResponseFieldBitCodec.decode(o.getJsonArray("bit-list"));
-        field.alarms = ModbusPollingResponseFieldAlarmCodec.decode(o.getJsonArray("alarms"));
         return field;
     }
 

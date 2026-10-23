@@ -18,7 +18,34 @@
         "dataType": "uint16",
         "access": "R",
         "scale": 0.1,
-        "unit": "℃"
+        "unit": "℃",
+        "alarms": [
+          {
+            "id": "a1",
+            "enabled": true,
+            "compare": ">",
+            "threshold": 80,
+            "level": "WARN",
+            "text": "进水温度过高"
+          }
+        ]
+      },
+      {
+        "name": "进水阀",
+        "index": 2,
+        "address": 0,
+        "area": "coil",
+        "access": "R",
+        "alarms": [
+          {
+            "id": "b1",
+            "enabled": true,
+            "compare": "=",
+            "threshold": 1,
+            "level": "CRITICAL",
+            "text": "进水阀未关闭"
+          }
+        ]
       }
     ],
     "commands": [],
@@ -54,17 +81,7 @@
             "format": "uint16",
             "byteOrder": "ABCD",
             "scale": 0.1,
-            "unit": "℃",
-            "alarms": [
-              {
-                "id": "a1",
-                "enabled": true,
-                "compare": ">",
-                "threshold": 80,
-                "level": "WARN",
-                "text": "进水温度过高"
-              }
-            ]
+            "unit": "℃"
           }
         ]
       },
@@ -131,17 +148,7 @@
             "bit-list": [
               {
                 "offset": 0,
-                "field": "进水阀",
-                "alarms": [
-                  {
-                    "id": "b1",
-                    "enabled": true,
-                    "compare": "=",
-                    "threshold": 1,
-                    "level": "CRITICAL",
-                    "text": "进水阀未关闭"
-                  }
-                ]
+                "field": "进水阀"
               },
               {
                 "offset": 3,

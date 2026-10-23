@@ -1,13 +1,11 @@
 package cc.openxiot.matrix.api.modbus.alarm;
 
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
-import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
@@ -243,7 +241,7 @@ class ModbusAlarmReconcilerTest {
 
     @Test
     void startupSweepWithNoOpenRowsReadsButWritesNothing() {
-        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(service(SID, function()))));
+        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(service(SID))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of()));
 
         reconciler.init(null);
@@ -274,44 +272,44 @@ class ModbusAlarmReconcilerTest {
 
     private static ModbusService serviceWithoutId() {
         ModbusService service = new ModbusService();
-        service.functions = List.of(function(field("进水温度", true)));
+        ModbusConfig snapshot = new ModbusConfig();
+        snapshot.registries = List.of(function(field("进水温度", true)));
+        service.configSnapshot = snapshot;
         return service;
     }
 
-    private static ModbusService service(String serviceId, ModbusPolling... functions) {
+    /** 服务夹具：告警现属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段。 */
+    private static ModbusService service(String serviceId, ModbusRegistry... registries) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(serviceId);
-        service.functions = List.of(functions);
+        ModbusConfig snapshot = new ModbusConfig();
+        snapshot.registries = new ArrayList<>(List.of(registries));
+        service.configSnapshot = snapshot;
         return service;
     }
 
-    private static ModbusPolling function(ModbusPollingResponseField... fields) {
-        return function(1, fields);
+    /** 历史包袱保留的 `function(...)` 调用外形：现在对应点表里的一个寄存器（告警属寄存器）。 */
+    private static ModbusRegistry function(ModbusRegistry... regs) {
+        return regs == null || regs.length == 0 ? null : regs[0];
     }
 
-    private static ModbusPolling function(int index, ModbusPollingResponseField... fields) {
-        ModbusPolling function = new ModbusPolling();
-                    function.from = new ModbusPollingFrom();
-                    function.from.type = "command";
-                    function.from.index = index;
-                    function.index = index;
-        function.response = ModbusPollingResponses.of(fields);
-        return function;
+    private static ModbusRegistry function(int index, ModbusRegistry... regs) {
+        return function(regs);
     }
 
-    private static ModbusPollingResponseField field(String name, boolean alarmEnabled) {
-        ModbusPollingResponseField field = new ModbusPollingResponseField();
-        field.field = name;
+    private static ModbusRegistry field(String name, boolean alarmEnabled) {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = name;
         if (alarmEnabled) {
-            ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
+            ModbusRegistryAlarm alarm = new ModbusRegistryAlarm();
             alarm.id = RULE_ID;
             alarm.enabled = true;
             alarm.compare = ">";
             alarm.threshold = 80.0;
             alarm.level = "WARN";
             alarm.text = "温度过高";
-            field.alarms = new ArrayList<>(List.of(alarm));
+            reg.alarms = new ArrayList<>(List.of(alarm));
         }
-        return field;
+        return reg;
     }
 }

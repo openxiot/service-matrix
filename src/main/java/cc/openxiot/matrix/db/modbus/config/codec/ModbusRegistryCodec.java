@@ -52,6 +52,10 @@ public final class ModbusRegistryCodec {
         if (reg.enumMap != null) {
             o.put("enumMap", reg.enumMap);
         }
+        // 空数组与「元素全是空壳」都不出键：库里不会留下 `alarms: []` 这种噪音
+        if (reg.alarms != null && !reg.alarms.isEmpty()) {
+            o.put("alarms", ModbusRegistryAlarmCodec.encode(reg.alarms));
+        }
         return o;
     }
 

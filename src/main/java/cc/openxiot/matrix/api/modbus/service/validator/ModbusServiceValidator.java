@@ -3,9 +3,10 @@ package cc.openxiot.matrix.api.modbus.service.validator;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldValue;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
@@ -79,7 +80,7 @@ public final class ModbusServiceValidator {
     private static final int MAX_ALARM_RULES = 8;
 
     /**
-     * 规则标识的长度上限（见 {@link ModbusPollingResponseFieldAlarm#id}）：前端生成的一小串随机码，
+     * 规则标识的长度上限（见 {@link ModbusRegistryAlarm.id}）：前端生成的一小串随机码，
      * 不是给人看的，给足余量即可。
      */
     private static final int MAX_ALARM_ID_LENGTH = 64;
@@ -126,6 +127,11 @@ public final class ModbusServiceValidator {
         }
         if (service.slaveId < 1 || service.slaveId > 247) {
             return "invalid slaveId: " + service.slaveId + " (must be 1..247)";
+        }
+        // 告警规则属寄存器（寄存器中心）：逐寄存器校验 configSnapshot.registries[].alarms
+        String registryAlarmErr = validateRegistryAlarms(service.configSnapshot.registries, "configSnapshot");
+        if (registryAlarmErr != null) {
+            return registryAlarmErr;
         }
         return validateFunctions(service.functions, service.slaveId);
     }
@@ -231,7 +237,7 @@ public final class ModbusServiceValidator {
             if (registry && ModbusPolling.responseFields(function).isEmpty()) {
                 return base + ".response is required for a registry poll (the register-derived read block must declare fields)";
             }
-            String responseErr = validateFields(ModbusPolling.responseFields(function), base, read);
+            String responseErr = validateFields(ModbusPolling.responseFields(function), base);
             if (responseErr != null) {
                 return responseErr;
             }
@@ -609,7 +615,7 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    private static String validateFields(List<ModbusPollingResponseField> fields, String base, boolean readFunction) {
+    private static String validateFields(List<ModbusPollingResponseField> fields, String base) {
         if (fields == null) {
             return null;
         }
@@ -663,12 +669,7 @@ public final class ModbusServiceValidator {
             if (valueListErr != null) {
                 return valueListErr;
             }
-            // 字段自身的告警放在取值表之后：它要拿 value-list 的 description 去核对 state
-            String alarmErr = validateAlarms(field.alarms, field, false, ibase + ".alarms", readFunction);
-            if (alarmErr != null) {
-                return alarmErr;
-            }
-            String bitListErr = validateBitList(field, ibase, seenField, readFunction);
+            String bitListErr = validateBitList(field, ibase, seenField);
             if (bitListErr != null) {
                 return bitListErr;
             }
@@ -683,8 +684,7 @@ public final class ModbusServiceValidator {
      * <p>位是**独立的结果键**（parser 把每个命名位单独放进结果对象），所以告警配在位上而不是父字段上：
      * 父字段那份是整个位掩码，与「进水阀开没开」不是一回事。</p>
      */
-    private static String validateBitList(ModbusPollingResponseField field, String ibase, Set<String> seenField,
-                                          boolean readFunction) {
+    private static String validateBitList(ModbusPollingResponseField field, String ibase, Set<String> seenField) {
         if (field.bitList == null || field.bitList.isEmpty()) {
             return null;
         }
@@ -708,38 +708,34 @@ public final class ModbusServiceValidator {
             if (!seenField.add(bit.field)) {
                 return "invalid " + bbase + ".field: " + bit.field + " (duplicated)";
             }
-            String alarmErr = validateAlarms(bit.alarms, field, true, bbase + ".alarms", readFunction);
-            if (alarmErr != null) {
-                return alarmErr;
-            }
         }
         return null;
     }
 
     /**
-     * 一个出值（或一个位）的**一组**阈值告警规则（{@link ModbusPollingResponseFieldAlarm}）：逐条校验，
+     * 寄存器的**一组**阈值告警规则（{@link ModbusRegistry#alarms}）：逐条校验，
      * 外加两条只有「一组」才有意义的要求 —— 条数上限，以及启用规则的 {@code id} 非空、不超长、组内唯一。
      *
-     * <p>{@code id} 是「这条开着的告警是哪条规则开的」的唯一依据（见 {@link ModbusPollingResponseFieldAlarm#id}），
+     * <p>{@code id} 是「这条开着的告警是哪条规则开的」的唯一依据（见 {@link ModbusRegistryAlarm#id}），
      * 所以它必须存在且唯一。<b>只在 {@code enabled == true} 时查</b>，与下面 {@link #validateAlarm}
      * 同一条规矩：停用的规则不参与判定，它的 {@code id} 不影响任何事 —— 半配置合法。</p>
      *
-     * @param abase 出错文案里的位置，如 {@code functions[0].response.fields[1].alarms}
+     * @param abase 出错文案里的位置，如 {@code configSnapshot.registries[0].alarms}
      */
-    private static String validateAlarms(List<ModbusPollingResponseFieldAlarm> alarms,
-                                         ModbusPollingResponseField field,
-                                         boolean isBit,
-                                         String abase,
-                                         boolean readFunction) {
+    static String validateAlarms(List<ModbusRegistryAlarm> alarms,
+                                 ModbusRegistry reg,
+                                 String abase) {
         if (alarms == null || alarms.isEmpty()) {
             return null;
         }
         if (alarms.size() > MAX_ALARM_RULES) {
             return "invalid " + abase + ": too many rules (" + MAX_ALARM_RULES + " max)";
         }
+        boolean isBit = reg != null && ("coil".equals(reg.area) || "discrete".equals(reg.area));
+        boolean readable = reg == null || !"W".equals(reg.access);
         Set<String> seenId = new HashSet<>();
         for (int k = 0; k < alarms.size(); k++) {
-            ModbusPollingResponseFieldAlarm alarm = alarms.get(k);
+            ModbusRegistryAlarm alarm = alarms.get(k);
             String rbase = abase + "[" + k + "]";
             if (alarm == null) {
                 return rbase + " is null";
@@ -755,7 +751,24 @@ public final class ModbusServiceValidator {
                     return "invalid " + rbase + ".id: " + alarm.id + " (duplicated)";
                 }
             }
-            String err = validateAlarm(alarm, field, isBit, rbase, readFunction);
+            String err = validateAlarm(alarm, reg, isBit, readable, rbase);
+            if (err != null) {
+                return err;
+            }
+        }
+        return null;
+    }
+
+    private static String validateRegistryAlarms(List<ModbusRegistry> registries, String base) {
+        if (registries == null) {
+            return null;
+        }
+        for (int i = 0; i < registries.size(); i++) {
+            ModbusRegistry reg = registries.get(i);
+            if (reg == null) {
+                continue;
+            }
+            String err = validateAlarms(reg.alarms, reg, base + ".registries[" + i + "].alarms");
             if (err != null) {
                 return err;
             }
@@ -764,30 +777,31 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 一条阈值告警规则（{@link ModbusPollingResponseFieldAlarm}）。
+     * 一条阈值告警规则（{@link ModbusRegistryAlarm}）。
      *
      * <p><b>只在 {@code enabled == true} 时校验</b> —— 半配置合法，与 {@link #validatePolling}
      * 同一条规矩：false 的用法就是「把配置留着、先不报」。所以下面的规则读作「启用之后必须自洽」。
      * 判定口径（{@link ModbusAlarmPolicy}）共用 {@code OPERATORS} / {@code LEVELS} 两张白名单，
      * 不各写一份。</p>
      *
-     * <p>「能比什么」由字段的取值形态决定，而不是留给运行期碰运气：{@code string} 字段没有可比的量，
-     * 一律不收；带 {@code value-list} 的字段出的是描述字符串，只能用 {@code =} 比 {@code state}
-     * —— 给它配 {@code >} 会让比较随原始值是否命中取值表而时灵时不灵，正是要避免的静默失效。</p>
+     * <p>「能比什么」由寄存器的取值形态决定，而不是留给运行期碰运气：{@code string} 寄存器没有可比的量，
+     * 一律不收；带 {@code enumMap} 的寄存器出的是显示名，只能用 {@code =} 比 {@code state}
+     * —— 给它配 {@code >} 会让比较随原始值是否命中枚举映射而时灵时不灵，正是要避免的静默失效。</p>
      *
-     * @param field 配置所在字段：位（{@code isBit}）借它的 format / value-list 判断可比性
-     * @param isBit 校验的是 {@code bit-list} 里某个位的配置（值恒为 0/1，只能比 0 或 1）
-     * @param abase 出错文案里的位置，如 {@code functions[0].response.fields[1].bit-list[2].alarms[0]}
+     * @param reg      配置所在寄存器：借它的 dataType / enumMap / area（isBit）判断可比性
+     * @param isBit    寄存器区是 coil/discrete（值恒为 0/1，只能比 0 或 1）
+     * @param readable 寄存器是否可读（access 非 W）——只读不可读；不可读的寄存器没有「读到的值」，不收告警
+     * @param abase    出错文案里的位置，如 {@code configSnapshot.registries[0].alarms[0]}
      */
-    private static String validateAlarm(ModbusPollingResponseFieldAlarm alarm,
-                                        ModbusPollingResponseField field,
+    private static String validateAlarm(ModbusRegistryAlarm alarm,
+                                        ModbusRegistry reg,
                                         boolean isBit,
-                                        String abase,
-                                        boolean readFunction) {
+                                        boolean readable,
+                                        String abase) {
         if (!ModbusAlarmPolicy.isEnabled(alarm)) {
             return null;
         }
-        if (!readFunction) {
+        if (!readable) {
             return "invalid " + abase + ": only read functions (fc 01/02/03/04) can have alarms";
         }
         if (alarm.compare == null || !ModbusAlarmPolicy.OPERATORS.contains(alarm.compare)) {
@@ -803,11 +817,12 @@ public final class ModbusServiceValidator {
         if (alarm.text.trim().length() > MAX_ALARM_TEXT_LENGTH) {
             return "invalid " + abase + ".text: too long (" + MAX_ALARM_TEXT_LENGTH + " characters max)";
         }
-        if (field.format != null && "string".equals(field.format.trim().toLowerCase(Locale.ROOT))) {
+        String dataType = reg == null ? null : reg.dataType;
+        if (dataType != null && "string".equals(dataType.trim().toLowerCase(Locale.ROOT))) {
             return "invalid " + abase + ": a string field has no comparable value";
         }
 
-        boolean named = field.valueList != null && !field.valueList.isEmpty();
+        boolean named = reg != null && reg.enumMap != null && !reg.enumMap.isEmpty();
         if ("=".equals(alarm.compare)) {
             if (named) {
                 if (alarm.threshold != null) {
@@ -816,7 +831,7 @@ public final class ModbusServiceValidator {
                 if (alarm.state == null || alarm.state.isBlank()) {
                     return abase + ".state is required (compare = on a value-list field)";
                 }
-                if (!hasDescription(field, alarm.state)) {
+                if (!hasDescription(reg, alarm.state)) {
                     return "invalid " + abase + ".state: " + alarm.state + " (not in this field's value-list)";
                 }
                 return null;
@@ -856,14 +871,12 @@ public final class ModbusServiceValidator {
         return null;
     }
 
-    /** {@code state} 是否逐字命中取值表里的某个 description —— 判定时就按这个字符串相等去比。 */
-    private static boolean hasDescription(ModbusPollingResponseField field, String state) {
-        for (ModbusPollingResponseFieldValue entry : field.valueList) {
-            if (entry != null && state.equals(entry.description)) {
-                return true;
-            }
+    /** {@code state} 是否逐字命中枚举映射里的某个显示名 —— 判定时就按这个字符串相等去比。 */
+    private static boolean hasDescription(ModbusRegistry reg, String state) {
+        if (reg == null || reg.enumMap == null) {
+            return false;
         }
-        return false;
+        return reg.enumMap.containsValue(state);
     }
 
     private static String validateValueList(ModbusPollingResponseField field, String ibase) {

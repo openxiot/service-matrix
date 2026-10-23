@@ -3,6 +3,7 @@ package cc.openxiot.matrix.db.modbus.config;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -60,4 +61,14 @@ public class ModbusRegistry {
      */
     @Schema(description = "枚举映射（可选，仅整型 dataType）：原始值(字符串)→名称，如 {\"1\":\"正常\",\"0\":\"告警\"}", examples = {"{\\\"1\\\":\\\"None\\\",\\\"2\\\":\\\"Even\\\"}"}, required = false)
     public Map<String, String> enumMap;
+
+    /**
+     * 寄存器阈值告警规则（可选）：值越限时产生一条告警，一次采样只留最严重的那条
+     * （判定与选举见 {@code ModbusAlarmPolicy}；compare ∈ &gt; &gt;= &lt; &lt;= =）。
+     * 告警挂在寄存器/点位（寄存器中心）上，不再挂在 function 应答字段上。
+     * {@link #enabled} 缺省 / false 都不告警，但配置原样留着。
+     */
+    @Schema(description = "寄存器阈值告警规则（可选）：值越限时产生一条告警。"
+            + "只能配在可读寄存器（access R / RW）上；一位一组规则，一次采样只留最严重的那条", required = false)
+    public List<ModbusRegistryAlarm> alarms;
 }

@@ -4,8 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
-import java.util.List;
-
 /**
  * 位区字段（01/02 的应答）里的一个具名位：除字段自身那份整段位掩码外，额外把该位单独作为一个
  * 0/1 取值输出，取值的 key 即 {@link #field}。
@@ -25,8 +23,4 @@ public class ModbusPollingResponseFieldBit {
 
     @Schema(description = "该位的取值名：invoke 返回值里这个位的 key（值为 0/1）", examples = {"进水阀"}, required = true)
     public String field;
-
-    @Schema(description = "本位的一组阈值告警规则：值恒为 0/1，故只能用「等于」比 0 或 1，"
-            + "如「进水阀 = 1 告警」；配在位上而不是父字段上，因为位是独立的结果键")
-    public List<ModbusPollingResponseFieldAlarm> alarms;
 }

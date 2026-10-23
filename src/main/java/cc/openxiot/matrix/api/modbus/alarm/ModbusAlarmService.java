@@ -81,8 +81,9 @@ public class ModbusAlarmService {
      */
     public Uni<Void> evaluate(ModbusService service, ModbusPolling function, JsonObject values) {
         // 第一层闸门：没配告警的服务（也就是绝大多数）在这里返回，**一次数据库操作都不做**
+        List<ModbusAlarmPolicy.ModbusFieldRule> rules = ModbusAlarmPolicy.registerRules(service);
         if (service == null || service.id == null || function == null || function.index == null
-                || !ModbusAlarmPolicy.hasEnabledAlarm(function)) {
+                || !ModbusAlarmPolicy.hasEnabledAlarm(rules)) {
             return Uni.createFrom().voidItem();
         }
         String serviceId = service.id.toHexString();
@@ -92,10 +93,10 @@ public class ModbusAlarmService {
                 : new LinkedHashMap<>(values.getMap());
         Date now = new Date();
 
-        // 一个方法配了 3 个字段也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的、
+        // 一个方法配了 3 个出值也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的、
         // 处理过没有」这张表，它**就是**状态本身（见 Modbus-Alarm.md 第三节）
         return alarmRepo.mapOpenRuleByField(serviceId, function.index)
-                .chain(open -> apply(serviceId, function, sample, open, now));
+                .chain(open -> apply(serviceId, function, rules, sample, open, now));
     }
 
     /**
@@ -150,9 +151,10 @@ public class ModbusAlarmService {
      *
      * <p>其它动作之间确实互不依赖（开落在不同出值上，四类关闭按出值互斥），并发是对的。</p>
      */
-    private Uni<Void> apply(String serviceId, ModbusPolling function, Map<String, Object> sample,
+    private Uni<Void> apply(String serviceId, ModbusPolling function, List<ModbusAlarmPolicy.ModbusFieldRule> rules,
+                            Map<String, Object> sample,
                             Map<String, OpenAlarmRule> open, Date now) {
-        ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(function, sample, open);
+        ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(rules, sample, open);
         reportSkips(serviceId, function, decision.skips());
         if (decision.isEmpty()) {
             // 稳态（值没越限、开着的那条还开着）走这条：一次写操作都没有

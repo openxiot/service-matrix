@@ -56,8 +56,4 @@ public class ModbusPollingResponseField {
     @BsonProperty("bit-list")
     @JsonProperty("bit-list")
     public List<ModbusPollingResponseFieldBit> bitList;
-
-    @Schema(description = "本字段的一组阈值告警规则：值越限时产生一条告警，一次采样只留最严重的那条。"
-            + "只对读方法（fc 01/02/03/04）有效；位区的各个位另有自己的一组（见 bit-list）")
-    public List<ModbusPollingResponseFieldAlarm> alarms;
 }

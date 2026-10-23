@@ -1,11 +1,12 @@
 package cc.openxiot.matrix.api.modbus.service.validator;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
-import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldAlarm;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldValue;
 import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest;
@@ -644,241 +645,213 @@ class ModbusServiceValidatorTest {
 
     @Test
     void acceptsAlarms() {
-        // 数值字段：超过 80 报「温度过高」
-        assertNull(validateFieldAlarm(alarm(">", 80.0, null), field("进水温度", "uint16", 2)));
-        // 取值表字段：等于「ON」报「水泵异常」（比的是描述字符串，不是原始值）
-        ModbusPollingResponseField named = field("水泵状态", "uint16", 2);
-        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
-        assertNull(validateFieldAlarm(alarm("=", null, "ON"), named));
-        // 数值字段用「等于」比数
-        assertNull(validateFieldAlarm(alarm("=", 1.0, null), field("进水温度", "uint16", 2)));
+        // 数值寄存器：超过 80 报「温度过高」
+        assertNull(validateAlarm(alarm(">", 80.0, null), holding("进水温度", "uint16")));
+        // 枚举寄存器：等于「ON」报「水泵异常」（比的是显示名，不是原始值）
+        ModbusRegistry named = holding("水泵状态", "uint16");
+        named.enumMap = Map.of("0", "OFF", "1", "ON");
+        assertNull(validateAlarm(alarm("=", null, "ON"), named));
+        // 数值寄存器用「等于」比数
+        assertNull(validateAlarm(alarm("=", 1.0, null), holding("进水温度", "uint16")));
     }
 
     @Test
     void acceptsARuleGroupOnOneField() {
         // 一个出值一组规则：阈值各异、甚至方向相反（低侧与高侧永远不可能同时命中）都合法
-        ModbusPollingResponseFieldAlarm low = alarm("r1", "<", 20.0, null);
+        ModbusRegistryAlarm low = alarm("r1", "<", 20.0, null);
         low.level = "WARN";
-        ModbusPollingResponseFieldAlarm high = alarm("r2", ">", 26.0, null);
+        ModbusRegistryAlarm high = alarm("r2", ">", 26.0, null);
         high.level = "INFO";
-        ModbusPollingResponseFieldAlarm worst = alarm("r3", ">", 30.0, null);
+        ModbusRegistryAlarm worst = alarm("r3", ">", 30.0, null);
         worst.level = "CRITICAL";
-        assertNull(validateFieldAlarms(List.of(low, high, worst), field("进水温度", "uint16", 2)));
+        assertNull(validateAlarms(List.of(low, high, worst), holding("进水温度", "uint16")));
 
         // 停用的规则不查 id（半配置合法），也不占用组内的 id 名额
-        ModbusPollingResponseFieldAlarm disabled = alarm(null, ">", 40.0, null);
+        ModbusRegistryAlarm disabled = alarm(null, ">", 40.0, null);
         disabled.enabled = false;
-        assertNull(validateFieldAlarms(List.of(low, disabled), field("进水温度", "uint16", 2)));
+        assertNull(validateAlarms(List.of(low, disabled), holding("进水温度", "uint16")));
     }
 
     @Test
     void rejectsBadAlarmIds() {
-        String base = "functions[0].response.fields[0].alarms";
-        ModbusPollingResponseField temperature = field("进水温度", "uint16", 2);
+        String base = "configSnapshot.registries[0].alarms";
+        ModbusRegistry temperature = holding("进水温度", "uint16");
 
         // id 是「这条开着的告警是哪条规则开的」的唯一依据：启用了就必须有
         assertEquals(base + "[0].id is required",
-                validateFieldAlarms(List.of(alarm(null, ">", 80.0, null)), temperature));
+                validateAlarms(List.of(alarm(null, ">", 80.0, null)), temperature));
         assertEquals(base + "[0].id is required",
-                validateFieldAlarms(List.of(alarm("  ", ">", 80.0, null)), temperature));
+                validateAlarms(List.of(alarm("  ", ">", 80.0, null)), temperature));
 
-        ModbusPollingResponseFieldAlarm longId = alarm("x".repeat(65), ">", 80.0, null);
+        ModbusRegistryAlarm longId = alarm("x".repeat(65), ">", 80.0, null);
         assertEquals("invalid " + base + "[0].id: too long (64 characters max)",
-                validateFieldAlarms(List.of(longId), temperature));
+                validateAlarms(List.of(longId), temperature));
 
         // 同一出值内重复：两条规则会争同一个 ruleId，开行的归属就说不清了
         assertEquals("invalid " + base + "[1].id: r1 (duplicated)",
-                validateFieldAlarms(List.of(alarm("r1", ">", 80.0, null), alarm("r1", ">", 90.0, null)),
+                validateAlarms(List.of(alarm("r1", ">", 80.0, null), alarm("r1", ">", 90.0, null)),
                         temperature));
     }
 
     @Test
     void rejectsTooManyRulesOnOneField() {
         // 防呆不是安全边界（多几条只是多几次纯内存比较），是给「界面上误加了一堆规则」一个上限
-        String base = "functions[0].response.fields[0].alarms";
-        ModbusPollingResponseField temperature = field("进水温度", "uint16", 2);
+        String base = "configSnapshot.registries[0].alarms";
+        ModbusRegistry temperature = holding("进水温度", "uint16");
 
-        List<ModbusPollingResponseFieldAlarm> eight = new ArrayList<>();
+        List<ModbusRegistryAlarm> eight = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
             eight.add(alarm("r" + i, ">", 80.0 + i, null));
         }
-        assertNull(validateFieldAlarms(eight, temperature));
+        assertNull(validateAlarms(eight, temperature));
 
-        List<ModbusPollingResponseFieldAlarm> nine = new ArrayList<>(eight);
+        List<ModbusRegistryAlarm> nine = new ArrayList<>(eight);
         nine.add(alarm("r8", ">", 90.0, null));
         assertEquals("invalid " + base + ": too many rules (8 max)",
-                validateFieldAlarms(nine, temperature));
+                validateAlarms(nine, temperature));
     }
 
     @Test
     void acceptsBitAlarm() {
-        // 位只有 0/1，只能用「等于」比 0 或 1：进水阀 = 1 告警
-        ModbusPollingResponseField bits = field("进水阀位", "uint8", 1);
-        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
-        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("=", 1.0, null)));
-
-        ModbusService service = service();
-        // 1 个字节的位字段只能来自位区读（01/02）：8 个位 = 1 字节
-        service.functions.get(0).request = ModbusPollingRequests.read("02", 0, 8);
-        service.functions.get(0).response = ModbusPollingResponses.of(bits);
-        assertNull(ModbusServiceValidator.validate(service));
+        // 线圈寄存器只有 0/1，只能用「等于」比 0 或 1：进水阀 = 1 告警
+        assertNull(validateAlarm(alarm("=", 1.0, null), coil("进水阀")));
     }
 
     @Test
     void ignoresDisabledAlarm() {
         // enabled != true：半配置合法，与 polling 同一条规矩 —— 留着配置、先不报
-        ModbusPollingResponseFieldAlarm disabled = alarm("??", null, null);
+        ModbusRegistryAlarm disabled = alarm("??", null, null);
         disabled.enabled = false;
         disabled.text = null;
         disabled.level = null;
-        assertNull(validateFieldAlarm(disabled, field("进水温度", "uint16", 2)));
+        assertNull(validateAlarm(disabled, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm absent = alarm("??", null, null);
+        ModbusRegistryAlarm absent = alarm("??", null, null);
         absent.enabled = null;
-        assertNull(validateFieldAlarm(absent, field("进水温度", "uint16", 2)));
+        assertNull(validateAlarm(absent, holding("进水温度", "uint16")));
     }
 
     @Test
     void rejectsBadAlarmScalars() {
-        String base = "functions[0].response.fields[0].alarms[0]";
+        String base = "configSnapshot.registries[0].alarms[0]";
 
-        ModbusPollingResponseFieldAlarm badCompare = alarm("!=", 80.0, null);
+        ModbusRegistryAlarm badCompare = alarm("!=", 80.0, null);
         assertEquals("invalid " + base + ".compare: != (must be one of > >= < <= =)",
-                validateFieldAlarm(badCompare, field("进水温度", "uint16", 2)));
+                validateAlarm(badCompare, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm noCompare = alarm(null, 80.0, null);
+        ModbusRegistryAlarm noCompare = alarm(null, 80.0, null);
         assertEquals("invalid " + base + ".compare: null (must be one of > >= < <= =)",
-                validateFieldAlarm(noCompare, field("进水温度", "uint16", 2)));
+                validateAlarm(noCompare, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm badLevel = alarm(">", 80.0, null);
+        ModbusRegistryAlarm badLevel = alarm(">", 80.0, null);
         badLevel.level = "FATAL";
         assertEquals("invalid " + base + ".level: FATAL (must be one of INFO WARN CRITICAL)",
-                validateFieldAlarm(badLevel, field("进水温度", "uint16", 2)));
+                validateAlarm(badLevel, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm blankText = alarm(">", 80.0, null);
+        ModbusRegistryAlarm blankText = alarm(">", 80.0, null);
         blankText.text = "  ";
         assertEquals(base + ".text is required",
-                validateFieldAlarm(blankText, field("进水温度", "uint16", 2)));
+                validateAlarm(blankText, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm longText = alarm(">", 80.0, null);
+        ModbusRegistryAlarm longText = alarm(">", 80.0, null);
         longText.text = "超".repeat(65);
         assertEquals("invalid " + base + ".text: too long (64 characters max)",
-                validateFieldAlarm(longText, field("进水温度", "uint16", 2)));
+                validateAlarm(longText, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm noThreshold = alarm(">", null, null);
+        ModbusRegistryAlarm noThreshold = alarm(">", null, null);
         assertEquals(base + ".threshold is required (compare >)",
-                validateFieldAlarm(noThreshold, field("进水温度", "uint16", 2)));
+                validateAlarm(noThreshold, holding("进水温度", "uint16")));
 
-        ModbusPollingResponseFieldAlarm nan = alarm(">", Double.NaN, null);
+        ModbusRegistryAlarm nan = alarm(">", Double.NaN, null);
         assertEquals("invalid " + base + ".threshold: NaN",
-                validateFieldAlarm(nan, field("进水温度", "uint16", 2)));
+                validateAlarm(nan, holding("进水温度", "uint16")));
     }
 
     @Test
     void rejectsNullRuleInAGroup() {
         // 数组里的空元素：要么是前端拼错了，要么是手工改库改出来的，收下来判定时会 NPE
-        assertEquals("functions[0].response.fields[0].alarms[1] is null",
-                validateFieldAlarms(Arrays.asList(alarm(">", 80.0, null), null),
-                        field("进水温度", "uint16", 2)));
+        assertEquals("configSnapshot.registries[0].alarms[1] is null",
+                validateAlarms(Arrays.asList(alarm(">", 80.0, null), null),
+                        holding("进水温度", "uint16")));
     }
 
     @Test
-    void rejectsAlarmOnWriteFunction() {
-        // 写方法的应答是请求回显，没有「读到的值」可言 —— 与 interval 同一条规则。
-        // 字段本身校验得过（告警规则排在「写方法不许有 response」之前），所以这里报的就是告警那条。
-        ModbusService service = writeService(ModbusPollingRequests.write("05", 0,
-                ModbusPollingRequests.field(1, "开机", "bit", true)));
-        ModbusPollingResponseField echoed = field("进水温度", "uint16", 2);
-        echoed.alarms = new ArrayList<>(List.of(alarm(">", 80.0, null)));
-        service.functions.get(0).response = ModbusPollingResponses.of(echoed);
+    void rejectsAlarmOnWriteOnlyRegister() {
+        // 写方法没有「读到的值」可言 —— 与 interval 同一条规则。
+        // 寄存器中心里等价于一条 access=W（只写不可读）的寄存器：读不到值，不收告警。
+        ModbusRegistry writeReg = holding("进水温度", "uint16");
+        writeReg.access = "W";
 
-        assertEquals("invalid functions[0].response.fields[0].alarms[0]: only read functions (fc 01/02/03/04) can have alarms",
-                ModbusServiceValidator.validate(service));
+        assertEquals("invalid configSnapshot.registries[0].alarms[0]: only read functions (fc 01/02/03/04) can have alarms",
+                validateAlarm(alarm(">", 80.0, null), writeReg));
     }
 
     @Test
-    void rejectsAlarmOnStringField() {
-        // string 字段出的是任意文本，没有可比的量
-        ModbusPollingResponseFieldAlarm a = alarm(">", 80.0, null);
-        assertEquals("invalid functions[0].response.fields[0].alarms[0]: a string field has no comparable value",
-                validateFieldAlarm(a, field("设备型号", "string", 4)));
+    void rejectsAlarmOnStringRegister() {
+        // string 寄存器出的是任意文本，没有可比的量
+        ModbusRegistryAlarm a = alarm(">", 80.0, null);
+        assertEquals("invalid configSnapshot.registries[0].alarms[0]: a string field has no comparable value",
+                validateAlarm(a, holding("设备型号", "string")));
     }
 
     @Test
-    void rejectsNumericCompareOnValueListField() {
-        // 带 value-list 的字段出的是描述字符串：配 > 会随原始值是否命中取值表而时灵时不灵
-        ModbusPollingResponseField named = field("水泵状态", "uint16", 2);
-        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
+    void rejectsNumericCompareOnEnumRegister() {
+        // 带 enumMap 的寄存器出的是显示名：配 > 会随原始值是否命中枚举映射而时灵时不灵
+        ModbusRegistry named = holding("水泵状态", "uint16");
+        named.enumMap = Map.of("0", "OFF", "1", "ON");
 
-        assertEquals("invalid functions[0].response.fields[0].alarms[0].compare: > (a value-list field yields names, use =)",
-                validateFieldAlarm(alarm(">", 80.0, null), named));
+        assertEquals("invalid configSnapshot.registries[0].alarms[0].compare: > (a value-list field yields names, use =)",
+                validateAlarm(alarm(">", 80.0, null), named));
     }
 
     @Test
-    void rejectsBadEqualsOnValueListField() {
-        String base = "functions[0].response.fields[0].alarms[0]";
-        ModbusPollingResponseField named = field("水泵状态", "uint16", 2);
-        named.valueList = new ArrayList<>(List.of(value(0L, "OFF"), value(1L, "ON")));
+    void rejectsBadEqualsOnEnumRegister() {
+        String base = "configSnapshot.registries[0].alarms[0]";
+        ModbusRegistry named = holding("水泵状态", "uint16");
+        named.enumMap = Map.of("0", "OFF", "1", "ON");
 
         assertEquals(base + ".state is required (compare = on a value-list field)",
-                validateFieldAlarm(alarm("=", null, null), named));
+                validateAlarm(alarm("=", null, null), named));
 
-        // 不在取值表里的描述：判定时永远比不中，是静默失效，直接拒
+        // 不在枚举映射里的显示名：判定时永远比不中，是静默失效，直接拒
         assertEquals("invalid " + base + ".state: RUNAWAY (not in this field's value-list)",
-                validateFieldAlarm(alarm("=", null, "RUNAWAY"), named));
+                validateAlarm(alarm("=", null, "RUNAWAY"), named));
 
-        // 取值表字段比数也不对：那种字段的值有时是字符串
+        // 枚举寄存器比数也不对：那种寄存器的值有时是字符串
         assertEquals("invalid " + base + ".threshold: not allowed on a value-list field (use state)",
-                validateFieldAlarm(alarm("=", 1.0, "ON"), named));
+                validateAlarm(alarm("=", 1.0, "ON"), named));
     }
 
     @Test
     void rejectsBothThresholdAndState() {
-        assertEquals("invalid functions[0].response.fields[0].alarms[0].state: only allowed on a value-list field (use threshold)",
-                validateFieldAlarm(alarm("=", 1.0, "ON"), field("进水温度", "uint16", 2)));
-        assertEquals("invalid functions[0].response.fields[0].alarms[0].state: only allowed when compare is =",
-                validateFieldAlarm(alarm(">", 80.0, "ON"), field("进水温度", "uint16", 2)));
-        assertEquals("functions[0].response.fields[0].alarms[0].threshold is required (compare =)",
-                validateFieldAlarm(alarm("=", null, null), field("进水温度", "uint16", 2)));
+        assertEquals("invalid configSnapshot.registries[0].alarms[0].state: only allowed on a value-list field (use threshold)",
+                validateAlarm(alarm("=", 1.0, "ON"), holding("进水温度", "uint16")));
+        assertEquals("invalid configSnapshot.registries[0].alarms[0].state: only allowed when compare is =",
+                validateAlarm(alarm(">", 80.0, "ON"), holding("进水温度", "uint16")));
+        assertEquals("configSnapshot.registries[0].alarms[0].threshold is required (compare =)",
+                validateAlarm(alarm("=", null, null), holding("进水温度", "uint16")));
     }
 
     @Test
     void rejectsBadBitAlarm() {
-        String base = "functions[0].response.fields[0].bit-list[0].alarms[0]";
-        ModbusPollingResponseField bits = field("进水阀位", "uint8", 1);
-        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
+        String base = "configSnapshot.registries[0].alarms[0]";
 
-        // 位只有 0/1：数值比较与 0.5 都是定义错误
-        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm(">", 1.0, null)));
-        ModbusService service = service();
-        service.functions.get(0).response = ModbusPollingResponses.of(bits);
+        // 线圈寄存器只有 0/1：数值比较与 0.5 都是定义错误
         assertEquals("invalid " + base + ".compare: > (a bit is 0 or 1, use =)",
-                ModbusServiceValidator.validate(service));
-
-        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("=", 0.5, null)));
+                validateAlarm(alarm(">", 1.0, null), coil("进水阀")));
         assertEquals("invalid " + base + ".threshold: 0.5 (a bit is 0 or 1, use =)",
-                ModbusServiceValidator.validate(service));
+                validateAlarm(alarm("=", 0.5, null), coil("进水阀")));
     }
 
     @Test
     void bitRuleGroupHasItsOwnIdSpace() {
-        // id 的唯一性只在「同一位」内要求：位与父字段各是一组、各开各的行，同名不冲突
-        String base = "functions[0].response.fields[0].bit-list[0].alarms";
-        ModbusPollingResponseField bits = field("进水阀位", "uint8", 1);
-        bits.bitList = new ArrayList<>(List.of(bit(0, "进水阀")));
-        bits.bitList.get(0).alarms = new ArrayList<>(List.of(alarm("r1", "=", 1.0, null)));
-
-        ModbusService service = service();
-        // 同 acceptsBitAlarm：1 字节的位字段配 8 位的位区读
-        service.functions.get(0).request = ModbusPollingRequests.read("01", 0, 8);
-        service.functions.get(0).response = ModbusPollingResponses.of(bits);
-        assertNull(ModbusServiceValidator.validate(service));
+        // id 的唯一性只在「同一位（同一寄存器）」内要求：位与父字段各是一组、各开各的行，同名不冲突
+        assertNull(validateAlarms(List.of(alarm("r1", "=", 1.0, null)), coil("进水阀")));
 
         // 位组内自己重复，照拒
-        bits.bitList.get(0).alarms = new ArrayList<>(
-                List.of(alarm("r1", "=", 1.0, null), alarm("r1", "=", 0.0, null)));
-        assertEquals("invalid " + base + "[1].id: r1 (duplicated)",
-                ModbusServiceValidator.validate(service));
+        assertEquals("invalid configSnapshot.registries[0].alarms[1].id: r1 (duplicated)",
+                validateAlarms(List.of(alarm("r1", "=", 1.0, null), alarm("r1", "=", 0.0, null)),
+                        coil("进水阀")));
     }
 
     // ===== invoke 入参 =====
@@ -1036,13 +1009,13 @@ class ModbusServiceValidatorTest {
     }
 
     /** 一份「启用之后应当自洽」的规则：各用例只改自己关心的那一处。{@code id} 默认 {@code r1}。 */
-    private static ModbusPollingResponseFieldAlarm alarm(String compare, Double threshold, String state) {
+    private static ModbusRegistryAlarm alarm(String compare, Double threshold, String state) {
         return alarm("r1", compare, threshold, state);
     }
 
     /** 同上，但规则身份自己给（{@code null} 用来测「启用了却没有 id」）。 */
-    private static ModbusPollingResponseFieldAlarm alarm(String id, String compare, Double threshold, String state) {
-        ModbusPollingResponseFieldAlarm alarm = new ModbusPollingResponseFieldAlarm();
+    private static ModbusRegistryAlarm alarm(String id, String compare, Double threshold, String state) {
+        ModbusRegistryAlarm alarm = new ModbusRegistryAlarm();
         alarm.id = id;
         alarm.enabled = true;
         alarm.compare = compare;
@@ -1065,16 +1038,40 @@ class ModbusServiceValidatorTest {
         return field;
     }
 
-    /** 把这条规则挂到服务唯一那个方法的唯一那个字段上，返回校验结果。 */
-    private static String validateFieldAlarm(ModbusPollingResponseFieldAlarm alarm, ModbusPollingResponseField field) {
-        return validateFieldAlarms(new ArrayList<>(List.of(alarm)), field);
+    // ===== 告警规则：属寄存器（寄存器中心），不属 function 应答字段 =====
+
+    /** 一个可读数值寄存器（holding，access R）。 */
+    private static ModbusRegistry holding(String name, String dataType) {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = name;
+        reg.area = "holding";
+        reg.dataType = dataType;
+        reg.access = "R";
+        return reg;
     }
 
-    /** 同上，但一次挂一组规则。 */
-    private static String validateFieldAlarms(List<ModbusPollingResponseFieldAlarm> alarms, ModbusPollingResponseField field) {
-        ModbusService service = service();
-        field.alarms = new ArrayList<>(alarms);
-        service.functions.get(0).response = ModbusPollingResponses.of(field);
-        return ModbusServiceValidator.validate(service);
+    /** 一个可读线圈寄存器（coil，值恒 0/1）。 */
+    private static ModbusRegistry coil(String name) {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = name;
+        reg.area = "coil";
+        reg.access = "R";
+        return reg;
+    }
+
+    /** 校验一条挂在某寄存器上的规则（返回错误文案或 null）。 */
+    private static String validateAlarm(ModbusRegistryAlarm alarm, ModbusRegistry reg) {
+        return validateAlarmOn(alarm, reg, new ArrayList<>(List.of(alarm)));
+    }
+
+    /** 校验挂在同一寄存器上的一组规则（返回错误文案或 null）。 */
+    private static String validateAlarms(List<ModbusRegistryAlarm> alarms, ModbusRegistry reg) {
+        return validateAlarmOn(null, reg, alarms);
+    }
+
+    private static String validateAlarmOn(ModbusRegistryAlarm alarm, ModbusRegistry reg,
+                                          List<ModbusRegistryAlarm> alarms) {
+        return ModbusServiceValidator.validateAlarms(alarms == null ? List.of(alarm) : alarms, reg,
+                "configSnapshot.registries[0].alarms");
     }
 }

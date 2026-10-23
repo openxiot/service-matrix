@@ -26,9 +26,6 @@ public final class ModbusPollingResponseFieldBitCodec {
         if (bit.field != null) {
             o.put("field", bit.field);
         }
-        if (bit.alarms != null && !bit.alarms.isEmpty()) {
-            o.put("alarms", ModbusPollingResponseFieldAlarmCodec.encode(bit.alarms));
-        }
         return o;
     }
 
@@ -49,7 +46,6 @@ public final class ModbusPollingResponseFieldBitCodec {
         ModbusPollingResponseFieldBit bit = new ModbusPollingResponseFieldBit();
         bit.offset = o.getInteger("offset");
         bit.field = o.getString("field");
-        bit.alarms = ModbusPollingResponseFieldAlarmCodec.decode(o.getJsonArray("alarms"));
         return bit;
     }
 
