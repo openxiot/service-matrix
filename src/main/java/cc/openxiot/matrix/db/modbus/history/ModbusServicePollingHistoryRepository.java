@@ -3,13 +3,19 @@ package cc.openxiot.matrix.db.modbus.history;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
+import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
+import io.quarkus.mongodb.FindOptions;
 import io.quarkus.mongodb.reactive.ReactiveMongoClient;
 import io.quarkus.mongodb.reactive.ReactiveMongoCollection;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.bson.conversions.Bson;
 
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -63,6 +69,49 @@ public class ModbusServicePollingHistoryRepository {
         return collection().insertOne(row)
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
+    }
+
+    /**
+     * 某段区间内的**失败调用**（{@code ok=false}），按 {@code at} **倒序**（最近的在前，故障清单这么看）。
+     *
+     * <p>{@code pollingIndex} 与 {@code type} 为 null 表示不限（分别是「整个服务」与「所有失败分类」）。
+     * 索引是 {@code (serviceId, pollingIndex, at)}：不带 {@code pollingIndex} 时只有第一段用得上，
+     * 排序要靠内存完成 —— 我们要的就是倒序，直接让查询倒序排即可。</p>
+     *
+     * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
+     */
+    public Uni<List<ModbusServicePollingHistory>> findFailureRange(String serviceId, Integer pollingIndex,
+                                                                   String type, Date from, Date to, int limit) {
+        List<Bson> filters = new ArrayList<>();
+        filters.add(Filters.eq("serviceId", serviceId));
+        filters.add(Filters.eq("ok", false));
+        if (pollingIndex != null) {
+            filters.add(Filters.eq("pollingIndex", pollingIndex));
+        }
+        if (type != null && !type.isBlank()) {
+            filters.add(Filters.eq("type", type));
+        }
+        filters.add(Filters.gte("at", from));
+        filters.add(Filters.lte("at", to));
+
+        return collection()
+                .find(Filters.and(filters),
+                        new FindOptions().sort(Sorts.descending("at")).limit(limit))
+                .collect().asList();
+    }
+
+    /**
+     * 某个服务在一段区间内的失败调用**时间线**，只取统计要用的那一列：{@code at}。
+     *
+     * <p><b>不打 limit</b>（调用方是统计，截断会让「今日异常」变成静默的下限，量级由窗口上限兜住）、
+     * **不排序**（统计在内存里分桶，顺序没有意义）。这与告警时间线同口径。</p>
+     */
+    public Uni<List<ModbusServicePollingHistory>> findFailureTimeline(String serviceId, Date from, Date to) {
+        return collection()
+                .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.eq("ok", false),
+                                Filters.gte("at", from), Filters.lte("at", to)),
+                        new FindOptions().projection(Projections.include("at")))
+                .collect().asList();
     }
 
     /** 级联删除一批服务的操作日志（服务没了就没有读它的入口，留着是存储垃圾）。 */

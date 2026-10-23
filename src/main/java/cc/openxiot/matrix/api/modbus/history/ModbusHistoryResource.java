@@ -5,8 +5,8 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceFailureCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceLastPollingCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -128,8 +128,8 @@ public class ModbusHistoryResource extends AbstractResource {
      * 远端原始码（{@code byRemoteCode}）的聚合，两者总是一起看 —— {@code truncated} 为 true
      * 时说明还有更早的故障没取回来，前端应提示缩小时间范围。</p>
      *
-     * <p>{@code serviceId} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的故障合成
-     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusServiceFailureCodec}），
+     * <p>{@code serviceId} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的失败调用合成
+     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusServicePollingHistoryCodec}），
      * 前端据此认领归属。这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 —— 项目级的历史页
      * 要的正是「这个项目里哪儿在报错」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
      * 此时响应里**不出 {@code serviceId} 键**（与 Codec 里「null 不出键」同口径）：它不是某个服务的结果。</p>
@@ -169,8 +169,8 @@ public class ModbusHistoryResource extends AbstractResource {
                             .put("to", result.to().getTime())
                             .put("limit", result.limit())
                             .put("truncated", result.truncated())
-                            .put("items", ModbusServiceFailureCodec.encode(result.items()))
-                            .put("summary", ModbusServiceFailureCodec.encodeSummary(result.items()));
+                            .put("items", ModbusServicePollingHistoryCodec.encode(result.items()))
+                            .put("summary", ModbusServicePollingHistoryCodec.encodeSummary(result.items()));
                     if (!wholeSpace) {
                         body.put("serviceId", serviceId);
                     }

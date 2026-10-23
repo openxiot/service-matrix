@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryQueryService.FailureResult;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
@@ -89,10 +89,11 @@ class ModbusHistoryQueryServiceTest {
 
     // -- helpers --
 
-    private static ModbusServiceFailure failure(String serviceId, Long at) {
-        ModbusServiceFailure failure = new ModbusServiceFailure();
+    private static ModbusServicePollingHistory failure(String serviceId, Long at) {
+        ModbusServicePollingHistory failure = new ModbusServicePollingHistory();
         failure.serviceId = serviceId;
         failure.pollingIndex = 1;
+        failure.ok = false;
         failure.type = "NO_RESPONSE";
         failure.message = "no response";
         failure.at = at == null ? null : new Date(at);

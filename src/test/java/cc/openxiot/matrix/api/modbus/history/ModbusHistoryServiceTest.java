@@ -4,8 +4,6 @@ import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
@@ -74,7 +72,6 @@ class ModbusHistoryServiceTest {
     private ModbusHistoryService service;
     private ModbusServiceLastPollingRepository shadowRepo;
     private ModbusServiceHistoryRepository historyRepo;
-    private ModbusServiceFailureRepository failureRepo;
     private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
     private ModbusServiceShadowRepository registryShadowRepo;
     private ModbusServicePollingHistoryRepository pollingHistoryRepo;
@@ -83,7 +80,6 @@ class ModbusHistoryServiceTest {
     void setUp() {
         shadowRepo = mock(ModbusServiceLastPollingRepository.class);
         historyRepo = mock(ModbusServiceHistoryRepository.class);
-        failureRepo = mock(ModbusServiceFailureRepository.class);
         registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusServiceShadowRepository.class);
         pollingHistoryRepo = mock(ModbusServicePollingHistoryRepository.class);
@@ -91,7 +87,6 @@ class ModbusHistoryServiceTest {
         service = new ModbusHistoryService();
         service.shadowRepo = shadowRepo;
         service.historyRepo = historyRepo;
-        service.failureRepo = failureRepo;
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;
         service.pollingHistoryRepo = pollingHistoryRepo;
@@ -197,8 +192,7 @@ class ModbusHistoryServiceTest {
     void opLog_failure_recordsTypeAndRemoteCode() {
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().nullItem());
         when(shadowRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-
+        
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
         ArgumentCaptor<ModbusServicePollingHistory> log = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
@@ -309,18 +303,17 @@ class ModbusHistoryServiceTest {
         Date lastSample = new Date();
         ModbusServiceLastPolling existing = shadow(new ObjectId(), sample("进水温度", 61.5), lastSample);
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(existing));
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
         // 顺序同历史：先失败记录、后影子（反了会让这条故障永久丢失）
-        InOrder inOrder = inOrder(failureRepo, shadowRepo);
-        inOrder.verify(failureRepo).insert(any());
+        InOrder inOrder = inOrder(pollingHistoryRepo, shadowRepo);
+        inOrder.verify(pollingHistoryRepo).insert(any());
         inOrder.verify(shadowRepo).replace(any());
 
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
-        ModbusServiceFailure row = savedFailure();
+        ModbusServicePollingHistory row = savedPollingLog();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
@@ -345,7 +338,7 @@ class ModbusHistoryServiceTest {
 
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
-        verifyNoInteractions(failureRepo);
+        verify(pollingHistoryRepo).insert(any());   // 同类失败也照记操作日志（每调用一条）
         verify(shadowRepo, never()).insert(any());
         verify(shadowRepo, never()).replace(any());
     }
@@ -355,12 +348,11 @@ class ModbusHistoryServiceTest {
         // 故障换了（父设备超时 → CRC 不符）：说明设备状态变了，得留一条
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(
                 shadow(new ObjectId(), sample("进水温度", 61.5), new Date(), TIMEOUT, new Date())));
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(), crcMismatch()).await().indefinitely();
 
-        ModbusServiceFailure row = savedFailure();
+        ModbusServicePollingHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(row.type));
         assertEquals(CRC_ERROR, row.message);
         assertNull(row.remoteCode);   // CRC 不符没有远端码 —— 有码的是从站异常与父设备报错
@@ -370,8 +362,7 @@ class ModbusHistoryServiceTest {
     void firstCallFailingInsertsShadow() {
         // 这个 function 从没成功过：影子上只有故障态，没有值
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().nullItem());
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
@@ -382,33 +373,17 @@ class ModbusHistoryServiceTest {
     }
 
     @Test
-    void failureRowFailureLeavesShadowUntouched() {
-        // 失败记录没写进去，影子就必须停在旧态：下次同样的故障仍会被重判并重试落库（自愈）
-        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(
-                shadow(new ObjectId(), sample("进水温度", 61.5), new Date())));
-        when(failureRepo.insert(any()))
-                .thenReturn(Uni.createFrom().failure(new IllegalStateException("db down")));
-
-        assertThrows(IllegalStateException.class, () -> service
-                .recordFailure(modbusService(), function(), parentTimeout())
-                .await().indefinitely());
-
-        verify(shadowRepo, never()).replace(any());
-    }
-
-    @Test
     void foreignFailureIsClassifiedUnknown() {
         // 非本模块抛的异常（编解码、上游 SDK）：宁可标 UNKNOWN，也不猜一个会把人带偏的分类
         // —— 把编解码异常猜成「设备离线」，排查就从现场跑到代码上去了
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(
                 shadow(new ObjectId(), sample("进水温度", 61.5), new Date(), TIMEOUT, new Date())));
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(), new IllegalStateException("connection reset"))
                 .await().indefinitely();
 
-        ModbusServiceFailure row = savedFailure();
+        ModbusServicePollingHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.UNKNOWN.name(), row.type);
         assertNull(row.remoteCode);
         assertEquals("connection reset", row.message);   // 明细照旧保留，分类不确定不等于信息丢失
@@ -419,13 +394,12 @@ class ModbusHistoryServiceTest {
         // NPE 之类没有 message：落一串 null 在库里什么也说明不了
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(
                 shadow(new ObjectId(), sample("进水温度", 61.5), new Date(), TIMEOUT, new Date())));
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(), new NullPointerException())
                 .await().indefinitely();
 
-        assertEquals("NullPointerException", savedFailure().message);
+        assertEquals("NullPointerException", savedPollingLog().message);
     }
 
     @Test
@@ -433,14 +407,13 @@ class ModbusHistoryServiceTest {
         // 上游描述可能很长，越长越容易让「同一条故障」被判成不同的两条，重复记录就压不住了
         when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(
                 shadow(new ObjectId(), sample("进水温度", 61.5), new Date(), TIMEOUT, new Date())));
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         service.recordFailure(modbusService(), function(),
                         ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "x".repeat(5000)))
                 .await().indefinitely();
 
-        assertEquals(501, savedFailure().message.length());
+        assertEquals(501, savedPollingLog().message.length());
     }
 
     // ===== 故障恢复 =====
@@ -585,8 +558,7 @@ class ModbusHistoryServiceTest {
     void pollRecordFailureWithABaselineNeverReadsTheShadow() {
         Date lastSample = new Date();
         ModbusServiceLastPolling baseline = shadow(new ObjectId(), sample("进水温度", 61.5), lastSample);
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         ModbusServiceLastPolling next = service.recordFailure(modbusService(), function(), parentTimeout(), baseline)
                 .await().indefinitely();
@@ -608,7 +580,7 @@ class ModbusHistoryServiceTest {
                 .await().indefinitely();
 
         assertNull(next);
-        verifyNoInteractions(failureRepo);
+        verify(pollingHistoryRepo).insert(any());   // 同类失败也照记操作日志（每调用一条）
         verify(shadowRepo, never()).replace(any());
     }
 
@@ -622,13 +594,12 @@ class ModbusHistoryServiceTest {
     void pollFailureOnABrokenBaselineStillWritesANewRow() {
         ModbusServiceLastPolling broken = shadow(new ObjectId(), sample("进水温度", 61.5), new Date(),
                 TIMEOUT, new Date());
-        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
-        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+                when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
 
         ModbusServiceLastPolling next = service.recordFailure(modbusService(), function(), crcMismatch(), broken)
                 .await().indefinitely();
 
-        assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(savedFailure().type));
+        assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(savedPollingLog().type));
         assertEquals(CRC_ERROR, next.lastError);
     }
 
@@ -726,9 +697,9 @@ class ModbusHistoryServiceTest {
         return captor.getValue();
     }
 
-    private ModbusServiceFailure savedFailure() {
-        ArgumentCaptor<ModbusServiceFailure> captor = ArgumentCaptor.forClass(ModbusServiceFailure.class);
-        verify(failureRepo).insert(captor.capture());
+    private ModbusServicePollingHistory savedPollingLog() {
+        ArgumentCaptor<ModbusServicePollingHistory> captor = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+        verify(pollingHistoryRepo).insert(captor.capture());
         return captor.getValue();
     }
 }

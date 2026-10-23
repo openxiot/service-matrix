@@ -4,8 +4,6 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
@@ -63,9 +61,6 @@ public class ModbusHistoryService {
     @Inject
     ModbusServiceHistoryRepository historyRepo;
 
-    @Inject
-    ModbusServiceFailureRepository failureRepo;
-
     /** 寄存器中心的新存储：逐寄存器的历史事件与当前值（影子）。在现有写路径之上叠加（expand），
      *  待寄存器读侧就绪后再收口旧存储。 */
     @Inject
@@ -119,7 +114,6 @@ public class ModbusHistoryService {
         }
         shadowRepo.ensureIndexes()
                 .chain(ignored -> historyRepo.ensureIndexes(retentionSeconds))
-                .chain(ignored -> failureRepo.ensureIndexes())
                 .chain(ignored -> pollingHistoryRepo.ensureIndexes(retentionSeconds))
                 .await().indefinitely();
     }
@@ -266,10 +260,12 @@ public class ModbusHistoryService {
                     shadow == null ? null : shadow.fields,
                     shadow == null ? null : shadow.recordedAt,
                     message, now);
-            result = failureRepo.insert(failureOf(serviceId, function.index, error, message, now))
-                    .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
-                    // 寄存器中心的新路径：逐寄存器记失败事件（曲线竖线）+ 更新当前值的故障态
-                    .chain(ignored -> registryFailureEffects(service, function, error, now).replaceWith(next));
+            // 影子的写要**等到链里**才执行（deferred）：否则下面的三元会在 op-log insert 之前
+            // 就急切地把入流量落进影子，顺序（先 op-log 后影子）就破了。
+            result = Uni.createFrom().deferred(() ->
+                    (shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
+                            // 寄存器中心的新路径：逐寄存器记失败事件（曲线竖线）+ 更新当前值的故障态
+                            .chain(ignored -> registryFailureEffects(service, function, error, now).replaceWith(next)));
         }
         return pollingHistoryRepo.insert(log).chain(ignored -> result);
     }
@@ -292,7 +288,6 @@ public class ModbusHistoryService {
         return Uni.combine().all()
                 .unis(shadowRepo.deleteByServiceIds(serviceIds),
                         historyRepo.deleteByServiceIds(serviceIds),
-                        failureRepo.deleteByServiceIds(serviceIds),
                         registryHistoryRepo.deleteByServiceIds(serviceIds),
                         registryShadowRepo.deleteByServiceIds(serviceIds),
                         pollingHistoryRepo.deleteByServiceIds(serviceIds),
@@ -443,18 +438,6 @@ public class ModbusHistoryService {
         row.at = at;
         row.keepalive = keepalive;
         return row;
-    }
-
-    private static ModbusServiceFailure failureOf(String serviceId, Integer pollingIndex,
-                                                  Throwable error, String message, Date at) {
-        ModbusServiceFailure failure = new ModbusServiceFailure();
-        failure.serviceId = serviceId;
-        failure.pollingIndex = pollingIndex;
-        failure.type = typeOf(error).name();
-        failure.remoteCode = error instanceof ModbusInvokeException e ? e.remoteCode() : null;
-        failure.message = message;
-        failure.at = at;
-        return failure;
     }
 
     /**

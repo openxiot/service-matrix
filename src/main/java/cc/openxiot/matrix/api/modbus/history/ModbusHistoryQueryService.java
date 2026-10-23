@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -51,7 +51,7 @@ public class ModbusHistoryQueryService {
     ModbusServiceHistoryRepository historyRepo;
 
     @Inject
-    ModbusServiceFailureRepository failureRepo;
+    ModbusServicePollingHistoryRepository pollingHistoryRepo;
 
     /**
      * 区间查询的结果：规范化之后的入参（Resource 要原样回给前端）加上整形后的点。
@@ -77,7 +77,7 @@ public class ModbusHistoryQueryService {
             Date from,
             Date to,
             int limit,
-            List<ModbusServiceFailure> items,
+            List<ModbusServicePollingHistory> items,
             boolean truncated
     ) {
     }
@@ -161,8 +161,8 @@ public class ModbusHistoryQueryService {
      *
      * <p>为什么是「逐服务各查一次再合并」而不是一条跨服务的查询：故障集合的索引是
      * {@code (serviceId, pollingIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
-     * 只有十几条，各查一次的量级完全可控。故障又是**去重过**的（同一条错误持续存在只落一条，
-     * 见 {@link ModbusServiceFailure}），合并出来的行数本就不大 —— 所以合并与排序放在内存里做，
+     * 只有十几条，各查一次的量级完全可控。操作日志按 limit 截到「该服务最近的 limit+1 条」，
+     * 合并出来的行数本就不大 —— 所以合并与排序放在内存里做，
      * 与「不传 pollingIndex 时排序靠内存」是同一个判断。</p>
      *
      * <p><b>逐服务多取一条（limit + 1）不影响全局结果</b>：全局前 limit 条必然落在「该服务的前
@@ -192,8 +192,8 @@ public class ModbusHistoryQueryService {
             return Uni.createFrom().item(new FailureResult(from, end, size, List.of(), false));
         }
         String failureType = isBlank(type) ? null : type;
-        List<Uni<List<ModbusServiceFailure>>> queries = serviceIds.stream()
-                .map(id -> failureRepo.findRange(id, pollingIndex, failureType, from, end, size + 1))
+        List<Uni<List<ModbusServicePollingHistory>>> queries = serviceIds.stream()
+                .map(id -> pollingHistoryRepo.findFailureRange(id, pollingIndex, failureType, from, end, size + 1))
                 .toList();
 
         // 并发取：服务之间没有依赖，串行只会把总耗时乘上服务数
@@ -208,24 +208,24 @@ public class ModbusHistoryQueryService {
      * <p>抽成静态方法是为了能单测：这个仓库跑不了要连库的测试，而「合并之后对不对」恰恰是最该
      * 被断言的部分（见 {@code ModbusHistoryQueryServiceTest}）。</p>
      */
-    static FailureResult merge(Date from, Date to, int limit, List<ModbusServiceFailure> rows) {
-        List<ModbusServiceFailure> sorted = new ArrayList<>(rows);
+    static FailureResult merge(Date from, Date to, int limit, List<ModbusServicePollingHistory> rows) {
+        List<ModbusServicePollingHistory> sorted = new ArrayList<>(rows);
         // at 理论上不会缺（写入时必带），但真缺了也得排得出结果：按 0 算，倒序里落在最后
         sorted.sort(Comparator.comparingLong(
-                (ModbusServiceFailure failure) -> failure.at == null ? 0L : failure.at.getTime()).reversed());
+                (ModbusServicePollingHistory row) -> row.at == null ? 0L : row.at.getTime()).reversed());
         boolean truncated = sorted.size() > limit;
         return new FailureResult(from, to, limit,
                 List.copyOf(truncated ? sorted.subList(0, limit) : sorted), truncated);
     }
 
     /** 把 combine 的「每个服务一组」摊平成一个清单（Iterable 版 combine 的泛型被擦成了 List<?>）。 */
-    private static List<ModbusServiceFailure> flatten(List<?> groups) {
-        List<ModbusServiceFailure> merged = new ArrayList<>();
+    private static List<ModbusServicePollingHistory> flatten(List<?> groups) {
+        List<ModbusServicePollingHistory> merged = new ArrayList<>();
         for (Object group : groups) {
             if (group instanceof List<?> rows) {
                 for (Object row : rows) {
-                    if (row instanceof ModbusServiceFailure failure) {
-                        merged.add(failure);
+                    if (row instanceof ModbusServicePollingHistory history) {
+                        merged.add(history);
                     }
                 }
             }

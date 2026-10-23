@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailureRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
@@ -77,7 +77,7 @@ public class StatisticsQueryService {
     ModbusServiceAlarmRepository alarmRepo;
 
     @Inject
-    ModbusServiceFailureRepository failureRepo;
+    ModbusServicePollingHistoryRepository pollingHistoryRepo;
 
     @Inject
     SpaceService spaceService;
@@ -128,10 +128,11 @@ public class StatisticsQueryService {
     }
 
     /**
-     * 故障：窗口内的总数与按整点的时间线。
+     * 故障：窗口内的失败调用总数与按整点的时间线。
      *
-     * <p>注意口径：故障行在**写入时就按 message 去重**（同一条消息只记首次出现的那一行），
-     * 所以这里的数字是「有几种失败」而不是「失败了多少次」。</p>
+     * <p>注意口径（较旧模型变了）：故障读数从操作日志过滤（每次调用一条、写时不按 message 去重），
+     * 所以这里的数字是「失败了多少次调用」，不再是旧 {@code service-failures} 的「有几种失败」——
+     * 失败分类/远端码仍可逐条给到，聚合统计按调用计。</p>
      */
     public record FailureStats(int total, List<Bucket> hourly) {
     }
@@ -172,8 +173,8 @@ public class StatisticsQueryService {
                                 List<String> ids = serviceIds(tuple.getItem2());
                                 Uni<List<ModbusServiceAlarm>> alarms = mergeTimelines(ids.stream()
                                         .map(id -> alarmRepo.findTimeline(id, from, end)).toList());
-                                Uni<List<ModbusServiceFailure>> failures = mergeTimelines(ids.stream()
-                                        .map(id -> failureRepo.findTimeline(id, from, end)).toList());
+                                Uni<List<ModbusServicePollingHistory>> failures = mergeTimelines(ids.stream()
+                                        .map(id -> pollingHistoryRepo.findFailureTimeline(id, from, end)).toList());
                                 return Uni.combine().all().unis(alarms, failures).asTuple()
                                         .map(rows -> new Overview(from, end,
                                                 devicesOf(tuple.getItem1()),
@@ -326,10 +327,10 @@ public class StatisticsQueryService {
         return times;
     }
 
-    /** 一组故障的发生时刻。 */
-    private static List<Date> failureTimes(List<ModbusServiceFailure> failures) {
+    /** 一组失败调用的发生时刻。 */
+    private static List<Date> failureTimes(List<ModbusServicePollingHistory> failures) {
         List<Date> times = new ArrayList<>(failures.size());
-        for (ModbusServiceFailure failure : failures) {
+        for (ModbusServicePollingHistory failure : failures) {
             if (failure != null) {
                 times.add(failure.at);
             }
