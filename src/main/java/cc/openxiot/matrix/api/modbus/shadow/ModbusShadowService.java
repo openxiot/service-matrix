@@ -2,8 +2,8 @@ package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
@@ -36,10 +36,10 @@ public class ModbusShadowService {
     ModbusServiceRepository repo;
 
     @Inject
-    ModbusServiceLastPollingRepository lastPollingRepo;
+    ModbusServiceShadowRepository registryShadowRepo;
 
     /**
-     * 取一个服务的寄存器缓存网格（{@code ModbusServiceLastPolling} 有值才出现缓存，规则见
+     * 取一个服务的寄存器缓存网格（{@code ModbusServiceShadow} 有值才出现缓存，规则见
      * {@link #mergeRegisterCache}）。
      *
      * <p>与按方法的「当前值」接口（{@code ModbusHistoryResource.current}）的差别：这里以点表
@@ -52,9 +52,9 @@ public class ModbusShadowService {
         return repo.findById(serviceId)
                 .onItem().transformToUni(service -> service == null
                         ? Uni.createFrom().item(List.of())
-                        : lastPollingRepo.listByServiceId(serviceId)
-                                .map(snapshots -> mergeRegisterCache(
-                                        service.configSnapshot, service.functions, snapshots)));
+                        : registryShadowRepo.listByServiceId(serviceId)
+                                .map(shadows -> mergeRegisterCache(
+                                        service.configSnapshot, service.functions, shadows)));
     }
 
     /**
@@ -78,12 +78,14 @@ public class ModbusShadowService {
 
     /**
      * 归并本核。可读寄存器 = 点表 {@code access ∈ {R, RW}} 的那些（写寄存器没有缓存值）。
-     * 值来自归属它的读方法的快照 {@code fields[寄存器名]}；拿不到归属方法、或缓存里没有这个键 → {@code no-data}。
+     * 值来自逐寄存器的影子 {@code ModbusServiceShadow}（按 {@code registerIndex} 索引到该寄存器）；
+     * 拿不到影子、或影子没有值 → {@code no-data}。方法归属 {@code pollingIndex} 仍由
+     * {@code functions} 里应答字段名 == 寄存器点表名的那个方法解出（只作展示，不决定值）。
      */
     private static List<ModbusRegisterSnapshot> mergeRegisterCache(
             ModbusConfig config,
             List<ModbusPolling> functions,
-            List<ModbusServiceLastPolling> snapshots
+            List<ModbusServiceShadow> shadows
     ) {
         // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
         Map<String, Integer> owner = new HashMap<>();
@@ -99,11 +101,12 @@ public class ModbusShadowService {
                 }
             }
         }
-        Map<Integer, ModbusServiceLastPolling> byIndex = new HashMap<>();
-        if (snapshots != null) {
-            for (ModbusServiceLastPolling lp : snapshots) {
-                if (lp != null && lp.pollingIndex != null) {
-                    byIndex.put(lp.pollingIndex, lp);
+        // 寄存器序号 → 影子（逐寄存器：身份是 registerIndex）
+        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
+        if (shadows != null) {
+            for (ModbusServiceShadow sh : shadows) {
+                if (sh != null && sh.registerIndex != null) {
+                    byIndex.put(sh.registerIndex, sh);
                 }
             }
         }
@@ -126,21 +129,19 @@ public class ModbusShadowService {
             snap.dataType = reg.dataType;
             snap.unit = reg.unit;
             snap.access = access;
-            Integer idx = owner.get(reg.name);
-            snap.pollingIndex = idx;
-            ModbusServiceLastPolling lp = idx == null ? null : byIndex.get(idx);
-            Object value = lp != null && lp.fields != null ? lp.fields.get(reg.name) : null;
-            if (value == null) {
+            snap.pollingIndex = owner.get(reg.name);
+            ModbusServiceShadow sh = reg.index == null ? null : byIndex.get(reg.index);
+            if (sh == null || sh.value == null) {
                 snap.status = ModbusRegisterSnapshot.STATUS_NO_DATA;
             } else {
-                snap.value = value;
-                snap.recordedAt = lp.recordedAt;
-                if (lp.lastError == null) {
+                snap.value = sh.value;
+                snap.recordedAt = sh.recordedAt;
+                if (sh.lastError == null) {
                     snap.status = ModbusRegisterSnapshot.STATUS_CURRENT;
                 } else {
                     snap.status = ModbusRegisterSnapshot.STATUS_STALE;
-                    snap.lastError = lp.lastError;
-                    snap.errorAt = lp.errorAt;
+                    snap.lastError = sh.lastError;
+                    snap.errorAt = sh.errorAt;
                 }
             }
             out.add(snap);

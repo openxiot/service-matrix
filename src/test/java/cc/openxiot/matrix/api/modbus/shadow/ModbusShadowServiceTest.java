@@ -2,8 +2,8 @@ package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
@@ -37,24 +37,24 @@ class ModbusShadowServiceTest {
 
     private ModbusShadowService shadowService;
     private ModbusServiceRepository repo;
-    private ModbusServiceLastPollingRepository lastPollingRepo;
+    private ModbusServiceShadowRepository registryShadowRepo;
 
     @BeforeEach
     void setUp() {
         repo = mock(ModbusServiceRepository.class);
-        lastPollingRepo = mock(ModbusServiceLastPollingRepository.class);
+        registryShadowRepo = mock(ModbusServiceShadowRepository.class);
         shadowService = new ModbusShadowService();
         shadowService.repo = repo;
-        shadowService.lastPollingRepo = lastPollingRepo;
+        shadowService.registryShadowRepo = registryShadowRepo;
     }
 
     @Test
     void registerCacheMergesRegistersIntoGrid() {
         long t0 = 1_700_000_000_000L;
         givenService(List.of(readFunction(1, "进水温度"), readFunction(2, "出水温度")));
-        when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
-                lastPolling(1, Map.of("进水温度", 61.5), new Date(t0), null, null),
-                lastPolling(2, Map.of("出水温度", 35.0), new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
+        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
+                shadow(1, 61.5, new Date(t0), null, null),
+                shadow(2, 35.0, new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
 
         List<ModbusRegisterSnapshot> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
 
@@ -111,9 +111,9 @@ class ModbusShadowServiceTest {
         ModbusService svc2 = service();
         svc2.id = new ObjectId(id2);
         when(repo.findById(id2)).thenReturn(Uni.createFrom().item(svc2));
-        when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
-                lastPolling(1, Map.of("进水温度", 61.5), new Date(1_700_000_000_000L), null, null))));
-        when(lastPollingRepo.listByServiceId(id2)).thenReturn(Uni.createFrom().item(List.of()));
+        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
+                shadow(1, 61.5, new Date(1_700_000_000_000L), null, null))));
+        when(registryShadowRepo.listByServiceId(id2)).thenReturn(Uni.createFrom().item(List.of()));
 
         Map<String, List<ModbusRegisterSnapshot>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, id2)).await().indefinitely();
@@ -130,7 +130,7 @@ class ModbusShadowServiceTest {
         String bogus = "dea1dbeef000000000000001";
         givenService(List.of(readFunction(1, "进水温度")));
         when(repo.findById(bogus)).thenReturn(Uni.createFrom().nullItem());
-        when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
+        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
 
         Map<String, List<ModbusRegisterSnapshot>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, bogus)).await().indefinitely();
@@ -155,8 +155,11 @@ class ModbusShadowServiceTest {
         return svc;
     }
 
-    private static ModbusRegistry register(String name, String area, String access, String unit) {
+    // 寄存器点表序 index 是「影子身份」，与读方法序无关：在这里每个寄存器一个 index，方法与
+    // 寄存器错开一个数，验证归并不依赖「owner 方法序」（只依赖寄存器自身的 registerIndex）。
+    private static ModbusRegistry register(int index, String name, String area, String access, String unit) {
         ModbusRegistry reg = new ModbusRegistry();
+        reg.index = index;
         reg.name = name;
         reg.area = area;
         reg.access = access;
@@ -167,10 +170,10 @@ class ModbusShadowServiceTest {
     private static ModbusConfig registerConfig() {
         ModbusConfig cfg = new ModbusConfig();
         cfg.registries = List.of(
-                register("进水温度", "holding", "R", "℃"),
-                register("出水温度", "holding", "RW", "℃"),
-                register("电机运行", "coil", "W", null),          // 写寄存器：不参与缓存
-                register("压力", "input", "R", "MPa"));            // 可读但无读方法 → no-data
+                register(1, "进水温度", "holding", "R", "℃"),
+                register(2, "出水温度", "holding", "RW", "℃"),
+                register(3, "电机运行", "coil", "W", null),          // 写寄存器：不参与缓存
+                register(4, "压力", "input", "R", "MPa"));            // 可读但无影子 → no-data
         return cfg;
     }
 
@@ -189,15 +192,15 @@ class ModbusShadowServiceTest {
         return fn;
     }
 
-    private static ModbusServiceLastPolling lastPolling(int index, Map<String, Object> fields,
-                                                        Date recordedAt, String lastError, Date errorAt) {
-        ModbusServiceLastPolling lp = new ModbusServiceLastPolling();
-        lp.serviceId = SERVICE_ID;
-        lp.pollingIndex = index;
-        lp.fields = fields;
-        lp.recordedAt = recordedAt;
-        lp.lastError = lastError;
-        lp.errorAt = errorAt;
-        return lp;
+    private static ModbusServiceShadow shadow(int registerIndex, Object value,
+                                              Date recordedAt, String lastError, Date errorAt) {
+        ModbusServiceShadow sh = new ModbusServiceShadow();
+        sh.serviceId = SERVICE_ID;
+        sh.registerIndex = registerIndex;
+        sh.value = value;
+        sh.recordedAt = recordedAt;
+        sh.lastError = lastError;
+        sh.errorAt = errorAt;
+        return sh;
     }
 }
