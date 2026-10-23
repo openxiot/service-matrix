@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.history;
+package cc.openxiot.matrix.db.modbus.shadow;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
@@ -89,12 +89,6 @@ public class ModbusServiceShadowRepository {
         List<Bson> sets = new ArrayList<>();
         sets.add(Updates.set("serviceId", shadow.serviceId));
         sets.add(Updates.set("registerIndex", shadow.registerIndex));
-        if (shadow.name != null) {
-            sets.add(Updates.set("name", shadow.name));
-        }
-        if (shadow.unit != null) {
-            sets.add(Updates.set("unit", shadow.unit));
-        }
         sets.add(Updates.set("value", shadow.value));
         sets.add(Updates.set("recordedAt", shadow.recordedAt));
         sets.add(Updates.set("lastError", null));
@@ -105,19 +99,13 @@ public class ModbusServiceShadowRepository {
     /**
      * 按 {@code (serviceId, registerIndex)} **幂等记一次失败**（不存在插入、存在覆盖）。
      *
-     * <p>只 $set 故障态 {@code lastError}/errorAt 与展示名/单位，**不动 {@code value}/recordedAt**
+     * <p>只 $set 故障态 {@code lastError}/errorAt，**不动 {@code value}/recordedAt**
      * —— 那两只保留「最后一次成功的采集」，前端要靠它们显示最后已知值（及它有多旧）。</p>
      */
     public Uni<Void> upsertFailure(ModbusServiceShadow shadow) {
         List<Bson> sets = new ArrayList<>();
         sets.add(Updates.set("serviceId", shadow.serviceId));
         sets.add(Updates.set("registerIndex", shadow.registerIndex));
-        if (shadow.name != null) {
-            sets.add(Updates.set("name", shadow.name));
-        }
-        if (shadow.unit != null) {
-            sets.add(Updates.set("unit", shadow.unit));
-        }
         sets.add(Updates.set("lastError", shadow.lastError));
         sets.add(Updates.set("errorAt", shadow.errorAt));
         return upsert(filterOf(shadow), Updates.combine(sets));

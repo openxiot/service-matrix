@@ -10,8 +10,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -33,7 +33,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.inOrder;
@@ -200,12 +199,11 @@ class ModbusHistoryServiceTest {
         assertEquals(Boolean.FALSE, row.failure);   // 值变化落的成功事件，不是失败竖线
         assertNotNull(row.at);
 
-        // 寄存器影子换成新值：带上值、寄存器名与序号
+        // 寄存器影子换成新值：带上值与序号（名称/单位由服务定义 configSnapshot 提供）
         ArgumentCaptor<ModbusServiceShadow> shadowCap = ArgumentCaptor.forClass(ModbusServiceShadow.class);
         verify(registryShadowRepo).upsertValue(shadowCap.capture());
         ModbusServiceShadow saved = shadowCap.getValue();
         assertEquals(1, saved.registerIndex.intValue());
-        assertEquals("进水温度", saved.name);
         assertEquals(62.5, saved.value);
         assertNotNull(saved.recordedAt);
     }
@@ -402,7 +400,8 @@ class ModbusHistoryServiceTest {
         when(registryShadowRepo.listByServiceId(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
-        ModbusPollBaseline next = service.record(modbusService(), function(), new JsonObject()).await().indefinitely();
+        // 写方法 + 服务定义带点表快照（shadow 只带 registerIndex，字段名要从 configSnapshot.registries 解析）
+        ModbusPollBaseline next = service.record(modbusServiceWithRegistries(), function(), new JsonObject()).await().indefinitely();
 
         assertNull(next.lastError());
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());   // 上次成功的值原样留着
@@ -587,20 +586,19 @@ class ModbusHistoryServiceTest {
 
     /** 一只无故障的逐寄存器影子（上一次成功采集）。 */
     private static ModbusServiceShadow valueShadow(Object value, Date recordedAt) {
-        return registryShadow(1, "进水温度", value, recordedAt, null, null);
+        return registryShadow(1, value, recordedAt, null, null);
     }
 
     /** 一只停在故障态的逐寄存器影子（上一次调用失败，值仍是最后一次成功采集）。 */
     private static ModbusServiceShadow faultShadow(Object value, Date recordedAt, String lastError) {
-        return registryShadow(1, "进水温度", value, recordedAt, lastError, new Date());
+        return registryShadow(1, value, recordedAt, lastError, new Date());
     }
 
-    private static ModbusServiceShadow registryShadow(Integer registerIndex, String name, Object value,
+    private static ModbusServiceShadow registryShadow(Integer registerIndex, Object value,
                                                       Date recordedAt, String lastError, Date errorAt) {
         ModbusServiceShadow shadow = new ModbusServiceShadow();
         shadow.serviceId = SERVICE_ID;
         shadow.registerIndex = registerIndex;
-        shadow.name = name;
         shadow.value = value;
         shadow.recordedAt = recordedAt;
         shadow.lastError = lastError;

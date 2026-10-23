@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.modbus.history;
+package cc.openxiot.matrix.db.modbus.shadow;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -19,6 +19,10 @@ import java.util.Date;
  * <p><b>失败时 {@link #value} / {@link #recordedAt} 一律不动</b>：它们是「最后一次成功的采集」，
  * 前端靠它们显示最后已知值（及它有多旧），清掉就等于把值丢了；这次失败的 {@link #lastError} /
  * {@link #errorAt} 另记。</p>
+ *
+ * <p><b>名称/单位不在此处快照</b>：身份看 {@link #registerIndex}，展示名与单位一律以服务定义
+ * {@code configSnapshot.registries} 里的 {@code reg.index} / {@code reg.name} / {@code reg.unit}
+ * 为准。</p>
  */
 @RegisterForReflection
 @Schema(description = "Modbus 服务某只寄存器的当前值（最后一次调用的结果，兼作变化比对基准与故障态）")
@@ -33,12 +37,6 @@ public class ModbusServiceShadow {
 
     @Schema(description = "寄存器序号（ModbusRegistry.index，点表内的稳定身份）", examples = {"1"}, required = true)
     public Integer registerIndex;
-
-    @Schema(description = "寄存器名（展示快照；身份看 registerIndex）")
-    public String name;
-
-    @Schema(description = "寄存器单位（展示快照，可空）", examples = {"℃"})
-    public String unit;
 
     @Schema(description = "最后一次**成功**采集的值：数值，或 value-list 的 description，或位展开的 0|1")
     public Object value;

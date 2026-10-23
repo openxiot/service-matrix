@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.modbus.history;
 
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.bson.codecs.pojo.annotations.BsonId;

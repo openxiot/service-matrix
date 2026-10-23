@@ -5,7 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.Date;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.codec.ModbusServiceShadowCodec;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 
@@ -18,8 +19,6 @@ class ModbusServiceShadowCodecTest {
     void encode_normal_carriesValueAndRecordedAt() {
         JsonObject o = ModbusServiceShadowCodec.encode(shadow(null));
         assertEquals(1, o.getInteger("registerIndex").intValue());
-        assertEquals("温度", o.getString("name"));
-        assertEquals("℃", o.getString("unit"));
         assertEquals(23.5, o.getDouble("value").doubleValue());
         assertEquals(AT.getTime(), o.getLong("recordedAt").longValue());
         assertFalse(o.containsKey("lastError"));
@@ -44,8 +43,6 @@ class ModbusServiceShadowCodecTest {
         ModbusServiceShadow s = new ModbusServiceShadow();
         s.serviceId = "svc-1";
         s.registerIndex = 1;
-        s.name = "温度";
-        s.unit = "℃";
         s.value = value == null ? 23.5 : value;
         s.recordedAt = AT;
         return s;

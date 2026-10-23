@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.db.modbus.history.codec;
+package cc.openxiot.matrix.db.modbus.shadow.codec;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -14,6 +14,8 @@ import java.util.List;
  * <p>{@code lastError} / {@code errorAt} 为 null 时**不出键**（与 {@code ModbusServiceCodec} 同口径）：
  * 前端判「有没有故障」看 {@code lastError} 在不在，而不是判一个显式的 null。
  * {@code value} / {@code recordedAt} 是**最后一次成功**采集的值与时刻，有故障时它们照旧存在。</p>
+ *
+ * <p>名称/单位由服务定义提供，这里不下发（影子本身不再携带它们）。</p>
  */
 public final class ModbusServiceShadowCodec {
 
@@ -27,12 +29,6 @@ public final class ModbusServiceShadowCodec {
         }
         if (shadow.registerIndex != null) {
             o.put("registerIndex", shadow.registerIndex);
-        }
-        if (shadow.name != null) {
-            o.put("name", shadow.name);
-        }
-        if (shadow.unit != null) {
-            o.put("unit", shadow.unit);
         }
         if (shadow.value != null) {
             o.put("value", shadow.value);

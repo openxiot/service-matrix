@@ -9,8 +9,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.shadow.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
@@ -352,8 +352,6 @@ public class ModbusHistoryService {
         ModbusServiceShadow sh = new ModbusServiceShadow();
         sh.serviceId = serviceId;
         sh.registerIndex = reg.index;
-        sh.name = reg.name;
-        sh.unit = reg.unit;
         sh.value = value;
         sh.recordedAt = at;
         sh.lastError = lastError;
@@ -455,38 +453,46 @@ public class ModbusHistoryService {
      * 从逐寄存器影子重建**本读块**的比对基准（不再读已停写的 service-last-polling）。
      *
      * <p>块的字段 = 该读方法应答里定义的字段（名 == 寄存器名，见 {@code ModbusResponseParser}）。
-     * 每个字段取它寄存器影子的值 / 时刻 / 故障态；字段还没采到（无影子）说明基准里没有它，
-     * {@code ModbusHistoryPolicy.decide} 自会把它当「变化」处理。</p>
+     * 名称/单位以服务定义 {@code configSnapshot.registries} 为准：按 {@code reg.index} 匹配影子
+     * {@code registerIndex}、键用 {@code reg.name}。每个字段取它寄存器影子的值 / 时刻 / 故障态；
+     * 字段还没采到（无影子）说明基准里没有它，{@code ModbusHistoryPolicy.decide} 自会把它当
+     * 「变化」处理。</p>
      *
-     * <p>整个块一只影子都没有时返回 null —— 那才是真·首次采集（会 {@code insert} 全新影子）。</p>
+     * <p>service 未落库（configSnapshot 为 null）或整个块一只影子都没有时返回 null ——
+     * 那才是真·首次采集（会 {@code insert} 全新影子）。</p>
      */
     private static ModbusPollBaseline blockBaseline(ModbusService service, ModbusPolling function,
                                                     List<ModbusServiceShadow> shadows) {
-        Map<String, ModbusServiceShadow> byName = new HashMap<>();
+        Map<Integer, ModbusServiceShadow> byIndex = new HashMap<>();
         if (shadows != null) {
             for (ModbusServiceShadow shadow : shadows) {
-                if (shadow != null && shadow.name != null) {
-                    byName.put(shadow.name, shadow);
+                if (shadow != null && shadow.registerIndex != null) {
+                    byIndex.put(shadow.registerIndex, shadow);
                 }
             }
         }
-        Set<String> defined = ModbusLastPollingPlan.definedFields(ModbusPolling.responseFields(function));
         Map<String, Object> values = new LinkedHashMap<>();
         Date last = null;
         String lastError = null;
-        for (String field : defined) {
-            ModbusServiceShadow shadow = byName.get(field);
-            if (shadow == null) {
-                continue;
-            }
-            if (shadow.value != null) {
-                values.put(field, shadow.value);
-            }
-            if (shadow.recordedAt != null && (last == null || shadow.recordedAt.after(last))) {
-                last = shadow.recordedAt;
-            }
-            if (shadow.lastError != null) {
-                lastError = shadow.lastError;
+        if (service != null && service.configSnapshot != null && service.configSnapshot.registries != null) {
+            Set<String> defined = ModbusLastPollingPlan.definedFields(ModbusPolling.responseFields(function));
+            for (ModbusRegistry reg : service.configSnapshot.registries) {
+                if (reg == null || reg.index == null || !defined.contains(reg.name)) {
+                    continue;
+                }
+                ModbusServiceShadow shadow = byIndex.get(reg.index);
+                if (shadow == null) {
+                    continue;
+                }
+                if (shadow.value != null) {
+                    values.put(reg.name, shadow.value);
+                }
+                if (shadow.recordedAt != null && (last == null || shadow.recordedAt.after(last))) {
+                    last = shadow.recordedAt;
+                }
+                if (shadow.lastError != null) {
+                    lastError = shadow.lastError;
+                }
             }
         }
         if (values.isEmpty() && last == null && lastError == null) {

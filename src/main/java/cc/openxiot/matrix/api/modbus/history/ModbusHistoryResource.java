@@ -5,7 +5,7 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
+import cc.openxiot.matrix.db.modbus.shadow.codec.ModbusServiceShadowCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
