@@ -415,13 +415,13 @@ public class ModbusHistoryService {
     }
 
     /** 一条操作日志文档。成功侧带响应快照、失败侧带分类/远端码/文本。 */
-    private static ModbusTransactionHistory pollingLog(String serviceId, Integer pollingIndex,
+    private static ModbusTransactionHistory pollingLog(String serviceId, Integer transactionIndex,
                                                           String operation, boolean ok, Date at,
                                                           Map<String, Object> fields,
                                                           String type, Integer remoteCode, String message) {
         ModbusTransactionHistory row = new ModbusTransactionHistory();
         row.serviceId = serviceId;
-        row.pollingIndex = pollingIndex;
+        row.transactionIndex = transactionIndex;
         row.operation = operation;
         row.ok = ok;
         row.at = at;

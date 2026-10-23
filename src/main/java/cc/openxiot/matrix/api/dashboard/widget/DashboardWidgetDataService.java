@@ -759,12 +759,12 @@ public class DashboardWidgetDataService {
 
     /**
      * 服务卡的 data：
-     * {@code {pollingIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
+     * {@code {transactionIndex, recordedAt?, fields: [{field, value?, unit, bit}], error?, errorAt?}}。
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>，不是某个状态字段：影子就是
      * 「最后一次成功的采集」，一个从没成功过的方法**根本不会有影子**
      * （{@link ModbusShadowCodec} 的说法）。所以没有影子时只给
-     * {@code pollingIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
+     * {@code transactionIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
      * 一行都没有值可显示的空壳不是信息。</p>
      *
      * <p>{@code recordedAt} 属于**整个 function**，不是每个字段各自的：同一张卡的字段必须来自
@@ -790,7 +790,7 @@ public class DashboardWidgetDataService {
      * 采集的那一份做代表（值仍逐寄存器取自各自的影子），所以时间只有一处。</p>
      *
      * <p>按 {@code config.fields} 的**配置顺序**产出；{@code unit} / {@code bit} 取自寄存器定义。
-     * 旧卡的 {@code pollingIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
+     * 旧卡的 {@code transactionIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
         List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
@@ -967,7 +967,7 @@ public class DashboardWidgetDataService {
         }
 
         /**
-         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 pollingIndex）。
+         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 transactionIndex）。
          * {@code serviceId} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
          * 都给 {@code null} —— 拿不到寄存器序号就无从查这段窗口的历史。
          */

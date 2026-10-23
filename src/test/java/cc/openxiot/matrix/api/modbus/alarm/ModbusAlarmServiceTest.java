@@ -120,7 +120,7 @@ class ModbusAlarmServiceTest {
 
         ModbusServiceAlarm row = insertedRow();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
+        assertEquals(FUNCTION_INDEX, row.transactionIndex.intValue());
         assertEquals("进水温度", row.field);
         // 这条行是哪条规则开的（内部标识，不下发）：下一轮据此判「胜者还是不是它」
         assertEquals(rule.id, row.ruleId);
@@ -514,7 +514,7 @@ class ModbusAlarmServiceTest {
         ModbusServiceAlarm row = new ModbusServiceAlarm();
         row.id = id;
         row.serviceId = SERVICE_ID;
-        row.pollingIndex = FUNCTION_INDEX;
+        row.transactionIndex = FUNCTION_INDEX;
         row.field = "进水温度";
         row.level = "WARN";
         row.text = "温度过高";

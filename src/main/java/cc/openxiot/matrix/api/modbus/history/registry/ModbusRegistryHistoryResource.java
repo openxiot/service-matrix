@@ -55,7 +55,7 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
     SpaceService spaceService;
 
     /**
-     * 一个点位的区间曲线：{@code {serviceId, pollingIndex, field, from, to, maxPoints, downsampled,
+     * 一个点位的区间曲线：{@code {serviceId, transactionIndex, field, from, to, maxPoints, downsampled,
      * carryIn, points}}。
      *
      * <p>{@code carryIn} 是区间起点之前最近的那一条（可能没有）：不带它，前端不知道 {@code from}
@@ -68,19 +68,19 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
     public Uni<Response> range(
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
-            @QueryParam("pollingIndex") Integer pollingIndex,
+            @QueryParam("transactionIndex") Integer transactionIndex,
             @QueryParam("field") String field,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
             @QueryParam("maxPoints") Integer maxPoints
     ) {
         logger.infov("query modbus history, space: {0}, service: {1}, polling: {2}, field: {3}",
-                spaceId, serviceId, pollingIndex, field);
+                spaceId, serviceId, transactionIndex, field);
         return requireSpaceMember(spaceId)
-                .chain(ignored -> registryService.range(serviceId, pollingIndex, field,
+                .chain(ignored -> registryService.range(serviceId, transactionIndex, field,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(
-                        ModbusHistoryRangeCodec.encode(serviceId, pollingIndex, field, result)))
+                        ModbusHistoryRangeCodec.encode(serviceId, transactionIndex, field, result)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }

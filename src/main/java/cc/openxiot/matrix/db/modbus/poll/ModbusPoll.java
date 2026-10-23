@@ -12,7 +12,7 @@ import org.bson.types.ObjectId;
  *
  * <p>运行时状态（{@code nextRunAt} / 租约 / 上次结果）**不写进 {@code ModbusService} 定义文档**：
  * 那是接口直接返回的、空间图投影查询也在用的文档，混进实时状态会让「读定义」变成「读实时状态」。
- * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, pollingIndex)}。</p>
+ * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, transactionIndex)}。</p>
  *
  * <p>只有**读方法、有 {@code interval}、{@code polling != false}** 才入表（口径见 {@code ModbusPollPlan}）；
  * 定义改了由对账（{@code ModbusPollReconciler}）跟着改，服务删了跟着删。
@@ -38,7 +38,7 @@ public class ModbusPoll {
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusTransaction.index）", examples = {"1"}, required = true)
-    public Integer pollingIndex;
+    public Integer transactionIndex;
 
     /** 冗余一份：调度要按设备分组（同一条 RS485 串行），不必每次回查服务定义；它同时是分片键的候选。 */
     @Schema(description = "父设备 did：同一个 did 下的方法必须串行（同一条 RS485 总线）", required = true)

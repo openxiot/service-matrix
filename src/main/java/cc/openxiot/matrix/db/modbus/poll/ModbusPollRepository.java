@@ -44,13 +44,13 @@ public class ModbusPollRepository  {
     /**
      * 启动时确保索引存在（幂等；失败仅告警，不阻断启动，与其它仓储同口径）。
      *
-     * <p>{@code (serviceId, pollingIndex)} 唯一：一条 = 一个方法的任务，重复会让同一个方法被采两次。
+     * <p>{@code (serviceId, transactionIndex)} 唯一：一条 = 一个方法的任务，重复会让同一个方法被采两次。
      * {@code (nextRunAt, leaseUntil)}：本轮的内存时间轮并不扫库，建它是为了运维查询
      * 与「以后真要多副本分片」时不必再等索引建好。</p>
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "pollingIndex"), new IndexOptions().unique(true))
+                .createIndex(Indexes.ascending("serviceId", "transactionIndex"), new IndexOptions().unique(true))
                 .chain(ignored -> dropLegacyFunctionIndex())
                 .chain(ignored -> collection().createIndex(Indexes.ascending("nextRunAt", "leaseUntil")))
                 .onFailure().recoverWithNull()
@@ -59,8 +59,8 @@ public class ModbusPollRepository  {
 
     /**
      * 兼容旧索引：早期版本建过非 sparse 的 {@code (serviceId, functionIndex)} 唯一索引
-     * （名字 {@code serviceId_1_functionIndex_1}）。改名成 {@code pollingIndex} 之后，
-     * 新行会带着 {@code "pollingIndex"} 而 {@code "functionIndex"} 留空 —— 若旧索引还在，
+     * （名字 {@code serviceId_1_functionIndex_1}）。改名成 {@code transactionIndex} 之后，
+     * 新行会带着 {@code "transactionIndex"} 而 {@code "functionIndex"} 留空 —— 若旧索引还在，
      * 第二行 null 就会违反旧索引的唯一性，导致插入失败。所以这里幂等地把它删掉
      * （不存在时容错，不阻断启动）。
      */
@@ -189,14 +189,14 @@ public class ModbusPollRepository  {
     }
 
     /** 对账：删掉某个服务里已不再需要轮询的方法（方法被删了、或周期被去掉了）。 */
-    public Uni<Long> deleteByPollingIndexes(String serviceId, List<Integer> pollingIndexes) {
-        if (serviceId == null || pollingIndexes == null || pollingIndexes.isEmpty()) {
+    public Uni<Long> deleteByTransactionIndexes(String serviceId, List<Integer> transactionIndexes) {
+        if (serviceId == null || transactionIndexes == null || transactionIndexes.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
         return collection()
                 .deleteMany(Filters.and(
                         Filters.eq("serviceId", serviceId),
-                        Filters.in("pollingIndex", pollingIndexes)))
+                        Filters.in("transactionIndex", transactionIndexes)))
                 .map(DeleteResult::getDeletedCount);
     }
 }

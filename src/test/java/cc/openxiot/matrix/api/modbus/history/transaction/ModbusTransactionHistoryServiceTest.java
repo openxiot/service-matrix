@@ -92,7 +92,7 @@ class ModbusTransactionHistoryServiceTest {
     private static ModbusTransactionHistory failure(String serviceId, Long at) {
         ModbusTransactionHistory failure = new ModbusTransactionHistory();
         failure.serviceId = serviceId;
-        failure.pollingIndex = 1;
+        failure.transactionIndex = 1;
         failure.ok = false;
         failure.type = "NO_RESPONSE";
         failure.message = "no response";

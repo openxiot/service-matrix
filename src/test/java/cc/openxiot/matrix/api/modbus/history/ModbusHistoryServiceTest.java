@@ -136,7 +136,7 @@ class ModbusHistoryServiceTest {
         verify(pollingHistoryRepo).insert(log.capture());
         ModbusTransactionHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.pollingIndex);
+        assertEquals(FUNCTION_INDEX, row.transactionIndex);
         assertEquals(Boolean.TRUE, row.ok);
         assertEquals("read", row.operation);
         assertNull(row.type);
@@ -173,7 +173,7 @@ class ModbusHistoryServiceTest {
         verify(pollingHistoryRepo).insert(log.capture());
         ModbusTransactionHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.pollingIndex);
+        assertEquals(FUNCTION_INDEX, row.transactionIndex);
         assertEquals(Boolean.FALSE, row.ok);
         assertEquals("read", row.operation);
         assertNull(row.fields);
@@ -275,7 +275,7 @@ class ModbusHistoryServiceTest {
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
         ModbusTransactionHistory row = savedPollingLog();
         assertEquals(SERVICE_ID, row.serviceId);
-        assertEquals(FUNCTION_INDEX, row.pollingIndex.intValue());
+        assertEquals(FUNCTION_INDEX, row.transactionIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
         assertEquals(408, row.remoteCode);
         assertEquals(TIMEOUT, row.message);

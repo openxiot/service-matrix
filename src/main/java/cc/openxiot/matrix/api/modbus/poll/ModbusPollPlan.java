@@ -57,7 +57,7 @@ public final class ModbusPollPlan {
     }
 
     /**
-     * 一份定义 → 该服务的任务清单（{@code pollingIndex} 升序，不改动入参），
+     * 一份定义 → 该服务的任务清单（{@code transactionIndex} 升序，不改动入参），
      * 输入是**未落库**的 {@link ModbusPoll}（{@code _id} 由**这里**生成，插入时原样落库）。
      *
      * <p>{@code _id} 不等插入回写（回写时机由驱动/编解码器决定，不是这条链路能假定的）：
@@ -85,14 +85,14 @@ public final class ModbusPollPlan {
             ModbusPoll task = new ModbusPoll();
             task.id = new ObjectId();
             task.serviceId = serviceId;
-            task.pollingIndex = function.index;
+            task.transactionIndex = function.index;
             task.did = did;
             task.interval = function.interval;
             task.nextRunAt = new Date(ModbusPollSchedule.insertRunAt(now, function.interval,
                     jitterPercent, random));
             tasks.add(task);
         }
-        tasks.sort((left, right) -> Integer.compare(left.pollingIndex, right.pollingIndex));
+        tasks.sort((left, right) -> Integer.compare(left.transactionIndex, right.transactionIndex));
         return tasks;
     }
 }

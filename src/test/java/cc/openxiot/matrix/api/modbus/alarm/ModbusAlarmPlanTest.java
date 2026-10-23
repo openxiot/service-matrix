@@ -169,8 +169,8 @@ class ModbusAlarmPlanTest {
         // 方法 1：两个陈旧出值合成一条，字段名有序；「进水温度」还配着告警，不在里面
         assertEquals(List.of("压力", "回水温度"), closes.get(0).fields());
         assertEquals(List.of("出水温度"), closes.get(1).fields());
-        assertEquals(1, closes.get(0).pollingIndex().intValue());
-        assertEquals(2, closes.get(1).pollingIndex().intValue());
+        assertEquals(1, closes.get(0).transactionIndex().intValue());
+        assertEquals(2, closes.get(1).transactionIndex().intValue());
         assertEquals(SID, closes.get(0).serviceId());
     }
 
@@ -184,7 +184,7 @@ class ModbusAlarmPlanTest {
 
         List<Close> closes = ModbusAlarmPlan.plan(List.of(one, two), rows);
         assertEquals(List.of(SID, SID, OTHER_SID), closes.stream().map(Close::serviceId).toList());
-        assertEquals(List.of(2, 3, 1), closes.stream().map(Close::pollingIndex).toList());
+        assertEquals(List.of(2, 3, 1), closes.stream().map(Close::transactionIndex).toList());
     }
 
     @Test
@@ -195,8 +195,8 @@ class ModbusAlarmPlanTest {
                 List.of(row(SID, 1, "a"), row(SID, null, "b")));
 
         assertEquals(2, closes.size());
-        assertNull(closes.get(0).pollingIndex());
-        assertEquals(1, closes.get(1).pollingIndex().intValue());
+        assertNull(closes.get(0).transactionIndex());
+        assertEquals(1, closes.get(1).transactionIndex().intValue());
     }
 
     // ===== 夹具 =====
@@ -209,17 +209,17 @@ class ModbusAlarmPlanTest {
         return closes.stream().flatMap(close -> close.fields().stream()).toList();
     }
 
-    private static ModbusServiceAlarm open(Integer pollingIndex, String field) {
-        return row(SID, pollingIndex, field);
+    private static ModbusServiceAlarm open(Integer transactionIndex, String field) {
+        return row(SID, transactionIndex, field);
     }
 
-    private static ModbusServiceAlarm row(String serviceId, Integer pollingIndex, String field) {
+    private static ModbusServiceAlarm row(String serviceId, Integer transactionIndex, String field) {
         ModbusServiceAlarm row = new ModbusServiceAlarm();
         row.serviceId = serviceId;
-        row.pollingIndex = pollingIndex;
+        row.transactionIndex = transactionIndex;
         row.field = field;
         row.ruleId = RULE_ID;
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, pollingIndex, field);
+        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, field);
         return row;
     }
 

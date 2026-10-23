@@ -120,9 +120,9 @@ class ModbusServiceAlarmRepositoryTest {
         BsonDocument filter = ModbusServiceAlarmRepository
                 .closeFilter("svc-1", 2, List.of("进水温度", "回水温度")).toBsonDocument();
 
-        // 按 serviceId + pollingIndex + 一批 field 关（$in 而不是某一个），不是定位到某条 _id
+        // 按 serviceId + transactionIndex + 一批 field 关（$in 而不是某一个），不是定位到某条 _id
         assertEquals("svc-1", clause(filter, "serviceId").asString().getValue());
-        assertEquals(2, clause(filter, "pollingIndex").asInt32().getValue());
+        assertEquals(2, clause(filter, "transactionIndex").asInt32().getValue());
         assertEquals(2, clause(filter, "field").asDocument().getArray("$in").size());
         // 已恢复的行 openKey 已被 $unset，不该被再关一次而覆盖掉它第一次的 recoveredAt
         assertTrue(clause(filter, "openKey").asDocument().getBoolean("$exists").getValue());

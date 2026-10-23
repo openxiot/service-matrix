@@ -99,7 +99,7 @@ public class ModbusAlarmReconciler {
         Date now = new Date();
         List<Uni<Void>> ops = new ArrayList<>(closes.size());
         for (ModbusAlarmPlan.Close close : closes) {
-            ops.add(alarmRepo.closeByKeys(close.serviceId(), close.pollingIndex(), close.fields(),
+            ops.add(alarmRepo.closeByKeys(close.serviceId(), close.transactionIndex(), close.fields(),
                     ModbusServiceAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
         }
         int fields = closes.stream().mapToInt(close -> close.fields().size()).sum();

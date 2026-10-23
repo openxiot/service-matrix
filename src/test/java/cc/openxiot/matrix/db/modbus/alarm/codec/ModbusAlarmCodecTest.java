@@ -39,7 +39,7 @@ class ModbusAlarmCodecTest {
         // 每条都带 id：告警行有逐行动作（点「处理」），前端得知道点的是哪一条
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
         assertEquals("svc-1", o.getString("serviceId"));
-        assertEquals(2, o.getInteger("pollingIndex").intValue());
+        assertEquals(2, o.getInteger("transactionIndex").intValue());
         assertEquals("进水温度", o.getString("field"));
         // 触发那一刻的定义快照
         assertEquals(">", o.getString("compare"));
@@ -86,7 +86,7 @@ class ModbusAlarmCodecTest {
         alarm.at = AT;
         JsonObject o = ModbusAlarmCodec.encode(alarm);
         assertEquals(3, o.size());
-        for (String absent : List.of("id", "pollingIndex", "compare", "threshold", "state", "level",
+        for (String absent : List.of("id", "transactionIndex", "compare", "threshold", "state", "level",
                 "text", "unit", "recoveredAt", "closeType", "handled", "handledBy", "sample", "openKey")) {
             assertFalse(o.containsKey(absent), absent + " 不该出键");
         }
@@ -204,7 +204,7 @@ class ModbusAlarmCodecTest {
     private static ModbusServiceAlarm open(String field, Object sample) {
         ModbusServiceAlarm alarm = new ModbusServiceAlarm();
         alarm.serviceId = "svc-1";
-        alarm.pollingIndex = 2;
+        alarm.transactionIndex = 2;
         alarm.field = field;
         alarm.compare = ">";
         alarm.threshold = 80.0;

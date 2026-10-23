@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 内存里的比对基准：{@code (serviceId, pollingIndex) → 当前值文档}，省掉每次采集的一次影子读。
+ * 内存里的比对基准：{@code (serviceId, transactionIndex) → 当前值文档}，省掉每次采集的一次影子读。
  *
  * <p><b>只在 poller 单副本时成立</b>（Modbus-Service-Poller.md 第四节）。多副本时每个副本各记一份，
  * 谁采到谁更新自己那份：另一副本改了值，本副本的基准还是旧的 —— 于是「值没变」的判定出错，

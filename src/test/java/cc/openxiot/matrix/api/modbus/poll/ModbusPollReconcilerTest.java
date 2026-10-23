@@ -198,7 +198,7 @@ class ModbusPollReconcilerTest {
         ModbusPoll row = new ModbusPoll();
         row.id = id;
         row.serviceId = SID;
-        row.pollingIndex = 1;
+        row.transactionIndex = 1;
         row.did = DID;
         row.interval = 30;
         row.nextRunAt = new Date(NOW);

@@ -78,7 +78,7 @@ public class ModbusServiceAlarm {
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusTransaction.index）", examples = {"1"}, required = true)
-    public Integer pollingIndex;
+    public Integer transactionIndex;
 
     @Schema(description = "出值名：字段名（response.fields[].field），或位区里某个具名位（bit-list[].field）"
             + "—— 位是独立的结果键，所以它出现在这里与字段平级", examples = {"进水温度"}, required = true)
@@ -136,7 +136,7 @@ public class ModbusServiceAlarm {
 
     // ===== 内部，不下发 =====
 
-    @Schema(description = "未恢复时才有：serviceId#pollingIndex#field。唯一部分索引建在它上面（并发护栏），"
+    @Schema(description = "未恢复时才有：serviceId#transactionIndex#field。唯一部分索引建在它上面（并发护栏），"
             + "**绝不下发给前端**", hidden = true)
     public String openKey;
 
@@ -150,7 +150,7 @@ public class ModbusServiceAlarm {
      * 该出值的开行标识。未恢复的行带它、已恢复的行把它 {@code $unset} 掉 ——
      * 于是「有一个 openKey 等于它的行」与「这个出值正在告警」是同一件事。
      */
-    public static String openKeyOf(String serviceId, Integer pollingIndex, String field) {
-        return serviceId + "#" + pollingIndex + "#" + field;
+    public static String openKeyOf(String serviceId, Integer transactionIndex, String field) {
+        return serviceId + "#" + transactionIndex + "#" + field;
     }
 }

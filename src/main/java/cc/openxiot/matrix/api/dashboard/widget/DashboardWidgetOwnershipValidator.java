@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code pollingIndex} 方法序号不再需要，
+ * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code transactionIndex} 方法序号不再需要，
  * 字段按 {@code findFunctionByField} 在服务定义里解析）。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
@@ -188,11 +188,11 @@ public class DashboardWidgetOwnershipValidator {
                     if (serviceId == null) {
                         continue;
                     }
-                    // 老卡带 pollingIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
-                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
+                    // 老卡带 transactionIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
+                    Integer transactionIndex = DashboardWidgetConfigs.intVal(config.get("transactionIndex"));
                     addServiceId(serviceIds, serviceId);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollingIndex, field));
+                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, transactionIndex, field));
                     }
                 }
                 case "line" -> {
@@ -200,13 +200,13 @@ public class DashboardWidgetOwnershipValidator {
                         continue;
                     }
                     String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    Integer pollingIndex = DashboardWidgetConfigs.intVal(config.get("pollingIndex"));
+                    Integer transactionIndex = DashboardWidgetConfigs.intVal(config.get("transactionIndex"));
                     String field = DashboardWidgetConfigs.str(config.get("field"));
                     if (serviceId == null || field == null) {
                         continue;
                     }
                     addServiceId(serviceIds, serviceId);
-                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollingIndex, field));
+                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, transactionIndex, field));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
@@ -281,11 +281,11 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
             return "service does not belong to this space: " + ref.serviceId();
         }
-        // 老卡带 pollingIndex（方法序号）：按那个方法的应答字段校验，行为不变。
-        if (ref.pollingIndex() != null) {
-            ModbusTransaction function = findFunction(service, ref.pollingIndex());
+        // 老卡带 transactionIndex（方法序号）：按那个方法的应答字段校验，行为不变。
+        if (ref.transactionIndex() != null) {
+            ModbusTransaction function = findFunction(service, ref.transactionIndex());
             if (function == null) {
-                return "function not found: " + ref.pollingIndex();
+                return "function not found: " + ref.transactionIndex();
             }
             if (!hasField(function, ref.field())) {
                 return "field not found: " + ref.field();
@@ -373,8 +373,8 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。pollingIndex 仅老卡带，可为 null。 */
-    private record ServiceRef(int index, String widgetId, String serviceId, Integer pollingIndex, String field) {
+    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。transactionIndex 仅老卡带，可为 null。 */
+    private record ServiceRef(int index, String widgetId, String serviceId, Integer transactionIndex, String field) {
     }
 
     /** 一张设备卡片的引用。 */

@@ -32,9 +32,9 @@ import java.util.TreeSet;
  * 超过 28 警告 / 超过 30 严重」这种分级配置里，越限到 31℃ 时四条规则里两条同时命中 ——
  * 却只产生一条告警（{@link #rank} 最高的那条），其余开着的行按 {@code SUPERSEDED} 关掉。
  * 于是不变式是「一个寄存器同时最多一条开着」，它恰好就是告警表那条唯一部分索引强制的东西
- * （{@code openKey} 因此仍然只是 {@code serviceId#pollingIndex#field}，不带规则标识）。</p>
+ * （{@code openKey} 因此仍然只是 {@code serviceId#transactionIndex#field}，不带规则标识）。</p>
  *
- * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, pollingIndex, field)} 上有未恢复的告警
+ * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, transactionIndex, field)} 上有未恢复的告警
  * 就是「开着」。判定只需要这一张集合，它由告警表自己查出来
  * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceLastPolling、也不用 poller 的内存基准）。</p>
  */
@@ -270,7 +270,7 @@ public final class ModbusAlarmPolicy {
      *
      * <p>对每个非 null、有 {@code name}、{@code alarms} 非空且有启用的寄存器产出一条规则 ——
      * 告警属寄存器（寄存器中心），不再属 function 应答字段。判定的 identity（告警行按读块维度、
-     * openKey 的 pollingIndex）仍由调用方从判定的继承关系带过去，本表只管「哪个出值有哪些规则、
+     * openKey 的 transactionIndex）仍由调用方从判定的继承关系带过去，本表只管「哪个出值有哪些规则、
      * 单位是什么」。</p>
      */
     public static List<ModbusFieldRule> registerRules(ModbusService service) {

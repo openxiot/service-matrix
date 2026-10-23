@@ -79,7 +79,7 @@ public class ModbusTransactionHistoryResource extends AbstractResource {
      * 整棵子树（项目 = 根空间 + 子空间，设备可以挂在任一子空间上）。故障清单若只查根空间自己的服务，
      * 子空间里的服务就会「表里列着、异常栏永远是空的」—— 把「没查」显示成「没问题」。</p>
      *
-     * <p>{@code pollingIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
+     * <p>{@code transactionIndex} 不传 = 整个服务（空间级时 = 各服务的这个方法序号）；
      * {@code type} 不传 = 所有分类。</p>
      */
     @GET
@@ -88,7 +88,7 @@ public class ModbusTransactionHistoryResource extends AbstractResource {
     public Uni<Response> failures(
             @PathParam("spaceId") String spaceId,
             @QueryParam("serviceId") String serviceId,
-            @QueryParam("pollingIndex") Integer pollingIndex,
+            @QueryParam("transactionIndex") Integer transactionIndex,
             @QueryParam("type") String type,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
@@ -101,8 +101,8 @@ public class ModbusTransactionHistoryResource extends AbstractResource {
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
                         .chain(ids -> pollingService.failuresOfServices(
-                                ids, pollingIndex, type, millis(from), millis(to), limit))
-                        : pollingService.failures(serviceId, pollingIndex, type,
+                                ids, transactionIndex, type, millis(from), millis(to), limit))
+                        : pollingService.failures(serviceId, transactionIndex, type,
                         millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()

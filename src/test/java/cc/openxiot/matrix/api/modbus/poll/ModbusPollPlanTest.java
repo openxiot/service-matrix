@@ -99,7 +99,7 @@ class ModbusPollPlanTest {
         assertTrue(!ModbusPollPlan.shouldPoll(null));
     }
 
-    /** 一份定义 → 只留下该轮询的那些，按 pollingIndex 升序。 */
+    /** 一份定义 → 只留下该轮询的那些，按 transactionIndex 升序。 */
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
         ModbusService service = service(3, 1, 2);
@@ -111,8 +111,8 @@ class ModbusPollPlanTest {
         List<ModbusPoll> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(2, tasks.size());
-        assertEquals(1, tasks.get(0).pollingIndex);
-        assertEquals(3, tasks.get(1).pollingIndex);
+        assertEquals(1, tasks.get(0).transactionIndex);
+        assertEquals(3, tasks.get(1).transactionIndex);
         for (ModbusPoll task : tasks) {
             assertEquals(service.id.toHexString(), task.serviceId);
             assertEquals("did-1", task.did);

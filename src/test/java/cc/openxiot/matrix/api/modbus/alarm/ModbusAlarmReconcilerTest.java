@@ -94,13 +94,13 @@ class ModbusAlarmReconcilerTest {
         reconcile(service(SID, function(2, field("回水温度", true))));
 
         ArgumentCaptor<String> serviceId = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<Integer> pollingIndex = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<Integer> transactionIndex = ArgumentCaptor.forClass(Integer.class);
         ArgumentCaptor<Date> at = ArgumentCaptor.forClass(Date.class);
-        verify(alarmRepo).closeByKeys(serviceId.capture(), pollingIndex.capture(), any(),
+        verify(alarmRepo).closeByKeys(serviceId.capture(), transactionIndex.capture(), any(),
                 anyString(), at.capture());
 
         assertEquals(SID, serviceId.getValue());
-        assertEquals(2, pollingIndex.getValue().intValue());
+        assertEquals(2, transactionIndex.getValue().intValue());
         assertNotNull(at.getValue(), "关闭时刻必须写上：一条没有 recoveredAt 的关闭等于没关");
     }
 
@@ -259,14 +259,14 @@ class ModbusAlarmReconcilerTest {
         when(alarmRepo.listOpenByServiceId(anyString())).thenReturn(Uni.createFrom().item(List.of(rows)));
     }
 
-    private static ModbusServiceAlarm openRow(String serviceId, Integer pollingIndex, String field) {
+    private static ModbusServiceAlarm openRow(String serviceId, Integer transactionIndex, String field) {
         ModbusServiceAlarm row = new ModbusServiceAlarm();
         row.serviceId = serviceId;
-        row.pollingIndex = pollingIndex;
+        row.transactionIndex = transactionIndex;
         row.field = field;
         // 开它的就是夹具定义里那条规则（id 同 RULE_ID）：判据是规则级，没有它这条行会被判成「不认识」
         row.ruleId = RULE_ID;
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, pollingIndex, field);
+        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, field);
         return row;
     }
 

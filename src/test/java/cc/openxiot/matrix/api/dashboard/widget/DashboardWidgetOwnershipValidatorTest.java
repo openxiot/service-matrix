@@ -205,18 +205,18 @@ class WidgetOwnershipValidatorTest {
 
     // ===== 新卡：不存方法序号，字段（寄存器）按名解析到某个读方法 =====
 
-    /** 服务卡不再带 pollingIndex：字段能解析到某个读方法即合法（方法由取数时解析）。 */
+    /** 服务卡不再带 transactionIndex：字段能解析到某个读方法即合法（方法由取数时解析）。 */
     @Test
-    void service_withoutPollingIndex_registerField_belongs() {
+    void service_withoutTransactionIndex_registerField_belongs() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null), function(2, "压力", null)));
 
         assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "温度", "压力")).isEmpty(),
-                "寄存器字段卡不应再要求方法序号（pollingIndex）");
+                "寄存器字段卡不应再要求方法序号（transactionIndex）");
     }
 
     /** 位名走新路径同样认。 */
     @Test
-    void service_withoutPollingIndex_bitField_belongs() {
+    void service_withoutTransactionIndex_bitField_belongs() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀"))));
 
         assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "进水阀")).isEmpty());
@@ -224,7 +224,7 @@ class WidgetOwnershipValidatorTest {
 
     /** 字段解析不到（写错 / 取不到数）时照旧报错，不让它存下去。 */
     @Test
-    void service_withoutPollingIndex_fieldNotFound() {
+    void service_withoutTransactionIndex_fieldNotFound() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
 
         assertEquals("widgets[0](w1): field not found: 湿度",
@@ -233,7 +233,7 @@ class WidgetOwnershipValidatorTest {
 
     /** 曲线卡（serviceField 数据源）同样不再要求方法序号：字段能解析即合法。 */
     @Test
-    void line_serviceField_withoutPollingIndex_fieldResolves() {
+    void line_serviceField_withoutTransactionIndex_fieldResolves() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
 
         assertTrue(errors(lineServiceField("w1", SERVICE_ID, "温度")).isEmpty());
@@ -241,7 +241,7 @@ class WidgetOwnershipValidatorTest {
 
     /** 曲线卡的字段解析不到照旧报错。 */
     @Test
-    void line_serviceField_withoutPollingIndex_fieldNotFound() {
+    void line_serviceField_withoutTransactionIndex_fieldNotFound() {
         stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
 
         assertEquals("widgets[0](w1): field not found: 湿度",
@@ -361,9 +361,9 @@ class WidgetOwnershipValidatorTest {
         return widget(id, "device", config("did", did, "pid", "p1"));
     }
 
-    private static WebDashboardWidget serviceWithField(String id, String serviceId, int pollingIndex, String field) {
+    private static WebDashboardWidget serviceWithField(String id, String serviceId, int transactionIndex, String field) {
         return widget(id, "service", config("serviceId", serviceId,
-                "pollingIndex", pollingIndex, "fields", List.of(field)));
+                "transactionIndex", transactionIndex, "fields", List.of(field)));
     }
 
     /** 新卡服务卡：只带服务 + 寄存器字段，不带方法序号。 */

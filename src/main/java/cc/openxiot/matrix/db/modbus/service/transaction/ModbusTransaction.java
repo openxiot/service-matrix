@@ -28,7 +28,7 @@ import java.util.List;
  * 校验层直接拒掉（见 {@code ModbusServiceValidator}）。</p>
  *
  * <p>{@link #index} 是方法在服务内的序号（1 起自然数、同服务唯一）—— 轮询身份
- * （{@code modbus.polls.pollingIndex}）、告警/影子/历史的方法键都读它。
+ * （{@code modbus.polls.transactionIndex}）、告警/影子/历史的方法键都读它。
  * {@link ModbusTransactionFrom#index} 只作**溯源**（指向 config 的 {@code ModbusRegistry#index} /
  * {@code ModbusCommand#index}），**不作轮询身份**，别拿它当 identity。</p>
  */
@@ -37,7 +37,7 @@ import java.util.List;
 @Schema(description = "Modbus 服务方法")
 public class ModbusTransaction {
 
-    @Schema(description = "方法在服务内的序号（1 起自然数、同服务唯一）：轮询身份（modbus.polls.pollingIndex）、"
+    @Schema(description = "方法在服务内的序号（1 起自然数、同服务唯一）：轮询身份（modbus.polls.transactionIndex）、"
             + "告警/影子/历史的方法键都读它", examples = {"1"}, required = true)
     public Integer index;
 

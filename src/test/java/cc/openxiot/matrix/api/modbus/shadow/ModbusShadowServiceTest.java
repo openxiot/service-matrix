@@ -65,7 +65,7 @@ class ModbusShadowServiceTest {
         JsonObject temp = grid.get(0);
         assertEquals("进水温度", temp.getString("name"));
         assertEquals(61.5, temp.getValue("value"));
-        assertEquals(1, temp.getInteger("pollingIndex"));
+        assertEquals(1, temp.getInteger("transactionIndex"));
         assertEquals(t0, temp.getLong("recordedAt"));
         assertEquals("current", temp.getString("status"));
         // 有值 + 最近失败 → stale，值仍是最后已知值
@@ -78,7 +78,7 @@ class ModbusShadowServiceTest {
         JsonObject pressure = grid.get(2);
         assertEquals("压力", pressure.getString("name"));
         assertFalse(pressure.containsKey("value"));
-        assertFalse(pressure.containsKey("pollingIndex"));
+        assertFalse(pressure.containsKey("transactionIndex"));
         assertEquals("no-data", pressure.getString("status"));
     }
 

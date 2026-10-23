@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * {@code service-polling-histories}）。
  *
  * <p>写侧是「每次调用追加一条」；读侧（轮询明细、失败统计）由上层模块按
- * {@code (serviceId, pollingIndex, at)} 过滤，索引在这里建好。操作日志按采集频率线性增长，
+ * {@code (serviceId, transactionIndex, at)} 过滤，索引在这里建好。操作日志按采集频率线性增长，
  * 所以 {@code at} 上要有 TTL 保留策略兜底（与 {@link ModbusRegistryHistoryRepository} 同口径）。</p>
  */
 @ApplicationScoped
@@ -38,11 +38,11 @@ public class ModbusTransactionHistoryRepository {
                 .getCollection("service-polling-histories", ModbusTransactionHistory.class);
     }
 
-    /** 启动时确保索引存在：{@code (serviceId, pollingIndex, at)} 复合索引（前两段等值 + {@code at} 范围），
+    /** 启动时确保索引存在：{@code (serviceId, transactionIndex, at)} 复合索引（前两段等值 + {@code at} 范围），
      *  外加（{@code retentionSeconds > 0} 时）{@code at} 上的 TTL 索引。 */
     public Uni<Void> ensureIndexes(long retentionSeconds) {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "pollingIndex", "at"))
+                .createIndex(Indexes.ascending("serviceId", "transactionIndex", "at"))
                 .onFailure().recoverWithNull()
                 .chain(ignored -> ensureRetention(retentionSeconds));
     }
@@ -74,19 +74,19 @@ public class ModbusTransactionHistoryRepository {
     /**
      * 某段区间内的**失败调用**（{@code ok=false}），按 {@code at} **倒序**（最近的在前，故障清单这么看）。
      *
-     * <p>{@code pollingIndex} 与 {@code type} 为 null 表示不限（分别是「整个服务」与「所有失败分类」）。
-     * 索引是 {@code (serviceId, pollingIndex, at)}：不带 {@code pollingIndex} 时只有第一段用得上，
+     * <p>{@code transactionIndex} 与 {@code type} 为 null 表示不限（分别是「整个服务」与「所有失败分类」）。
+     * 索引是 {@code (serviceId, transactionIndex, at)}：不带 {@code transactionIndex} 时只有第一段用得上，
      * 排序要靠内存完成 —— 我们要的就是倒序，直接让查询倒序排即可。</p>
      *
      * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
      */
-    public Uni<List<ModbusTransactionHistory>> findFailureRange(String serviceId, Integer pollingIndex,
+    public Uni<List<ModbusTransactionHistory>> findFailureRange(String serviceId, Integer transactionIndex,
                                                                    String type, Date from, Date to, int limit) {
         List<Bson> filters = new ArrayList<>();
         filters.add(Filters.eq("serviceId", serviceId));
         filters.add(Filters.eq("ok", false));
-        if (pollingIndex != null) {
-            filters.add(Filters.eq("pollingIndex", pollingIndex));
+        if (transactionIndex != null) {
+            filters.add(Filters.eq("transactionIndex", transactionIndex));
         }
         if (type != null && !type.isBlank()) {
             filters.add(Filters.eq("type", type));

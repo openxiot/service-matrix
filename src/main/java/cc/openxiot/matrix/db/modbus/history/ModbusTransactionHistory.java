@@ -34,7 +34,7 @@ public class ModbusTransactionHistory {
     public String serviceId;
 
     @Schema(description = "读块序号（ModbusTransaction.index，操作日志按读块记）", examples = {"1"}, required = true)
-    public Integer pollingIndex;
+    public Integer transactionIndex;
 
     @Schema(description = "操作类型：read（读） / write（写）", required = true)
     public String operation;

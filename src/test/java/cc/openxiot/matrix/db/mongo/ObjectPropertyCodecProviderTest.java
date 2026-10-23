@@ -133,7 +133,7 @@ class ObjectPropertyCodecProviderTest {
         ModbusTransactionHistory log = new ModbusTransactionHistory();
         log.id = new ObjectId();
         log.serviceId = "6aa759bb4e45b0b6122d2ed5";
-        log.pollingIndex = 1;
+        log.transactionIndex = 1;
         log.operation = "read";
         log.ok = Boolean.TRUE;
         Map<String, Object> fields = new LinkedHashMap<>();
@@ -222,7 +222,7 @@ class ObjectPropertyCodecProviderTest {
         widget.size = "HALF";
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("serviceId", "6aa759bb4e45b0b6122d2ed5");
-        config.put("pollingIndex", 1);
+        config.put("transactionIndex", 1);
         config.put("fields", List.of("temp", "status.bit0"));
         config.put("showUnit", Boolean.TRUE);
         widget.config = config;

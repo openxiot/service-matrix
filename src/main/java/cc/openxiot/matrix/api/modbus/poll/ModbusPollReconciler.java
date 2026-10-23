@@ -308,9 +308,9 @@ public class ModbusPollReconciler {
             return sequence(taskWrites(serviceId, planned, existing)).chain(() -> {
                 List<Uni<Void>> offers = new ArrayList<>(planned.size());
                 for (ModbusPoll task : planned) {
-                    ModbusPollKey key = new ModbusPollKey(serviceId, task.pollingIndex);
+                    ModbusPollKey key = new ModbusPollKey(serviceId, task.transactionIndex);
                     plannedKeys.add(key);
-                    ModbusPoll row = rowOf(existing, task.pollingIndex);
+                    ModbusPoll row = rowOf(existing, task.transactionIndex);
                     // id 以库里的那一行为准：计划对象上的 id 只在「这一轮要插入」时才等于落库后的 _id。
                     // 反过来（读计划对象的 id）会让库里已有的任务永远带着 null id 进时间轮 ——
                     // 表现就是每周期一条 "modbus poll task has no id"、一次采集也不发生。
@@ -342,8 +342,8 @@ public class ModbusPollReconciler {
         List<Uni<Void>> writes = new ArrayList<>();
         Set<Integer> plannedIndexes = new HashSet<>();
         for (ModbusPoll task : planned) {
-            plannedIndexes.add(task.pollingIndex);
-            ModbusPoll row = rowOf(existing, task.pollingIndex);
+            plannedIndexes.add(task.transactionIndex);
+            ModbusPoll row = rowOf(existing, task.transactionIndex);
             if (row == null) {
                 writes.add(pollRepo.insert(task));
             } else if (!Objects.equals(row.did, task.did) || !Objects.equals(row.interval, task.interval)) {
@@ -351,11 +351,11 @@ public class ModbusPollReconciler {
             }
         }
         List<Integer> removed = existing.stream()
-                .map(poll -> poll.pollingIndex)
+                .map(poll -> poll.transactionIndex)
                 .filter(index -> index != null && !plannedIndexes.contains(index))
                 .toList();
         if (!removed.isEmpty()) {
-            writes.add(pollRepo.deleteByPollingIndexes(serviceId, removed)
+            writes.add(pollRepo.deleteByTransactionIndexes(serviceId, removed)
                     .invoke(count -> logger.infov(
                             "modbus poll tasks removed, service: {0}, functions: {1}, tasks: {2}",
                             serviceId, removed, count))
@@ -424,12 +424,12 @@ public class ModbusPollReconciler {
         return service.device == null ? null : service.device.did;
     }
 
-    private static ModbusPoll rowOf(List<ModbusPoll> polls, Integer pollingIndex) {
-        if (pollingIndex == null) {
+    private static ModbusPoll rowOf(List<ModbusPoll> polls, Integer transactionIndex) {
+        if (transactionIndex == null) {
             return null;
         }
         for (ModbusPoll poll : polls) {
-            if (pollingIndex.equals(poll.pollingIndex)) {
+            if (transactionIndex.equals(poll.transactionIndex)) {
                 return poll;
             }
         }

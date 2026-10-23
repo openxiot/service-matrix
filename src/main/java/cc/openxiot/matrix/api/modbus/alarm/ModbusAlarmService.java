@@ -63,7 +63,7 @@ public class ModbusAlarmService {
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
-    /** 已经报过的「判不了」键（{@code serviceId#pollingIndex#field#ruleId}），进程内去重。 */
+    /** 已经报过的「判不了」键（{@code serviceId#transactionIndex#field#ruleId}），进程内去重。 */
     private final Set<String> reportedSkips = ConcurrentHashMap.newKeySet();
 
     void init(@Observes StartupEvent event) {
@@ -241,11 +241,11 @@ public class ModbusAlarmService {
     }
 
     /** 触发那一刻的定义快照进告警行：定义是活的、行是不可变的历史（见 Modbus-Alarm.md 第八节）。 */
-    private static ModbusServiceAlarm rowOf(String serviceId, Integer pollingIndex,
+    private static ModbusServiceAlarm rowOf(String serviceId, Integer transactionIndex,
                                             ModbusAlarmPolicy.Open hit, Date at) {
         ModbusServiceAlarm row = new ModbusServiceAlarm();
         row.serviceId = serviceId;
-        row.pollingIndex = pollingIndex;
+        row.transactionIndex = transactionIndex;
         row.field = hit.field();
         row.compare = hit.alarm().compare;
         row.threshold = hit.alarm().threshold;
@@ -257,7 +257,7 @@ public class ModbusAlarmService {
         // 显式写 false（而不是留 null）：null 与 false 都算未处理，但页面上要显示一个确定的状态
         row.handled = false;
         row.sample = hit.sample();
-        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, pollingIndex, hit.field());
+        row.openKey = ModbusServiceAlarm.openKeyOf(serviceId, transactionIndex, hit.field());
         // 哪条规则开的（不下发）：下一轮据此判断「胜者还是不是它」，也供定义变更对账判这条还该不该开着
         row.ruleId = hit.alarm().id;
         return row;

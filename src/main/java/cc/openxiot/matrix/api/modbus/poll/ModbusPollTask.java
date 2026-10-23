@@ -37,7 +37,7 @@ public final class ModbusPollTask {
 
     public final String serviceId;
 
-    public final Integer pollingIndex;
+    public final Integer transactionIndex;
 
     /** 父设备 did：同一个 did 下的方法必须串行（同一条 RS485 总线）。**设备换了要整条替换**，故为 final。 */
     public final String did;
@@ -54,10 +54,10 @@ public final class ModbusPollTask {
     /** 对账要求删除、但它正在飞：不打断这一帧，跑完不再回轮（见 {@link ModbusPollWheel#finish}）。 */
     boolean retired;
 
-    public ModbusPollTask(ObjectId id, String serviceId, Integer pollingIndex, String did) {
+    public ModbusPollTask(ObjectId id, String serviceId, Integer transactionIndex, String did) {
         this.id = id;
         this.serviceId = serviceId;
-        this.pollingIndex = pollingIndex;
+        this.transactionIndex = transactionIndex;
         this.did = did;
     }
 
@@ -70,7 +70,7 @@ public final class ModbusPollTask {
      * 而权威的那个 id 在库里那一行上。</p>
      */
     public static ModbusPollTask of(ModbusPoll poll, ObjectId id, String ownerId) {
-        ModbusPollTask task = new ModbusPollTask(id, poll.serviceId, poll.pollingIndex, poll.did);
+        ModbusPollTask task = new ModbusPollTask(id, poll.serviceId, poll.transactionIndex, poll.did);
         task.intervalSeconds = poll.interval == null ? 0 : poll.interval;
         task.ownerId = ownerId;
         task.nextRunAt = poll.nextRunAt == null ? 0L : poll.nextRunAt.getTime();
@@ -78,7 +78,7 @@ public final class ModbusPollTask {
     }
 
     public ModbusPollKey key() {
-        return new ModbusPollKey(serviceId, pollingIndex);
+        return new ModbusPollKey(serviceId, transactionIndex);
     }
 
     @Override

@@ -39,7 +39,7 @@ import java.util.random.RandomGenerator;
  * <ul>
  *   <li><b>调度线程</b>：{@link ScheduledExecutorService} 单线程，{@code scheduleAtFixedRate} 唤醒。
  *       它独占**内存时间轮**（{@link ModbusPollWheel} 不加锁）与**任务对象的全部字段**——
- *       工作线程只读 {@code ownerId} / {@code serviceId} / {@code pollingIndex}，
+ *       工作线程只读 {@code ownerId} / {@code serviceId} / {@code transactionIndex}，
  *       算好的下一次时刻**回填到调度线程**，不直接改时间轮。</li>
  *   <li><b>工作线程池</b>：{@code modbus.poll.concurrency} 个，池大小即并发上限。
  *       时间轮的 {@code pump} 也按同一个数限流，所以池里不会排队。</li>
@@ -300,7 +300,7 @@ public class ModbusPollScheduler {
                     "owner space is unknown for poll task, did=" + task.did);
         }
         JsonObject values = serviceService
-                .invokePolled(task.ownerId, task.serviceId, task.pollingIndex, baselines)
+                .invokePolled(task.ownerId, task.serviceId, task.transactionIndex, baselines)
                 .ifNoItem().after(Duration.ofSeconds(invokeTimeoutSeconds))
                 .failWith(() -> ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE,
                         "poll invoke timeout after " + invokeTimeoutSeconds + "s, did=" + task.did))
