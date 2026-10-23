@@ -18,7 +18,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * {@link ModbusPoll} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code polls}）。
+ * {@link ModbusPolling} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code polls}）。
  *
  * <p>写入分成几条互不重叠的路，各自 {@code $set} 自己那几个字段：
  * {@link #updatePlan} 只动调度字段（{@code did} / {@code interval}，对账用）、
@@ -28,17 +28,17 @@ import java.util.List;
  * —— 这两个写发生在不同的线程甚至不同的进程上，而它们本来毫无关系。</p>
  */
 @ApplicationScoped
-public class ModbusPollRepository  {
+public class ModbusPollingRepository  {
 
     @Inject
     ReactiveMongoClient mongoClient;
 
-    /** {@link ModbusPoll#lastStatus} 的两个取值：只有成功与失败**两种**，跳过不是状态。 */
+    /** {@link ModbusPolling#lastStatus} 的两个取值：只有成功与失败**两种**，跳过不是状态。 */
     public static final String STATUS_OK = "OK";
     public static final String STATUS_FAILED = "FAILED";
 
-    private ReactiveMongoCollection<ModbusPoll> collection() {
-        return mongoClient.getDatabase("modbus").getCollection("polls", ModbusPoll.class);
+    private ReactiveMongoCollection<ModbusPolling> collection() {
+        return mongoClient.getDatabase("modbus").getCollection("polls", ModbusPolling.class);
     }
 
     /**
@@ -71,12 +71,12 @@ public class ModbusPollRepository  {
     }
 
     /** 全量任务（对账与启动恢复用）。表很小：一条 = 一个方法，与采样频率无关。 */
-    public Uni<List<ModbusPoll>> listAll() {
+    public Uni<List<ModbusPolling>> listAll() {
         return collection().find().collect().asList();
     }
 
     /** 某个服务下的任务，按方法序号升序。 */
-    public Uni<List<ModbusPoll>> findByServiceId(String serviceId) {
+    public Uni<List<ModbusPolling>> findByServiceId(String serviceId) {
         if (serviceId == null || serviceId.isBlank()) {
             return Uni.createFrom().item(List.of());
         }
@@ -84,7 +84,7 @@ public class ModbusPollRepository  {
     }
 
     /** 一批服务的任务（查询接口按空间取：空间 → serviceId 列表 → 任务）。 */
-    public Uni<List<ModbusPoll>> listByServiceIds(List<String> serviceIds) {
+    public Uni<List<ModbusPolling>> listByServiceIds(List<String> serviceIds) {
         if (serviceIds == null || serviceIds.isEmpty()) {
             return Uni.createFrom().item(List.of());
         }
@@ -92,7 +92,7 @@ public class ModbusPollRepository  {
     }
 
     /** 新增一条（{@code _id} 由 Panache 生成并回写到 {@code poll.id}）。 */
-    public Uni<Void> insert(ModbusPoll poll) {
+    public Uni<Void> insert(ModbusPolling poll) {
         if (poll.id == null) { poll.id = new ObjectId(); }
         return collection().insertOne(poll).replaceWithVoid();
     }
@@ -163,7 +163,7 @@ public class ModbusPollRepository  {
      * 提前释放会让一次被中断的采集立刻被另一个副本重发（同一帧上总线两次），
      * 而它的收益只是停机后少等一段 —— 见 Modbus-Service-Poller.md 第七节。</p>
      */
-    public Uni<ModbusPoll> claim(ObjectId id, String owner, Date now, Date leaseUntil, Date nextRunAt) {
+    public Uni<ModbusPolling> claim(ObjectId id, String owner, Date now, Date leaseUntil, Date nextRunAt) {
         Bson filter = Filters.and(
                 Filters.eq("_id", id),
                 Filters.or(

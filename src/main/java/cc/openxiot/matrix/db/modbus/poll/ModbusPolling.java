@@ -27,7 +27,7 @@ import org.bson.types.ObjectId;
  */
 @RegisterForReflection
 @Schema(description = "Modbus 轮询任务（派生集合：一条 = 一个服务的某个方法）")
-public class ModbusPoll {
+public class ModbusPolling {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)

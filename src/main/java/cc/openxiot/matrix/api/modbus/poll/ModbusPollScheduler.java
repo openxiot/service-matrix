@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.poll;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
@@ -76,7 +76,7 @@ public class ModbusPollScheduler {
     ModbusServiceService serviceService;
 
     @Inject
-    ModbusPollRepository pollRepo;
+    ModbusPollingRepository pollRepo;
 
     @Inject
     Logger logger;
@@ -143,7 +143,7 @@ public class ModbusPollScheduler {
     /**
      * 优雅停机：停唤醒 → 等在飞任务收尾（限时）→ 停线程池。
      *
-     * <p>不释放租约（{@code ModbusPollRepository.claim} 的注释写了原因）：被中断的那一帧可能已经在总线上，
+     * <p>不释放租约（{@code ModbusPollingRepository.claim} 的注释写了原因）：被中断的那一帧可能已经在总线上，
      * 让租约自然到期比立刻放给别人重发安全。代价是停机后最多 {@code lease-seconds} 的空窗。</p>
      */
     void stop(@Observes ShutdownEvent event) {
@@ -239,7 +239,7 @@ public class ModbusPollScheduler {
 
     /**
      * 认领并派发。认领前先算出下一次时刻 —— 它要和租约**写在同一行**（见
-     * {@code ModbusPollRepository.claim}），所以这里先算、认领不到就丢掉重算。
+     * {@code ModbusPollingRepository.claim}），所以这里先算、认领不到就丢掉重算。
      */
     private void claim(ModbusPollTask task, long now) {
         long nextRunAt = nextRunAt(now, now, task);
@@ -251,7 +251,7 @@ public class ModbusPollScheduler {
             finish(task, nextRunAt);
             return;
         }
-        ModbusPoll claimed = pollRepo
+        ModbusPolling claimed = pollRepo
                 .claim(task.id, instanceId, new Date(now), new Date(now + leaseSeconds * 1000L),
                         new Date(nextRunAt))
                 .onFailure().invoke(e -> logger.warnv(

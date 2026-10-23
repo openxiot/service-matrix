@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.poll.codec;
 
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -8,7 +8,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * {@link ModbusPoll} → JSON（轮询任务查询接口用）。
+ * {@link ModbusPolling} → JSON（轮询任务查询接口用）。
  *
  * <p>只出不进：任务表是**派生数据**（口径由服务定义决定，见 {@code ModbusPollPlan}），
  * 不由请求体决定 —— 所以没有 decode。要改任务就去改服务定义，对账会跟着改。</p>
@@ -18,12 +18,12 @@ import java.util.List;
  * {@code lastStatus} 只有 {@code OK} / {@code FAILED} 两个值 —— 跳过（设备忙、租约没抢到）
  * 不是状态，它不写这一列。</p>
  */
-public final class ModbusPollCodec {
+public final class ModbusPollingCodec {
 
-    private ModbusPollCodec() {
+    private ModbusPollingCodec() {
     }
 
-    public static JsonObject encode(ModbusPoll poll) {
+    public static JsonObject encode(ModbusPolling poll) {
         JsonObject o = new JsonObject();
         if (poll == null) {
             return o;
@@ -58,10 +58,10 @@ public final class ModbusPollCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusPoll> polls) {
+    public static JsonArray encode(List<ModbusPolling> polls) {
         JsonArray arr = new JsonArray();
         if (polls != null) {
-            for (ModbusPoll poll : polls) {
+            for (ModbusPolling poll : polls) {
                 arr.add(encode(poll));
             }
         }

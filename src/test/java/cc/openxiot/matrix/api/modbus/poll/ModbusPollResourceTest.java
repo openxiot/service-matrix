@@ -15,8 +15,8 @@ import static org.mockito.Mockito.when;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
@@ -55,7 +55,7 @@ class ModbusPollResourceTest {
     ModbusServiceService serviceService;
 
     @InjectMock
-    ModbusPollRepository pollRepo;
+    ModbusPollingRepository pollRepo;
 
     @InjectMock
     ModbusPollScheduler scheduler;
@@ -81,15 +81,15 @@ class ModbusPollResourceTest {
         return svc;
     }
 
-    private ModbusPoll poll() {
-        ModbusPoll poll = new ModbusPoll();
+    private ModbusPolling poll() {
+        ModbusPolling poll = new ModbusPolling();
         poll.serviceId = SID;
         poll.transactionIndex = 1;
         poll.did = DID;
         poll.interval = 10;
         poll.nextRunAt = new Date(NOW + 10_000);
         poll.lastRunAt = new Date(NOW);
-        poll.lastStatus = ModbusPollRepository.STATUS_OK;
+        poll.lastStatus = ModbusPollingRepository.STATUS_OK;
         poll.failCount = 0;
         return poll;
     }
@@ -136,7 +136,7 @@ class ModbusPollResourceTest {
                 .body("data.items[0].interval", equalTo(10))
                 .body("data.items[0].nextRunAt", equalTo(NOW + 10_000))
                 .body("data.items[0].lastRunAt", equalTo(NOW))
-                .body("data.items[0].lastStatus", equalTo(ModbusPollRepository.STATUS_OK))
+                .body("data.items[0].lastStatus", equalTo(ModbusPollingRepository.STATUS_OK))
                 // 服务名一起带上：前端不必再查一遍定义才知道这条任务是谁的
                 .body("data.items[0].serviceName", equalTo("1 号冷水机组"));
     }

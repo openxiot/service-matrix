@@ -35,7 +35,7 @@ import java.util.Map;
  * <p>这个仓储里没有一条「整文档替换」：告警行一旦落下，此后只有两种改动 ——
  * 关闭（写 {@code recoveredAt} / {@code closeType}、{@code $unset} {@code openKey}）与
  * 处理（写 {@code handled} / {@code handledBy}）。它们是**互不相交的字段**，用 {@code $set}
- * 各写各的，谁也盖不掉谁 —— 与 {@code ModbusPollRepository} 同一条纪律。</p>
+ * 各写各的，谁也盖不掉谁 —— 与 {@code ModbusPollingRepository} 同一条纪律。</p>
  *
  * <p>写侧的另一条纪律：<b>关闭按整个开行标识 {@code updateMany}，不定位到某条 {@code _id}</b>。
  * 这消除了「幽灵告警永远关不掉」这个失效模式，也让采集热路径只需要「存在性」而不需要身份。</p>

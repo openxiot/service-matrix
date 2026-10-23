@@ -5,9 +5,9 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
-import cc.openxiot.matrix.db.modbus.poll.codec.ModbusPollCodec;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
+import cc.openxiot.matrix.db.modbus.poll.codec.ModbusPollingCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -57,7 +57,7 @@ public class ModbusPollResource extends AbstractResource {
     ModbusServiceService serviceService;
 
     @Inject
-    ModbusPollRepository pollRepo;
+    ModbusPollingRepository pollRepo;
 
     @Inject
     ModbusPollScheduler scheduler;
@@ -103,10 +103,10 @@ public class ModbusPollResource extends AbstractResource {
 
     // -- helper methods --
 
-    private JsonObject body(String spaceId, Map<String, String> nameById, List<ModbusPoll> polls) {
+    private JsonObject body(String spaceId, Map<String, String> nameById, List<ModbusPolling> polls) {
         JsonArray items = new JsonArray();
-        for (ModbusPoll poll : polls) {
-            JsonObject item = ModbusPollCodec.encode(poll);
+        for (ModbusPolling poll : polls) {
+            JsonObject item = ModbusPollingCodec.encode(poll);
             String name = poll.serviceId == null ? null : nameById.get(poll.serviceId);
             if (name != null) {
                 item.put("serviceName", name);

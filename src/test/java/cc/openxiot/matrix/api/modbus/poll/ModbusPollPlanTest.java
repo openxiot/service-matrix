@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
@@ -108,12 +108,12 @@ class ModbusPollPlanTest {
         service.transactions.get(2).interval = 10;
         service.transactions.get(2).polling = Boolean.FALSE;     // index 2 被关掉
 
-        List<ModbusPoll> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(2, tasks.size());
         assertEquals(1, tasks.get(0).transactionIndex);
         assertEquals(3, tasks.get(1).transactionIndex);
-        for (ModbusPoll task : tasks) {
+        for (ModbusPolling task : tasks) {
             assertEquals(service.id.toHexString(), task.serviceId);
             assertEquals("did-1", task.did);
             assertNotNull(task.id);                           // id 在这里就定下来，不等插入回写
@@ -132,7 +132,7 @@ class ModbusPollPlanTest {
         service.transactions.get(0).interval = 10;
         service.transactions.get(1).interval = 60;
 
-        List<ModbusPoll> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(NOW + 10_000, tasks.get(0).nextRunAt.getTime());
         assertEquals(NOW + 60_000, tasks.get(1).nextRunAt.getTime());

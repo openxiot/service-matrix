@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
 import org.bson.types.ObjectId;
 
 /**
  * 调度循环内存里的一个任务：{@code modbus.polls} 一行 + 调度要用的归属。
  *
- * <p>与实体 {@link ModbusPoll} 分开，是因为两者的字段口径本来就不同：实体是**持久化状态**
+ * <p>与实体 {@link ModbusPolling} 分开，是因为两者的字段口径本来就不同：实体是**持久化状态**
  * （含上次结果、连续失败次数这些只给前端看的字段），这里是**内存调度状态**（含 {@link #ownerId} 这种
  * 每次对账才解析一次、不该落库的字段）。合成一个类就得在实体上挂 transients，
  * 而 transients 恰恰是「同一份数据两种生命周期」最容易出错的地方。</p>
@@ -69,7 +69,7 @@ public final class ModbusPollTask {
      * （{@code ModbusPollPlan.tasksOf} 现算的），库里已经有这一行时它身上没有 id，
      * 而权威的那个 id 在库里那一行上。</p>
      */
-    public static ModbusPollTask of(ModbusPoll poll, ObjectId id, String ownerId) {
+    public static ModbusPollTask of(ModbusPolling poll, ObjectId id, String ownerId) {
         ModbusPollTask task = new ModbusPollTask(id, poll.serviceId, poll.transactionIndex, poll.did);
         task.intervalSeconds = poll.interval == null ? 0 : poll.interval;
         task.ownerId = ownerId;

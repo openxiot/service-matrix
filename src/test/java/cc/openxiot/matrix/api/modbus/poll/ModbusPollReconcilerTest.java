@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.poll;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransactionFrom;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequests;
@@ -59,7 +59,7 @@ class ModbusPollReconcilerTest {
     ModbusServiceRepository serviceRepo;
 
     @Mock
-    ModbusPollRepository pollRepo;
+    ModbusPollingRepository pollRepo;
 
     @Mock
     ModbusShadowRepository registryShadowRepo;
@@ -103,7 +103,7 @@ class ModbusPollReconcilerTest {
 
         reconcile();
 
-        ArgumentCaptor<ModbusPoll> inserted = ArgumentCaptor.forClass(ModbusPoll.class);
+        ArgumentCaptor<ModbusPolling> inserted = ArgumentCaptor.forClass(ModbusPolling.class);
         verify(pollRepo).insert(inserted.capture());
         assertNotNull(inserted.getValue().id, "落库的那条自己得先有 id");
         assertEquals(inserted.getValue().id, pumpOne().id, "落库的 _id 与内存任务必须是同一个");
@@ -156,7 +156,7 @@ class ModbusPollReconcilerTest {
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(service())));
     }
 
-    private void givenRows(ModbusPoll... rows) {
+    private void givenRows(ModbusPolling... rows) {
         when(pollRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(rows)));
     }
 
@@ -194,8 +194,8 @@ class ModbusPollReconcilerTest {
         return space;
     }
 
-    private static ModbusPoll row(ObjectId id) {
-        ModbusPoll row = new ModbusPoll();
+    private static ModbusPolling row(ObjectId id) {
+        ModbusPolling row = new ModbusPolling();
         row.id = id;
         row.serviceId = SID;
         row.transactionIndex = 1;

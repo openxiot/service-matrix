@@ -78,7 +78,7 @@ public final class ModbusPollSchedule {
     /**
      * 租约是否已过期（= 别人可以抢）：没被持有（{@code leaseUntil} 为空）或已过时刻。
      *
-     * <p>这是 {@code ModbusPollRepository.tryLease} 那个查询条件的可单测版本 ——
+     * <p>这是 {@code ModbusPollingRepository.tryLease} 那个查询条件的可单测版本 ——
      * 库里那份还多一条「持有者是自己」，见 {@link #leaseClaimable}。</p>
      */
     public static boolean leaseExpired(Long leaseUntil, long now) {

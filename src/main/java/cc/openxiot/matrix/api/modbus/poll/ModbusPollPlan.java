@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.transaction.ModbusTransaction;
 import cc.openxiot.matrix.db.modbus.service.transaction.request.ModbusRequest;
@@ -58,7 +58,7 @@ public final class ModbusPollPlan {
 
     /**
      * 一份定义 → 该服务的任务清单（{@code transactionIndex} 升序，不改动入参），
-     * 输入是**未落库**的 {@link ModbusPoll}（{@code _id} 由**这里**生成，插入时原样落库）。
+     * 输入是**未落库**的 {@link ModbusPolling}（{@code _id} 由**这里**生成，插入时原样落库）。
      *
      * <p>{@code _id} 不等插入回写（回写时机由驱动/编解码器决定，不是这条链路能假定的）：
      * 内存时间轮里的任务必须在**放进去的那一刻**就有 id —— 抢租约、写结果、认领都靠它，
@@ -70,9 +70,9 @@ public final class ModbusPollPlan {
      *
      * @param did 父设备 id（{@code service.device.did}）；为空的定义不可调度，不入表
      */
-    public static List<ModbusPoll> tasksOf(ModbusService service, String did, long now,
+    public static List<ModbusPolling> tasksOf(ModbusService service, String did, long now,
                                            int jitterPercent, RandomGenerator random) {
-        List<ModbusPoll> tasks = new ArrayList<>();
+        List<ModbusPolling> tasks = new ArrayList<>();
         if (service == null || service.id == null || did == null || did.isBlank()
                 || service.transactions == null) {
             return tasks;
@@ -82,7 +82,7 @@ public final class ModbusPollPlan {
             if (!shouldPoll(function)) {
                 continue;
             }
-            ModbusPoll task = new ModbusPoll();
+            ModbusPolling task = new ModbusPolling();
             task.id = new ObjectId();
             task.serviceId = serviceId;
             task.transactionIndex = function.index;

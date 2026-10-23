@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPolling;
+import cc.openxiot.matrix.db.modbus.poll.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
@@ -73,7 +73,7 @@ public class ModbusPollReconciler {
     ModbusServiceRepository serviceRepo;
 
     @Inject
-    ModbusPollRepository pollRepo;
+    ModbusPollingRepository pollRepo;
 
     @Inject
     ModbusShadowRepository registryShadowRepo;
@@ -144,7 +144,7 @@ public class ModbusPollReconciler {
         }
         String serviceId = service.id.toHexString();
         long now = System.currentTimeMillis();
-        List<ModbusPoll> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
+        List<ModbusPolling> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
                 jitterPercent, ThreadLocalRandom.current());
         return pollRepo.findByServiceId(serviceId)
                 .chain(existing -> sequence(taskWrites(serviceId, planned, existing)))
@@ -247,7 +247,7 @@ public class ModbusPollReconciler {
 
     // ===== 全量对账 =====
 
-    private Uni<Void> reconcileAll(List<ModbusService> services, List<ModbusPoll> polls, long now) {
+    private Uni<Void> reconcileAll(List<ModbusService> services, List<ModbusPolling> polls, long now) {
         Set<String> liveServiceIds = new HashSet<>();
         for (ModbusService service : services) {
             if (service != null && service.id != null) {
@@ -288,12 +288,12 @@ public class ModbusPollReconciler {
         return sequence(steps);
     }
 
-    private Uni<Void> reconcileService(ModbusService service, List<ModbusPoll> polls,
+    private Uni<Void> reconcileService(ModbusService service, List<ModbusPolling> polls,
                                        Set<ModbusPollKey> plannedKeys, long now) {
         String serviceId = service.id.toHexString();
-        List<ModbusPoll> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
+        List<ModbusPolling> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
                 jitterPercent, ThreadLocalRandom.current());
-        List<ModbusPoll> existing = polls.stream()
+        List<ModbusPolling> existing = polls.stream()
                 .filter(poll -> serviceId.equals(poll.serviceId))
                 .toList();
 
@@ -307,10 +307,10 @@ public class ModbusPollReconciler {
             }
             return sequence(taskWrites(serviceId, planned, existing)).chain(() -> {
                 List<Uni<Void>> offers = new ArrayList<>(planned.size());
-                for (ModbusPoll task : planned) {
+                for (ModbusPolling task : planned) {
                     ModbusPollKey key = new ModbusPollKey(serviceId, task.transactionIndex);
                     plannedKeys.add(key);
-                    ModbusPoll row = rowOf(existing, task.transactionIndex);
+                    ModbusPolling row = rowOf(existing, task.transactionIndex);
                     // id 以库里的那一行为准：计划对象上的 id 只在「这一轮要插入」时才等于落库后的 _id。
                     // 反过来（读计划对象的 id）会让库里已有的任务永远带着 null id 进时间轮 ——
                     // 表现就是每周期一条 "modbus poll task has no id"、一次采集也不发生。
@@ -338,12 +338,12 @@ public class ModbusPollReconciler {
      * 3600 秒时，任务按旧时刻再跑一次、然后按新周期排 —— 比「改完周期立刻重排」更不容易出意外
      * （重排可能把一次采集顶到前面去，RS485 上就是多一帧）。</p>
      */
-    private List<Uni<Void>> taskWrites(String serviceId, List<ModbusPoll> planned, List<ModbusPoll> existing) {
+    private List<Uni<Void>> taskWrites(String serviceId, List<ModbusPolling> planned, List<ModbusPolling> existing) {
         List<Uni<Void>> writes = new ArrayList<>();
         Set<Integer> plannedIndexes = new HashSet<>();
-        for (ModbusPoll task : planned) {
+        for (ModbusPolling task : planned) {
             plannedIndexes.add(task.transactionIndex);
-            ModbusPoll row = rowOf(existing, task.transactionIndex);
+            ModbusPolling row = rowOf(existing, task.transactionIndex);
             if (row == null) {
                 writes.add(pollRepo.insert(task));
             } else if (!Objects.equals(row.did, task.did) || !Objects.equals(row.interval, task.interval)) {
@@ -424,11 +424,11 @@ public class ModbusPollReconciler {
         return service.device == null ? null : service.device.did;
     }
 
-    private static ModbusPoll rowOf(List<ModbusPoll> polls, Integer transactionIndex) {
+    private static ModbusPolling rowOf(List<ModbusPolling> polls, Integer transactionIndex) {
         if (transactionIndex == null) {
             return null;
         }
-        for (ModbusPoll poll : polls) {
+        for (ModbusPolling poll : polls) {
             if (transactionIndex.equals(poll.transactionIndex)) {
                 return poll;
             }
