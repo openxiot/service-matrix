@@ -10,6 +10,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
@@ -51,7 +53,9 @@ import static org.mockito.Mockito.when;
  * （Modbus-History.md 第二节、第四节）。
  *
  * <ul>
- *   <li>值没变时**一个数据库操作都不做** —— 这条是整套成本模型的落点，破了就等于没优化。</li>
+ *   <li>值没变时**值历史/影子一个数据库操作都不做** —— 这条是整套成本模型的落点，破了就等于没优化；
+ *       例外是操作日志（{@code ModbusServicePollingHistory}）：它每调用一条、**跟值变没变无关**，
+ *       是用户拍板接受的写路径放大（靠保留策略兜底）。</li>
  *   <li>**先写明细（历史 / 失败记录）、再更新影子** —— 反过来会让失败的那次变化永久丢失。</li>
  *   <li>明细写失败时**影子必须停在旧态** —— 下次采集才能把同一次变化重判并重试。</li>
  *   <li>同一条故障持续存在时**不落重复记录** —— DTU 离线三天不是三万条记录。</li>
@@ -73,6 +77,7 @@ class ModbusHistoryServiceTest {
     private ModbusServiceFailureRepository failureRepo;
     private ModbusServiceRegistryHistoryRepository registryHistoryRepo;
     private ModbusServiceShadowRepository registryShadowRepo;
+    private ModbusServicePollingHistoryRepository pollingHistoryRepo;
 
     @BeforeEach
     void setUp() {
@@ -81,6 +86,7 @@ class ModbusHistoryServiceTest {
         failureRepo = mock(ModbusServiceFailureRepository.class);
         registryHistoryRepo = mock(ModbusServiceRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusServiceShadowRepository.class);
+        pollingHistoryRepo = mock(ModbusServicePollingHistoryRepository.class);
 
         service = new ModbusHistoryService();
         service.shadowRepo = shadowRepo;
@@ -88,9 +94,11 @@ class ModbusHistoryServiceTest {
         service.failureRepo = failureRepo;
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;
+        service.pollingHistoryRepo = pollingHistoryRepo;
         when(registryHistoryRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
         when(registryShadowRepo.upsertValue(any())).thenReturn(Uni.createFrom().voidItem());
         when(registryShadowRepo.upsertFailure(any())).thenReturn(Uni.createFrom().voidItem());
+        when(pollingHistoryRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
         service.deadband = 0;
         service.keepAliveSeconds = 600;
     }
@@ -137,6 +145,73 @@ class ModbusHistoryServiceTest {
         verify(historyRepo).insertAll(anyList());
         verifyNoInteractions(registryHistoryRepo);
         verifyNoInteractions(registryShadowRepo);
+    }
+
+    /** 操作日志：成功调用记一条（ok、read、响应快照），与值历史/影子并行、互不拖累。 */
+    @Test
+    void opLog_success_recordsOneRowPerCall() {
+        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(shadow(new ObjectId(), sample("进水温度", 61.5), new Date())));
+        when(historyRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
+        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
+                .await().indefinitely();
+
+        ArgumentCaptor<ModbusServicePollingHistory> log = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+        verify(pollingHistoryRepo).insert(log.capture());
+        ModbusServicePollingHistory row = log.getValue();
+        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(FUNCTION_INDEX, row.pollingIndex);
+        assertEquals(Boolean.TRUE, row.ok);
+        assertEquals("read", row.operation);
+        assertNull(row.type);
+        assertNull(row.message);
+        assertEquals(62.5, row.fields.get("进水温度"));
+    }
+
+    /**
+     * 操作日志**跟「值变没变」无关**：值没变时值历史/影子一个操作都不做（那是成本模型的原封不动），
+     * 但这次调用本身还是记一条 —— 否则轮询明细会丢了「大多数调用没产生新值」的那些。
+     */
+    @Test
+    void opLog_noChangeValue_stillLogsTheCall() {
+        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX))
+                .thenReturn(Uni.createFrom().item(shadow(new ObjectId(), sample("进水温度", 61.5), new Date())));
+        when(historyRepo.insertAll(anyList())).thenReturn(Uni.createFrom().voidItem());
+        when(shadowRepo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 61.5))
+                .await().indefinitely();
+
+        // 值历史 / 寄存器历史 / 影子都不写
+        verifyNoInteractions(historyRepo);
+        verifyNoInteractions(registryHistoryRepo);
+        verifyNoInteractions(registryShadowRepo);
+        // 操作日志照记
+        verify(pollingHistoryRepo).insert(any());
+    }
+
+    /** 操作日志：失败调用记一条（ok=false，带分类与远端码）。分类/远端码由抛出点透传。 */
+    @Test
+    void opLog_failure_recordsTypeAndRemoteCode() {
+        when(shadowRepo.find(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().nullItem());
+        when(shadowRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
+        when(failureRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
+
+        service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
+
+        ArgumentCaptor<ModbusServicePollingHistory> log = ArgumentCaptor.forClass(ModbusServicePollingHistory.class);
+        verify(pollingHistoryRepo).insert(log.capture());
+        ModbusServicePollingHistory row = log.getValue();
+        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(FUNCTION_INDEX, row.pollingIndex);
+        assertEquals(Boolean.FALSE, row.ok);
+        assertEquals("read", row.operation);
+        assertNull(row.fields);
+        assertEquals("DEVICE_ERROR", row.type);
+        assertEquals(408, row.remoteCode.intValue());
+        assertEquals(TIMEOUT, row.message);
     }
 
     @Test

@@ -10,6 +10,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
@@ -72,6 +74,10 @@ public class ModbusHistoryService {
     @Inject
     ModbusServiceShadowRepository registryShadowRepo;
 
+    /** 操作日志：每次调用一条（见 {@link ModbusServicePollingHistory}）。写失败静默，不拖累调用。 */
+    @Inject
+    ModbusServicePollingHistoryRepository pollingHistoryRepo;
+
     /** 只为级联删除而注入：告警行与历史同命 —— 服务没了，它再也没人能处理（见 {@link #purge}）。 */
     @Inject
     ModbusServiceAlarmRepository alarmRepo;
@@ -114,6 +120,7 @@ public class ModbusHistoryService {
         shadowRepo.ensureIndexes()
                 .chain(ignored -> historyRepo.ensureIndexes(retentionSeconds))
                 .chain(ignored -> failureRepo.ensureIndexes())
+                .chain(ignored -> pollingHistoryRepo.ensureIndexes(retentionSeconds))
                 .await().indefinitely();
     }
 
@@ -159,36 +166,48 @@ public class ModbusHistoryService {
         ModbusServiceLastPolling shadow = baseline;
         boolean failedBefore = shadow != null && shadow.lastError != null;
 
+        // 操作日志：每次调用一条（成功侧）。**它跟「值变没变」无关** —— 变化与否是值历史/影子的取舍
+        //（那两条仍各自按变化/保活判定），操作日志记的是「这轮调用执行过、成了」。
+        // 放开关在链首：无论后续走「清影子 / 无变化早退 / 落明细」哪条，都先记下。
+        ModbusServicePollingHistory log = pollingLog(serviceId, function.index,
+                sample.isEmpty() ? "write" : "read", true, now, sample.isEmpty() ? null : sample,
+                null, null, null);
+        Uni<ModbusServiceLastPolling> result;
         if (sample.isEmpty()) {
             // 写方法（response 为空）：没有读值可记。但「这次调用成功了」本身要落下来 ——
             // 否则上一次失败留在影子上的故障态永远清不掉，前端会一直看到一条早已恢复的故障。
             if (!failedBefore) {
-                return Uni.createFrom().nullItem();
+                result = Uni.createFrom().nullItem();
+            } else {
+                ModbusServiceLastPolling cleared = clearedShadow(shadow, serviceId, function.index);
+                result = shadowRepo.replace(cleared).replaceWith(cleared);
             }
-            ModbusServiceLastPolling cleared = clearedShadow(shadow, serviceId, function.index);
-            return shadowRepo.replace(cleared).replaceWith(cleared);
+        } else {
+            // 上次调用失败过：把这次成功当「首次采集」处理（基准置空 → 每个字段都落一条）。
+            // 否则值恰好没变时，恢复的那一刻一个样本都不落，曲线上就分不清「已恢复」和「仍在故障」。
+            boolean fresh = shadow == null || failedBefore;
+            ModbusHistoryPolicy.Decision decision = ModbusHistoryPolicy.decide(
+                    fresh ? null : shadow.fields,
+                    fresh ? null : shadow.recordedAt,
+                    sample, now, deadband, keepAliveSeconds * 1000L);
+            if (!decision.hasRows()) {
+                // 绝大多数采集走这条：只记操作日志，值历史/影子一个操作都没有
+                //（见 Modbus-History-TODO.md 第四步的实测）。
+                result = Uni.createFrom().nullItem();
+            } else {
+                // 先追加历史，成功后再动影子：中间失败则影子停在旧值，下次采集仍判为「变了」而重试。
+                // 影子的写必须在 chain 之内构造 —— 放外面（哪怕 Uni 是懒的）也等于把「先历史后影子」
+                // 这条约定寄托在 Mutiny 的懒执行上，读代码的人和测试都看不出来。
+                ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
+                        sample, now, null, null);
+                result = historyRepo.insertAll(rows(serviceId, function.index, sample, decision, now))
+                        .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
+                        // 寄存器中心的新路径（expand）：逐寄存器追加历史事件 + 更新当前值（影子）。
+                        // 失败不阻断 invoke —— 新存储写不上只影响寄存器读侧，值本身已经拿到了
+                        .chain(ignored -> registryEffects(service, sample, decision, now).replaceWith(next));
+            }
         }
-
-        // 上次调用失败过：把这次成功当「首次采集」处理（基准置空 → 每个字段都落一条）。
-        // 否则值恰好没变时，恢复的那一刻一个样本都不落，曲线上就分不清「已恢复」和「仍在故障」。
-        boolean fresh = shadow == null || failedBefore;
-        ModbusHistoryPolicy.Decision decision = ModbusHistoryPolicy.decide(
-                fresh ? null : shadow.fields,
-                fresh ? null : shadow.recordedAt,
-                sample, now, deadband, keepAliveSeconds * 1000L);
-        if (!decision.hasRows()) {
-            // 绝大多数采集走这条：一个数据库操作都没有（见 Modbus-History-TODO.md 第四步的实测）
-            return Uni.createFrom().nullItem();
-        }
-        // 先追加历史，成功后再动影子：中间失败则影子停在旧值，下次采集仍判为「变了」而重试。
-        // 影子的写必须在 chain 之内构造 —— 放外面（哪怕 Uni 是懒的）也等于把「先历史后影子」
-        // 这条约定寄托在 Mutiny 的懒执行上，读代码的人和测试都看不出来。
-        ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index, sample, now, null, null);
-        return historyRepo.insertAll(rows(serviceId, function.index, sample, decision, now))
-                .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
-                // 寄存器中心的新路径（expand）：逐寄存器追加历史事件 + 更新当前值（影子）。
-                // 失败不阻断 invoke —— 新存储写不上只影响寄存器读侧，值本身已经拿到了
-                .chain(ignored -> registryEffects(service, sample, decision, now).replaceWith(next));
+        return pollingHistoryRepo.insert(log).chain(ignored -> result);
     }
 
     /**
@@ -231,21 +250,28 @@ public class ModbusHistoryService {
         Date now = new Date();
         ModbusServiceLastPolling shadow = baseline;
 
+        // 操作日志：每次调用一条（失败侧）。分类 / 远端码 / 异常文本都在这儿，失败统计据此过滤。
+        // **重复失败也照记**：操作日志记的是操作本身（这次调用又失败了），去重是值历史/故障明细的事。
+        ModbusServicePollingHistory log = pollingLog(serviceId, function.index, "read", false, now, null,
+                typeOf(error).name(), remoteCodeOf(error), message);
+        Uni<ModbusServiceLastPolling> result;
         if (shadow != null && message.equals(shadow.lastError)) {
-            // 同一个故障还在持续（DTU 离线是最典型的形态）：不落重复记录。
+            // 同一个故障还在持续（DTU 离线是最典型的形态）：值历史/影子不再重复落。
             // 故障持续多久由这条记录到下一行成功样本的间隔推出来，逐次打点不增加任何信息。
             // 判定用 message 而不是分类：分类相同时 message 未必相同（异常码不同），
             // 反过来 message 相同则分类必然相同 —— 用 message 是更严的那个键。
-            return Uni.createFrom().nullItem();
+            result = Uni.createFrom().nullItem();
+        } else {
+            ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
+                    shadow == null ? null : shadow.fields,
+                    shadow == null ? null : shadow.recordedAt,
+                    message, now);
+            result = failureRepo.insert(failureOf(serviceId, function.index, error, message, now))
+                    .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
+                    // 寄存器中心的新路径：逐寄存器记失败事件（曲线竖线）+ 更新当前值的故障态
+                    .chain(ignored -> registryFailureEffects(service, function, error, now).replaceWith(next));
         }
-        ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
-                shadow == null ? null : shadow.fields,
-                shadow == null ? null : shadow.recordedAt,
-                message, now);
-        return failureRepo.insert(failureOf(serviceId, function.index, error, message, now))
-                .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
-                // 寄存器中心的新路径：逐寄存器记失败事件（曲线竖线）+ 更新当前值的故障态
-                .chain(ignored -> registryFailureEffects(service, function, error, now).replaceWith(next));
+        return pollingHistoryRepo.insert(log).chain(ignored -> result);
     }
 
     /**
@@ -269,6 +295,7 @@ public class ModbusHistoryService {
                         failureRepo.deleteByServiceIds(serviceIds),
                         registryHistoryRepo.deleteByServiceIds(serviceIds),
                         registryShadowRepo.deleteByServiceIds(serviceIds),
+                        pollingHistoryRepo.deleteByServiceIds(serviceIds),
                         alarmRepo.deleteByServiceIds(serviceIds))
                 .asTuple()
                 .replaceWithVoid();
@@ -438,6 +465,29 @@ public class ModbusHistoryService {
      */
     private static ModbusFailureType typeOf(Throwable error) {
         return error instanceof ModbusInvokeException e ? e.type() : ModbusFailureType.UNKNOWN;
+    }
+
+    /** 远端原始码（只有 SLAVE_EXCEPTION / DEVICE_ERROR 带；其余 null，与失败记录同口径）。 */
+    private static Integer remoteCodeOf(Throwable error) {
+        return error instanceof ModbusInvokeException e ? e.remoteCode() : null;
+    }
+
+    /** 一条操作日志文档。成功侧带响应快照、失败侧带分类/远端码/文本。 */
+    private static ModbusServicePollingHistory pollingLog(String serviceId, Integer pollingIndex,
+                                                          String operation, boolean ok, Date at,
+                                                          Map<String, Object> fields,
+                                                          String type, Integer remoteCode, String message) {
+        ModbusServicePollingHistory row = new ModbusServicePollingHistory();
+        row.serviceId = serviceId;
+        row.pollingIndex = pollingIndex;
+        row.operation = operation;
+        row.ok = ok;
+        row.at = at;
+        row.fields = fields;
+        row.type = type;
+        row.remoteCode = remoteCode;
+        row.message = message;
+        return row;
     }
 
     /**
