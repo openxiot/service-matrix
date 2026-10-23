@@ -35,10 +35,10 @@ import java.util.Map;
  *
  * <p>数据源按卡片类型分几路，各自**按去重键批量取**（§8）：统计卡 / 分布图 / 告警曲线走
  * {@link StatisticsQueryService#overview}（按窗口分组），服务卡走
- * {@link ModbusHistoryQueryService#currentValues}（按 serviceId 去重），设备卡走
+ * {@link ModbusServiceShadowCodec}（当前值，按 serviceId 去重），设备卡走
  * {@link ManipulationService#getShadows}（按 did 去重、**一屏一次调用**），
- * 字段曲线走 {@link ModbusHistoryQueryService#range}（按「点位 × 窗口 × 点数」去重）
- * 与其配套的 {@link ModbusHistoryQueryService#failures}（按「方法 × 窗口」去重）。</p>
+ * 字段曲线走 {@link ModbusRegistryHistoryService#range}（按「点位 × 窗口 × 点数」去重）
+ * 与其配套的 {@link ModbusPollingHistoryService#failures}（按「方法 × 窗口」去重）。</p>
  *
  * <h3>取数分组：**只给真正读它的卡片取**</h3>
  * <p>{@code overview} 是按窗口分组的，所以「哪些卡片需要 overview」决定了要发几次查询。
@@ -763,7 +763,7 @@ public class DashboardWidgetDataService {
      *
      * <p><b>「采过没采过」的判据是 {@code recordedAt} 在不在</b>，不是某个状态字段：影子就是
      * 「最后一次成功的采集」，一个从没成功过的方法**根本不会有影子**
-     * （{@link ModbusHistoryQueryService#currentValues} 的说法）。所以没有影子时只给
+     * （{@link ModbusServiceShadowCodec} 的说法）。所以没有影子时只给
      * {@code pollingIndex}，前端据此渲染「尚未采集」；<b>不给 {@code fields}</b> ——
      * 一行都没有值可显示的空壳不是信息。</p>
      *

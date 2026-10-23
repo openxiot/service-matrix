@@ -42,7 +42,7 @@ public class ModbusShadowService {
      * 取一个服务的寄存器缓存网格（{@code ModbusServiceShadow} 有值才出现缓存，规则见
      * {@link #mergeRegisterCache}）。
      *
-     * <p>与按方法的「当前值」接口（{@code ModbusHistoryResource.current}）的差别：这里以点表
+     * <p>与按方法的「当前值」接口（本类的 {@code ModbusShadowResource.current}）的差别：这里以点表
      * {@code registries} 为准、覆盖全部可读寄存器（含从没被调用过的，标 {@code no-data}）。</p>
      *
      * <p>服务不存在 / 没有点表快照时返回空网格——读取是**投影**，「能给多少给多少」，

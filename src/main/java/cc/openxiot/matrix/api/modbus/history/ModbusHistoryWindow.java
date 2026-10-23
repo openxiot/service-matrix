@@ -14,7 +14,7 @@ import java.util.List;
  * <h3>carry-in</h3>
  * <p>区间起点之前最近的那一条**必须一起返回**：变化点存储里，某点最后一次变化可能在 {@code from} 之前，
  * 不带它前端就不知道 {@code from} 时刻的值，曲线从起点开始就是空白
- * —— 这是变化点存储最经典的第一坑。它由调用方（{@code ModbusHistoryQueryService}）单独查一条，
+ * —— 这是变化点存储最经典的第一坑。它由调用方（{@code ModbusRegistryHistoryService}）单独查一条，
  * 不混进 {@code samples}：它不是这个区间的数据，是区间起点的**状态**。</p>
  *
  * <h3>一个桶描述的是「这段时间里值是怎么走的」</h3>

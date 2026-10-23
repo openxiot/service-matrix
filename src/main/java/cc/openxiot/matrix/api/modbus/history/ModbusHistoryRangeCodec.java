@@ -27,7 +27,8 @@ public final class ModbusHistoryRangeCodec {
      * 编码一个点位的区间查询结果（历史页那条路，包着 {@code RangeResult} 调用下面的底层方法）。
      *
      * <p>{@code serviceId} / {@code pollingIndex} / {@code field} 由调用方传进来，而不是从
-     * {@link ModbusHistoryQueryService.RangeResult} 里取：那个记录只有「这两个时刻之间、要多少个点」，
+     * {@link cc.openxiot.matrix.api.modbus.history.registry.ModbusRegistryHistoryService.RangeResult} 里取：
+     * 那个记录只有「这两个时刻之间、要多少个点」，
      * 是哪条曲线由调用方（HTTP 的查询参数，或看板那张卡的配置）决定 —— 而且请求里那份是**字符串**，
      * 回显它比回显解析后的值更忠实。</p>
      */
@@ -35,7 +36,7 @@ public final class ModbusHistoryRangeCodec {
             String serviceId,
             Integer pollingIndex,
             String field,
-            ModbusHistoryQueryService.RangeResult result
+            cc.openxiot.matrix.api.modbus.history.registry.ModbusRegistryHistoryService.RangeResult result
     ) {
         return encode(serviceId, pollingIndex, field,
                 result.from(), result.to(), result.maxPoints(), result.window());

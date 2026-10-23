@@ -9,7 +9,7 @@ import java.util.Date;
  * <p><b>不是 Mongo 实体</b>：不加 {@code @RegisterForReflection}、没有 codec、不落库。它只是
  * {@link ModbusHistoryWindow}（纯函数、只跑内存）与数据源（{@code ModbusServiceRegistryHistory}）之间
  * 的中间载体 —— 原来用已停写的库实体 {@code ModbusServiceHistory} 充当，把窗口从那套实体里解耦出来。
- * 谁产出它：{@code ModbusHistoryQueryService#sampleOf} 与 {@code DashboardWidgetDataService#sampleOf}。
+ * 谁产出它：{@code ModbusRegistryHistoryService#sampleOf} 与 {@code DashboardWidgetDataService#sampleOf}。
  * 谁消费它：{@link ModbusHistoryWindow} 与 {@link ModbusHistoryRangeCodec}。</p>
  *
  * <p>值仍是异构的（数值 / {@code value-list} 的 description / 位展开的 0|1）—— 窗口对值只读、不做

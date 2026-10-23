@@ -187,7 +187,7 @@ public class ModbusServiceService {
      * 空间（**含子空间**）下的服务 id —— 与 {@code SpaceResource.getGraph} 同一条路：
      * 先取整棵子树，再逐空间取服务，最后拍平成一张 id 表。
      *
-     * <p>「按空间查服务」这件事本就属于本类，所以从 {@code ModbusHistoryResource} 下沉到这里 ——
+     * <p>「按空间查服务」这件事本就属于本类，所以下沉到这里 ——
      * 历史与告警两个资源都要它，各写一份迟早漂移（而漂移的表现是「一个页面查得到、另一个查不到」，
      * 看起来像数据问题）。</p>
      *

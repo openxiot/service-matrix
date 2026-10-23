@@ -1,11 +1,10 @@
-package cc.openxiot.matrix.api.modbus.history;
+package cc.openxiot.matrix.api.modbus.history.polling;
 
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.shadow.codec.ModbusServiceShadowCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -27,7 +26,7 @@ import org.jboss.logging.Logger;
 import java.util.Date;
 
 /**
- * Modbus 采集历史的读取（见 Modbus-History.md 第五节）：当前值、区间曲线、故障列表。
+ * 某段区间内的故障记录（见 Modbus-History.md 第五节）。
  *
  * <p><b>另起一段路径</b>（不挂在 {@code /modbus/service} 之下）：服务定义与采集数据是两回事 ——
  * 前者是用户维护的配置，后者是设备跑出来的时间序列，生命周期与权限粒度将来都可能分开
@@ -45,13 +44,13 @@ import java.util.Date;
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Modbus History", description = "Modbus 采集历史 API")
 @RequestScoped
-public class ModbusHistoryResource extends AbstractResource {
+public class ModbusPollingHistoryResource extends AbstractResource {
 
     @Inject
     Logger logger;
 
     @Inject
-    ModbusHistoryQueryService queryService;
+    ModbusPollingHistoryService pollingService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -62,64 +61,6 @@ public class ModbusHistoryResource extends AbstractResource {
 
     @Inject
     SpaceService spaceService;
-
-    /**
-     * 一个服务下所有寄存器的当前值：{@code {serviceId, registers: [...]}}。
-     *
-     * <p>每条带 {@code registerIndex}/{@code name}/{@code unit}、{@code value}（最后已知值）、
-     * {@code recordedAt}（那个值有多旧）、{@code lastError} / {@code errorAt}（从哪一刻起就不再更新）
-     * —— 前端要能显示「最后已知值 + 它从哪一刻起不再更新」，而不是把陈旧值当最新值画。
-     * 没有影子的寄存器不在结果里：那是「从没调用过」，与「有值但很旧」不是一回事。</p>
-     */
-    @GET
-    @Path("/current/{spaceId}/{serviceId}")
-    @RolesAllowed({OxRole.USER})
-    public Uni<Response> current(
-            @PathParam("spaceId") String spaceId,
-            @PathParam("serviceId") String serviceId
-    ) {
-        logger.infov("get modbus current values, space: {0}, service: {1}", spaceId, serviceId);
-        return requireSpaceMember(spaceId)
-                .chain(ignored -> queryService.currentValues(serviceId))
-                .map(shadows -> OxResponse.ok(
-                        new JsonObject()
-                                .put("serviceId", serviceId)
-                                .put("registers", ModbusServiceShadowCodec.encode(shadows)))
-                )
-                .onFailure(IllegalArgumentException.class)
-                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-    }
-
-    /**
-     * 一个点位的区间曲线：{@code {serviceId, pollingIndex, field, from, to, maxPoints, downsampled,
-     * carryIn, points}}。
-     *
-     * <p>{@code carryIn} 是区间起点之前最近的那一条（可能没有）：不带它，前端不知道 {@code from}
-     * 时刻的值，曲线从起点就是空白。{@code downsampled} 决定 {@code points} 怎么读：false 是原始样本
-     * （{@code {at, value, keepalive}}），true 是降采样桶（{@code {at, until, count, first, last, min, max, avg}}）。</p>
-     */
-    @GET
-    @Path("/range/{spaceId}")
-    @RolesAllowed({OxRole.USER})
-    public Uni<Response> range(
-            @PathParam("spaceId") String spaceId,
-            @QueryParam("serviceId") String serviceId,
-            @QueryParam("pollingIndex") Integer pollingIndex,
-            @QueryParam("field") String field,
-            @QueryParam("from") Long from,
-            @QueryParam("to") Long to,
-            @QueryParam("maxPoints") Integer maxPoints
-    ) {
-        logger.infov("query modbus history, space: {0}, service: {1}, polling: {2}, field: {3}",
-                spaceId, serviceId, pollingIndex, field);
-        return requireSpaceMember(spaceId)
-                .chain(ignored -> queryService.range(serviceId, pollingIndex, field,
-                        millis(from), millis(to), maxPoints))
-                .map(result -> OxResponse.ok(
-                        ModbusHistoryRangeCodec.encode(serviceId, pollingIndex, field, result)))
-                .onFailure(IllegalArgumentException.class)
-                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
-    }
 
     /**
      * 某段区间内的故障记录：{@code {serviceId, from, to, truncated, items, summary}}。
@@ -159,9 +100,9 @@ public class ModbusHistoryResource extends AbstractResource {
         return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
-                        .chain(ids -> queryService.failuresOfServices(
+                        .chain(ids -> pollingService.failuresOfServices(
                                 ids, pollingIndex, type, millis(from), millis(to), limit))
-                        : queryService.failures(serviceId, pollingIndex, type,
+                        : pollingService.failures(serviceId, pollingIndex, type,
                         millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()
