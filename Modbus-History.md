@@ -1,9 +1,9 @@
 # Modbus 采集数据的历史存储
 
-本文档只解决一件事：`ModbusService.functions[]` 里的方法被调出来后，
+本文档只解决一件事：`ModbusService.polls[]` 里的轮询被调出来后，
 **成功了**解出来的「字段 → 值」往哪存、怎么取，**失败了**的故障又往哪存、怎么取。
 
-* **数据来源**：手动 `invoke` 与服务端自动轮询（`function.interval` / `function.polling`）。
+* **数据来源**：手动 `invoke` 与服务端自动轮询（`poll.interval` / `poll.polling`）。
   两者走**同一条写入路径** —— 手动调出来的值一样进历史。
 * **消费者**：前端画曲线、报表。就这两个。
 * **不涉及**：报警 / 规则 / 设备影子。那几条线各自独立，不共用这份数据 ——
@@ -89,13 +89,13 @@
   合并成一类，故障列表就会把人指错地方。拿不准的一律 `UNKNOWN` —— 宁可说「不知道」，
   也不猜一个会带偏方向的分类（把编解码异常猜成「设备离线」，排查就从现场跑到代码上去了）。
   因此**异常没带分类就不进统计**：`IllegalArgumentException` 那类通用异常归 `UNKNOWN`，
-  而「方法序号不存在」这种请求写错的情况**根本不记**（没有可归因的 function，不算执行失败）。
+  而「方法序号不存在」这种请求写错的情况**根本不记**（没有可归因的 poll，不算执行失败）。
 * **`message` 是「同一故障」的判定依据**，超长截断（500 字符）：上游描述可能很长，
   越长越容易让同一条故障被判成不同的两条，去重就压不住了。
   判定用 message 而不是分类 —— 分类相同时 message 未必相同（异常码不同），
   反过来 message 相同则分类必然相同，用 message 是更严的那个键。
   异常没带 message 时退回类名（否则 NPE 之类在库里就是一串 null，什么也说明不了）。
-* **记录的是整条 function，不是某个点位** —— 帧都 CRC 不符的时候，哪个字段都没读到。
+* **记录的是整条 poll，不是某个点位** —— 帧都 CRC 不符的时候，哪个字段都没读到。
   所以它单独一张表，不和「一个字段一个值」的历史混在一起。
 * **失败时影子上的值与时刻一律不动**：它们是「最后一次成功的采集」，
   前端要靠它们显示最后已知值以及它从哪一刻起不再更新。
@@ -111,19 +111,19 @@
 ## 三、数据模型（落库 `modbus`，三张集合）
 
 ```
-ModbusServiceLastPolling    serviceId / pollingIndex / fields{字段→值} / recordedAt
+ModbusServiceLastPolling    serviceId / pollIndex / fields{字段→值} / recordedAt
                                      / lastError / errorAt
-ModbusServiceHistory   serviceId / pollingIndex / field / value / at / keepalive
-ModbusServiceFailure   serviceId / pollingIndex / type / remoteCode / message / at
+ModbusServiceHistory   serviceId / pollIndex / field / value / at / keepalive
+ModbusServiceFailure   serviceId / pollIndex / type / remoteCode / message / at
 ```
 
-* **影子按 function 一条（字段内嵌），历史按 field 一条，失败记录按 function 一条。**
+* **影子按 poll 一条（字段内嵌），历史按 field 一条，失败记录按 poll 一条。**
   影子一张表三用：它既是「当前值」（前端要看的最新值直接读它），
   也是下一次采集的**比对基准**，还记着**最后一次调用是否失败**（`lastError`）。
   成功与失败共用这一个文档，是为了让每次 invoke 只读一次库 ——
   最后一次调用的结果本来就该是一份状态：要么是值，要么是一个故障。
-  按 function 存，一次采集一次写就够；历史按字段落，粒度才对得上前端按点取曲线。
-* **点位的身份是 `(serviceId, pollingIndex, field)` 三元组**，不额外拼 `pointId` 字符串
+  按 poll 存，一次采集一次写就够；历史按字段落，粒度才对得上前端按点取曲线。
+* **点位的身份是 `(serviceId, pollIndex, field)` 三元组**，不额外拼 `pointId` 字符串
   —— 字段名是用户填的（可能是中文，可能带任何分隔符），拼串做前缀匹配迟早会撞上转义问题。
 * **时间统一 `Date`（UTC）**，不存字符串：将来真要搬走时这种格式最省事。
 * **`value` 是异构的**：数值（`int8`..`uint32`/`float32`、缩放后的 `double`）、
@@ -140,12 +140,12 @@ ModbusServiceFailure   serviceId / pollingIndex / type / remoteCode / message / 
   失败不动它：它和 `fields` 一起表示「最后已知值，以及它有多旧」。
 * `lastError` 为 null 表示最后一次调用成功；`errorAt` 是当前这条故障**首次**出现的时刻，
   同一故障持续期间不刷新 —— 它到下一行成功样本的间隔就是故障持续了多久。
-* 失败记录里的 `type` **存字符串、不存枚举值**（`SpaceEntity.type`、`ModbusPollingResponseField.format` 同口径）：
+* 失败记录里的 `type` **存字符串、不存枚举值**（`SpaceEntity.type`、`ModbusResponseField.format` 同口径）：
   枚举增删时老文档还读得出来。`remoteCode` 只有 `SLAVE_EXCEPTION`（异常码）与
   `DEVICE_ERROR`（父设备状态码）有值，其余为 null —— 前端按 `type` 聚合后靠它下钻。
 
-**索引**：影子 `(serviceId, pollingIndex)` 唯一；历史 `(serviceId, pollingIndex, field, at)`；
-失败记录 `(serviceId, pollingIndex, at)`。历史那条复合索引支撑「某点某时间段倒序取 N 条」：
+**索引**：影子 `(serviceId, pollIndex)` 唯一；历史 `(serviceId, pollIndex, field, at)`；
+失败记录 `(serviceId, pollIndex, at)`。历史那条复合索引支撑「某点某时间段倒序取 N 条」：
 前三个字段等值 + `at` 范围，排序可正可反，不需要额外索引。
 
 ## 四、写入顺序：先明细，后影子
@@ -184,12 +184,12 @@ ModbusServiceFailure   serviceId / pollingIndex / type / remoteCode / message / 
 
 ```
 GET /current/{spaceId}/{serviceId}
-    → { serviceId, functions: [ { pollingIndex, fields, recordedAt[, lastError, errorAt] } ] }
-GET /range/{spaceId}?serviceId&pollingIndex&field&from&to&maxPoints
-    → { serviceId, pollingIndex, field, from, to, maxPoints, downsampled, total,
+    → { serviceId, polls: [ { pollIndex, fields, recordedAt[, lastError, errorAt] } ] }
+GET /registry/range/{spaceId}?serviceId&pollIndex&field&from&to&maxPoints
+    → { serviceId, pollIndex, field, from, to, maxPoints, downsampled, total,
         points: [ {at, value[, keepalive]} | {at, until, count, first, last, min, max, avg} ]
         [, carryIn] }
-GET /failures/{spaceId}?serviceId&pollingIndex&type&from&to&limit
+GET /polling/failures/{spaceId}?serviceId&pollIndex&type&from&to&limit
     → { serviceId, from, to, limit, truncated, items: [...], summary: {total, byType, byRemoteCode} }
 ```
 
@@ -235,7 +235,7 @@ GET /failures/{spaceId}?serviceId&pollingIndex&type&from&to&limit
 `summary` 是**这批 `items`** 按 `type`（故障类型分布，取不到分类的老文档算 `UNKNOWN`）与
 `remoteCode`（哪几个从站、哪个异常码最多）的聚合，两个数组都按条数降序、条数相同按键升序，
 输出稳定、前端不必再排；这正是分类落地成三个字段的目的。
-`pollingIndex` / `type` 不传即不限；`type` 拼错**报错而不是返回空列表**
+`pollIndex` / `type` 不传即不限；`type` 拼错**报错而不是返回空列表**
 （「拼错的分类」和「这段时间没这类故障」在界面上长得一样）；`limit` 缺省 200、封顶 1000，
 取到「上限 + 1」条时置 `truncated: true`，与 `total` 一起读。
 **当前值接口**带 `lastError` / `errorAt` —— 前端得能显示
@@ -320,7 +320,7 @@ staging / prod 跑的是 **Azure DocumentDB**（原 Cosmos DB for MongoDB vCore�
 | `modbus.history.retention-days` | `90` | 明细保留天数；`> 0` 建 `at` 上的 TTL 索引，`<= 0` = 关（并删掉已有的索引）。**缺省即生效**，只作用于 `service-histories` |
 | `modbus.index.enabled` | `true` | 建索引开关，与点表/服务共用；关掉时保留策略也不建 |
 
-**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusPollingResponseField` 上加字段，
+**按字段配死区**（每个点位一个死区值）是后续的增强：需要在 `ModbusResponseField` 上加字段，
 现阶段先用全局缺省。
 
 ## 九、变更记录

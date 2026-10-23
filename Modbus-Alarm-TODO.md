@@ -21,7 +21,7 @@
 - [x] 结论成立 ⇒ **1 号索引已补进 `ensureIndexes()`**（回退档 F1 / F2 未启用，留档备查）。
 
 > 失败的判定路径没有走过，但留着：真不成立时走 F1（普通唯一复合索引
-> `{serviceId, pollingIndex, field, recoveredAt}`）或 F2（`updateOne` upsert + `updateMany` 兜底，
+> `{serviceId, pollIndex, field, recoveredAt}`）或 F2（`updateOne` upsert + `updateMany` 兜底，
 > 并把竞态写进文档）—— **不静默降级**。
 
 ## 第一步：配置模型与校验（已完成）
@@ -29,16 +29,16 @@
 > 这一步的「一个出值一条规则」已被**第 4.5 步**改成「一个出值**一组**规则」；
 > 下面的记录保持当时的样子，现行口径看第 4.5 步与 `Modbus-Alarm.md`。
 
-- [x] `ModbusPollingResponseFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
-- [x] 挂在**两处**：`ModbusPollingResponseField.alarm` 与 `ModbusPollingResponseFieldBit.alarm`
+- [x] `ModbusResponseFieldAlarm`：`enabled` / `compare` / `threshold` / `state` / `level` / `text`。
+- [x] 挂在**两处**：`ModbusResponseField.alarm` 与 `ModbusResponseFieldBit.alarm`
       —— 位是独立的结果键（parser 逐位 `values.put(bit.field, …)`），只挂字段够不着「位 = 1 告警」。
-- [x] `ModbusPollingResponseFieldAlarmCodec` + 接进 `ModbusPollingResponseFieldCodec` / `ModbusPollingResponseFieldBitCodec`；
+- [x] `ModbusResponseFieldAlarmCodec` + 接进 `ModbusResponseFieldCodec` / `ModbusResponseFieldBitCodec`；
   守「null 不出键」，空对象读作「没配」。
 - [x] `ModbusAlarmPolicy`：`OPERATORS` / `LEVELS` 白名单（唯一一份）、`hasEnabledAlarm`（免费闸门）、
       `hit`（三态 `HIT`/`MISS`/`SKIP`）、`decide`（开 / 按值关 / 按定义关）。
 - [x] `ModbusServiceValidator.validateAlarm`：只在 `enabled == true` 时校验；只许读方法；
       `string` 字段不收；`value-list` 字段只许 `=` 比 `state`；位只许 `=` 比 0/1。
-- [x] `isReadFunction` 抽取：周期与告警共用同一处功能码判断。
+- [x] `isReadPoll` 抽取：周期与告警共用同一处功能码判断。
 - [x] 单测：`ModbusAlarmPolicyTest`（14）+ `ModbusServiceValidatorTest` 补 9 +
       `ModbusServiceCodecTest` 收进示例体。全量 432 例中 431 绿
       （`SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，本机读超时，与本次改动无关）。
@@ -69,8 +69,8 @@
       （`insertOpen` / `closeByKeys`）。
 - [x] 接进 `ModbusServiceService.execute`，与 `recordHistory` **并列**（不是串进成功路径）：
 
-      .chain(values -> recordHistory(service, function, values, baselines)
-              .chain(ignored -> evaluateAlarms(service, function, values))
+      .chain(values -> recordHistory(service, poll, values, baselines)
+              .chain(ignored -> evaluateAlarms(service, poll, values))
               .replaceWith(values));
 
 - [x] 与 `recordHistory` 同壳：失败只记日志、`recoverWithNull`，
@@ -154,7 +154,7 @@
 
 代码在 `webapp-matrix`，0.9.2 → 0.9.6（`7973e80` `5602cea` `813f65e` `66809e3` `6d7307f`）。
 
-- [x] 类型与编解码镜像：`ModbusPollingResponseFieldAlarm` + 两处 `alarm?` + `ModbusPollingResponseFieldAlarmCodec`；
+- [x] 类型与编解码镜像：`ModbusResponseFieldAlarm` + 两处 `alarm?` + `ModbusResponseFieldAlarmCodec`；
       `ModbusAlarm.ts`（含 `MODBUS_ALARM_LEVELS` / `MODBUS_ALARM_LEVEL_LABELS` /
       `MODBUS_ALARM_OPERATOR_LABELS` / `modbusAlarmCondition(alarm, translate)` /
       `modbusAlarmOperatorLabel` / `modbusAlarmLevelLabel`， **translate 由调用方传入**，
@@ -163,7 +163,7 @@
   两者查的表、兜底值、用在的列都不同，合成一份要按前缀分派。
 - [x] `modbus.service.ts`：`getAlarms(...)` / `handleAlarm(spaceId, id)`。
 - [x] 编辑器逐字段配置：照抄轮询那套「侧表 + 签名」——
-      `alarms` 是 `Map`，键 `` `${configId}#${pollingIndex}#${fieldKey}` ``（**`configId` 前缀**：
+      `alarms` 是 `Map`，键 `` `${configId}#${pollIndex}#${fieldKey}` ``（**`configId` 前缀**：
       换源点表不能把告警带到同序号的方法/字段上）、`withAlarms(func)` 在保存时并回去、
       `seedAlarms` 装载、`alarmSignature` 排序序列化。
 - [x] **`ServiceBaseline` 加了 `alarms: string` 且 `serviceChanged` 比它** ——
@@ -196,7 +196,7 @@
 集合一行没落过、也没有存量配置带过 `alarm` 键，所以这是零成本窗口期的最后一刻。
 完整口径见 `Modbus-Alarm.md` 第十三节第一条，这里只列交付物。
 
-- [x] `ModbusPollingResponseFieldAlarm` 加 `id`（前端生成、后端校验：非空 / ≤64 / 同出值内唯一；
+- [x] `ModbusResponseFieldAlarm` 加 `id`（前端生成、后端校验：非空 / ≤64 / 同出值内唯一；
   **只在 `enabled == true` 时校验**，照抄「半配置合法」）。 **条数上限 8 条/出值**。
 - [x] `alarm` → `alarms` 两处（字段与位），两个父 Codec 跟着改；空数组 / 「元素全是空对象」
       都读作**没配**，库里不留 `alarms: []` 也不留空壳规则。
@@ -216,8 +216,8 @@
 
 **前端**（`webapp-matrix`，0.9.7 → 0.9.8：`5331d5a` 代码、`f66e74a` 词典）：
 
-- [x] `ModbusPollingResponseFieldAlarm` 加 `id`；两处 `alarm` → `alarms`；
-      `ModbusPollingResponseFieldAlarmCodec` 的单对象 `decode`/`encode` 变成一组的
+- [x] `ModbusResponseFieldAlarm` 加 `id`；两处 `alarm` → `alarms`；
+      `ModbusResponseFieldAlarmCodec` 的单对象 `decode`/`encode` 变成一组的
       `decodeList`/`encodeList`（空数组与「元素全是空壳」都读作没配、`!= null` 判值 ——
   两条都与后端同口径，过一趟前端不会把服务定义改了形）。
 - [x] 编辑器展开区的**行单位从「出值」变成「出值 + 规则」**：组内一条规则一行，出值名与类型

@@ -76,7 +76,9 @@ class ModbusPollReconcilerTest {
     @InjectMocks
     ModbusPollReconciler reconciler;
 
-    /** 库里已经有这一行：内存任务用的是**行上的** {@code _id}，不是计划对象那个 null。 */
+    /**
+     * 库里已经有这一行：内存任务用的是**行上的** {@code _id}，不是计划对象那个 null。
+     */
     @Test
     void existingRowKeepsItsDatabaseId() {
         ObjectId rowId = new ObjectId();
@@ -93,7 +95,9 @@ class ModbusPollReconcilerTest {
         verify(pollRepo, never()).insert(any());
     }
 
-    /** 库里还没有这一行：计划生成的 id 就是落库的 {@code _id}，两个必须是同一个。 */
+    /**
+     * 库里还没有这一行：计划生成的 id 就是落库的 {@code _id}，两个必须是同一个。
+     */
     @Test
     void newTaskIsScheduledWithTheIdItIsInsertedWith() {
         givenServices();
@@ -145,7 +149,9 @@ class ModbusPollReconcilerTest {
         reconciler.reconcileAll().await().indefinitely();
     }
 
-    /** 取到点的那一个任务（{@code Long.MAX_VALUE} 当「现在」：轮里所有任务都算到点）。 */
+    /**
+     * 取到点的那一个任务（{@code Long.MAX_VALUE} 当「现在」：轮里所有任务都算到点）。
+     */
     private ModbusPollTask pumpOne() {
         List<ModbusPollTask> due = reconciler.wheel().pump(Long.MAX_VALUE, 10);
         assertEquals(1, due.size(), "这一轮只该有一个任务到点");
@@ -164,7 +170,9 @@ class ModbusPollReconcilerTest {
         when(spaceRepo.findById(SPACE_ID)).thenReturn(Uni.createFrom().item(space()));
     }
 
-    /** 一个读保持寄存器（fc 03）的方法，周期 30 秒 —— 与现网那条报了 bug 的任务同形。 */
+    /**
+     * 一个读保持寄存器（fc 03）的方法，周期 30 秒 —— 与现网那条报了 bug 的任务同形。
+     */
     private static ModbusService service() {
         ModbusService service = new ModbusService();
         service.id = new ObjectId(SID);
@@ -175,15 +183,15 @@ class ModbusPollReconcilerTest {
         space.rootId = SPACE_ID;
         device.space = space;
         service.device = device;
-        ModbusPoll function = new ModbusPoll();
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = 1;
-                    function.index = 1;
-        function.interval = 30;
-        function.polling = Boolean.TRUE;
-        function.request = ModbusRequests.holding();
-        service.polls = List.of(function);
+        ModbusPoll poll = new ModbusPoll();
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = 1;
+        poll.index = 1;
+        poll.interval = 30;
+        poll.polling = Boolean.TRUE;
+        poll.request = ModbusRequests.holding();
+        service.polls = List.of(poll);
         return service;
     }
 

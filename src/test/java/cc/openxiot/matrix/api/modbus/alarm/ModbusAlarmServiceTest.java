@@ -84,9 +84,9 @@ class ModbusAlarmServiceTest {
     @Test
     void withoutConfigurationNothingIsTouchedAtAll() {
         // 第一道闸门是纯内存判断：没配告警的方法连「有哪些开着」都不查
-        assertNull(service.evaluate(modbusService(field("进水温度")), function(),
+        assertNull(service.evaluate(modbusService(field("进水温度")), poll(),
                 sample("进水温度", 99.0)).await().indefinitely());
-        assertNull(service.evaluate(modbusService(field("进水温度", disabled())), function(),
+        assertNull(service.evaluate(modbusService(field("进水温度", disabled())), poll(),
                 sample("进水温度", 99.0)).await().indefinitely());
         verifyNoInteractions(alarmRepo);
     }
@@ -99,7 +99,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
                 .thenReturn(Uni.createFrom().item(open("进水温度", rule)));
 
-        service.evaluate(modbusService(field("进水温度", rule)), function(),
+        service.evaluate(modbusService(field("进水温度", rule)), poll(),
                 sample("进水温度", 99.0)).await().indefinitely();
 
         verify(alarmRepo).mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX);
@@ -116,7 +116,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
         ModbusRegistry field = field("进水温度", "℃", rule);
-        service.evaluate(modbusService(field), function(), sample("进水温度", 85.5)).await().indefinitely();
+        service.evaluate(modbusService(field), poll(), sample("进水温度", 85.5)).await().indefinitely();
 
         ModbusAlarm row = insertedRow();
         assertEquals(SERVICE_ID, row.serviceId);
@@ -146,7 +146,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.insertOpen(any())).thenReturn(Uni.createFrom().item(true));
 
         ModbusRegistry bits = bits("进水阀位", "进水阀", alarm("=", 1.0));
-        service.evaluate(modbusService(bits), function(), sample("进水阀", 1)).await().indefinitely();
+        service.evaluate(modbusService(bits), poll(), sample("进水阀", 1)).await().indefinitely();
 
         ModbusAlarm row = insertedRow();
         assertEquals("进水阀", row.field);
@@ -164,7 +164,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
-        service.evaluate(modbusService(field("进水温度", rule)), function(),
+        service.evaluate(modbusService(field("进水温度", rule)), poll(),
                 sample("进水温度", 20.0)).await().indefinitely();
 
         assertEquals(ModbusAlarm.CLOSE_VALUE, closedType());
@@ -186,7 +186,7 @@ class ModbusAlarmServiceTest {
 
         service.evaluate(modbusService(
                         field("进水温度"),
-                        field("回水温度", rule)), function(),
+                        field("回水温度", rule)), poll(),
                 sample("进水温度", 20.0).put("回水温度", 20.0)).await().indefinitely();
 
         assertEquals(ModbusAlarm.CLOSE_DEFINITION, closedType());
@@ -203,7 +203,7 @@ class ModbusAlarmServiceTest {
         // 数量与「定义刚被改过」完全同阶（一次编辑最多留下几条），不该用**每次采样**的代价去兜。
         // 它归 ModbusAlarmReconciler 的定义变更对账扫掉（Modbus-Alarm.md 第五节末）。
         // 这条测试钉住的是「闸门在前、对账在后」这个分工，别让人以为是漏判。
-        service.evaluate(modbusService(field("进水温度")), function(),
+        service.evaluate(modbusService(field("进水温度")), poll(),
                 sample("进水温度", 20.0)).await().indefinitely();
 
         verifyNoInteractions(alarmRepo);
@@ -220,7 +220,7 @@ class ModbusAlarmServiceTest {
 
         service.evaluate(modbusService(
                         field("进水温度", alarm(">", 80.0)),
-                        field("回水温度", low)), function(),
+                        field("回水温度", low)), poll(),
                 sample("进水温度", 85.0).put("回水温度", 9.0)).await().indefinitely();
 
         assertEquals("进水温度", insertedRow().field);
@@ -241,7 +241,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
-        service.evaluate(modbusService(field("进水温度", warn, critical)), function(),
+        service.evaluate(modbusService(field("进水温度", warn, critical)), poll(),
                 sample("进水温度", 27.0)).await().indefinitely();
 
         assertEquals(ModbusAlarm.CLOSE_SUPERSEDED, closedType());
@@ -265,7 +265,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
-        service.evaluate(modbusService(field("进水温度", warn, critical)), function(),
+        service.evaluate(modbusService(field("进水温度", warn, critical)), poll(),
                 sample("进水温度", 31.0)).await().indefinitely();
 
         InOrder order = inOrder(alarmRepo);
@@ -285,7 +285,7 @@ class ModbusAlarmServiceTest {
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
 
-        service.evaluate(modbusService(field("进水温度", rule)), function(),
+        service.evaluate(modbusService(field("进水温度", rule)), poll(),
                 sample("进水温度", 99.0)).await().indefinitely();
 
         InOrder order = inOrder(alarmRepo);
@@ -309,13 +309,13 @@ class ModbusAlarmServiceTest {
         // 所以同一条规则只报一次
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
         ModbusService svc = modbusService(field("进水温度", alarm(">", 80.0)));
-        ModbusPoll function = function();
+        ModbusPoll poll = poll();
 
         // 定义比数、运行期给的是字符串（这一帧拿不出可比的值）
-        service.evaluate(svc, function, sample("进水温度", "ON")).await().indefinitely();
-        service.evaluate(svc, function, sample("进水温度", "ON")).await().indefinitely();
+        service.evaluate(svc, poll, sample("进水温度", "ON")).await().indefinitely();
+        service.evaluate(svc, poll, sample("进水温度", "ON")).await().indefinitely();
         // 另一帧里干脆没有这个出值（截断的应答）：同一个出值，还是那条
-        service.evaluate(svc, function, sample("别的字段", 1)).await().indefinitely();
+        service.evaluate(svc, poll, sample("别的字段", 1)).await().indefinitely();
 
         verify(logger, times(1)).warnv(anyString(), capturedParams());
         // 判不了既不开也不关：读了一次「哪些开着」，写操作一次都没有
@@ -332,7 +332,7 @@ class ModbusAlarmServiceTest {
         ModbusRegistryAlarm second = alarm("??", 90.0);
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
 
-        service.evaluate(modbusService(field("进水温度", first, second)), function(),
+        service.evaluate(modbusService(field("进水温度", first, second)), poll(),
                 sample("进水温度", "ON")).await().indefinitely();
 
         verify(logger, times(2)).warnv(anyString(), capturedParams());
@@ -342,7 +342,7 @@ class ModbusAlarmServiceTest {
     void warningNamesTheFieldAndWhatWasConfigured() {
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
 
-        service.evaluate(modbusService(field("进水温度", alarm(">", 80.0))), function(),
+        service.evaluate(modbusService(field("进水温度", alarm(">", 80.0))), poll(),
                 sample("进水温度", "ON")).await().indefinitely();
 
         ArgumentCaptor<Object[]> params = ArgumentCaptor.forClass(Object[].class);
@@ -375,7 +375,7 @@ class ModbusAlarmServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo is down")));
 
         RuntimeException error = assertThrows(RuntimeException.class, () -> service
-                .evaluate(modbusService(field("进水温度", alarm(">", 80.0))), function(),
+                .evaluate(modbusService(field("进水温度", alarm(">", 80.0))), poll(),
                         sample("进水温度", 99.0))
                 .await().indefinitely());
         assertEquals("mongo is down", error.getMessage());
@@ -389,7 +389,7 @@ class ModbusAlarmServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write concern error")));
 
         assertThrows(RuntimeException.class, () -> service
-                .evaluate(modbusService(field("进水温度", alarm(">", 80.0))), function(),
+                .evaluate(modbusService(field("进水温度", alarm(">", 80.0))), poll(),
                         sample("进水温度", 99.0))
                 .await().indefinitely());
     }
@@ -546,10 +546,10 @@ private static ModbusService modbusService(ModbusRegistry... registries) {
 }
 
 /** 方法只承担方法序号（告警行按读块维度）：出值规则已迁到服务点表快照。 */
-private static ModbusPoll function(ModbusRegistry... ignored) {
-    ModbusPoll function = new ModbusPoll();
-    function.index = FUNCTION_INDEX;
-    return function;
+private static ModbusPoll poll(ModbusRegistry... ignored) {
+    ModbusPoll poll = new ModbusPoll();
+    poll.index = FUNCTION_INDEX;
+    return poll;
 }
 
 private static ModbusRegistry field(String name, ModbusRegistryAlarm... alarms) {

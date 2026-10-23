@@ -67,7 +67,7 @@ class ModbusAlarmReconcilerTest {
     void stillCoveredRowsWriteNothing() {
         // 稳态：字段还配着告警，一条都不该被关 —— 「改了定义」绝大多数时候什么也没改到告警上
         givenOpen(openRow(SID, 1, "进水温度"));
-        reconcile(service(SID, function(field("进水温度", true))));
+        reconcile(service(SID, poll(field("进水温度", true))));
 
         verify(alarmRepo, never()).closeByKeys(anyString(), any(), any(), anyString(), any());
     }
@@ -78,7 +78,7 @@ class ModbusAlarmReconcilerTest {
         // 定义不再覆盖它 ⇒ 按 DEFINITION 关。这一条是「改了定义后这个方法再也不采」的兜底：
         // 采集链路只看得见**新定义里还配着告警的键**，这个键连候选都进不去，只能靠对账
         givenOpen(openRow(SID, 1, "进水温度"));
-        reconcile(service(SID, function(field("回水温度", true))));
+        reconcile(service(SID, poll(field("回水温度", true))));
 
         ArgumentCaptor<Collection<String>> fields = ArgumentCaptor.forClass(Collection.class);
         ArgumentCaptor<String> closeType = ArgumentCaptor.forClass(String.class);
@@ -91,7 +91,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void closeCarriesTheServiceAndFunctionOfTheRow() {
         givenOpen(openRow(SID, 2, "进水温度"));
-        reconcile(service(SID, function(2, field("回水温度", true))));
+        reconcile(service(SID, poll(2, field("回水温度", true))));
 
         ArgumentCaptor<String> serviceId = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Integer> pollIndex = ArgumentCaptor.forClass(Integer.class);
@@ -110,7 +110,7 @@ class ModbusAlarmReconcilerTest {
         // 关闭是按整个开行标识 updateMany 的：同一个方法上的多个出值合成一条语句，
         // 不是一条语句一个出值（后者会让一轮对账的写放大成出值数倍）
         givenOpen(openRow(SID, 1, "进水温度"), openRow(SID, 1, "回水温度"));
-        reconcile(service(SID, function(field("出水温度", true))));
+        reconcile(service(SID, poll(field("出水温度", true))));
 
         ArgumentCaptor<Collection<String>> fields = ArgumentCaptor.forClass(Collection.class);
         verify(alarmRepo).closeByKeys(anyString(), any(), fields.capture(), anyString(), any());
@@ -121,7 +121,7 @@ class ModbusAlarmReconcilerTest {
     void onlyThisServicesOpenRowsAreRead() {
         // 写入路径只该问这一个服务：全表扫是启动那一次的事
         givenOpen();
-        reconcile(service(SID, function(field("进水温度", true))));
+        reconcile(service(SID, poll(field("进水温度", true))));
 
         verify(alarmRepo).listOpenByServiceId(SID);
         verify(alarmRepo, never()).listAllOpen();
@@ -148,7 +148,7 @@ class ModbusAlarmReconcilerTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("alarm table is down")));
 
         assertThrows(IllegalStateException.class,
-                () -> reconcile(service(SID, function(field("进水温度", true)))));
+                () -> reconcile(service(SID, poll(field("进水温度", true)))));
     }
 
     @Test
@@ -158,7 +158,7 @@ class ModbusAlarmReconcilerTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write failed")));
 
         assertThrows(IllegalStateException.class,
-                () -> reconcile(service(SID, function(field("回水温度", true)))));
+                () -> reconcile(service(SID, poll(field("回水温度", true)))));
     }
 
     // ===== 启动扫 =====
@@ -167,7 +167,7 @@ class ModbusAlarmReconcilerTest {
     void startupSweepClosesRowsWhoseDefinitionNoLongerCoversThem() {
         // 服务还在、字段还在，但告警被直接改库改掉了（运维脚本、迁移）—— 采集链路看不见这种残留
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, function(field("进水温度", false))))));
+                .item(List.of(service(SID, poll(field("进水温度", false))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
@@ -189,7 +189,7 @@ class ModbusAlarmReconcilerTest {
         // 与影子 / 历史 / 故障记录是同一个失败模式（只记日志、不重试），且页面按空间子树查、看不见它。
         // 这条测试钉的是「对账在后、级联在前」这个分工。
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, function(field("进水温度", true))))));
+                .item(List.of(service(SID, poll(field("进水温度", true))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(OTHER_SID, 1, "回水温度"))));
 
         reconciler.init(null);
@@ -200,7 +200,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void startupSweepWritesNothingInSteadyState() {
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, function(field("进水温度", true))))));
+                .item(List.of(service(SID, poll(field("进水温度", true))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
 
         reconciler.init(null);
@@ -229,7 +229,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void startupSweepSwallowsCloseFailures() {
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, function(field("进水温度", false))))));
+                .item(List.of(service(SID, poll(field("进水温度", false))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write failed")));
@@ -273,7 +273,7 @@ class ModbusAlarmReconcilerTest {
     private static ModbusService serviceWithoutId() {
         ModbusService service = new ModbusService();
         ModbusConfig snapshot = new ModbusConfig();
-        snapshot.registries = List.of(function(field("进水温度", true)));
+        snapshot.registries = List.of(poll(field("进水温度", true)));
         service.configSnapshot = snapshot;
         return service;
     }
@@ -289,12 +289,12 @@ class ModbusAlarmReconcilerTest {
     }
 
     /** 历史包袱保留的 `function(...)` 调用外形：现在对应点表里的一个寄存器（告警属寄存器）。 */
-    private static ModbusRegistry function(ModbusRegistry... regs) {
+    private static ModbusRegistry poll(ModbusRegistry... regs) {
         return regs == null || regs.length == 0 ? null : regs[0];
     }
 
-    private static ModbusRegistry function(int index, ModbusRegistry... regs) {
-        return function(regs);
+    private static ModbusRegistry poll(int index, ModbusRegistry... regs) {
+        return poll(regs);
     }
 
     private static ModbusRegistry field(String name, boolean alarmEnabled) {

@@ -29,41 +29,51 @@ class ModbusPollPlanTest {
 
     private static final long NOW = 1_700_000_000_000L;
 
-    /** 读保持寄存器（fc 03）。 */
+    /**
+     * 读保持寄存器（fc 03）。
+     */
     private static final ModbusRequest READ_REQUEST = ModbusRequests.holding();
 
-    /** 写单寄存器（fc 06）。 */
+    /**
+     * 写单寄存器（fc 06）。
+     */
     private static final ModbusRequest WRITE_REQUEST = ModbusRequests.write("06", 1);
 
     @Test
     void pollingTrueWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, Boolean.TRUE)));
+        assertTrue(ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.TRUE)));
     }
 
-    /** 三态里的 null：配了周期就是要跑，不必再显式写一个 true。 */
+    /**
+     * 三态里的 null：配了周期就是要跑，不必再显式写一个 true。
+     */
     @Test
     void defaultPollingWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, null)));
+        assertTrue(ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, null)));
     }
 
-    /** 留着周期先不跑：定义不动，只把开关关掉。 */
+    /**
+     * 留着周期先不跑：定义不动，只把开关关掉。
+     */
     @Test
     void pollingFalseIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 10, Boolean.FALSE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.FALSE)));
     }
 
     @Test
     void withoutIntervalIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, null, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, READ_REQUEST, 0, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, null, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 0, Boolean.TRUE)));
     }
 
-    /** 写方法即便被人手工塞了 interval 也不入表（fc 05 / 06 / 0F / 10 逐个过一遍）。 */
+    /**
+     * 写方法即便被人手工塞了 interval 也不入表（fc 05 / 06 / 0F / 10 逐个过一遍）。
+     */
     @Test
     void writeFunctionsAreNotPolledEvenWithAnInterval() {
         for (String fc : List.of("05", "06", "0F", "10")) {
             ModbusRequest request = ModbusRequests.write(fc, 1);
-            assertTrue(!ModbusPollPlan.shouldPoll(function(1, request, 10, Boolean.TRUE)),
+            assertTrue(!ModbusPollPlan.shouldPoll(poll(1, request, 10, Boolean.TRUE)),
                     "write function must not be polled: fc " + fc);
         }
     }
@@ -76,8 +86,8 @@ class ModbusPollPlanTest {
     void requestsWithoutFunctionCodeAreNotPolled() {
         assertNull(ModbusPollPlan.functionFc(null));
         assertNull(ModbusPollPlan.functionFc(new ModbusRequest()));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, null, 10, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(function(1, new ModbusRequest(), 10, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, null, 10, Boolean.TRUE)));
+        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, new ModbusRequest(), 10, Boolean.TRUE)));
     }
 
     @Test
@@ -88,18 +98,22 @@ class ModbusPollPlanTest {
         assertEquals("0f", ModbusPollPlan.functionFc(ModbusRequests.write("0f", 0)));
         // 小写 fc 照样算写方法
         assertTrue(!ModbusPollPlan.shouldPoll(
-                function(1, ModbusRequests.write("0f", 1), 10, Boolean.TRUE)));
+                poll(1, ModbusRequests.write("0f", 1), 10, Boolean.TRUE)));
     }
 
-    /** 缺 index 的方法没有键，进不了表。 */
+    /**
+     * 缺 index 的方法没有键，进不了表。
+     */
     @Test
     void withoutIndexIsNotPolled() {
-        ModbusPoll function = function(null, READ_REQUEST, 10, Boolean.TRUE);
-        assertTrue(!ModbusPollPlan.shouldPoll(function));
+        ModbusPoll poll = poll(null, READ_REQUEST, 10, Boolean.TRUE);
+        assertTrue(!ModbusPollPlan.shouldPoll(poll));
         assertTrue(!ModbusPollPlan.shouldPoll(null));
     }
 
-    /** 一份定义 → 只留下该轮询的那些，按 pollIndex 升序。 */
+    /**
+     * 一份定义 → 只留下该轮询的那些，按 pollIndex 升序。
+     */
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
         ModbusService service = service(3, 1, 2);
@@ -125,7 +139,9 @@ class ModbusPollPlanTest {
         assertEquals(30, tasks.get(1).interval);
     }
 
-    /** 周期不同的任务排出来的时刻不同（每个方法各自从当下起算一个周期）。 */
+    /**
+     * 周期不同的任务排出来的时刻不同（每个方法各自从当下起算一个周期）。
+     */
     @Test
     void tasksOfSchedulesEachFunctionByItsOwnInterval() {
         ModbusService service = service(1, 2);
@@ -138,7 +154,9 @@ class ModbusPollPlanTest {
         assertEquals(NOW + 60_000, tasks.get(1).nextRunAt.getTime());
     }
 
-    /** 没有父设备的定义不可调度：归属（did → 空间）反推不出来。 */
+    /**
+     * 没有父设备的定义不可调度：归属（did → 空间）反推不出来。
+     */
     @Test
     void tasksOfWithoutDeviceIsEmpty() {
         ModbusService service = service(1);
@@ -148,7 +166,9 @@ class ModbusPollPlanTest {
         assertTrue(ModbusPollPlan.tasksOf(service, "  ", NOW, 0, new Random(1L)).isEmpty());
     }
 
-    /** 未落库的定义（id 为空）算不出键，什么都不产出 —— 也不抛。 */
+    /**
+     * 未落库的定义（id 为空）算不出键，什么都不产出 —— 也不抛。
+     */
     @Test
     void tasksOfWithoutIdIsEmpty() {
         ModbusService service = service(1);
@@ -169,27 +189,29 @@ class ModbusPollPlanTest {
 
     // -- helpers --
 
-    private static ModbusPoll function(Integer index, ModbusRequest request, Integer interval,
-                                              Boolean polling) {
-        ModbusPoll function = new ModbusPoll();
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = index;
-                    function.index = index;
-        function.request = request;
-        function.interval = interval;
-        function.polling = polling;
-        return function;
+    private static ModbusPoll poll(Integer index, ModbusRequest request, Integer interval,
+                                   Boolean polling) {
+        ModbusPoll poll = new ModbusPoll();
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = index;
+        poll.index = index;
+        poll.request = request;
+        poll.interval = interval;
+        poll.polling = polling;
+        return poll;
     }
 
-    /** 建一个带 n 个读方法（index 1..n）的服务，周期都还没配。 */
+    /**
+     * 建一个带 n 个读方法（index 1..n）的服务，周期都还没配。
+     */
     private static ModbusService service(int... indexes) {
         ModbusService service = new ModbusService();
         service.id = new ObjectId();
         service.name = "svc";
         service.polls = new ArrayList<>();
         for (int index : indexes) {
-            service.polls.add(function(index, READ_REQUEST, null, null));
+            service.polls.add(poll(index, READ_REQUEST, null, null));
         }
         return service;
     }

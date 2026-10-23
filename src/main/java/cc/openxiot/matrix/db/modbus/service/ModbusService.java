@@ -29,11 +29,10 @@ public class ModbusService {
     @Schema(description = "主键（MongoDB ObjectId）", required = false)
     public ObjectId id;
 
-
     /**
      * 定义格式版本号：当前只认 2。
      *
-     * <p>1 → 2 是 function 内部结构的演进：{@code request} 从「一整串 Modbus RTU 帧的 16 进制字符串」
+     * <p>1 → 2 是 poll 内部结构的演进：{@code request} 从「一整串 Modbus RTU 帧的 16 进制字符串」
      * 改成了结构化定义（{@link ModbusRequest}），
      * 写方法另外多出「写入字段 + 缺省值」。校验层按本常量**硬拒旧版本**：
      * 让旧口径的定义响亮地失败，而不是被读成 null 之后报一句含糊的「request is required」。</p>
@@ -43,7 +42,7 @@ public class ModbusService {
     @Schema(description = "服务名称（展示用，如 1 号冷水机组）", required = true)
     public String name;
 
-    @Schema(description = "定义格式版本号：function 内部结构后续若演进，按它区分口径（当前为 2）",
+    @Schema(description = "定义格式版本号：ModbusPoll 内部结构后续若演进，按它区分口径（当前为 2）",
             examples = {"2"}, required = true)
     public Integer version;
 
@@ -59,7 +58,7 @@ public class ModbusService {
     @Schema(description = "依赖的设备调用坐标（调哪个设备/服务/方法、请求帧填在哪个入参 piid）", required = true)
     public DeviceOn device = new DeviceOn();
 
-    @Schema(description = "方法列表：每一项（function）= 一次父设备调用（读或写），"
+    @Schema(description = "方法列表：每一项（ModbusPoll）= 一次父设备调用（读或写），"
             + "来源（type 上的 type 字段：command 显式命令 / registry 寄存器块读）见 ModbusPollFrom；"
             + "方法序号（身份）在 ModbusPoll 的 index",
             required = true)

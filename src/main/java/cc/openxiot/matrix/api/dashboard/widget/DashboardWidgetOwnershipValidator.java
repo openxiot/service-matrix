@@ -283,11 +283,11 @@ public class DashboardWidgetOwnershipValidator {
         }
         // 老卡带 pollIndex（方法序号）：按那个方法的应答字段校验，行为不变。
         if (ref.pollIndex() != null) {
-            ModbusPoll function = findFunction(service, ref.pollIndex());
-            if (function == null) {
+            ModbusPoll poll = findPoll(service, ref.pollIndex());
+            if (poll == null) {
                 return "function not found: " + ref.pollIndex();
             }
-            if (!hasField(function, ref.field())) {
+            if (!hasField(poll, ref.field())) {
                 return "field not found: " + ref.field();
             }
             return null;
@@ -310,21 +310,21 @@ public class DashboardWidgetOwnershipValidator {
         if (service == null || service.polls == null) {
             return null;
         }
-        for (ModbusPoll function : service.polls) {
-            if (function != null && hasField(function, field)) {
-                return function;
+        for (ModbusPoll poll : service.polls) {
+            if (poll != null && hasField(poll, field)) {
+                return poll;
             }
         }
         return null;
     }
 
-    private static ModbusPoll findFunction(ModbusService service, Integer index) {
+    private static ModbusPoll findPoll(ModbusService service, Integer index) {
         if (service.polls == null) {
             return null;
         }
-        for (ModbusPoll function : service.polls) {
-            if (function != null && index.equals(function.index)) {
-                return function;
+        for (ModbusPoll poll : service.polls) {
+            if (poll != null && index.equals(poll.index)) {
+                return poll;
             }
         }
         return null;
@@ -338,8 +338,8 @@ public class DashboardWidgetOwnershipValidator {
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
-    private static boolean hasField(ModbusPoll function, String field) {
-        for (ModbusResponseField candidate : ModbusPoll.responseFields(function)) {
+    private static boolean hasField(ModbusPoll poll, String field) {
+        for (ModbusResponseField candidate : ModbusPoll.responseFields(poll)) {
             if (candidate == null) {
                 continue;
             }

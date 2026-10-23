@@ -87,13 +87,13 @@ public class ModbusShadowService {
      */
     private static List<JsonObject> mergeRegisterCache(
             ModbusConfig config,
-            List<ModbusPoll> functions,
+            List<ModbusPoll> polls,
             List<ModbusShadow> shadows
     ) {
         // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
         Map<String, Integer> owner = new HashMap<>();
-        if (functions != null) {
-            for (ModbusPoll fn : functions) {
+        if (polls != null) {
+            for (ModbusPoll fn : polls) {
                 if (fn == null || fn.index == null) {
                     continue;
                 }

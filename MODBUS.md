@@ -26,7 +26,7 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 
 **照着抄的时候认准方向。** 这份 JSON 里「键在不在」本身就是语义：**值为 null、列表为空的键一律不写**
 （codec 的既有口径）—— 空的时候不会被写出来，保存后读回来也不会凭空多出 `fields: []`、
-`response: {}` 这种空壳键。所以键并不与 `ModbusPolling` 的字段一一对应，而是按方法方向出现或消失：
+`response: {}` 这种空壳键。所以键并不与 `ModbusPoll` 的字段一一对应，而是按方法方向出现或消失：
 
 | 键 | 读方法（fc 01/02/03/04） | 写方法（fc 05/06/0F/10） |
 |---|---|---|
@@ -44,20 +44,25 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 ## 三、数据模型（落库 `modbus`/`services`，Panache 生成 ObjectId，对外十六进制字符串）
 
 ```
-ModbusService                       name / version / configSnapshot / slaveId / device / functions[] / creator / updater
+ModbusService                       name / version / configSnapshot / slaveId / device / polls[] / creator / updater
 ModbusConfig（快照）                id / owner / slave / visibility / registries[] / commands[] / lifecycle / creator / updater
                                     ← 创建服务时整份拷贝进 configSnapshot；之后点表改动/删除不影响该服务
 DeviceOn                            did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn                             spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
-ModbusPolling                      index / name / request / interval / polling / response
-ModbusPollingRequest               slaveId / fc / start / quantity / fields[]  ← 请求帧定义（读给 quantity，写给 fields）
-ModbusPollingRequestField          index / field / offset / format / byteOrder / value  ← 写入字段（含缺省值）
-ModbusPollingResponse              fields[]                                        ← 应答定义（与 request 对称；写方法整段没有）
-ModbusPollingResponseField         index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[] / alarms[]
-ModbusPollingResponseFieldValue    value / description       ← 取值表条目：原始值 → 描述字符串
-ModbusPollingResponseFieldBit      offset / field / alarms[] ← 位区里的具名位（01/02），位是独立的结果键
-ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / level / text
+ModbusPoll                        pollIndex / name / request / interval / polling / response   ← 单次轮询 / 一个读块（旧 functions[] 里的元素）
+ModbusRequest                 slaveId / fc / start / quantity / fields[]  ← 请求帧定义（读给 quantity，写给 fields）
+ModbusRequestField            index / field / offset / format / byteOrder / value  ← 写入字段（含缺省值）
+ModbusResponse                fields[]                                        ← 应答定义（与 request 对称；写方法整段没有）
+ModbusResponseField           index / field / bytes / format / byteOrder / scale / unit / value-list[] / bit-list[] / alarms[]
+ModbusResponseFieldValue      value / description       ← 取值表条目：原始值 → 描述字符串
+ModbusResponseFieldBit        offset / field / alarms[] ← 位区里的具名位（01/02），位是独立的结果键
+ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level / text
 ```
+
+> **单次 vs 周期，别混**：这里 `ModbusPoll`（单个 `poll`，`ModbusService.polls[]` 里的一个元素）
+> 是**单次轮询 / 一个读块** —— 定义了「读哪儿、发什么帧、怎么解应答」这一个可调用的方法，`pollIndex`
+> 给它编号。`ModbusPolling`（`modbus.polls` 集合里的轮询任务）是**周期轮询任务** —— 到点按 `interval`
+> 自动调某一个 `poll`。前者是「做什么」，后者是「多久做一次」。
 
 * 服务本身**不记组织**（原来的 `orgId` 字段已删）：服务这一层按空间判权（见第四节）。
   `configSnapshot.owner` 只是点表归属的**历史副本**（展示/溯源用），不参与鉴权。
@@ -77,7 +82,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 * `device.space` 记录该设备所在的空间（`cc.openxiot.matrix.db.space.SpaceOn`，`DeviceEntity.space`
   用的是同一个类）。空间图要按空间反查服务（`ModbusServiceRepository.findBriefBySpaceId`，见第六节），
   落库时带上就不必再到设备表里绕一圈。它不参与校验：缺省的服务只是不出现在按空间的查询里。
-* `function.request` = **请求帧的结构化定义**（`ModbusPollingRequest`），**不是**一整串 hex：
+* `poll.request` = **请求帧的结构化定义**（`ModbusRequest`），**不是**一整串 hex：
   `slaveId` / `fc` / `start` 三个标量，读方法再给 `quantity`、写方法再给 `fields[]`。
   **方向由 `fc` 推出**（01/02/03/04 读、05/06/0F/10 写），没有单独的 area / rw 字段 ——
   一个方法 = 一条命令，这正是点表 `ModbusCommand` 的口径。**帧在 invoke 时由后端现组**
@@ -89,34 +94,34 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   一条命令只有一个 `dataType`（跨度统一，`readQuantity` 据此乘跨度）；服务里每个应答字段
   各带自己的 `format`/`bytes`，「值个数 × 单一跨度」根本算不出来，所以这里直接就是线上那个数。
   写方法的数量由 `fields[]` 推出，给了 `quantity` 反而报错。
-* `request.fields[]` = **写方法的写入字段**（`ModbusPollingRequestField`：`index` / `field` /
+* `request.fields[]` = **写方法的写入字段**（`ModbusRequestField`：`index` / `field` /
   `offset` / `format` / `byteOrder` / `value`），读方法必须为空。`field` 是字段名，
   既是 `invoke` 请求体里取值用的 key，也是人看的名；`value` 是 **缺省值**（原始值，不做
   scale 换算）—— 没配缺省值的字段每次调用都必须给值，配了则可开箱即用、又能被 invoke 覆盖。
   点表展开出来的写命令（`运行模式 = 制冷`、`开机 = 1`）都带死值，缺省值就是为它们留的。
   `offset` 只对 fc 0F/10 有意义（位偏移 / 寄存器偏移，相对 `start`），05/06 写一个值，不许填。
-* `function.interval` = 服务端**自动调用**本方法的周期（秒）：到点自动 invoke 一次，再按
+* `poll.interval` = 服务端**自动调用**本 poll 的周期（秒）：到点自动 invoke 一次，再按
   `response.fields[]` 解出字段值；缺省表示没配周期。只挂在读方法上 —— 写方法填了会被校验拒绝。
-* `function.polling` = **自动轮询开关**：`true` 按 `interval` 周期跑，`false` 保留周期但暂停，
+* `poll.polling` = **自动轮询开关**：`true` 按 `interval` 周期跑，`false` 保留周期但暂停，
   缺省 = 按 `interval` 判定（有周期即启用，兼容加这个字段之前的定义）。**写方法一律不许开启**
   —— 让定时器周期性地往寄存器里写值是危险动作，`polling == true` 时校验器直接拒绝（不只是
   「`polling` 要求 `interval`、而 `interval` 不许配在写方法上」这种绕一层的间接成立），
   `ModbusPollPlan.shouldPoll` 在执行侧再堵一道。
   **执行侧的调度器尚未落地**（设计已定，见 `Modbus-Service-Poller.md`），这两个字段目前都只是定义。
-* `response` = **应答定义**（`ModbusPollingResponse`），目前只有 `fields[]` 一张应答解析规则表
-  （`ModbusPollingResponseField`），读方法必填、写方法整段不出现。包一层而不是直接把字段表挂在
-  `function` 上：一是与 `request` 对称（帧的两侧都是对象，各有一处放自己的属性 ——
+* `response` = **应答定义**（`ModbusResponse`），目前只有 `fields[]` 一张应答解析规则表
+  （`ModbusResponseField`），读方法必填、写方法整段不出现。包一层而不是直接把字段表挂在
+  `poll` 上：一是与 `request` 对称（帧的两侧都是对象，各有一处放自己的属性 ——
   `request.fields[]` / `response.fields[]`），二是给 **应答级**的设定留位子（异常码到文案的映射、
-  缺省字节序、期望帧长）。刻意 **不**做成 `List<ModbusPollingResponse>`：一帧请求只对一帧应答，
+  缺省字节序、期望帧长）。刻意 **不**做成 `List<ModbusResponse>`：一帧请求只对一帧应答，
   消费端（parser / 影子 / 告警）要的始终是「 **一个**有序切片表覆盖 **一个**数据区」，
   套一层 List 之后那边只能 flatten 或取 `[0]`，外面那层永远只有一个元素，却给每条校验文案
   加一个恒定的 `[0]`。真要支持「一次调用读写多个不连续区段」，该加的是 `requests[]` /
   `responses[]` 这一对，那是另一个特性。
-  `version` 标记 functions 内部格式的口径， **当前是 `2`**（`request` 从 hex 字符串改成结构化定义
+  `version` 标记 polls 内部格式的口径， **当前是 `2`**（`request` 从 hex 字符串改成结构化定义
   那一版；`response` 从裸数组改成对象并入同一版 —— v2 尚未部署过，不必为此再抬一版），
   后续演进时递增。校验器要求 `version == 2`：旧口径的定义会 **响亮地失败**，而不是被
   `getJsonObject` 读成 null 后报一句与病因无关的「request.slaveId is required」。
-* `response.fields[].alarms[]` = 该出值的 **一组阈值告警规则**（`ModbusPollingResponseFieldAlarm`）：
+* `response.fields[].alarms[]` = 该出值的 **一组阈值告警规则**（`ModbusResponseFieldAlarm`）：
   `enabled` 为 `true` 且值越限时按级别 **选出一条**开出告警（同一出值同时最多一条开着；
   选举、关闭原因与状态见 `Modbus-Alarm.md`）。 **只能配在读方法（fc 01/02/03/04）上**
   —— 写方法的应答是请求回显，没有「读到的值」可言。上限 **8 条/出值**。
@@ -146,7 +151,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 | POST | `/matrix/v1/modbus/service/one/{spaceId}` | 空间管理员 | 创建（body = 完整 ModbusService） |
 | PUT | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
 | DELETE | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 删除 |
-| POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法，body `{"service": "<id>", "function": <index>, "values": {"字段名": 值}}`（`values` 只在写方法上用，见第五节） |
+| POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法（单次轮询，`PollOnce`），body `{"service": "<id>", "pollIndex": <单次轮询的序号>, "values": {"字段名": 值}}`（`values` 只在写方法上用，见第五节） |
 | GET | `/matrix/v1/modbus/shadows/{spaceId}?serviceIds=a,b,c` | 空间成员 | **寄存器缓存网格**：一次读一个/多个服务的全部可读寄存器当前缓存值（独立资源，见 `ModbusShadowResource`/`ModbusShadowService`；`serviceIds` 缺省则该空间全取，可用逗号或重复参数） |
 | GET | `/matrix/v1/modbus/poll/{spaceId}` | 空间成员 | 该空间下服务的**轮询任务**与运行时状态（另起一段路径，见 `Modbus-Service-Poller.md` 第八节） |
 
@@ -167,8 +172,8 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 
 ## 五、invoke 的调用链与返回
 
-`ModbusServiceService.invoke`：按 id **读一次** `ModbusService` 文档 → 取该 index 的 function →
-**按 `request` 现组帧**（`ModbusFrameCodec.encodeRequest(function.request, values)`）→
+`ModbusServiceService.invoke`：按 id **读一次** `ModbusService` 文档 → 取该 `pollIndex` 的 poll →
+**按 `request` 现组帧**（`ModbusFrameCodec.encodeRequest(poll.request, values)`）→
 组装依赖设备的 `ActionOperation`（did/siid/aiid 取 `device`，in 填 `{argument: 帧}`）→
 交 `ManipulationService.invokeActions`（DTU 的“发送”把帧透传到 RS485）→ 把应答帧按
 `response.fields[]` 解成字段值。
@@ -183,7 +188,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   **读方法给了 `values` 直接报错** —— 静默忽略一个用户以为生效了的载荷，比报错糟得多。
   写字段里没有缺省值的必须给、给了未声明的字段名报错、类型不符 / 越界报错，
   这套判定是 `ModbusServiceValidator.validateInvoke`，在 `execute` **之前**拦下：
-  它是**调用方的请求错误**（与「function not found」同类），与设备故障不是一回事，
+  它是**调用方的请求错误**（与「poll not found」同类），与设备故障不是一回事，
   因此不进 `service-failures`。
 
 * 往下传的**归属**是 `ownerId` = **设备所在根空间 id**（资源层用路径上 `spaceId` 现推：
@@ -237,7 +242,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   再 `Uni.combine().all().unis(...)` 并行等齐。
 * 服务侧 `ModbusServiceRepository.findBriefBySpaceId` 用 Mongo 投影（`FindOptions.projection`）只带
   `_id` / `name` / `device.did` / `device.space.spaceId` 回来（命中 `device.space.spaceId` 索引）：
-  文档里的 functions / response 一个字节都不上网络。代价是返回的实体只有这几个字段有值——
+  文档里的 polls / response 一个字节都不上网络。代价是返回的实体只有这几个字段有值——
   **别当完整定义用**，要详情另按 id 查。
 * `services` 用 `ModbusServiceCodec.encodeBrief(List)` 出**精简视图**，只有五个字段：
 
@@ -248,7 +253,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 
   `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；`did` / `spaceId` 是依赖设备及其落点，
   供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{spaceId}/{id}`。
-  整份定义（functions / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
+  整份定义（polls / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
 
 ## 七、校验
 
@@ -259,8 +264,8 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 * `version`：必填，且**必须等于 `2`**（定义格式口径）。旧口径的定义硬拒，不静默降级读成 null。
   后端在 service 里的缺省填充形同虚设，前端要带上。
 * `device`：did 非空、siid/aiid/argument ≥ 1。
-* `functions`：index 必填 / ≥1 / 服务内唯一；name 必填；request 必填（见下）。
-* `request`（请求帧定义，`ModbusPollingRequest`）：
+* `polls`：`pollIndex` 必填 / ≥1 / 服务内唯一；name 必填；request 必填（见下）。
+* `request`（请求帧定义，`ModbusRequest`）：
   * 公共：`slaveId` ∈ 1..247；`fc` ∈ `01/02/03/04/05/06/0F/10`（大小写不敏感，`0f` 与 `0F` 同一件事）；
     `start` ∈ 0..65535。
   * 读（01–04）：`quantity` 必填（01/02 ∈ 1..2000 **位**、03/04 ∈ 1..125 **个寄存器**）；
@@ -296,11 +301,11 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 * `values`（`invoke` 的入参，**执行期**校验 `ModbusServiceValidator.validateInvoke`）：
   读方法给了 `values` 报错；写方法逐字段查 —— 没有缺省值的字段必须给、给了未声明的字段名报错、
   类型不符 / 越界报错（取值判定与定义期的缺省值共用同一处）。这是**调用方的请求错误**，
-  与「function not found」同类，在 `execute` 之前拦下，**不进** `service-failures`。
+  与「poll not found」同类，在 `execute` 之前拦下，**不进** `service-failures`。
 * `response.fields[]`：index 必填 / ≥1 / 组内唯一；field 必填；bytes ≥ 1；format ∈
   `int8/uint8/int16/uint16/int32/uint32/float32/string`，且非 string 时 bytes 必须等于该格式的宽度；
   bytes > 1 时 byteOrder 必填且 ∈ `ABCD/DCBA/BADC/CDAB`；value-list 内 value/description 必填且 value 不重复。
-  出错文案里的位置就是 JSON 里的路径（`functions[0].response.fields[1].bytes`），照着提示能直接找到那一项。
+  出错文案里的位置就是 JSON 里的路径（`polls[0].response.fields[1].bytes`），照着提示能直接找到那一项。
 * **同一应答内的出值名唯一**：各字段的 `field` 与各位清单的 `bit-list[].field` 不能重复 ——
   解析结果是一个 `字段 → 值` 的对象，重名即互相覆盖。
 * `bit-list`（01/02 位区的逐位取值）：offset 必填且 `0 ≤ offset < bytes × 8`、组内不重复，field 必填。
@@ -310,7 +315,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * 一组最多 **8 条**（`alarms` 与 `bit-list[].alarms` 各自算）—— 防呆，不是安全边界。
   * 启用规则的 `id` **非空、去空白后 ≤ 64 字、同一出值内唯一**；停用的规则既不查 `id`、
     也不占用组内的唯一名额。`id` 只在 `enabled` 时校验，理由与本节开头同。
-  * 只能配在**读方法**上（与 `interval` 共用同一个 `isReadFunction` 判断，不各写一份）。
+  * 只能配在**读方法**上（与 `interval` 共用同一个 `isReadPoll` 判断，不各写一份）。
   * `compare` ∈ `> >= < <= =`；`level` ∈ `INFO/WARN/CRITICAL`；`text` 去首尾空白后非空且 ≤ 64 字。
   * **能比什么由字段的取值形态决定**，不留给运行期碰运气：`format` 为 `string` 的字段一律不收
     （出的是任意文本，没有可比的量）；带 `value-list` 的字段只能用 `=` 比 `state`
@@ -350,7 +355,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 
 ### 2026-09-23
 
-* **`function.request` 从「一整串 Modbus RTU 帧」改成结构化定义**（`ModbusPollingRequest`），
+* **`function.request` 从「一整串 Modbus RTU 帧」改成结构化定义**（`ModbusRequest`），
   **组帧下沉到后端**。以前前端现算 CRC16 把帧烤进定义里，带来三个问题：写操作的值被焊死在定义里
   （点表展开出的 `开机 = 1`、`运行模式 = 制冷` 各自焊成一个方法，想写别的值只能再建一个 ——
   「界面上手动输入值」根本做不到）；读写方向靠 `parseHex(request)[1]` 猜，还得为库里的脏数据
@@ -365,13 +370,13 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     **请求 ↔ 应答对账**：`Σ response.fields[].bytes` 必须等于实际取回的字节数（01/02 = `ceil(quantity/8)`、
     03/04 = `quantity × 2`），于是「1 字节字段配 fc 03」这类定义在**定义期**就被挡下
     （03/04 整寄存器地读，单字节只能来自位区）。
-  * **写字段带缺省值**（`ModbusPollingRequestField.value` 用 `Object` 而非 `Double` / `String`：
+  * **写字段带缺省值**（`ModbusRequestField.value` 用 `Object` 而非 `Double` / `String`：
     位是布尔、寄存器是数值，压成 `Double` 会把「位」变成 0/1 数字，压成 `String` 是把协议语义
-    压成字符串匹配 —— 见 `ModbusPollingResponseFieldAlarm` 那条注释）。点表展开出的写命令都带死值，
+    压成字符串匹配 —— 见 `ModbusResponseFieldAlarm` 那条注释）。点表展开出的写命令都带死值，
     没有缺省值它们会退化成「每次调用都得手填 0」的哑方法，枚举语义全丢。`Object` 落 Mongo
     靠 `ObjectPropertyCodecProvider`（先例：`ModbusServiceHistory.value`），故不能换成接口或
     泛型变量声明。本版写字段只收 **原始值**，不做 `scale` 工程量换算（将来要「按 ℃ 输入」再加）。
-  * **组帧只有一条代码路径**：`ModbusFrameCodec.encodeRequest(ModbusPollingRequest, Map)`，
+  * **组帧只有一条代码路径**：`ModbusFrameCodec.encodeRequest(ModbusRequest, Map)`，
     读写都在 invoke 时现组、复用现成的 CRC16 与字节序原语；与点表线
     `encodeRequest(slaveId, ModbusCommand)` 出**逐字节相同**的帧（有单测钉住，含
     `010300000001840A` 这个既有断言值）。前端不再需要算帧。
@@ -388,23 +393,23 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     让旧定义**响亮地失败**，而不是被 `getJsonObject` 静默读成 null 之后报一句与病因无关的
     「request.slaveId is required」。
   * **function 这一族统一改名**：`ModbusServiceFunction` → `ModbusPolling`、
-    `ModbusServiceRequest(Field)` → `ModbusPollingRequest(Field)`、原 `ModbusServiceField` →
-    `ModbusPollingResponseField`，连它的三个嵌套类一起走全名 ——
-    `ModbusPollingResponseFieldValue` / `…Bit` / `…Alarm`。两条理由：
+    `ModbusServiceRequest(Field)` → `ModbusRequest(Field)`、原 `ModbusServiceField` →
+    `ModbusResponseField`，连它的三个嵌套类一起走全名 ——
+    `ModbusResponseFieldValue` / `…Bit` / `…Alarm`。两条理由：
     同一个 `ModbusService` 的子结构不必各自再背一遍 `Service` 前缀；而 Request / Response 这一对
     说的是「报文哪一侧、怎么编解码」—— 原类挂在 `function.response` 上、职责是解应答，
     叫 `ReadField` 会和「读请求」混淆（读请求里根本没有命名字段）。
     嵌套类跟着父类走全名，是为了 **每个名字都能从上一级推出来**（省下的那几个字不值一次猜测）。
-    Codec 与测试随类名同步（`ModbusPollingCodec` / `ModbusPollingRequestCodec` / …），
+    Codec 与测试随类名同步（`ModbusPollingCodec` / `ModbusRequestCodec` / …），
     **包名不动**（`db.modbus.service.function.*`：它确实是「服务的方法」，读起来仍成立）。
     `PollOnce`（invoke 接口的请求体，与上面这几个类无关） **不改名**。
     `ModbusService` / `ModbusServiceService` / `ModbusServiceResource` / `ModbusServiceValidator` /
     `ModbusServiceHistory` / `ModbusServiceFailure` 这批「服务一级」的名字也不动。
-  * **`function.response` 从裸数组包成对象**（`ModbusPollingResponse`，内含 `fields[]`）。原来
+  * **`function.response` 从裸数组包成对象**（`ModbusResponse`，内含 `fields[]`）。原来
     `request` 是对象、`response` 却是一根裸数组，两侧读起来不是一个句式；包一层之后
     `request.fields[]` / `response.fields[]` 对称，而且应答级的东西（异常码到文案的映射、
     缺省字节序、期望帧长）有了落点，将来加它们不用再动 `function` 的形状。
-    刻意**不做** `List<ModbusPollingResponse>`：一帧请求只对一帧应答，消费端
+    刻意**不做** `List<ModbusResponse>`：一帧请求只对一帧应答，消费端
     （`ModbusResponseParser.parse(fields, frame)` / 影子对账 / 告警遍历）要的始终是「一个有序
     切片表覆盖一个数据区」，套一层 List 那边只能 flatten 或取 `[0]`；真要「一次调用多个区段」，
     该加的是 `requests[]` / `responses[]` 这一对。写方法因此是**整个 `response` 键不出现**
@@ -481,13 +486,13 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     分组键仍是**点表 id**（现在是快照里的 `id`，文案层说是 `configId` 也行），由前端解成「厂家 型号」。
   * **告警与故障仍逐个 serviceId 各查一次再内存归并**，新增
     `ModbusServiceAlarmRepository.findTimeline` / `ModbusServiceFailureRepository.findTimeline`
-    （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, pollingIndex, at)` 跨服务查
+    （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, pollIndex, at)` 跨服务查
     会丢掉前缀，与 `ModbusHistoryQueryService` 的说明同一条；分桶也在内存里做（整点密集零填充），
     全后端依旧没有 `$group` / `Aggregates`。
 
 
-* **阈值告警模型返工：一个出值一组规则**（`alarm` → `alarms[]`、规则加 `id`）。`ModbusPollingResponseField.alarm`
-  与 `ModbusPollingResponseFieldBit.alarm` 各改成 `List<ModbusPollingResponseFieldAlarm>`，两处 Codec 与非空数组的
+* **阈值告警模型返工：一个出值一组规则**（`alarm` → `alarms[]`、规则加 `id`）。`ModbusResponseField.alarm`
+  与 `ModbusResponseFieldBit.alarm` 各改成 `List<ModbusResponseFieldAlarm>`，两处 Codec 与非空数组的
   「不出键」口径成对改掉；校验器改为「逐条 + 组内共性」（条数上限 8、`id` 非空/≤64/组内唯一，
   见第七节）；判定侧只留级别最高的一条开着（`Modbus-Alarm.md` 第四、五节）。零成本窗口期的
   最后一刻：集合一行没落过、也没有任何存量服务的配置里带过 `alarm` 这个键。
@@ -552,8 +557,8 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 * **Modbus 阈值告警（第一步：配置模型与校验）**。在此之前只知道「采到没采到」
   （`ModbusServiceFailure`：帧错 / 设备无应答 / CRC 不过）， **采到了但值不对看不见** ——
   温度已经 12℃ 了，曲线画出来了，没人盯着就不会有人发现。本次补上「读方法的出值可配阈值」这一层：
-  `ModbusPollingResponseFieldAlarm`（新）、`ModbusPollingResponseField.alarm` 与 `ModbusPollingResponseFieldBit.alarm`（新）、
-  `ModbusPollingResponseFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
+  `ModbusResponseFieldAlarm`（新）、`ModbusResponseField.alarm` 与 `ModbusResponseFieldBit.alarm`（新）、
+  `ModbusResponseFieldAlarmCodec`（新）、判定口径 `api/modbus/alarm/ModbusAlarmPolicy`（新）、
   `ModbusServiceValidator.validateAlarm`；`validateInterval` 里那段取功能码的代码同时抽成了
   共用的 `isReadFunction`。 **采集链路上的接线、查询接口与前端在后续提交** ——
   这一步零 IO、可独立落地，没配告警的服务在采集热路径上一分钱都不多花
@@ -614,7 +619,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     （**不是**代码问题）。搬家后跑一次 `clean test` 即可。
 * **修：轮询器一次都没采到设备 —— 内存任务没带 `_id`**。现网现象（staging，
   `MODBUS_POLL_ENABLED=true` 的副本）：每周期一条
-  `modbus poll task has no id, key: <serviceId>:<pollingIndex>`，间隔看着就是 `interval`，
+  `modbus poll task has no id, key: <serviceId>:<pollIndex>`，间隔看着就是 `interval`，
   而设备一次都没被采到 —— 库里那一行只有写入路径插进去的那几个字段
   （`nextRunAt` 停在首次写入的时刻，`lastRunAt` / `leaseOwner` / `lastStatus` **始终为空**，
   说明认领（`claim`）一次都没成功过）。
@@ -702,9 +707,9 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   定义里的 `interval` 从「一份没有执行者的配置」变成真有人按时去调。**同一个 jar 双部署**
   （api N 副本 + poller 1 副本），靠 `modbus.poll.enabled` 区分，**缺省关** ——
   一次发布让多个副本一起采集 = 同一条 RS485 上出现重复帧。
-  * **新集合 `modbus.polls`**（`db/modbus/poll`）：`serviceId / pollingIndex / did / interval /
+  * **新集合 `modbus.polls`**（`db/modbus/poll`）：`serviceId / pollIndex / did / interval /
     nextRunAt / leaseOwner / leaseUntil / lastRunAt / lastStatus / lastError / failCount`；
-    索引 `(serviceId, pollingIndex)` 唯一 + `nextRunAt`。**纯派生数据**，随时可全量重建。
+    索引 `(serviceId, pollIndex)` 唯一 + `nextRunAt`。**纯派生数据**，随时可全量重建。
   * **入表口径与原定义分开判**（`ModbusPollPlan`）：读方法（复查 `ModbusFrameCodec.isRead`）+
     有 `interval` + `polling != false`。第三条是**故意与校验器重复**的 ——
     让服务端定时往寄存器里写值是危险动作，库里可能已有历史数据或被直接改过，
@@ -725,7 +730,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * **观测**：`lastRunAt` / `lastStatus`（只有 `OK` / `FAILED`，**跳过不是状态**）/ `lastError` /
     `failCount` 落库，查询接口 `GET /matrix/v1/modbus/poll/{spaceId}`（空间成员）连内存指标一起给；
     心跳**不做成逐次写库**，只在内存里记、由接口读出去。
-  * **影子对账**（`ModbusLastPollingPlan`）：定义里删掉的 `pollingIndex` 是孤儿、必须主动删
+  * **影子对账**（`ModbusLastPollingPlan`）：定义里删掉的 `pollIndex` 是孤儿、必须主动删
     （否则当前值接口一直显示一个不存在的点位）；`response` 里删掉的字段键写路径顺手剪掉即可
     （`record` 整体替换 `fields`，最坏拖到保活周期就自愈）。
   * 测试：新增 66 个纯单测（`ModbusPollScheduleTest` / `ModbusPollPlanTest` / `ModbusPollWheelTest` /
@@ -797,7 +802,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     地址起，与 0F 的 `Coil.offset` 同口径），可只命名其中几位。`fieldNames` 收敛为 **03/04 专用**
     （01/02 填了报错：`fc 01 names each bit via bitNames`），因其应答字段只有一个、整段位掩码的名字
     由生成方按功能名称兜底。
-  * `ModbusPollingResponseField.bitList`（对外 JSON `bit-list`）= 位区字段里的具名位，元素 `{offset, field}`；
+  * `ModbusResponseField.bitList`（对外 JSON `bit-list`）= 位区字段里的具名位，元素 `{offset, field}`；
     生成服务时由 `bitNames` 直接落过来。解析器在字段值（整段位掩码）之外，把每位再作为一个 0/1
     取值补进结果，key 即该位的 `field`。
   * 位区取值口径修正为 **LSB-first**（第 i 位 = 第 i/8 字节的第 i%8 位，第 0 位即起始地址）：
@@ -914,8 +919,8 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
 * JSON 互转按「一个实体一个 Codec」拆开、放在实体的 `codec` 子包
   （`cc.openxiot.matrix.db.modbus.service.codec`），统一 `JsonObject encode(X)` / `X decode(JsonObject)`：
   `ModbusServiceCodec`（主键按十六进制串输出，另带 `JsonArray encode(List)`）、
-  `DeviceOnCodec`（时名 `ModbusServiceParentCodec`）、`ModbusPollingCodec`、`ModbusPollingResponseFieldCodec`、
-  `ModbusPollingResponseFieldValueCodec`。
+  `DeviceOnCodec`（时名 `ModbusServiceParentCodec`）、`ModbusPollingCodec`、`ModbusResponseFieldCodec`、
+  `ModbusResponseFieldValueCodec`。
 * 应答帧的解析单独放在 `ModbusResponseParser.parse(fields, frameHex)`（复用了
   `ModbusFrameCodec` 的 CRC 与字节序原语），名字与 JSON 编解码区分开。
 * `ModbusFrameCodec` 的 `checkCrc` / `reorder` 由 private 改为 public（仅可见性，行为不变，供本方案复用），

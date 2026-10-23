@@ -596,13 +596,15 @@ class ModbusServiceValidatorTest {
                 ModbusServiceValidator.validate(duplicated));
     }
 
-    /** 同一应答内所有出值名必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖。 */
+    /**
+     * 同一应答内所有出值名必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖。
+     */
     @Test
     void rejectsDuplicatedFieldNames() {
         ModbusService duplicated = service();
-        ModbusResponseField second = function(1).response.fields.get(0); // 序号不同、名字相同的第二个字段
+        ModbusResponseField second = poll(1).response.fields.getFirst(); // 序号不同、名字相同的第二个字段
         second.index = 2;
-        duplicated.polls.get(0).response.fields.add(second);
+        duplicated.polls.getFirst().response.fields.add(second);
         assertEquals("invalid polls[0].response.fields[1].field: 进水温度 (duplicated)",
                 ModbusServiceValidator.validate(duplicated));
     }
@@ -867,9 +869,9 @@ class ModbusServiceValidatorTest {
     void invokeRejectsValuesOnReadFunctions() {
         // 静默忽略一个用户以为生效了的载荷，比报错糟得多
         assertEquals("invalid values: a read function (fc 03) takes no values",
-                ModbusServiceValidator.validateInvoke(function(1), Map.of("进水温度", 1)));
+                ModbusServiceValidator.validateInvoke(poll(1), Map.of("进水温度", 1)));
         // 没给 values 的读方法照旧
-        assertNull(ModbusServiceValidator.validateInvoke(function(1), null));
+        assertNull(ModbusServiceValidator.validateInvoke(poll(1), null));
     }
 
     @Test
@@ -913,7 +915,9 @@ class ModbusServiceValidatorTest {
 
     // ===== 夹具 =====
 
-    /** 一份各处都合法的定义：各用例只改自己关心的那一处。 */
+    /**
+     * 一份各处都合法的定义：各用例只改自己关心的那一处。
+     */
     private static ModbusService service() {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
@@ -921,11 +925,13 @@ class ModbusServiceValidatorTest {
         service.configSnapshot = configSnapshot();
         service.slaveId = 1;
         service.device = device();
-        service.polls = new ArrayList<>(List.of(function(1), function(2)));
+        service.polls = new ArrayList<>(List.of(poll(1), poll(2)));
         return service;
     }
 
-    /** 源点表快照的最小形状：快照 id 是校验要求的（溯源与统计分组键）。 */
+    /**
+     * 源点表快照的最小形状：快照 id 是校验要求的（溯源与统计分组键）。
+     */
     private static ModbusConfig configSnapshot() {
         ModbusConfig config = new ModbusConfig();
         config.id = new ObjectId("65f0c0ffee0123456789abcd");
@@ -935,7 +941,9 @@ class ModbusServiceValidatorTest {
         return config;
     }
 
-    /** 一份只含给定写方法的定义（写方法没有 response，也没有 interval / polling）。 */
+    /**
+     * 一份只含给定写方法的定义（写方法没有 response，也没有 interval / polling）。
+     */
     private static ModbusService writeService(ModbusRequest request) {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
@@ -945,24 +953,24 @@ class ModbusServiceValidatorTest {
         service.device = device();
 
         ModbusPoll write = new ModbusPoll();
-                    write.index = 1;      // 方法身份（type.index 只是溯源）
-                    write.from = new ModbusPollFrom();
-                    write.from.type = "command";
-                    write.from.index = 1;
+        write.index = 1;      // 方法身份（type.index 只是溯源）
+        write.from = new ModbusPollFrom();
+        write.from.type = "command";
+        write.from.index = 1;
         write.name = "写设定温度";
         write.request = request;
         service.polls = new ArrayList<>(List.of(write));
         return service;
     }
 
-    private static ModbusPoll function(int index) {
-        ModbusPoll function = new ModbusPoll();
-                    function.index = index;   // 方法身份（type.index 只是溯源）
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = index;
-        function.name = "读进水温度";
-        function.request = ModbusRequests.holding();
+    private static ModbusPoll poll(int index) {
+        ModbusPoll poll = new ModbusPoll();
+        poll.index = index;   // 方法身份（type.index 只是溯源）
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = index;
+        poll.name = "读进水温度";
+        poll.request = ModbusRequests.holding();
 
         ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
@@ -970,11 +978,13 @@ class ModbusServiceValidatorTest {
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusResponses.of(field);
-        return function;
+        poll.response = ModbusResponses.of(field);
+        return poll;
     }
 
-    /** 依赖设备的调用坐标：各用例只关心自己那一处，这里给一份各处都合法的。 */
+    /**
+     * 依赖设备的调用坐标：各用例只关心自己那一处，这里给一份各处都合法的。
+     */
     private static DeviceOn device() {
         DeviceOn device = new DeviceOn();
         device.did = "did-1";
@@ -984,7 +994,9 @@ class ModbusServiceValidatorTest {
         return device;
     }
 
-    /** 最常用的那条写请求：fc 06 写一个寄存器，带缺省值。 */
+    /**
+     * 最常用的那条写请求：fc 06 写一个寄存器，带缺省值。
+     */
     private static ModbusRequest singleRegister() {
         return ModbusRequests.write("06", 0,
                 ModbusRequests.field(1, "设定温度", "uint16", 70));
@@ -1008,12 +1020,16 @@ class ModbusServiceValidatorTest {
         return entry;
     }
 
-    /** 一份「启用之后应当自洽」的规则：各用例只改自己关心的那一处。{@code id} 默认 {@code r1}。 */
+    /**
+     * 一份「启用之后应当自洽」的规则：各用例只改自己关心的那一处。{@code id} 默认 {@code r1}。
+     */
     private static ModbusRegistryAlarm alarm(String compare, Double threshold, String state) {
         return alarm("r1", compare, threshold, state);
     }
 
-    /** 同上，但规则身份自己给（{@code null} 用来测「启用了却没有 id」）。 */
+    /**
+     * 同上，但规则身份自己给（{@code null} 用来测「启用了却没有 id」）。
+     */
     private static ModbusRegistryAlarm alarm(String id, String compare, Double threshold, String state) {
         ModbusRegistryAlarm alarm = new ModbusRegistryAlarm();
         alarm.id = id;
@@ -1040,7 +1056,9 @@ class ModbusServiceValidatorTest {
 
     // ===== 告警规则：属寄存器（寄存器中心），不属 function 应答字段 =====
 
-    /** 一个可读数值寄存器（holding，access R）。 */
+    /**
+     * 一个可读数值寄存器（holding，access R）。
+     */
     private static ModbusRegistry holding(String name, String dataType) {
         ModbusRegistry reg = new ModbusRegistry();
         reg.name = name;
@@ -1050,7 +1068,9 @@ class ModbusServiceValidatorTest {
         return reg;
     }
 
-    /** 一个可读线圈寄存器（coil，值恒 0/1）。 */
+    /**
+     * 一个可读线圈寄存器（coil，值恒 0/1）。
+     */
     private static ModbusRegistry coil(String name) {
         ModbusRegistry reg = new ModbusRegistry();
         reg.name = name;
@@ -1059,12 +1079,16 @@ class ModbusServiceValidatorTest {
         return reg;
     }
 
-    /** 校验一条挂在某寄存器上的规则（返回错误文案或 null）。 */
+    /**
+     * 校验一条挂在某寄存器上的规则（返回错误文案或 null）。
+     */
     private static String validateAlarm(ModbusRegistryAlarm alarm, ModbusRegistry reg) {
         return validateAlarmOn(alarm, reg, new ArrayList<>(List.of(alarm)));
     }
 
-    /** 校验挂在同一寄存器上的一组规则（返回错误文案或 null）。 */
+    /**
+     * 校验挂在同一寄存器上的一组规则（返回错误文案或 null）。
+     */
     private static String validateAlarms(List<ModbusRegistryAlarm> alarms, ModbusRegistry reg) {
         return validateAlarmOn(null, reg, alarms);
     }

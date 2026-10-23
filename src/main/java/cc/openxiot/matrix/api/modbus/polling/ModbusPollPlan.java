@@ -38,17 +38,17 @@ public final class ModbusPollPlan {
     }
 
     /** 该不该入表：三条口径见类注释。 */
-    public static boolean shouldPoll(ModbusPoll function) {
-        if (function == null || function.index == null) {
+    public static boolean shouldPoll(ModbusPoll poll) {
+        if (poll == null || poll.index == null) {
             return false;
         }
-        if (function.interval == null || function.interval <= 0) {
+        if (poll.interval == null || poll.interval <= 0) {
             return false;
         }
-        if (Boolean.FALSE.equals(function.polling)) {
+        if (Boolean.FALSE.equals(poll.polling)) {
             return false;
         }
-        return ModbusFrameCodec.isRead(functionFc(function.request));
+        return ModbusFrameCodec.isRead(functionFc(poll.request));
     }
 
     /** 请求定义的功能码（{@code request} 缺失时返回 {@code null}，{@code isRead} 认它作非读）。 */
@@ -78,17 +78,17 @@ public final class ModbusPollPlan {
             return tasks;
         }
         String serviceId = service.id.toHexString();
-        for (ModbusPoll function : service.polls) {
-            if (!shouldPoll(function)) {
+        for (ModbusPoll poll : service.polls) {
+            if (!shouldPoll(poll)) {
                 continue;
             }
             ModbusPolling task = new ModbusPolling();
             task.id = new ObjectId();
             task.serviceId = serviceId;
-            task.pollIndex = function.index;
+            task.pollIndex = poll.index;
             task.did = did;
-            task.interval = function.interval;
-            task.nextRunAt = new Date(ModbusPollSchedule.insertRunAt(now, function.interval,
+            task.interval = poll.interval;
+            task.nextRunAt = new Date(ModbusPollSchedule.insertRunAt(now, poll.interval,
                     jitterPercent, random));
             tasks.add(task);
         }

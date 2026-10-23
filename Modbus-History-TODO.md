@@ -5,9 +5,9 @@
 ## 第一步：落库规则与存储层（已完成）
 
 - [x] `ModbusHistoryPolicy`：变位 / 死区 / 保活打点的纯判定（逐字段），无数据库依赖，可单测。
-- [x] `ModbusServiceLastPolling`：当前值 + 比对基准 + 故障态（`lastError` / `errorAt`），按 function 一条。
+- [x] `ModbusServiceLastPolling`：当前值 + 比对基准 + 故障态（`lastError` / `errorAt`），按 poll 一条。
 - [x] `ModbusServiceHistory`：变化日志，按 field 一条。
-- [x] `ModbusServiceFailure`：执行失败记录，按 function 一条，**同一故障只落一条**。
+- [x] `ModbusServiceFailure`：执行失败记录，按 poll 一条，**同一故障只落一条**。
       失败原因拆成 `type` + `remoteCode` + `message`（前端按类型聚合，见下条）。
 - [x] `ModbusFailureType`：10 类失败（设备侧 / 报文侧 / 定义侧 / 平台侧）+ `UNKNOWN` 兜底；
       `ModbusInvokeException` 把分类与远端原始码带在异常上（继承 `IllegalArgumentException`，
@@ -45,8 +45,8 @@
 - [x] **当前值接口** `GET /matrix/v1/modbus/history/current/{spaceId}/{serviceId}`：按服务列出影子 ——
       带 `lastError` / `errorAt`，前端得能显示「最后已知值 + 它从哪一刻起不再更新」，
       而不是把陈旧值当最新值画。没有影子的方法**不出现**在结果里（「从没调用过」≠「有值但很旧」）。
-- [x] **历史区间接口** `GET .../range/{spaceId}`：
-      `serviceId` + `pollingIndex` + `field` + `from` + `to` + `maxPoints`。
+- [x] **历史区间接口** `GET .../registry/range/{spaceId}`：
+      `serviceId` + `pollIndex` + `field` + `from` + `to` + `maxPoints`。
   - [x] **carry-in**：区间起点之前最近的一条单独查一条带回（`carryIn` 键，可能没有），
         不混进 `points` —— 它不是区间的数据，是区间起点的状态。
   - [x] **服务端降采样**：按 `maxPoints`（缺省 500 / 封顶 2000）分桶，
@@ -56,12 +56,12 @@
         没做成聚合管道：算子的线上支持没法验证，而正确性全在折算规则上。
   - [x] **一次最多 20000 条原始样本，超了报错而不是静默截断**
         （取 `上限 + 1` 条判溢出；截断会把曲线尾巴悄悄抹掉，前端看起来一切正常）。
-- [x] **故障列表接口** `GET .../failures/{spaceId}`：按服务 + 时间段列失败记录（前端在曲线上打阴影区）。
-      注意一次失败覆盖的是整个 function，不是单个字段（`pollingIndex` 不传 = 整个服务）。
+- [x] **故障列表接口** `GET .../polling/failures/{spaceId}`：按服务 + 时间段列失败记录（前端在曲线上打阴影区）。
+      注意一次失败覆盖的是整个 poll，不是单个字段（`pollIndex` 不传 = 整个服务）。
       支持**按 `type` 过滤 + 聚合**（故障类型分布）与**按 `remoteCode` 下钻**
       （哪个从站、哪个异常码最多）—— 分类落成字段就是为了这两个查询。
       `type` 拼错**报错而不是返回空列表**；`limit` 缺省 200 / 封顶 1000，多取一条置 `truncated`。
-      索引仍是 `(serviceId, pollingIndex, at)`：带 `pollingIndex` 的查询吃满索引，
+      索引仍是 `(serviceId, pollIndex, at)`：带 `pollIndex` 的查询吃满索引，
       不带时只有第一段用得上、排序靠内存 —— 故障是去重过的，行数很少，先这样。
       真要「整个服务按类型聚合」也快了，再补 `(serviceId, at)`（写侧索引已经不少，先量了再说）。
 - [x] 鉴权口径与现有接口一致：路径上带 `spaceId`，查历史要**空间成员**（与 `invoke` 同口径）。
@@ -87,13 +87,13 @@
 - [x] ~~**还剩一件**（文档第九节第 2 条）~~：租约 —— **已定（2026-09-13）：现在就做**。
       单副本下它等于空跑，但扩容就从「事故」变成「安全操作」，而事后再补要先清一遍历史数据。
 - [x] `modbus.polls` 任务表 + 对账（写入路径 + 启动 + 周期兜底）：
-      只把**读方法、有 `interval`、`polling != false`** 的 function 入表（口径见 `MODBUS.md` 第七节），
+      只把**读方法、有 `interval`、`polling != false`** 的 poll 入表（口径见 `MODBUS.md` 第七节），
       并复查 `ModbusFrameCodec.isRead`。删服务 / 删设备时一并清理。
 - [x] poller 本体（同代码双部署：api N 副本 + poller 1 副本，`modbus.poll.enabled` 开关，缺省关）：
       内存时间轮 + **按 `did` 串行**（同一条 RS485 不能并发）+ 并发上限 + 重入保护（上次没跑完就跳过）。
       `nextRunAt = max(now, lastRunAt + interval)`（**错过不补**）、±10% 抖动、启动从库里恢复。
       **不合并帧**（数据模型做不到，文档第二节写死了）。
-- [x] **单副本内存基准**：poller 在内存里维护每个 function 的最后样本，省掉每次采集的一次影子读。
+- [x] **单副本内存基准**：poller 在内存里维护每个 poll 的最后样本，省掉每次采集的一次影子读。
       **只在 poller 单副本时成立**；写这一层时要在代码里写明这个前提（多副本会让各副本基准漂移、漏记变化）。
       手动 invoke 走的是 API 副本（N 个），所以它**不用**内存基准，每次读库 —— 见 `Modbus-History.md` 第四节。
       **故障态下不吃内存基准**（每次读库）：否则会把一次新的同类故障并进上一次的账上。
@@ -101,7 +101,7 @@
       只动 `lastStatus`，**不删任务、不动周期**；调用必须带超时（小于租约时长）；优雅停机。
 - [x] 观测：`lastRunAt` / `lastStatus` / 连续失败计数 + 单条心跳（不是每次采集都写）。
 - [x] 服务定义变更（改了 `response`、删了方法）后影子的对账：
-      按当前定义清掉不再存在的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
+      按当前定义清掉不再存在的 `(pollIndex, field)`，否则影子留下永远收不到更新的键。
 
 落实位置（2026-09-13）：`db/modbus/poll/`（`ModbusPoll` + 仓储 + Codec）与 `api/modbus/poll/`
 （纯函数件 `ModbusPollPlan` / `ModbusPollSchedule` / `ModbusLastPollingPlan`、`ModbusPollWheel` 时间轮、

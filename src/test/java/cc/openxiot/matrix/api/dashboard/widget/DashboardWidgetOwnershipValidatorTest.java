@@ -129,14 +129,14 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_inOwnSpace_belongs() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).isEmpty());
     }
 
     @Test
     void service_inChildSpace_belongs() {
-        stubService(service(SERVICE_ID, CHILD_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, CHILD_ID, poll(1, "温度", null)));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).isEmpty());
     }
@@ -147,7 +147,7 @@ class WidgetOwnershipValidatorTest {
      */
     @Test
     void service_staleRootIdSnapshotButLiveSpaceIdIsInSubtree_belongs() {
-        ModbusService stale = service(SERVICE_ID, ROOT_ID, function(1, "温度", null));
+        ModbusService stale = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
         stale.device.space.rootId = OTHER_ID;
         stubService(stale);
 
@@ -156,7 +156,7 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_inAnotherSpace_doesNotBelong() {
-        stubService(service(SERVICE_ID, OTHER_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, OTHER_ID, poll(1, "温度", null)));
 
         assertEquals("widgets[0](w1): service does not belong to this space: " + SERVICE_ID,
                 errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).get("w1"));
@@ -164,7 +164,7 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_withoutSpace_doesNotBelongAndDoesNotThrow() {
-        ModbusService orphan = service(SERVICE_ID, ROOT_ID, function(1, "温度", null));
+        ModbusService orphan = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
         orphan.device.space = null;
         stubService(orphan);
 
@@ -180,7 +180,7 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_functionNotFound() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertEquals("widgets[0](w1): function not found: 9",
                 errors(serviceWithField("w1", SERVICE_ID, 9, "温度")).get("w1"));
@@ -188,7 +188,7 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_fieldNotFound() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertEquals("widgets[0](w1): field not found: 湿度",
                 errors(serviceWithField("w1", SERVICE_ID, 1, "湿度")).get("w1"));
@@ -197,7 +197,7 @@ class WidgetOwnershipValidatorTest {
     /** 位是独立点位：名字写在 {@code response.fields[].bitList[].field} 上，也得认。 */
     @Test
     void service_bitField_belongs() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀", "出水阀"))));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "状态字", List.of("进水阀", "出水阀"))));
 
         assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "进水阀")).isEmpty(),
                 "位名应当被认作合法字段（见 ModbusPollResponseFieldBit）");
@@ -208,7 +208,7 @@ class WidgetOwnershipValidatorTest {
     /** 服务卡不再带 pollIndex：字段能解析到某个读方法即合法（方法由取数时解析）。 */
     @Test
     void service_withoutPollIndex_registerField_belongs() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null), function(2, "压力", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null), poll(2, "压力", null)));
 
         assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "温度", "压力")).isEmpty(),
                 "寄存器字段卡不应再要求方法序号（pollIndex）");
@@ -217,7 +217,7 @@ class WidgetOwnershipValidatorTest {
     /** 位名走新路径同样认。 */
     @Test
     void service_withoutPollIndex_bitField_belongs() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "状态字", List.of("进水阀"))));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "状态字", List.of("进水阀"))));
 
         assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "进水阀")).isEmpty());
     }
@@ -225,7 +225,7 @@ class WidgetOwnershipValidatorTest {
     /** 字段解析不到（写错 / 取不到数）时照旧报错，不让它存下去。 */
     @Test
     void service_withoutPollIndex_fieldNotFound() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertEquals("widgets[0](w1): field not found: 湿度",
                 errors(serviceWithRegisters("w1", SERVICE_ID, "湿度")).get("w1"));
@@ -234,7 +234,7 @@ class WidgetOwnershipValidatorTest {
     /** 曲线卡（serviceField 数据源）同样不再要求方法序号：字段能解析即合法。 */
     @Test
     void line_serviceField_withoutPollIndex_fieldResolves() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertTrue(errors(lineServiceField("w1", SERVICE_ID, "温度")).isEmpty());
     }
@@ -242,7 +242,7 @@ class WidgetOwnershipValidatorTest {
     /** 曲线卡的字段解析不到照旧报错。 */
     @Test
     void line_serviceField_withoutPollIndex_fieldNotFound() {
-        stubService(service(SERVICE_ID, ROOT_ID, function(1, "温度", null)));
+        stubService(service(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
 
         assertEquals("widgets[0](w1): field not found: 湿度",
                 errors(lineServiceField("w1", SERVICE_ID, "湿度")).get("w1"));
@@ -322,17 +322,17 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    private static ModbusService service(String id, String spaceId, ModbusPoll... functions) {
+    private static ModbusService service(String id, String spaceId, ModbusPoll... polls) {
         ModbusService s = new ModbusService();
         s.id = new ObjectId(id);
         s.name = "1 号冷水机组";
         s.device = new DeviceOn();
         s.device.space = spaceId == null ? null : new SpaceOn(space(spaceId));
-        s.polls = List.of(functions);
+        s.polls = List.of(polls);
         return s;
     }
 
-    private static ModbusPoll function(int index, String field, List<String> bits) {
+    private static ModbusPoll poll(int index, String field, List<String> bits) {
         ModbusResponseField f = new ModbusResponseField();
         f.field = field;
         f.unit = "℃";

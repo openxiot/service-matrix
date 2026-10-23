@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.service;
 
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -65,14 +66,18 @@ class ModbusServiceServiceTest {
 
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
     private static final String CONFIG_ID = "65f0c0ffee0123456789abce";
-    /** 设备归属（manipulation 的 ownerId）：设备所在根空间 id。 */
+    /**
+     * 设备归属（manipulation 的 ownerId）：设备所在根空间 id。
+     */
     private static final String ROOT_SPACE_ID = "6512f3a4b5c6d7e8f9a0b1c9";
     private static final int FUNCTION_INDEX = 1;
     private static final String DID = "did-1";
     private static final int SIID = 2;
     private static final int AIID = 1;
 
-    /** 一帧正常的应答：从站 01、读 03、2 字节、值 0x0064 = 100。 */
+    /**
+     * 一帧正常的应答：从站 01、读 03、2 字节、值 0x0064 = 100。
+     */
     private static final String FRAME = "0103020064B9AF";
 
     private ModbusServiceService service;
@@ -109,7 +114,7 @@ class ModbusServiceServiceTest {
 
     @Test
     void invokeDecodesFrameAndRecordsHistory() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
@@ -166,7 +171,7 @@ class ModbusServiceServiceTest {
     void alarmsAreEvaluatedAfterHistoryOnTheSameValues() {
         // 两件并列的副作用，串起来只是为了**顺序确定**：历史是「采到什么」、告警是「值对不对」，
         // 现场排查先看前者。倒过来会让告警行指向一条还不存在的采样
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
 
@@ -182,7 +187,7 @@ class ModbusServiceServiceTest {
     void alarmFailureDoesNotRewriteTheInvokeResponse() {
         // 告警表写不进去，不该让一次**已经成功**的采集变成失败：值已经拿到了，告警只是副作用。
         // 与 recordFailure 同一壳：只记日志、recoverWithNull
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
         when(alarms.evaluate(any(), any(), any()))
@@ -199,7 +204,7 @@ class ModbusServiceServiceTest {
     void missingCoordinateIsConfigErrorAndNeverReachesParent() {
         ModbusService broken = modbusService();
         broken.device.siid = null;
-        givenService(broken, function());
+        givenService(broken, poll());
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
         ModbusInvokeException thrown = assertThrows(ModbusInvokeException.class,
@@ -214,7 +219,7 @@ class ModbusServiceServiceTest {
     @Test
     void transportFailureIsSeparatedFromDeviceFaults() {
         // manipulation 不可用：跟着报错的是服务间调用，不是现场设备 —— 归 TRANSPORT_ERROR
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         when(manipulation.invokeActions(eq(ROOT_SPACE_ID), anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("connection refused")));
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
@@ -233,7 +238,7 @@ class ModbusServiceServiceTest {
     @Test
     void parentDeviceErrorCarriesItsStatusCode() {
         // 父设备（DTU）自己报错：它会给一个状态码，那是前端按分类聚合后下钻用的原始信息
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.TIMEOUT, "device timeout", null));
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
@@ -252,7 +257,7 @@ class ModbusServiceServiceTest {
     @Test
     void completedButFramelessResponseIsNoResponse() {
         // 父设备说自己成功、却没带回帧：设备侧没给出可用的东西，归「无应答」而不是「成功但没有值」
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, null));
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
@@ -266,7 +271,7 @@ class ModbusServiceServiceTest {
     @Test
     void badFrameIsRecordedWithParserClassification() {
         // CRC 不符由解析器判（只有它算得出 CRC），这里只负责把它原样记下来
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, "0103020064B9AE"));
         when(history.recordFailure(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
@@ -278,7 +283,7 @@ class ModbusServiceServiceTest {
     @Test
     void failureRecordFailureDoesNotReplaceTheOriginalError() {
         // 故障记录没写进去，调用方该看到的失败原因必须原样传下去 —— 不能因为「记录失败」而变成另一个错误
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.TIMEOUT, "device timeout", null));
         when(history.recordFailure(any(), any(), any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("db down")));
@@ -293,7 +298,7 @@ class ModbusServiceServiceTest {
     @Test
     void unknownFunctionIsNotAFailureRecord() {
         // 方法序号不存在是请求写错了：没有可归因的 function，不该混进故障统计里去
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                 () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, 99, null).await().indefinitely());
@@ -365,7 +370,7 @@ class ModbusServiceServiceTest {
 
     @Test
     void readMethodRejectsValues() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                 () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("进水温度", 1))
@@ -378,10 +383,12 @@ class ModbusServiceServiceTest {
 
     // ===== 轮询入口（内存基准，见 Modbus-Service-Poller.md 第四节） =====
 
-    /** 轮询与手动调用**走同一条路径**：同样组装父设备调用、同样解应答，差的只有基准从哪来。 */
+    /**
+     * 轮询与手动调用**走同一条路径**：同样组装父设备调用、同样解应答，差的只有基准从哪来。
+     */
     @Test
     void invokePolledUsesTheSamePathAsInvoke() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
 
@@ -394,10 +401,12 @@ class ModbusServiceServiceTest {
         verify(history).record(any(), any(), any());      // 缓存是空的 → 读库那条
     }
 
-    /** 缓存可用时走 4 参入口（不读库），写完把**新基准**放回缓存。 */
+    /**
+     * 缓存可用时走 4 参入口（不读库），写完把**新基准**放回缓存。
+     */
     @Test
     void invokePolledUsesTheCachedBaselineAndCachesTheNewOne() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
@@ -418,7 +427,7 @@ class ModbusServiceServiceTest {
      */
     @Test
     void invokePolledFallsBackToTheDatabaseWhenTheCacheIsFaulted() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
@@ -432,10 +441,12 @@ class ModbusServiceServiceTest {
         assertSame(next, baselines.get(key));             // 成功的那份重新变得可用
     }
 
-    /** 轮询失败：4 参入口 + 缓存里那份基准；写回来的是故障态，于是下一次采集自动回退读库。 */
+    /**
+     * 轮询失败：4 参入口 + 缓存里那份基准；写回来的是故障态，于是下一次采集自动回退读库。
+     */
     @Test
     void invokePolledRecordsFailureAgainstTheCachedBaseline() {
-        givenService(modbusService(), function());
+        givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.TIMEOUT, "device timeout", null));
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
@@ -456,12 +467,14 @@ class ModbusServiceServiceTest {
 
     // ===== 夹具 =====
 
-    private void givenService(ModbusService value, ModbusPoll function) {
-        value.polls = List.of(function);
+    private void givenService(ModbusService value, ModbusPoll poll) {
+        value.polls = List.of(poll);
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(value));
     }
 
-    /** update 的既有文档：repo.findById 直接命中，不许落库。 */
+    /**
+     * update 的既有文档：repo.findById 直接命中，不许落库。
+     */
     private void givenUpdatable(ModbusService existing) {
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(existing));
     }
@@ -499,17 +512,21 @@ class ModbusServiceServiceTest {
         return service;
     }
 
-    /** 一份指标全部都合法的服务（能过 {@code ModbusServiceValidator}），{@code slaveId} 按参数给。 */
+    /**
+     * 一份指标全部都合法的服务（能过 {@code ModbusServiceValidator}），{@code slaveId} 按参数给。
+     */
     private static ModbusService updatableService(Integer slaveId) {
         ModbusService service = modbusService();
         service.version = ModbusService.VERSION;
         service.configSnapshot = configSnapshot();
         service.slaveId = slaveId;
-        service.polls = List.of(function());
+        service.polls = List.of(poll());
         return service;
     }
 
-    /** 快照只要求 id（校验与统计分组键）；内容不参与本类的调用/合并规则。 */
+    /**
+     * 快照只要求 id（校验与统计分组键）；内容不参与本类的调用/合并规则。
+     */
     private static ModbusConfig configSnapshot() {
         ModbusConfig config = new ModbusConfig();
         config.id = new ObjectId(CONFIG_ID);
@@ -520,14 +537,14 @@ class ModbusServiceServiceTest {
         return new ModbusPollBaseline(Map.of("进水温度", 61.5), null, lastError);
     }
 
-    private static ModbusPoll function() {
-        ModbusPoll function = new ModbusPoll();
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = FUNCTION_INDEX;
-                    function.index = FUNCTION_INDEX;
-        function.name = "读进水温度";
-        function.request = ModbusRequests.holding();
+    private static ModbusPoll poll() {
+        ModbusPoll poll = new ModbusPoll();
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = FUNCTION_INDEX;
+        poll.index = FUNCTION_INDEX;
+        poll.name = "读进水温度";
+        poll.request = ModbusRequests.holding();
 
         ModbusResponseField field = new ModbusResponseField();
         field.index = 1;
@@ -535,20 +552,24 @@ class ModbusServiceServiceTest {
         field.bytes = 2;
         field.format = "uint16";
         field.byteOrder = "ABCD";
-        function.response = ModbusResponses.of(field);
-        return function;
+        poll.response = ModbusResponses.of(field);
+        return poll;
     }
 
-    /** 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。 */
+    /**
+     * 一个写方法（fc 06 写单寄存器）：{@code value} 为 null 则该字段每次 invoke 都必须给值。
+     */
     private static ModbusPoll writeFunction(Integer defaultValue) {
-        ModbusPoll write = function();
+        ModbusPoll write = poll();
         write.request = ModbusRequests.write("06", 1,
                 ModbusRequests.field(1, "写入值", "uint16", defaultValue));
         write.response = null;
         return write;
     }
 
-    /** 从交给父设备的那份请求体里读回**现组**的帧（帧只在这里落地，别处看不到）。 */
+    /**
+     * 从交给父设备的那份请求体里读回**现组**的帧（帧只在这里落地，别处看不到）。
+     */
     private String sentFrame() {
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
         verify(manipulation).invokeActions(eq(ROOT_SPACE_ID), body.capture());

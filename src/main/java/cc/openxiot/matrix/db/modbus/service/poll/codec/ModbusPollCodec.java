@@ -26,54 +26,54 @@ public final class ModbusPollCodec {
     private ModbusPollCodec() {
     }
 
-    public static JsonObject encode(ModbusPoll function) {
+    public static JsonObject encode(ModbusPoll poll) {
         JsonObject o = new JsonObject();
-        if (function == null) {
+        if (poll == null) {
             return o;
         }
         // 方法在服务内的序号（身份）：与 from.index（溯源）分开 —— from.index 只指向 config，
         // 不承载身份；缺失容忍（旧文档可能没有，调用链各自兜底）
-        if (function.index != null) {
-            o.put("index", function.index);
+        if (poll.index != null) {
+            o.put("index", poll.index);
         }
-        if (function.from != null) {
+        if (poll.from != null) {
             JsonObject from = new JsonObject();
-            if (function.from.type != null) {
-                from.put("type", function.from.type);
+            if (poll.from.type != null) {
+                from.put("type", poll.from.type);
             }
-            if (function.from.index != null) {
-                from.put("index", function.from.index);
+            if (poll.from.index != null) {
+                from.put("index", poll.from.index);
             }
-            if (function.from.access != null) {
-                from.put("access", function.from.access);
+            if (poll.from.access != null) {
+                from.put("access", poll.from.access);
             }
             o.put("from", from);
         }
-        if (function.name != null) {
-            o.put("name", function.name);
+        if (poll.name != null) {
+            o.put("name", poll.name);
         }
-        if (function.request != null) {
-            o.put("request", ModbusRequestCodec.encode(function.request));
+        if (poll.request != null) {
+            o.put("request", ModbusRequestCodec.encode(poll.request));
         }
-        if (function.interval != null) {
-            o.put("interval", function.interval);
+        if (poll.interval != null) {
+            o.put("interval", poll.interval);
         }
-        if (function.polling != null) {
-            o.put("polling", function.polling);
+        if (poll.polling != null) {
+            o.put("polling", poll.polling);
         }
         // 没有应答字段（写方法）就整段不出键：与 request.fields 为空不出键同一约定，
         // 库里因此不会留下 `response: {}` 这种空壳
-        if (!ModbusPoll.responseFields(function).isEmpty()) {
-            o.put("response", ModbusResponseCodec.encode(function.response));
+        if (!ModbusPoll.responseFields(poll).isEmpty()) {
+            o.put("response", ModbusResponseCodec.encode(poll.response));
         }
         return o;
     }
 
-    public static JsonArray encode(List<ModbusPoll> functions) {
+    public static JsonArray encode(List<ModbusPoll> polls) {
         JsonArray arr = new JsonArray();
-        if (functions != null) {
-            for (ModbusPoll function : functions) {
-                arr.add(encode(function));
+        if (polls != null) {
+            for (ModbusPoll poll : polls) {
+                arr.add(encode(poll));
             }
         }
         return arr;
@@ -83,7 +83,7 @@ public final class ModbusPollCodec {
         if (o == null) {
             return null;
         }
-        ModbusPoll function = new ModbusPoll();
+        ModbusPoll poll = new ModbusPoll();
         // 来源：解出 {type,index,access} 对象；缺省（旧文档）保持 null，轮询/告警/影子各自兜底
         JsonObject fromObj = o.getJsonObject("from");
         if (fromObj != null) {
@@ -91,26 +91,26 @@ public final class ModbusPollCodec {
             from.type = fromObj.getString("type");
             from.index = fromObj.getInteger("index");
             from.access = fromObj.getString("access");
-            function.from = from;
+            poll.from = from;
         }
         // 方法自身的序号（身份）：与 from.index 分开解 —— from.index 只是溯源
-        function.index = o.getInteger("index");
-        function.name = o.getString("name");
-        function.request = ModbusRequestCodec.decode(o.getJsonObject("request"));
-        function.interval = o.getInteger("interval");
-        function.polling = o.getBoolean("polling");
-        function.response = ModbusResponseCodec.decode(o.getJsonObject("response"));
-        return function;
+        poll.index = o.getInteger("index");
+        poll.name = o.getString("name");
+        poll.request = ModbusRequestCodec.decode(o.getJsonObject("request"));
+        poll.interval = o.getInteger("interval");
+        poll.polling = o.getBoolean("polling");
+        poll.response = ModbusResponseCodec.decode(o.getJsonObject("response"));
+        return poll;
     }
 
     public static List<ModbusPoll> decode(JsonArray arr) {
         if (arr == null) {
             return null;
         }
-        List<ModbusPoll> functions = new ArrayList<>(arr.size());
+        List<ModbusPoll> polls = new ArrayList<>(arr.size());
         for (int i = 0; i < arr.size(); i++) {
-            functions.add(decode(arr.getJsonObject(i)));
+            polls.add(decode(arr.getJsonObject(i)));
         }
-        return functions;
+        return polls;
     }
 }

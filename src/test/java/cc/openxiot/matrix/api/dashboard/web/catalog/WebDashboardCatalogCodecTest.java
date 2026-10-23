@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.dashboard.web.catalog;
 
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -69,7 +70,9 @@ class DashboardCatalogCodecTest {
         assertFalse(device.getBoolean("online"));
     }
 
-    /** 服务整份下发，形状与 {@code /modbus/service/one/{id}} 逐字相同，前端直接复用已有的解码器。 */
+    /**
+     * 服务整份下发，形状与 {@code /modbus/service/one/{id}} 逐字相同，前端直接复用已有的解码器。
+     */
     @Test
     void encodeService_reusesTheFullServiceShape() {
         JsonObject service = WebDashboardCatalogCodec.encode(List.of(), List.of(service()))
@@ -112,19 +115,19 @@ class DashboardCatalogCodecTest {
         field.unit = "℃";
         field.bitList = List.of(bit);
 
-        ModbusPoll function = new ModbusPoll();
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = 1;
-                    function.index = 1;
-        function.name = "读温度";
-        function.response = ModbusResponses.of(field);
+        ModbusPoll poll = new ModbusPoll();
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = 1;
+        poll.index = 1;
+        poll.name = "读温度";
+        poll.response = ModbusResponses.of(field);
 
         ModbusService service = new ModbusService();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
         service.name = "1 号冷水机组";
         service.device = new DeviceOn();
-        service.polls = List.of(function);
+        service.polls = List.of(poll);
         return service;
     }
 }

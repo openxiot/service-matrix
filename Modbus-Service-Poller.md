@@ -1,6 +1,6 @@
 # Modbus 服务轮询：执行侧设计
 
-`MODBUS.md` 定义了 `function.interval` / `function.polling` 的**语义与校验**，`Modbus-History.md` 定义了
+`MODBUS.md` 定义了 `poll.interval` / `poll.polling` 的**语义与校验**，`Modbus-History.md` 定义了
 采到的值**落到哪里**（影子 + 历史）。这份文档回答剩下的那个问题：**谁按时去跑，怎么保证不重复、不丢、不把总线打死。**
 
 > 文档形态对齐 `Modbus-History.md`（设计）+ `Modbus-History-TODO.md`（计划）：本文只讲设计，落地清单在
@@ -16,7 +16,7 @@
 | api | N | 关 | 现在这个，照旧（手工 invoke、定义维护、查询） |
 | poller | 1 | 开 | **同一个镜像**，只多打开一个开关 |
 
-**不另起一个服务**，理由是绕不开**定义数据的归属**：`functions` / `request` / `response` 都在
+**不另起一个服务**，理由是绕不开**定义数据的归属**：`polls` / `request` / `response` 都在
 service-matrix 管的 `modbus.services` 里。独立服务要么直接读同一个库（共享库耦合），要么走 API
 （而 `invoke` 要求**空间成员**鉴权，得先给机器身份开个口子）。这两条都是真实成本，
 而「独立扩缩容 + 故障隔离」的收益，用**独立部署单元**就已经拿到了。
@@ -52,7 +52,7 @@ service-matrix 管的 `modbus.services` 里。独立服务要么直接读同一�
 
 > `unexpected modbus response function code ... 不一致通常是被上一帧的迟到应答串了`
 
-所以**不能给每个 function 各起一个定时器**：那是「按 function 并发」的模型，正好是错的那个。
+所以**不能给每个 poll 各起一个定时器**：那是「按 poll 并发」的模型，正好是错的那个。
 正确的形状是：
 
 * **按父设备（`did`）分组的串行队列**：队列里放该设备下所有到点的方法，跑完一个再跑下一个；
@@ -60,7 +60,7 @@ service-matrix 管的 `modbus.services` 里。独立服务要么直接读同一�
 
 **不合并帧，且写死**：把同一设备的多个方法合并成一帧 fc 03 在**当前数据模型下做不到** ——
 `request` 是前端编好的整帧，而后端手里只有「怎么切分应答」的信息
-（`ModbusPollingResponseField` 里的 `bytes` / `format` / `scale` / `value-list` / `bit-list`），
+（`ModbusResponseField` 里的 `bytes` / `format` / `scale` / `value-list` / `bit-list`），
 **没有寄存器地址与数量**。要合并只能把点表信息也存进服务，那是另一个量级的改动。
 写在这里是为了省得以后有人往上撞。
 
@@ -138,9 +138,9 @@ api:    每次 invoke 都读库（N 副本，各副本的内存基准会漂）
 
 ```
 modbus.polls
-  { _id, serviceId, pollingIndex, did, interval, nextRunAt, leaseOwner, leaseUntil,
+  { _id, serviceId, pollIndex, did, interval, nextRunAt, leaseOwner, leaseUntil,
     lastRunAt, lastStatus, lastError, failCount }
-索引：(serviceId, pollingIndex) 唯一 + nextRunAt（+ leaseUntil）
+索引：(serviceId, pollIndex) 唯一 + nextRunAt（+ leaseUntil）
 ```
 
 `failCount`（连续失败计数，第八节要求）是落地时加的；`lastStatus` 只有 `OK` / `FAILED` 两个值 ——
@@ -155,8 +155,8 @@ modbus.polls
 
 对账（reconcile）把 `polls` 拉回与定义一致，三种时机都要有：
 
-1. **写入路径**：create / update / delete 服务时同步对齐（`update` 是整体替换 `functions`，
-   做一次按 `(pollingIndex)` 的增删改即可）；
+1. **写入路径**：create / update / delete 服务时同步对齐（`update` 是整体替换 `polls`，
+   做一次按 `(pollIndex)` 的增删改即可）；
 2. **启动时全量对一次**；
 3. **之后周期性再对一次**（建议 5 分钟）。定义文档**是可能被直接改库的**
    （这个项目的库里已经手工改过字段名），凡是靠写入路径维护的派生数据一定会漂 ——
@@ -305,7 +305,7 @@ modbus.polls
    → `ModbusPollBaselines` + `record` / `recordFailure` 的 4 参入口 + `ShutdownEvent`。
 5. 观测（第八节）。→ `ModbusPollingResource`（`GET /matrix/v1/modbus/poll/{spaceId}`）。
 6. 影子对账：定义变更（改了 `response`、删了方法）后，按当前定义清掉影子里
-   **不再存在**的 `(pollingIndex, field)`，否则影子留下永远收不到更新的键。
+   **不再存在**的 `(pollIndex, field)`，否则影子留下永远收不到更新的键。
    → `ModbusLastPollingPlan` + 写入路径 / 启动全量扫。
 7. 之后才谈扩容（租约已经是现成的）与合并帧（要改数据模型）。
 

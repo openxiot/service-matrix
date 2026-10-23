@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -67,11 +68,15 @@ class WidgetDataServiceTest {
     private static final String SPACE_ID = "6512f3a4b5c6d7e8f9a0b1c2";
     private static final String SERVICE_ID = "svc-1";
 
-    /** 一个属性的完整 pid：{@code <did>.<siid>.<piid>}，影子元素里的 pid 也是这个形状。 */
+    /**
+     * 一个属性的完整 pid：{@code <did>.<siid>.<piid>}，影子元素里的 pid 也是这个形状。
+     */
     private static final String PID = "did-1.1.1";
     private static final long HOUR = 3_600_000L;
 
-    /** 最后一次成功采集的时刻，与失败时刻分开：失败时 {@code recordedAt} 必须停在成功那一刻。 */
+    /**
+     * 最后一次成功采集的时刻，与失败时刻分开：失败时 {@code recordedAt} 必须停在成功那一刻。
+     */
     private static final Date AT = new Date(1_700_000_000_000L);
     private static final Date ERROR_AT = new Date(1_700_000_600_000L);
 
@@ -99,8 +104,10 @@ class WidgetDataServiceTest {
     @Inject
     DashboardWidgetDataService service;
 
-    /** 区间查询要返回的寄存器事件：成功（带 value）与失败（{@code failure=true}）混在一起，
-     *  由服务自己筛开 —— 值曲线与失败竖线同一条源。下面那两桩答案每次调用时现读。 */
+    /**
+     * 区间查询要返回的寄存器事件：成功（带 value）与失败（{@code failure=true}）混在一起，
+     * 由服务自己筛开 —— 值曲线与失败竖线同一条源。下面那两桩答案每次调用时现读。
+     */
     private final List<ModbusRegistryHistory> events = new ArrayList<>();
 
     /**
@@ -351,7 +358,9 @@ class WidgetDataServiceTest {
 
     // ===== device =====
 
-    /** 正常态：影子里的值 + 型号（前端拿型号去产品规格里查属性名与单位）。 */
+    /**
+     * 正常态：影子里的值 + 型号（前端拿型号去产品规格里查属性名与单位）。
+     */
     @Test
     void render_deviceCard_valueFromShadow() {
         stubDevice("did-1", "tr_aaa");
@@ -383,7 +392,9 @@ class WidgetDataServiceTest {
         assertFalse(data.containsKey("error"));
     }
 
-    /** 影子元素里有这个 pid 但没有值（状态是成功）：同样算「没有读数」，不补 0。 */
+    /**
+     * 影子元素里有这个 pid 但没有值（状态是成功）：同样算「没有读数」，不补 0。
+     */
     @Test
     void render_deviceCard_elementWithoutValue() {
         stubDevice("did-1", "tr_aaa");
@@ -410,7 +421,9 @@ class WidgetDataServiceTest {
         assertFalse(data.containsKey("value"));
     }
 
-    /** 有状态没有描述时不能给一个空的 error：空 tooltip 看不出是读取失败还是别的。 */
+    /**
+     * 有状态没有描述时不能给一个空的 error：空 tooltip 看不出是读取失败还是别的。
+     */
     @Test
     void render_deviceCard_failureWithoutDescription() {
         stubDevice("did-1", "tr_aaa");
@@ -419,7 +432,9 @@ class WidgetDataServiceTest {
         assertEquals("status -400", data(render(device("w1", "did-1", PID)), 0).getString("error"));
     }
 
-    /** 型号查不到时仍给 pid（前端退回显示 pid 原文），但不编一个假的型号。 */
+    /**
+     * 型号查不到时仍给 pid（前端退回显示 pid 原文），但不编一个假的型号。
+     */
     @Test
     void render_deviceCard_unknownTypeIsOmitted() {
         stubShadows(new JsonObject().put("pid", PID).put("value", 1));
@@ -430,7 +445,9 @@ class WidgetDataServiceTest {
         assertFalse(data.containsKey("type"));
     }
 
-    /** 一屏多张设备卡**只调一次**影子接口，did 去重后一起给它。 */
+    /**
+     * 一屏多张设备卡**只调一次**影子接口，did 去重后一起给它。
+     */
     @Test
     void render_deviceCardsShareOneCall() {
         stubDevices(deviceEntity("did-1", "tr_aaa"), deviceEntity("did-2", "tr_bbb"));
@@ -471,7 +488,9 @@ class WidgetDataServiceTest {
         assertEquals("manipulation is down", result.widgets().get(1).message());
     }
 
-    /** 没有设备卡时不碰 manipulation，也不查设备表。 */
+    /**
+     * 没有设备卡时不碰 manipulation，也不查设备表。
+     */
     @Test
     void render_noDeviceCards_noDeviceQuery() {
         stubOverview();
@@ -483,7 +502,9 @@ class WidgetDataServiceTest {
 
     // ===== service =====
 
-    /** 正常态：值 + 单位 + 采集时刻。单位取自服务定义（服务端手里本来就有那份）。 */
+    /**
+     * 正常态：值 + 单位 + 采集时刻。单位取自服务定义（服务端手里本来就有那份）。
+     */
     @Test
     void render_serviceCard_valueUnitAndRecordedAt() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
@@ -498,7 +519,9 @@ class WidgetDataServiceTest {
         assertFalse(row.getBoolean("bit"));
     }
 
-    /** 新卡不存方法序号：字段（寄存器）按名解析到读方法再取数，结果与带方法的老卡一致。 */
+    /**
+     * 新卡不存方法序号：字段（寄存器）按名解析到读方法再取数，结果与带方法的老卡一致。
+     */
     @Test
     void render_serviceCard_withoutPollIndex_resolvesField() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
@@ -513,7 +536,9 @@ class WidgetDataServiceTest {
         assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
     }
 
-    /** 新卡尚未采集：字段能解析但那个方法没有影子，只回 fields 的空与无 recordedAt（判据同老卡）。 */
+    /**
+     * 新卡尚未采集：字段能解析但那个方法没有影子，只回 fields 的空与无 recordedAt（判据同老卡）。
+     */
     @Test
     void render_serviceCard_withoutPollIndex_neverCollected() {
         stubService(null, serviceDef(1, "温度", "℃", null));
@@ -559,7 +584,9 @@ class WidgetDataServiceTest {
         assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
     }
 
-    /** 这一轮没取到值的字段**不带 value 键**：前端显示 `-`，与「值是 0」不是一回事。 */
+    /**
+     * 这一轮没取到值的字段**不带 value 键**：前端显示 `-`，与「值是 0」不是一回事。
+     */
     @Test
     void render_serviceCard_fieldWithoutValueOmitsTheKey() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null),
@@ -572,7 +599,9 @@ class WidgetDataServiceTest {
         assertFalse(rows.getJsonObject(1).containsKey("value"));
     }
 
-    /** 字段顺序照**配置顺序**（用户选的就是这个顺序），不是服务定义里的顺序。 */
+    /**
+     * 字段顺序照**配置顺序**（用户选的就是这个顺序），不是服务定义里的顺序。
+     */
     @Test
     void render_serviceCard_keepsConfiguredFieldOrder() {
         stubService(shadow(Map.of("湿度", 60, "温度", 23.5), AT, null, null),
@@ -584,7 +613,9 @@ class WidgetDataServiceTest {
         assertEquals("温度", data.getJsonArray("fields").getJsonObject(1).getString("field"));
     }
 
-    /** 位是独立点位：名字写在 {@code bitList} 上，没有单位（与历史页 fieldRef 的 {@code unit: ''} 一致）。 */
+    /**
+     * 位是独立点位：名字写在 {@code bitList} 上，没有单位（与历史页 fieldRef 的 {@code unit: ''} 一致）。
+     */
     @Test
     void render_serviceCard_bitFieldHasNoUnitAndBitTrue() {
         stubService(shadow(Map.of("进水阀", 1), AT, null, null),
@@ -598,7 +629,9 @@ class WidgetDataServiceTest {
         assertEquals(1, row.getInteger("value").intValue());
     }
 
-    /** 断言的是 `bit` 而不是「单位为空」：单位为空也可能是用户没填。 */
+    /**
+     * 断言的是 `bit` 而不是「单位为空」：单位为空也可能是用户没填。
+     */
     @Test
     void render_serviceCard_plainFieldIsNotABit() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null),
@@ -611,7 +644,9 @@ class WidgetDataServiceTest {
         assertEquals("℃", row.getString("unit"));
     }
 
-    /** 同一个服务的多张卡只取一次（服务卡与字段曲线卡共用这一路去重）。 */
+    /**
+     * 同一个服务的多张卡只取一次（服务卡与字段曲线卡共用这一路去重）。
+     */
     @Test
     void render_serviceCardsOfTheSameServiceShareOneQuery() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
@@ -640,7 +675,9 @@ class WidgetDataServiceTest {
         assertTrue(data.widgets().get(1).success(), "另一张卡不该被牵连");
     }
 
-    /** 丢掉了 message 的失败（NPE 之类）也要给出一句话，不能是空白原因。 */
+    /**
+     * 丢掉了 message 的失败（NPE 之类）也要给出一句话，不能是空白原因。
+     */
     @Test
     void render_serviceFetchFailureWithoutMessageFallsBackToTheClassName() {
         when(registryShadowRepo.listByServiceId("svc-1"))
@@ -700,7 +737,9 @@ class WidgetDataServiceTest {
         verify(statisticsQueryService, times(2)).overview(eq(SPACE_ID), any(), any());
     }
 
-    /** 一张 overview 卡片都没有时，一次都不该查。 */
+    /**
+     * 一张 overview 卡片都没有时，一次都不该查。
+     */
     @Test
     void render_noOverviewCards_noOverviewQuery() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
@@ -891,7 +930,9 @@ class WidgetDataServiceTest {
 
     // ===== helpers =====
 
-    /** 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。 */
+    /**
+     * 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。
+     */
     private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
         Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
                 "pollIndex", 1, "field", "温度", "window", window);
@@ -903,7 +944,9 @@ class WidgetDataServiceTest {
         return curve(id, window, Map.of());
     }
 
-    /** 一次寄存器历史事件：成功带 {@code value}，失败带 {@code failure=true} 不带值。 */
+    /**
+     * 一次寄存器历史事件：成功带 {@code value}，失败带 {@code failure=true} 不带值。
+     */
     private static ModbusRegistryHistory registryEvent(long at, Object value, boolean failure) {
         ModbusRegistryHistory event = new ModbusRegistryHistory();
         event.serviceId = SERVICE_ID;
@@ -928,7 +971,9 @@ class WidgetDataServiceTest {
         return s;
     }
 
-    /** 一次取数的固定返回：设备 10/在线 7、服务 2、窗口内告警 5、故障 1 种。 */
+    /**
+     * 一次取数的固定返回：设备 10/在线 7、服务 2、窗口内告警 5、故障 1 种。
+     */
     private static StatisticsQueryService.Overview overview(Date from, Date to) {
         return new StatisticsQueryService.Overview(from, to,
                 new StatisticsQueryService.DeviceStats(10, 7, List.of(
@@ -977,7 +1022,9 @@ class WidgetDataServiceTest {
         return widget(id, "device", "W12H200", config("did", did, "pid", pid));
     }
 
-    /** 一次查询返回的设备（只为型号：卡片把它转给前端去查产品规格）。 */
+    /**
+     * 一次查询返回的设备（只为型号：卡片把它转给前端去查产品规格）。
+     */
     private void stubDevice(String did, String type) {
         stubDevices(deviceEntity(did, type));
     }
@@ -1010,48 +1057,56 @@ class WidgetDataServiceTest {
                 "pollIndex", pollIndex, "fields", fields));
     }
 
-    /** 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。 */
+    /**
+     * 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。
+     */
     private static WebDashboardWidget serviceCardRegisters(String id, String... fields) {
         return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID, "fields", List.of(fields)));
     }
 
     /**
- * 服务卡：stub 服务定义 + 逐寄存器影子。入参是 {@code ShadowInput}（承载「字段 → 值」与失败态，
- * 不再是已删的 {@code ModbusServiceLastPolling}），convert 成服务定义里每只寄存器的影子：
- * 字段名 == 寄存器名，没有该字段 = 那只寄存器还没采到（value 空，卡片据此显示 {@code -}）。
- */
-private void stubService(ShadowInput input, ModbusService definition) {
-    when(registryShadowRepo.listByServiceId(SERVICE_ID))
-            .thenReturn(Uni.createFrom().item(input == null ? List.of() : convertShadows(input, definition)));
-    when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
-}
-
-/** 把输入的「字段 → 值 + 失败态」按服务定义里的每只寄存器展平成逐寄存器影子。 */
-private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusService definition) {
-    List<ModbusShadow> shadows = new ArrayList<>();
-    if (input != null && definition != null && definition.configSnapshot != null
-            && definition.configSnapshot.registries != null) {
-        for (ModbusRegistry reg : definition.configSnapshot.registries) {
-            ModbusShadow s = new ModbusShadow();
-            s.serviceId = SERVICE_ID;
-            s.registerIndex = reg.index;
-            s.value = input.values == null ? null : input.values.get(reg.name);
-            s.recordedAt = input.recordedAt;
-            s.lastError = input.lastError;
-            s.errorAt = input.errorAt;
-            shadows.add(s);
-        }
+     * 服务卡：stub 服务定义 + 逐寄存器影子。入参是 {@code ShadowInput}（承载「字段 → 值」与失败态，
+     * 不再是已删的 {@code ModbusServiceLastPolling}），convert 成服务定义里每只寄存器的影子：
+     * 字段名 == 寄存器名，没有该字段 = 那只寄存器还没采到（value 空，卡片据此显示 {@code -}）。
+     */
+    private void stubService(ShadowInput input, ModbusService definition) {
+        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+                .thenReturn(Uni.createFrom().item(input == null ? List.of() : convertShadows(input, definition)));
+        when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
     }
-    return shadows;
-}
 
-/** 服务定义：方法与「温度」（带单位），位区里有一个「进水阀」。曲线卡要的 unit / step 从这来。 */
-private void stubDefinition() {
-    when(serviceRepo.findById(SERVICE_ID))
-            .thenReturn(Uni.createFrom().item(serviceDef(1, "温度", "℃", null, "进水阀")));
-}
+    /**
+     * 把输入的「字段 → 值 + 失败态」按服务定义里的每只寄存器展平成逐寄存器影子。
+     */
+    private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusService definition) {
+        List<ModbusShadow> shadows = new ArrayList<>();
+        if (input != null && definition != null && definition.configSnapshot != null
+                && definition.configSnapshot.registries != null) {
+            for (ModbusRegistry reg : definition.configSnapshot.registries) {
+                ModbusShadow s = new ModbusShadow();
+                s.serviceId = SERVICE_ID;
+                s.registerIndex = reg.index;
+                s.value = input.values == null ? null : input.values.get(reg.name);
+                s.recordedAt = input.recordedAt;
+                s.lastError = input.lastError;
+                s.errorAt = input.errorAt;
+                shadows.add(s);
+            }
+        }
+        return shadows;
+    }
 
-    /** 服务卡的输入载体。{@code lastError} / {@code errorAt} 为 null 表示这些字段没失败过。 */
+    /**
+     * 服务定义：方法与「温度」（带单位），位区里有一个「进水阀」。曲线卡要的 unit / step 从这来。
+     */
+    private void stubDefinition() {
+        when(serviceRepo.findById(SERVICE_ID))
+                .thenReturn(Uni.createFrom().item(serviceDef(1, "温度", "℃", null, "进水阀")));
+    }
+
+    /**
+     * 服务卡的输入载体。{@code lastError} / {@code errorAt} 为 null 表示这些字段没失败过。
+     */
     private static ShadowInput shadow(Map<String, Object> fields, Date recordedAt, String lastError, Date errorAt) {
         return new ShadowInput(fields, recordedAt, lastError, errorAt);
     }
@@ -1060,7 +1115,8 @@ private void stubDefinition() {
      * 承载一次服务卡取数要喂的「字段 → 值 + 故障态」，{@code stubService} 再按点表转成逐寄存器影子。
      * （顶替已删的 {@code ModbusServiceLastPolling}：只留这一个 plain 载体，影子一律走逐寄存器。）
      */
-    private record ShadowInput(Map<String, Object> values, Date recordedAt, String lastError, Date errorAt) {}
+    private record ShadowInput(Map<String, Object> values, Date recordedAt, String lastError, Date errorAt) {
+    }
 
     /**
      * 一个方法：{@code primary} 是主字段（带单位），{@code bit} 是它位区里的一个位名
@@ -1073,18 +1129,18 @@ private void stubDefinition() {
         if (second != null) {
             fields.add(field(second, "％", null));
         }
-        ModbusPoll function = new ModbusPoll();
-                    function.from = new ModbusPollFrom();
-                    function.from.type = "command";
-                    function.from.index = pollIndex;
-                    function.index = pollIndex;
-        function.name = primary;
-        function.response = ModbusResponses.of(fields);
+        ModbusPoll poll = new ModbusPoll();
+        poll.from = new ModbusPollFrom();
+        poll.from.type = "command";
+        poll.from.index = pollIndex;
+        poll.index = pollIndex;
+        poll.name = primary;
+        poll.response = ModbusResponses.of(fields);
 
         ModbusService definition = new ModbusService();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
-        definition.polls = List.of(function);
+        definition.polls = List.of(poll);
         // 点表快照的寄存器：主字段、次字段、位各是一只可读寄存器（服务卡按名字解析到它的 index）
         List<ModbusRegistry> registries = new ArrayList<>();
         int index = 1;
@@ -1101,7 +1157,9 @@ private void stubDefinition() {
         return definition;
     }
 
-    /** 一只可读寄存器：卡片把配置的字段名解析到它、并读它 index 对应的影子。 */
+    /**
+     * 一只可读寄存器：卡片把配置的字段名解析到它、并读它 index 对应的影子。
+     */
     private static ModbusRegistry register(int index, String name, String unit, String area) {
         ModbusRegistry reg = new ModbusRegistry();
         reg.index = index;

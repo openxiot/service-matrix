@@ -79,10 +79,10 @@ public class ModbusPoll {
      * （校验器那边也多一层判断：读方法拿到空表本身就是要报的错，所以它同样只需要读这张表）。
      * 收在这一个方法里，是为了让那十来处调用点不必各写一遍三段式空判断。</p>
      */
-    public static List<ModbusResponseField> responseFields(ModbusPoll function) {
-        if (function == null || function.response == null || function.response.fields == null) {
+    public static List<ModbusResponseField> responseFields(ModbusPoll poll) {
+        if (poll == null || poll.response == null || poll.response.fields == null) {
             return List.of();
         }
-        return function.response.fields;
+        return poll.response.fields;
     }
 }

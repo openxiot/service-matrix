@@ -143,9 +143,9 @@ class ModbusShadowServiceTest {
 
     // ---- 夹具 ----
 
-    private void givenService(List<ModbusPoll> functions) {
+    private void givenService(List<ModbusPoll> polls) {
         ModbusService svc = service();
-        svc.polls = functions;
+        svc.polls = polls;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
     }
 
