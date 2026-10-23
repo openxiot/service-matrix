@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFi
 import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
@@ -68,13 +68,13 @@ class ModbusHistoryServiceTest {
     private ModbusHistoryService service;
     private ModbusRegistryHistoryRepository registryHistoryRepo;
     private ModbusShadowRepository registryShadowRepo;
-    private ModbusPollHistoryRepository pollingHistoryRepo;
+    private ModbusPollingHistoryRepository pollingHistoryRepo;
 
     @BeforeEach
     void setUp() {
         registryHistoryRepo = mock(ModbusRegistryHistoryRepository.class);
         registryShadowRepo = mock(ModbusShadowRepository.class);
-        pollingHistoryRepo = mock(ModbusPollHistoryRepository.class);
+        pollingHistoryRepo = mock(ModbusPollingHistoryRepository.class);
 
         service = new ModbusHistoryService();
         service.registryHistoryRepo = registryHistoryRepo;
@@ -132,9 +132,9 @@ class ModbusHistoryServiceTest {
         service.record(modbusServiceWithRegistries(), function(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
-        ArgumentCaptor<ModbusPollHistory> log = ArgumentCaptor.forClass(ModbusPollHistory.class);
+        ArgumentCaptor<ModbusPollingHistory> log = ArgumentCaptor.forClass(ModbusPollingHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusPollHistory row = log.getValue();
+        ModbusPollingHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.TRUE, row.ok);
@@ -169,9 +169,9 @@ class ModbusHistoryServiceTest {
     void opLog_failure_recordsTypeAndRemoteCode() {
         service.recordFailure(modbusService(), function(), parentTimeout()).await().indefinitely();
 
-        ArgumentCaptor<ModbusPollHistory> log = ArgumentCaptor.forClass(ModbusPollHistory.class);
+        ArgumentCaptor<ModbusPollingHistory> log = ArgumentCaptor.forClass(ModbusPollingHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
-        ModbusPollHistory row = log.getValue();
+        ModbusPollingHistory row = log.getValue();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.FALSE, row.ok);
@@ -273,7 +273,7 @@ class ModbusHistoryServiceTest {
         inOrder.verify(pollingHistoryRepo).insert(any());
 
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
-        ModbusPollHistory row = savedPollingLog();
+        ModbusPollingHistory row = savedPollingLog();
         assertEquals(SERVICE_ID, row.serviceId);
         assertEquals(FUNCTION_INDEX, row.pollIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
@@ -312,7 +312,7 @@ class ModbusHistoryServiceTest {
 
         service.recordFailure(modbusService(), function(), crcMismatch()).await().indefinitely();
 
-        ModbusPollHistory row = savedPollingLog();
+        ModbusPollingHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(row.type));
         assertEquals(CRC_ERROR, row.message);
         assertNull(row.remoteCode);   // CRC 不符没有远端码 —— 有码的是从站异常与父设备报错
@@ -341,7 +341,7 @@ class ModbusHistoryServiceTest {
         service.recordFailure(modbusService(), function(), new IllegalStateException("connection reset"))
                 .await().indefinitely();
 
-        ModbusPollHistory row = savedPollingLog();
+        ModbusPollingHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.UNKNOWN.name(), row.type);
         assertNull(row.remoteCode);
         assertEquals("connection reset", row.message);   // 明细照旧保留，分类不确定不等于信息丢失
@@ -626,8 +626,8 @@ class ModbusHistoryServiceTest {
         return registryRowsOf().stream().map(row -> row.name).toList();
     }
 
-    private ModbusPollHistory savedPollingLog() {
-        ArgumentCaptor<ModbusPollHistory> captor = ArgumentCaptor.forClass(ModbusPollHistory.class);
+    private ModbusPollingHistory savedPollingLog() {
+        ArgumentCaptor<ModbusPollingHistory> captor = ArgumentCaptor.forClass(ModbusPollingHistory.class);
         verify(pollingHistoryRepo).insert(captor.capture());
         return captor.getValue();
     }

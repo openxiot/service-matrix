@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.dashboard.mobile.MobileDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardLayoutEntity;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.common.person.Person;
 import com.mongodb.MongoClientSettings;
@@ -130,7 +130,7 @@ class ObjectPropertyCodecProviderTest {
     /** 操作日志的 {@code fields}（成功调用的响应快照）：四类值（数值 / 描述 / 布尔 / 空）都能进能出。 */
     @Test
     void snapshotFieldsRoundTrip() {
-        ModbusPollHistory log = new ModbusPollHistory();
+        ModbusPollingHistory log = new ModbusPollingHistory();
         log.id = new ObjectId();
         log.serviceId = "6aa759bb4e45b0b6122d2ed5";
         log.pollIndex = 1;
@@ -144,7 +144,7 @@ class ObjectPropertyCodecProviderTest {
         log.fields = fields;
         log.at = new Date(AT);
 
-        ModbusPollHistory read = decode(ModbusPollHistory.class, encode(log));
+        ModbusPollingHistory read = decode(ModbusPollingHistory.class, encode(log));
 
         assertEquals(fields, read.fields);
         assertEquals(new Date(AT), read.at);

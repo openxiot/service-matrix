@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * {@link ModbusPollHistory} 的数据访问（Panache，实体固定落库 {@code modbus}/集合
+ * {@link ModbusPollingHistory} 的数据访问（Panache，实体固定落库 {@code modbus}/集合
  * {@code service-polling-histories}）。
  *
  * <p>写侧是「每次调用追加一条」；读侧（轮询明细、失败统计）由上层模块按
@@ -28,14 +28,14 @@ import java.util.concurrent.TimeUnit;
  * 所以 {@code at} 上要有 TTL 保留策略兜底（与 {@link ModbusRegistryHistoryRepository} 同口径）。</p>
  */
 @ApplicationScoped
-public class ModbusPollHistoryRepository {
+public class ModbusPollingHistoryRepository {
 
     @Inject
     ReactiveMongoClient mongoClient;
 
-    private ReactiveMongoCollection<ModbusPollHistory> collection() {
+    private ReactiveMongoCollection<ModbusPollingHistory> collection() {
         return mongoClient.getDatabase("modbus")
-                .getCollection("service-polling-histories", ModbusPollHistory.class);
+                .getCollection("service-polling-histories", ModbusPollingHistory.class);
     }
 
     /** 启动时确保索引存在：{@code (serviceId, pollIndex, at)} 复合索引（前两段等值 + {@code at} 范围），
@@ -59,7 +59,7 @@ public class ModbusPollHistoryRepository {
     }
 
     /** 附加一条操作日志（每次调用一条；失败静默——操作日志只是副作用，不拖累调用）。 */
-    public Uni<Void> insert(ModbusPollHistory row) {
+    public Uni<Void> insert(ModbusPollingHistory row) {
         if (row == null) {
             return Uni.createFrom().voidItem();
         }
@@ -80,8 +80,8 @@ public class ModbusPollHistoryRepository {
      *
      * @param limit 条数上限；调用方传「上限 + 1」以便判出「还有更早的没取回来」
      */
-    public Uni<List<ModbusPollHistory>> findFailureRange(String serviceId, Integer pollIndex,
-                                                                   String type, Date from, Date to, int limit) {
+    public Uni<List<ModbusPollingHistory>> findFailureRange(String serviceId, Integer pollIndex,
+                                                            String type, Date from, Date to, int limit) {
         List<Bson> filters = new ArrayList<>();
         filters.add(Filters.eq("serviceId", serviceId));
         filters.add(Filters.eq("ok", false));
@@ -106,7 +106,7 @@ public class ModbusPollHistoryRepository {
      * <p><b>不打 limit</b>（调用方是统计，截断会让「今日异常」变成静默的下限，量级由窗口上限兜住）、
      * **不排序**（统计在内存里分桶，顺序没有意义）。这与告警时间线同口径。</p>
      */
-    public Uni<List<ModbusPollHistory>> findFailureTimeline(String serviceId, Date from, Date to) {
+    public Uni<List<ModbusPollingHistory>> findFailureTimeline(String serviceId, Date from, Date to) {
         return collection()
                 .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.eq("ok", false),
                                 Filters.gte("at", from), Filters.lte("at", to)),

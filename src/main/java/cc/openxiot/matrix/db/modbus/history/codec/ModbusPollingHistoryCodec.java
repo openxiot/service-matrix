@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.db.modbus.history.codec;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@link ModbusPollHistory} → JSON（故障列表接口用）：失败调用 + 按分类的聚合。
+ * {@link ModbusPollingHistory} → JSON（故障列表接口用）：失败调用 + 按分类的聚合。
  *
  * <p>编出的**字段与 {@code ModbusServiceFailureCodec} 逐字一致**（{@code serviceId/pollIndex/
  * type/remoteCode/message/at}、{@code summary: {total, byType[], byRemoteCode[]}}）—— 故障读数改从
@@ -22,12 +22,12 @@ import java.util.Map;
  * （调用方给它的是本次查询取回的那一段，有 limit，所以 {@code total} 是「本次聚合了多少条」，
  * 界面上要和 {@code truncated} 一起读）。</p>
  */
-public final class ModbusPollHistoryCodec {
+public final class ModbusPollingHistoryCodec {
 
-    private ModbusPollHistoryCodec() {
+    private ModbusPollingHistoryCodec() {
     }
 
-    public static JsonObject encode(ModbusPollHistory row) {
+    public static JsonObject encode(ModbusPollingHistory row) {
         JsonObject o = new JsonObject();
         if (row == null) {
             return o;
@@ -56,10 +56,10 @@ public final class ModbusPollHistoryCodec {
         return o;
     }
 
-    public static JsonArray encode(List<ModbusPollHistory> rows) {
+    public static JsonArray encode(List<ModbusPollingHistory> rows) {
         JsonArray arr = new JsonArray();
         if (rows != null) {
-            for (ModbusPollHistory row : rows) {
+            for (ModbusPollingHistory row : rows) {
                 arr.add(encode(row));
             }
         }
@@ -67,11 +67,11 @@ public final class ModbusPollHistoryCodec {
     }
 
     /** 按分类与远端原始码聚合这批复失败调用：{@code {total, byType: [...], byRemoteCode: [...]}}。 */
-    public static JsonObject encodeSummary(List<ModbusPollHistory> rows) {
+    public static JsonObject encodeSummary(List<ModbusPollingHistory> rows) {
         Map<String, Tally> byType = new LinkedHashMap<>();
         Map<Integer, Tally> byRemoteCode = new LinkedHashMap<>();
 
-        for (ModbusPollHistory row : rows == null ? List.<ModbusPollHistory>of() : rows) {
+        for (ModbusPollingHistory row : rows == null ? List.<ModbusPollingHistory>of() : rows) {
             if (row == null) {
                 continue;
             }

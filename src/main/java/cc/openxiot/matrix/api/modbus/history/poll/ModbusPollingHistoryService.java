@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.modbus.history.poll;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -20,14 +20,14 @@ import java.util.List;
  * {@code ModbusRegistryHistoryService}。</p>
  */
 @ApplicationScoped
-public class ModbusPollHistoryService {
+public class ModbusPollingHistoryService {
 
     /** 故障列表的条数缺省值与封顶值。 */
     public static final int DEFAULT_FAILURE_LIMIT = 200;
     public static final int MAX_FAILURE_LIMIT = 1_000;
 
     @Inject
-    ModbusPollHistoryRepository pollingHistoryRepo;
+    ModbusPollingHistoryRepository pollingHistoryRepo;
 
     /**
      * 故障列表的结果。
@@ -42,7 +42,7 @@ public class ModbusPollHistoryService {
             Date from,
             Date to,
             int limit,
-            List<ModbusPollHistory> items,
+            List<ModbusPollingHistory> items,
             boolean truncated
     ) {
     }
@@ -105,7 +105,7 @@ public class ModbusPollHistoryService {
             return Uni.createFrom().item(new FailureResult(from, end, size, List.of(), false));
         }
         String failureType = isBlank(type) ? null : type;
-        List<Uni<List<ModbusPollHistory>>> queries = serviceIds.stream()
+        List<Uni<List<ModbusPollingHistory>>> queries = serviceIds.stream()
                 .map(id -> pollingHistoryRepo.findFailureRange(id, pollIndex, failureType, from, end, size + 1))
                 .toList();
 
@@ -121,23 +121,23 @@ public class ModbusPollHistoryService {
      * <p>抽成静态方法是为了能单测：这个仓库跑不了要连库的测试，而「合并之后对不对」恰恰是最该
      * 被断言的部分（见 {@code ModbusPollHistoryServiceTest}）。</p>
      */
-    static FailureResult merge(Date from, Date to, int limit, List<ModbusPollHistory> rows) {
-        List<ModbusPollHistory> sorted = new ArrayList<>(rows);
+    static FailureResult merge(Date from, Date to, int limit, List<ModbusPollingHistory> rows) {
+        List<ModbusPollingHistory> sorted = new ArrayList<>(rows);
         // at 理论上不会缺（写入时必带），但真缺了也得排得出结果：按 0 算，倒序里落在最后
         sorted.sort(Comparator.comparingLong(
-                (ModbusPollHistory row) -> row.at == null ? 0L : row.at.getTime()).reversed());
+                (ModbusPollingHistory row) -> row.at == null ? 0L : row.at.getTime()).reversed());
         boolean truncated = sorted.size() > limit;
         return new FailureResult(from, to, limit,
                 List.copyOf(truncated ? sorted.subList(0, limit) : sorted), truncated);
     }
 
     /** 把 combine 的「每个服务一组」摊平成一个清单（Iterable 版 combine 的泛型被擦成了 List<?>）。 */
-    private static List<ModbusPollHistory> flatten(List<?> groups) {
-        List<ModbusPollHistory> merged = new ArrayList<>();
+    private static List<ModbusPollingHistory> flatten(List<?> groups) {
+        List<ModbusPollingHistory> merged = new ArrayList<>();
         for (Object group : groups) {
             if (group instanceof List<?> rows) {
                 for (Object row : rows) {
-                    if (row instanceof ModbusPollHistory history) {
+                    if (row instanceof ModbusPollingHistory history) {
                         merged.add(history);
                     }
                 }

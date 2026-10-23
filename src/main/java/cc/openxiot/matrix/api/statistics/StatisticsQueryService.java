@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistory;
-import cc.openxiot.matrix.db.modbus.history.ModbusPollHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
+import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import io.smallrye.mutiny.Uni;
@@ -77,7 +77,7 @@ public class StatisticsQueryService {
     ModbusAlarmRepository alarmRepo;
 
     @Inject
-    ModbusPollHistoryRepository pollingHistoryRepo;
+    ModbusPollingHistoryRepository pollingHistoryRepo;
 
     @Inject
     SpaceService spaceService;
@@ -173,7 +173,7 @@ public class StatisticsQueryService {
                                 List<String> ids = serviceIds(tuple.getItem2());
                                 Uni<List<ModbusAlarm>> alarms = mergeTimelines(ids.stream()
                                         .map(id -> alarmRepo.findTimeline(id, from, end)).toList());
-                                Uni<List<ModbusPollHistory>> failures = mergeTimelines(ids.stream()
+                                Uni<List<ModbusPollingHistory>> failures = mergeTimelines(ids.stream()
                                         .map(id -> pollingHistoryRepo.findFailureTimeline(id, from, end)).toList());
                                 return Uni.combine().all().unis(alarms, failures).asTuple()
                                         .map(rows -> new Overview(from, end,
@@ -328,9 +328,9 @@ public class StatisticsQueryService {
     }
 
     /** 一组失败调用的发生时刻。 */
-    private static List<Date> failureTimes(List<ModbusPollHistory> failures) {
+    private static List<Date> failureTimes(List<ModbusPollingHistory> failures) {
         List<Date> times = new ArrayList<>(failures.size());
-        for (ModbusPollHistory failure : failures) {
+        for (ModbusPollingHistory failure : failures) {
             if (failure != null) {
                 times.add(failure.at);
             }

@@ -24,7 +24,7 @@ import java.util.Map;
  */
 @RegisterForReflection
 @Schema(description = "Modbus 服务一次采集（读/写）的操作记录，含成败")
-public class ModbusPollHistory {
+public class ModbusPollingHistory {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)

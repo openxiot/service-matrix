@@ -5,7 +5,7 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusPollHistoryCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusPollingHistoryCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -40,17 +40,17 @@ import java.util.Date;
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recordedAt} 同口径），
  * 省掉两端各写一遍格式解析。</p>
  */
-@Path("/matrix/v1/modbus/history/transaction")
+@Path("/matrix/v1/modbus/history/polling")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Modbus History", description = "Modbus 采集历史 API")
 @RequestScoped
-public class ModbusPollHistoryResource extends AbstractResource {
+public class ModbusPollingHistoryResource extends AbstractResource {
 
     @Inject
     Logger logger;
 
     @Inject
-    ModbusPollHistoryService pollingService;
+    ModbusPollingHistoryService pollingService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -110,8 +110,8 @@ public class ModbusPollHistoryResource extends AbstractResource {
                             .put("to", result.to().getTime())
                             .put("limit", result.limit())
                             .put("truncated", result.truncated())
-                            .put("items", ModbusPollHistoryCodec.encode(result.items()))
-                            .put("summary", ModbusPollHistoryCodec.encodeSummary(result.items()));
+                            .put("items", ModbusPollingHistoryCodec.encode(result.items()))
+                            .put("summary", ModbusPollingHistoryCodec.encodeSummary(result.items()));
                     if (!wholeSpace) {
                         body.put("serviceId", serviceId);
                     }
