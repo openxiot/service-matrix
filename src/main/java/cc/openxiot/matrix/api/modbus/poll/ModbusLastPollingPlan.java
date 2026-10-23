@@ -1,32 +1,26 @@
 package cc.openxiot.matrix.api.modbus.poll;
 
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
- * 影子（{@code service-last-polling}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
+ * 影子（{@code service-shadows}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
  *
- * <p>两种「陈旧」的代价与急迫性完全不同，所以处置也不同：</p>
+ * <p>寄存器是**原子单位**：对账以逐寄存器影子（{@link ModbusServiceShadow}）为单位，
+ * 现有的「寄存器」由 {@code ModbusService.configSnapshot.registries} 给出。</p>
  *
- * <ul>
- *   <li><b>孤儿方法</b>（定义里删掉的 {@code pollingIndex}）：那张影子再也不会被更新，
- *       却一直出现在「当前值接口」里 —— 前端会显示一个永远不变的值，而它对应的点位已经不存在了。
- *       必须主动删。</li>
- *   <li><b>废弃字段键</b>（{@code response} 里删掉的 {@code field}）：{@code ModbusHistoryService.record}
- *       是**整体替换** {@code shadow.fields} 的，所以下一次成功采集就自愈了。
- *       但它最坏要等到保活周期（缺省 10 分钟），期间前端会显示一个已经删掉的点位。顺手剪掉即可。</li>
- * </ul>
+ * <p>唯一需要处置的是**孤儿寄存器**（定义里删掉的 {@code registerIndex}）：那只寄存器的影子再也不会被更新，
+ * 却一直出现在「当前值接口」里 —— 前端会显示一个永远不变的值，而它对应的点位已经不存在了。
+ * 必须主动删。寄存器没有「废弃字段键」这一层（值/故障态都是正则子自身），所以对非孤儿一律不改。</p>
  *
  * <p>时机：服务定义的写入路径（{@code create} / {@code update}）+ 启动全量扫一次。
  * **不进周期对账** —— 那要扫「服务 × 影子」，而影子的陈旧只可能来自定义变更，
@@ -38,12 +32,12 @@ public final class ModbusLastPollingPlan {
     }
 
     /**
-     * 一张影子该怎么修。
+     * 一张寄存器影子该怎么修。
      *
-     * @param staleFields 定义里已经没有的字段键（{@code orphan} 为 true 时无意义）
-     * @param orphan      整个方法已从定义里删掉 —— 整条影子都要删
+     * @param staleFields 寄存器是原子单位，没有「废弃字段键」—— 恒为空（{@code orphan} 为 true 时无意义）
+     * @param orphan      整只寄存器已从点表里删掉 —— 整条影子都要删
      */
-    public record Fix(ModbusServiceLastPolling shadow, List<String> staleFields, boolean orphan) {
+    public record Fix(ModbusServiceShadow shadow, List<String> staleFields, boolean orphan) {
     }
 
     /**
@@ -75,55 +69,45 @@ public final class ModbusLastPollingPlan {
     }
 
     /**
-     * 算出这批影子需要做的修改（不需要动的**不出现在结果里**：调用方据此零写操作）。
+     * 算出这批寄存器影子需要做的修改（不需要动的**不出现在结果里**：调用方据此零写操作）。
      *
-     * <p>{@code service == null} / {@code functions == null} 时返回空 —— 拿不到定义就不动任何影子，
-     * 宁可留一张陈旧影子，也不要在读不到定义时把用户的当前值删掉。</p>
+     * <p>{@code service == null} / {@code configSnapshot.registries == null} 时返回空 ——
+     * 拿不到定义就不动任何影子，宁可留一张陈旧影子，也不要在读不到定义时把用户的当前值删掉。</p>
      *
-     * <p>写方法（{@code response} 为空）的影子**不算孤儿**：它确实会被调用（手动 invoke 写方法），
-     * 影子也就该存在，只是没有字段而已。</p>
+     * <p>寄存器是原子单位，没有「废弃字段键」：对非孤儿（registerIndex 还在点表里）一律不改，
+     * 因此只产出 {@code orphan == true} 的修复，且 {@code staleFields} 恒为空。</p>
      */
-    public static List<Fix> plan(ModbusService service, List<ModbusServiceLastPolling> shadows) {
+    public static List<Fix> plan(ModbusService service, List<ModbusServiceShadow> shadows) {
         List<Fix> fixes = new ArrayList<>();
-        if (service == null || service.id == null || service.functions == null || shadows == null) {
+        ModbusConfig config = service == null ? null : service.configSnapshot;
+        if (service == null || service.id == null || config == null || config.registries == null || shadows == null) {
             return fixes;
         }
 
-        Map<Integer, Set<String>> definedByIndex = new HashMap<>();
-        for (ModbusPolling function : service.functions) {
-            if (function != null && function.index != null) {
-                definedByIndex.put(function.index, definedFields(ModbusPolling.responseFields(function)));
+        Set<Integer> definedIndexes = new HashSet<>();
+        for (ModbusRegistry registry : config.registries) {
+            if (registry != null && registry.index != null) {
+                definedIndexes.add(registry.index);
             }
         }
 
         String serviceId = service.id.toHexString();
-        for (ModbusServiceLastPolling shadow : shadows) {
-            if (shadow == null || shadow.id == null || shadow.pollingIndex == null) {
+        for (ModbusServiceShadow shadow : shadows) {
+            if (shadow == null || shadow.id == null || shadow.registerIndex == null) {
                 continue;
             }
             // 影子是别的服务的：对账按服务做，串了就是 bug，不动它（正常不会发生）
             if (!serviceId.equals(shadow.serviceId)) {
                 continue;
             }
-            if (!definedByIndex.containsKey(shadow.pollingIndex)) {
+            // 寄存器不在点表里（或点表条目没有 index）：即定义为没有这只寄存器 —— 孤儿，整条删
+            if (!definedIndexes.contains(shadow.registerIndex)) {
                 fixes.add(new Fix(shadow, List.of(), true));
-                continue;
             }
-            Set<String> defined = definedByIndex.get(shadow.pollingIndex);
-            Set<String> stale = new TreeSet<>();
-            if (shadow.fields != null) {
-                for (String key : shadow.fields.keySet()) {
-                    if (key != null && !defined.contains(key)) {
-                        stale.add(key);
-                    }
-                }
-            }
-            if (!stale.isEmpty()) {
-                fixes.add(new Fix(shadow, List.copyOf(stale), false));
-            }
+            // 寄存器在点表里：原子单位，没有废弃字段键，不需要动
         }
         fixes.sort((left, right) -> {
-            int byIndex = Integer.compare(left.shadow().pollingIndex, right.shadow().pollingIndex);
+            int byIndex = Integer.compare(left.shadow().registerIndex, right.shadow().registerIndex);
             return byIndex != 0 ? byIndex : left.shadow().id.compareTo(right.shadow().id);
         });
         return fixes;

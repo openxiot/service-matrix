@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.poll;
 
 import cc.openxiot.matrix.db.modbus.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.poll.ModbusPollRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -19,7 +19,6 @@ import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -77,7 +76,7 @@ public class ModbusPollReconciler {
     ModbusPollRepository pollRepo;
 
     @Inject
-    ModbusServiceLastPollingRepository shadowRepo;
+    ModbusServiceShadowRepository registryShadowRepo;
 
     @Inject
     SpaceRepository spaceRepo;
@@ -214,7 +213,7 @@ public class ModbusPollReconciler {
 
     /**
      * 影子对账（见 Modbus-Service-Poller.md 第九节）：定义改了以后，影子会留下收不到更新的东西
-     * —— 孤儿方法（整条删）与废弃字段键（剪掉）。**只写库**，与内存表无关。
+     * —— 孤儿寄存器（整条删）。寄存器是原子单位，没有「废弃字段键」。**只写库**，与内存表无关。
      *
      * <p>只在**定义变更的写入路径 + 启动**做，不进周期对账：那要扫「服务 × 影子」，
      * 而影子的陈旧只可能来自定义变更。</p>
@@ -224,33 +223,25 @@ public class ModbusPollReconciler {
             return Uni.createFrom().voidItem();
         }
         String serviceId = service.id.toHexString();
-        return shadowRepo.listByServiceId(serviceId).chain(shadows -> {
+        return registryShadowRepo.listByServiceId(serviceId).chain(shadows -> {
             List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, shadows);
             if (fixes.isEmpty()) {
                 return Uni.createFrom().voidItem();
             }
-            List<Uni<Void>> ops = new ArrayList<>();
             List<ObjectId> orphans = new ArrayList<>();
-            int trimmed = 0;
             for (ModbusLastPollingPlan.Fix fix : fixes) {
                 if (fix.orphan()) {
                     orphans.add(fix.shadow().id);
-                    continue;
                 }
-                // fields 是整份替换的（ModbusHistoryService.record）：剪掉废弃键，值/时刻/故障态都留着
-                Map<String, Object> kept = new LinkedHashMap<>(fix.shadow().fields);
-                fix.staleFields().forEach(kept::remove);
-                fix.shadow().fields = kept;
-                trimmed++;
-                ops.add(shadowRepo.replace(fix.shadow()));
             }
-            if (!orphans.isEmpty()) {
-                ops.add(shadowRepo.deleteByIds(orphans).replaceWithVoid());
+            if (orphans.isEmpty()) {
+                return Uni.createFrom().voidItem();
             }
-            final int trimmedCount = trimmed;
-            return sequence(ops).invoke(() -> logger.infov(
-                    "modbus shadows reconciled, service: {0}, orphan functions: {1}, stale fields fixed: {2}",
-                    serviceId, orphans.size(), trimmedCount));
+            return registryShadowRepo.deleteByIds(orphans)
+                    .invoke(count -> logger.infov(
+                            "modbus shadows reconciled, service: {0}, orphan registers: {1}",
+                            serviceId, count))
+                    .replaceWithVoid();
         });
     }
 
