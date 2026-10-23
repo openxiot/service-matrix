@@ -88,7 +88,7 @@ public final class ModbusServiceValidator {
     }
 
     /**
-     * 整份定义：name / version / device / functions 逐层校验。
+     * 整份定义：name / version / configSnapshot / device / functions 逐层校验。
      */
     public static String validate(ModbusService service) {
         if (service == null) {
@@ -105,6 +105,16 @@ public final class ModbusServiceValidator {
             // 一堆 null，然后报一句和病因无关的「request.slaveId is required」
             return "invalid version: " + service.version + " (this server serves version "
                     + ModbusService.VERSION + ")";
+        }
+
+        // 点表快照是服务的**定义来源**（寄存器缓存读侧投影直接读它，不再回查点表），
+        // 缺了它服务就只剩下方法列表 —— 新口径一律要求带上；存量文档由迁移脚本补齐。
+        if (service.configSnapshot == null) {
+            return "configSnapshot is required";
+        }
+        // id 是溯源与统计分组键：快照可以没有 owner/lifecycle（会话裁剪），但必须知道自己取自哪条点表
+        if (service.configSnapshot.id == null) {
+            return "configSnapshot.id is required";
         }
 
         String deviceErr = checkDevice(service.device);

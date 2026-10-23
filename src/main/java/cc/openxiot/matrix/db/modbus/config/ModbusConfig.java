@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.db.modbus.config;
 
 import cc.openxiot.common.person.Person;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.types.ObjectId;
@@ -15,6 +16,7 @@ import java.util.List;
  * 对外（JSON / URL）一律以十六进制字符串呈现；持久化经 {@code ModbusConfigRepository}。</p>
  */
 @RegisterForReflection
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "Modbus 设备点表配置（从站设备信息 + 有序功能码动作列表）")
 public class ModbusConfig {
 

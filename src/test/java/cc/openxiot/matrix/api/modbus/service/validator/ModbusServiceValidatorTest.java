@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.modbus.service.validator;
 
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPollingFrom;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
@@ -11,6 +13,7 @@ import cc.openxiot.matrix.db.modbus.service.polling.request.ModbusPollingRequest
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.service.polling.response.ModbusPollingResponses;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -46,6 +49,14 @@ class ModbusServiceValidatorTest {
         ModbusService noVersion = service();
         noVersion.version = null;
         assertEquals("version is required", ModbusServiceValidator.validate(noVersion));
+
+        ModbusService noSnapshot = service();
+        noSnapshot.configSnapshot = null;
+        assertEquals("configSnapshot is required", ModbusServiceValidator.validate(noSnapshot));
+
+        ModbusService noSnapshotId = service();
+        noSnapshotId.configSnapshot.id = null;
+        assertEquals("configSnapshot.id is required", ModbusServiceValidator.validate(noSnapshotId));
     }
 
     @Test
@@ -934,10 +945,21 @@ class ModbusServiceValidatorTest {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
+        service.configSnapshot = configSnapshot();
         service.slaveId = 1;
         service.device = device();
         service.functions = new ArrayList<>(List.of(function(1), function(2)));
         return service;
+    }
+
+    /** 源点表快照的最小形状：快照 id 是校验要求的（溯源与统计分组键）。 */
+    private static ModbusConfig configSnapshot() {
+        ModbusConfig config = new ModbusConfig();
+        config.id = new ObjectId("65f0c0ffee0123456789abcd");
+        config.slave = new ModbusSlave();
+        config.slave.manufacturer = "特灵";
+        config.slave.model = "19XRV";
+        return config;
     }
 
     /** 一份只含给定写方法的定义（写方法没有 response，也没有 interval / polling）。 */
@@ -945,6 +967,7 @@ class ModbusServiceValidatorTest {
         ModbusService service = new ModbusService();
         service.name = "1 号冷水机组";
         service.version = ModbusService.VERSION;
+        service.configSnapshot = configSnapshot();
         service.slaveId = 1;
         service.device = device();
 

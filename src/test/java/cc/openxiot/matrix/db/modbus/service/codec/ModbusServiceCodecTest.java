@@ -48,7 +48,17 @@ class ModbusServiceCodecTest {
             {
               "name": "1 号冷水机组",
               "version": 2,
-              "configId": "65f0c0ffee0123456789abcd",
+              "configSnapshot": {
+                "id": "65f0c0ffee0123456789abcd",
+                "visibility": "private",
+                "slave": { "manufacturer": "特灵", "model": "19XRV", "slaveId": 1, "description": "1 号冷水机组" },
+                "registries": [
+                  { "name": "进水温度", "index": 1, "address": 0, "area": "holding",
+                    "dataType": "uint16", "access": "R", "scale": 0.1, "unit": "℃" }
+                ],
+                "commands": [],
+                "lifecycle": "development"
+              },
               "device": { "did": "did-1", "siid": 1, "aiid": 1, "argument": 1 },
               "functions": [
                 {
@@ -161,7 +171,11 @@ class ModbusServiceCodecTest {
 
         assertEquals("1 号冷水机组", service.name);
         assertEquals(ModbusService.VERSION, service.version.intValue());
-        assertEquals("65f0c0ffee0123456789abcd", service.configId);
+        // 点表快照：id 是十六进制字符串对外，进实体要还原成 ObjectId
+        assertEquals("65f0c0ffee0123456789abcd", service.configSnapshot.id.toHexString());
+        assertEquals("特灵", service.configSnapshot.slave.manufacturer);
+        assertEquals(1, service.configSnapshot.registries.size());
+        assertEquals("进水温度", service.configSnapshot.registries.get(0).name);
         assertNull(service.id);      // id 不由请求体决定
 
         assertEquals("did-1", service.device.did);

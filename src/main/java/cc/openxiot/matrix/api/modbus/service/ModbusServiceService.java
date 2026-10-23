@@ -619,7 +619,7 @@ public class ModbusServiceService {
         merged.updater = existing.updater;
         merged.name = patch.name != null ? patch.name : existing.name;
         merged.version = patch.version != null ? patch.version : existing.version;
-        merged.configId = patch.configId != null ? patch.configId : existing.configId;
+        merged.configSnapshot = patch.configSnapshot != null ? patch.configSnapshot : existing.configSnapshot;
         // 顶层从站地址与 device/functions 同级，patch 缺省时保留既有值（别看成不可改）
         merged.slaveId = patch.slaveId != null ? patch.slaveId : existing.slaveId;
         merged.device = patch.device != null ? patch.device : existing.device;

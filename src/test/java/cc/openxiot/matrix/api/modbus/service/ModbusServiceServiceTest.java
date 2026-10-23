@@ -26,6 +26,7 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -63,6 +64,7 @@ import java.util.Map;
 class ModbusServiceServiceTest {
 
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
+    private static final String CONFIG_ID = "65f0c0ffee0123456789abce";
     /** 设备归属（manipulation 的 ownerId）：设备所在根空间 id。 */
     private static final String ROOT_SPACE_ID = "6512f3a4b5c6d7e8f9a0b1c9";
     private static final int FUNCTION_INDEX = 1;
@@ -143,6 +145,20 @@ class ModbusServiceServiceTest {
         ModbusService merged = service.update(SERVICE_ID, patch).await().indefinitely();
 
         assertEquals(1, merged.slaveId);
+        verify(repo).replace(eq(merged));
+    }
+
+    @Test
+    void updateKeepsSnapshotWhenPatchOmitsIt() {
+        // 快照是服务的定义来源：patch 只改名称/轮询时不能把它清空（清空后寄存器缓存就没了）
+        givenUpdatable(updatableService(1));
+        when(repo.replace(any())).thenReturn(Uni.createFrom().voidItem());
+
+        ModbusService patch = updatableService(1);
+        patch.configSnapshot = null;
+        ModbusService merged = service.update(SERVICE_ID, patch).await().indefinitely();
+
+        assertEquals(new ObjectId(CONFIG_ID), merged.configSnapshot.id);
         verify(repo).replace(eq(merged));
     }
 
@@ -487,9 +503,17 @@ class ModbusServiceServiceTest {
     private static ModbusService updatableService(Integer slaveId) {
         ModbusService service = modbusService();
         service.version = ModbusService.VERSION;
+        service.configSnapshot = configSnapshot();
         service.slaveId = slaveId;
         service.functions = List.of(function());
         return service;
+    }
+
+    /** 快照只要求 id（校验与统计分组键）；内容不参与本类的调用/合并规则。 */
+    private static ModbusConfig configSnapshot() {
+        ModbusConfig config = new ModbusConfig();
+        config.id = new ObjectId(CONFIG_ID);
+        return config;
     }
 
     private static ModbusServiceLastPolling shadow(String lastError) {

@@ -3,6 +3,7 @@ package cc.openxiot.matrix.api.statistics;
 import cc.openxiot.matrix.api.device.DeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceFailure;
@@ -109,8 +110,9 @@ public class StatisticsQueryService {
     /**
      * 服务：总数、按所配点表的条数。
      *
-     * <p>分组键是 {@code configId}（**不是**显示名）：拼「厂家 型号」是前端的事，
-     * 首页那一列与服务清单页那一列因此是同一个函数。没配点表的服务落在 {@code ""} 键上。</p>
+     * <p>分组键是服务内嵌快照的源点表 id（{@code configSnapshot.id}，**不是**显示名）：
+     * 拼「厂家 型号」是前端的事，首页那一列与服务清单页那一列因此是同一个函数。
+     * 没有快照的服务落在 {@code ""} 键上。</p>
      */
     public record ServiceStats(int total, List<Count> byConfig) {
     }
@@ -163,7 +165,7 @@ public class StatisticsQueryService {
                 .chain(spaces -> {
                     List<String> spaceIds = spaces.stream().map(space -> space.id.toString()).toList();
                     Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
-                    Uni<List<ModbusService>> services = bySpace(spaceIds, serviceRepo::findConfigIdsBySpaceId);
+                    Uni<List<ModbusService>> services = bySpace(spaceIds, serviceRepo::findConfigKeysBySpaceId);
                     // 两轮：服务的 id 清单是后两件事的查询范围，只能等它回来
                     return Uni.combine().all().unis(devices, services).asTuple()
                             .chain(tuple -> {
@@ -188,7 +190,7 @@ public class StatisticsQueryService {
     /**
      * 服务的 id 清单：一次读取顺便去重（{@code ModbusServiceService.subtreeServiceIds} 的 id 部分）。
      *
-     * <p>服务文档的 {@code _id} 即使只投影 {@code configId} 也由 Mongo 默认带出（与
+     * <p>服务文档的 {@code _id} 即使只投影 {@code configSnapshot._id} 也由 Mongo 默认带出（与
      * {@code ModbusServiceRepository.findBriefBySpaceId} 同一条）。逐空间取不会取到重复的，
      * 去重是保险：重复的 id 会让告警多查一次、行被数两遍。</p>
      */
@@ -246,13 +248,13 @@ public class StatisticsQueryService {
         return new DeviceStats(devices.size(), online, tally(types));
     }
 
-    /** 服务：总数、按点表（{@code configId}）的条数。两者同源，故分组的条数之和恒等于总数。 */
+    /** 服务：总数、按源点表 id（{@code configSnapshot.id}）的条数。两者同源，故分组的条数之和恒等于总数。 */
     static ServiceStats servicesOf(List<ModbusService> rows) {
         List<String> configIds = new ArrayList<>();
         if (rows != null) {
             for (ModbusService service : rows) {
                 if (service != null) {
-                    configIds.add(configKey(service.configId));
+                    configIds.add(configKey(service.configSnapshot));
                 }
             }
         }
@@ -408,12 +410,12 @@ public class StatisticsQueryService {
     }
 
     /**
-     * 点表的键：{@code null} 归到空串。
+     * 点表的键：服务快照里的源点表 id；没有快照（或快照没有 id）归到空串。
      *
      * <p>点表 id 是**标识符**不是显示名，「没有」就是空串；拼不出名字该显示什么（首页用词典里的
      * {@code 未定义}）是前端的事。</p>
      */
-    private static String configKey(String configId) {
-        return configId == null ? "" : configId;
+    private static String configKey(ModbusConfig snapshot) {
+        return snapshot == null || snapshot.id == null ? "" : snapshot.id.toHexString();
     }
 }

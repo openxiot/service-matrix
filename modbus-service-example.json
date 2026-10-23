@@ -2,7 +2,28 @@
   "id": "xxxx",
   "name": "1 号冷水机组",
   "version": 2,
-  "configId": "Modbus配置ID",
+  "configSnapshot": {
+    "id": "65f0c0ffee0123456789abcd",
+    "slave": {
+      "manufacturer": "厂家",
+      "model": "型号",
+      "slaveId": 1
+    },
+    "registries": [
+      {
+        "name": "进水温度",
+        "index": 1,
+        "address": 0,
+        "area": "holding",
+        "dataType": "uint16",
+        "access": "R",
+        "scale": 0.1,
+        "unit": "℃"
+      }
+    ],
+    "commands": [],
+    "lifecycle": "development"
+  },
   "slaveId": 1,
   "device": {
     "did": "xxx",

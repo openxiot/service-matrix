@@ -133,19 +133,20 @@ public class ModbusServiceRepository  {
     }
 
     /**
-     * 列出设备落点在该空间的服务**所配的点表 id**：与 {@link #findBriefBySpaceId} 同一个过滤条件
-     * （{@code device.space.spaceId}），投影只带 {@code configId}。
+     * 列出设备落点在该空间的服务**所配点表的 id**：与 {@link #findBriefBySpaceId} 同一个过滤条件
+     * （{@code device.space.spaceId}），投影只带 {@code configSnapshot._id}。
      *
-     * <p>给「服务按点表分组」的统计用：清单里 {@code _id} 不需要（数的是条数），
-     * {@code name} 也不需要（分组键是点表）。调用方按**每个子孙空间**各调一次再拍平，
-     * 故这里只认「恰好落在这个空间」的服务 —— 与 {@link #findBriefBySpaceId} 一致。</p>
+     * <p>给「服务按点表分组」的统计用：清单里 {@code name} 不需要（分组键是点表 id），
+     * 但 {@code _id} 要（统计还要拿它逐服务查告警/故障时间线）。调用方按**每个子孙空间**
+     * 各调一次再拍平，故这里只认「恰好落在这个空间」的服务 —— 与 {@link #findBriefBySpaceId} 一致。</p>
      *
-     * <p>返回的对象只有 {@code configId} 有值（可能是 null），**不要当服务定义用**。</p>
+     * <p>返回的对象只有 {@code id} 与 {@code configSnapshot.id} 有值（后者可能为 null），
+     * **不要当服务定义用**。</p>
      */
-    public Uni<List<ModbusService>> findConfigIdsBySpaceId(String spaceId) {
+    public Uni<List<ModbusService>> findConfigKeysBySpaceId(String spaceId) {
         return collection()
                 .find(Filters.eq("device.space.spaceId", spaceId),
-                        new FindOptions().projection(Projections.include("configId")))
+                        new FindOptions().projection(Projections.include("configSnapshot._id")))
                 .collect().asList();
     }
 

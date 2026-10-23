@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.db.modbus.service;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -45,8 +46,9 @@ public class ModbusService {
             examples = {"2"}, required = true)
     public Integer version;
 
-    @Schema(description = "源点表配置 ID（溯源用：本服务由哪条点表映射而来）")
-    public String configId;
+    @Schema(description = "源点表的创建时快照：点表之后被修改/删除都不影响本服务；"
+            + "服务的寄存器缓存读侧投影直接读它，不再回查点表集合")
+    public ModbusConfig configSnapshot;
 
     @Schema(description = "从站地址（1..247）：从源点表拷贝而来可改；各方法 request.slaveId 必须与它一致"
             + "（校验层强制）——它是“这个服务读哪台从站”的顶层事实",

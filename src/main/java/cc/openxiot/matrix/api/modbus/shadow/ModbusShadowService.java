@@ -1,7 +1,6 @@
 package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
@@ -37,9 +36,6 @@ public class ModbusShadowService {
     ModbusServiceRepository repo;
 
     @Inject
-    ModbusConfigRepository configRepo;
-
-    @Inject
     ModbusServiceLastPollingRepository lastPollingRepo;
 
     /**
@@ -49,18 +45,16 @@ public class ModbusShadowService {
      * <p>与按方法的「当前值」接口（{@code ModbusHistoryResource.current}）的差别：这里以点表
      * {@code registries} 为准、覆盖全部可读寄存器（含从没被调用过的，标 {@code no-data}）。</p>
      *
-     * <p>服务不存在 / 没配点表 / 点表查不到时返回空网格——读取是**投影**，「能给多少给多少」，
+     * <p>服务不存在 / 没有点表快照时返回空网格——读取是**投影**，「能给多少给多少」，
      * 不因单个 id 失败而报错（与设备影子的「按 did 取、能取到多少返回多少」同口径）。</p>
      */
     public Uni<List<ModbusRegisterSnapshot>> registerCache(String serviceId) {
         return repo.findById(serviceId)
                 .onItem().transformToUni(service -> service == null
                         ? Uni.createFrom().item(List.of())
-                        : Uni.combine().all()
-                                .unis(resolveConfig(service.configId),
-                                        lastPollingRepo.listByServiceId(serviceId))
-                                .asTuple()
-                                .map(tuple -> mergeRegisterCache(tuple.getItem1(), service.functions, tuple.getItem2())));
+                        : lastPollingRepo.listByServiceId(serviceId)
+                                .map(snapshots -> mergeRegisterCache(
+                                        service.configSnapshot, service.functions, snapshots)));
     }
 
     /**
@@ -82,21 +76,15 @@ public class ModbusShadowService {
                                 (a, b) -> a, LinkedHashMap::new)));
     }
 
-    /** 服务引用的点表；configId 缺失或点表不存在时返回 null（视为无寄存器表）。 */
-    private Uni<ModbusConfig> resolveConfig(String configId) {
-        if (configId == null || configId.isBlank()) {
-            return Uni.createFrom().nullItem();
-        }
-        return configRepo.findById(configId); // 查不到 → null item，merge 视为无寄存器表
-    }
-
     /**
      * 归并本核。可读寄存器 = 点表 {@code access ∈ {R, RW}} 的那些（写寄存器没有缓存值）。
      * 值来自归属它的读方法的快照 {@code fields[寄存器名]}；拿不到归属方法、或缓存里没有这个键 → {@code no-data}。
      */
-    private static List<ModbusRegisterSnapshot> mergeRegisterCache(ModbusConfig config,
-                                                                   List<ModbusPolling> functions,
-                                                                   List<ModbusServiceLastPolling> snapshots) {
+    private static List<ModbusRegisterSnapshot> mergeRegisterCache(
+            ModbusConfig config,
+            List<ModbusPolling> functions,
+            List<ModbusServiceLastPolling> snapshots
+    ) {
         // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
         Map<String, Integer> owner = new HashMap<>();
         if (functions != null) {

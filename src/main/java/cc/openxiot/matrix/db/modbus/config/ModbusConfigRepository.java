@@ -17,7 +17,7 @@ import java.util.List;
  * Modbus 设备点表配置的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code configs}）。
  *
  * <p>落库主键 {@code _id} 是系统生成的 ObjectId（见 {@link ModbusConfig}），但对外（HTTP 路径参数、
- * 服务 {@code configId} 引用、JSON）一律是十六进制字符串：本仓储的方法签名保持 String，
+ * 服务里的点表快照 {@code configSnapshot.id}、JSON）一律是十六进制字符串：本仓储的方法签名保持 String，
  * 内部再转 ObjectId，接口契约与 id 生成方式解耦。非法 id（非 24 位十六进制）按「未命中」处理，不抛错。
  * 归属主体（org/user）经 {@code ModbusConfig#owner} 子文档表达，读/改/删的鉴权在
  * {@link cc.openxiot.matrix.api.modbus.config.ModbusConfigService} 里按 owner 判（例仿

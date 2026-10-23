@@ -1,7 +1,6 @@
 package cc.openxiot.matrix.api.modbus.shadow;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
@@ -24,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,21 +34,17 @@ import static org.mockito.Mockito.when;
 class ModbusShadowServiceTest {
 
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
-    private static final String CONFIG_ID = "65f0c0ffee0123456789abce";
 
     private ModbusShadowService shadowService;
     private ModbusServiceRepository repo;
-    private ModbusConfigRepository configRepo;
     private ModbusServiceLastPollingRepository lastPollingRepo;
 
     @BeforeEach
     void setUp() {
         repo = mock(ModbusServiceRepository.class);
-        configRepo = mock(ModbusConfigRepository.class);
         lastPollingRepo = mock(ModbusServiceLastPollingRepository.class);
         shadowService = new ModbusShadowService();
         shadowService.repo = repo;
-        shadowService.configRepo = configRepo;
         shadowService.lastPollingRepo = lastPollingRepo;
     }
 
@@ -58,7 +52,6 @@ class ModbusShadowServiceTest {
     void registerCacheMergesRegistersIntoGrid() {
         long t0 = 1_700_000_000_000L;
         givenService(List.of(readFunction(1, "进水温度"), readFunction(2, "出水温度")));
-        when(configRepo.findById(CONFIG_ID)).thenReturn(Uni.createFrom().item(registerConfig()));
         when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
                 lastPolling(1, Map.of("进水温度", 61.5), new Date(t0), null, null),
                 lastPolling(2, Map.of("出水温度", 35.0), new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
@@ -86,14 +79,14 @@ class ModbusShadowServiceTest {
         assertNull(pressure.value);
         assertNull(pressure.pollingIndex);
         assertEquals("no-data", pressure.status);
-
-        verify(configRepo).findById(CONFIG_ID);
     }
 
     @Test
-    void registerCacheWithoutConfigReturnsEmpty() {
-        givenService(List.of(readFunction(1, "进水温度")));
-        when(configRepo.findById(CONFIG_ID)).thenReturn(Uni.createFrom().nullItem());
+    void registerCacheWithoutSnapshotReturnsEmpty() {
+        ModbusService svc = service();
+        svc.functions = List.of(readFunction(1, "进水温度"));
+        svc.configSnapshot = null;
+        when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
 
         List<ModbusRegisterSnapshot> grid = shadowService.registerCache(SERVICE_ID).await().indefinitely();
 
@@ -118,7 +111,6 @@ class ModbusShadowServiceTest {
         ModbusService svc2 = service();
         svc2.id = new ObjectId(id2);
         when(repo.findById(id2)).thenReturn(Uni.createFrom().item(svc2));
-        when(configRepo.findById(CONFIG_ID)).thenReturn(Uni.createFrom().item(registerConfig()));
         when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
                 lastPolling(1, Map.of("进水温度", 61.5), new Date(1_700_000_000_000L), null, null))));
         when(lastPollingRepo.listByServiceId(id2)).thenReturn(Uni.createFrom().item(List.of()));
@@ -138,7 +130,6 @@ class ModbusShadowServiceTest {
         String bogus = "dea1dbeef000000000000001";
         givenService(List.of(readFunction(1, "进水温度")));
         when(repo.findById(bogus)).thenReturn(Uni.createFrom().nullItem());
-        when(configRepo.findById(CONFIG_ID)).thenReturn(Uni.createFrom().item(registerConfig()));
         when(lastPollingRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
 
         Map<String, List<ModbusRegisterSnapshot>> grid =
@@ -160,7 +151,7 @@ class ModbusShadowServiceTest {
     private static ModbusService service() {
         ModbusService svc = new ModbusService();
         svc.id = new ObjectId(SERVICE_ID);
-        svc.configId = CONFIG_ID;
+        svc.configSnapshot = registerConfig();
         return svc;
     }
 

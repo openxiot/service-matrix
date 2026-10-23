@@ -44,7 +44,9 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 ## 三、数据模型（落库 `modbus`/`services`，Panache 生成 ObjectId，对外十六进制字符串）
 
 ```
-ModbusService                       name / version / configId / device / functions[] / creator / updater
+ModbusService                       name / version / configSnapshot / slaveId / device / functions[] / creator / updater
+ModbusConfig（快照）                id / owner / slave / visibility / registries[] / commands[] / lifecycle / creator / updater
+                                    ← 创建服务时整份拷贝进 configSnapshot；之后点表改动/删除不影响该服务
 DeviceOn                            did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
 SpaceOn                             spaceId / rootId                     ← 设备落点，与 DeviceEntity.space 同一个类
 ModbusPolling                      index / name / request / interval / polling / response
@@ -57,9 +59,18 @@ ModbusPollingResponseFieldBit      offset / field / alarms[] ← 位区里的具
 ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / level / text
 ```
 
-* 服务本身**不记组织**（原来的 `orgId` 字段已删）：跨组织隔离由点表（`ModbusConfig.orgId`）负责，
-  服务这一层按空间判权（见第四节）。设备归属用的是**设备所在根空间**，见第五节与
-  `ManipulationService`。
+* 服务本身**不记组织**（原来的 `orgId` 字段已删）：服务这一层按空间判权（见第四节）。
+  `configSnapshot.owner` 只是点表归属的**历史副本**（展示/溯源用），不参与鉴权。
+  设备归属用的是**设备所在根空间**，见第五节与 `ManipulationService`。
+* **`configSnapshot` 是点表的创建时快照**（整份 `ModbusConfig`，含 `id`）：创建服务时由前端把
+  当前选中的点表原样写进请求体，之后点表被修改/删除都不影响这条服务 —— 服务不再依赖点表集合。
+  读服务的地方一律读它，**不再回查 `configs`**：寄存器缓存网格（`ModbusShadowService`）用它出
+  可读寄存器、详情/清单页用它显示「源点表」、设备页用它取寄存器名、统计按 `configSnapshot.id`
+  分组（`ModbusServiceRepository.findConfigKeysBySpaceId` 只投影 `configSnapshot._id`）。
+  落库形状与点表文档同形（嵌套 `_id`），迁移脚本见
+  `docs/migrations/modbus-service-config-snapshot.js`（configId → configSnapshot）。
+* `slaveId` 是服务级从站地址（1..247），创建时从快照的 `slave.slaveId` 拷贝、可在界面改；
+  各方法的 `request.slaveId` 必须与它一致。
 * `device.argument` = 依赖设备的方法**入参的 piid**，请求帧填在这里。DTU 承载数据的动作只有一个入参，
   故提到 device 级、对该服务的所有方法共用（不同型号 piid 不同：s710ym 是 1/2/2、dtu.json 是 1/1/1，
   由前端按型号写入，后端不去产品定义推算）。
@@ -267,7 +278,7 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
   * **偏移必须按 index 升序首尾相接**（10：每条 `offset == 上一条 offset + 上一条跨度`，从 0 起；
     0F：恰好是 `0..n-1`）：fc 0F/10 的帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞可言
     —— 点表那条线的 `writeMultipleRegistersBody` 也正是这么要求的。
-  * **同一服务各方法的 `slaveId` 必须一致**：一个服务由一条点表（`configId`）映射而来，
+  * **同一服务各方法的 `slaveId` 必须一致**：一个服务由一条点表（`configSnapshot`）映射而来，
     一条点表只有一个 `slave`；从站地址写错不会报错，只会静默读到隔壁设备。
 * **请求 ↔ 应答对账**（结构化之后白拿的那层）：
   * 读方法 `response.fields[]` **必填非空** —— 没有解析规则的读方法返回 `{}`，是静默失效。
@@ -311,6 +322,21 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     两边各写一份迟早漂移。
 
 ## 八、变更记录
+
+### 2026-10-23
+
+* **服务内嵌点表快照：`String configId` → `ModbusConfig configSnapshot`**。点表在服务建好之后
+  仍可能被修改/删除，而服务的方法、寄存器名、统计分组都依赖「建这条服务时那张点表」——
+  改为创建时把**整份点表**快照进服务（前端在创建/换点表时把 `configSnapshot` 内容写全），
+  读服务即拿到全量定义，**不再回查 `configs` 集合**：
+  * `ModbusShadowService.registerCache` 直接用 `service.configSnapshot.registries`（不再
+    `resolveConfig`），旧服务没有快照时给空网格；
+  * `ModbusServiceRepository.findConfigIdsBySpaceId` → `findConfigKeysBySpaceId`，只投影
+    `configSnapshot._id`，统计的分组键改为快照里的点表 id（键的形状没变，前端显示不受影响）；
+  * 校验器要求 `configSnapshot` 且其中 `id` 非空；更新（PATCH 合并）时缺省保留原快照。
+  * 落库形状：嵌套文档与点表集合同形（`_id` 为 ObjectId），`ModbusServiceSnapshotBsonTest` 钉住。
+  * 存量数据迁移：`docs/migrations/modbus-service-config-snapshot.js`（默认演练，`APPLY=1` 落库）；
+    **先部署新后端再迁库**，脚本头注释里有部署前后空窗的说明。
 
 ### 2026-10-22
 
@@ -449,9 +475,10 @@ ModbusPollingResponseFieldAlarm    id / enabled / compare / threshold / state / 
     本次返回的那一批 —— 拿它们算「今日告警 / 告警曲线 / 类型分布」得到的是**被截断的下限**，
     而卡片和曲线上完全看不出来。新接口不打 limit，量级由 31 天的窗口上限兜住。
   * **服务这一次读取同时给出总数、按点表分组、以及告警与故障要逐服务查的 id 清单**
-    （`ModbusServiceRepository.findConfigIdsBySpaceId`，与 `findBriefBySpaceId` 同过滤、只投影
-    `configId`；`_id` 由 Mongo 默认带出）。三者同源，故「分组的条数之和 == 服务总数」是构造出来的；
-    这也是没有复用 `ModbusServiceService.subtreeServiceIds` 的原因（它不带 `configId`，点表得再查一次）。
+    （`ModbusServiceRepository.findConfigKeysBySpaceId`，与 `findBriefBySpaceId` 同过滤、只投影
+    `configSnapshot._id`；`_id` 由 Mongo 默认带出）。三者同源，故「分组的条数之和 == 服务总数」是构造出来的；
+    这也是没有复用 `ModbusServiceService.subtreeServiceIds` 的原因（它不带点表分组键，点表得再查一次）。
+    分组键仍是**点表 id**（现在是快照里的 `id`，文案层说是 `configId` 也行），由前端解成「厂家 型号」。
   * **告警与故障仍逐个 serviceId 各查一次再内存归并**，新增
     `ModbusServiceAlarmRepository.findTimeline` / `ModbusServiceFailureRepository.findTimeline`
     （**不打 limit、不排序**，只投影 `at`(+`text`)）：索引 `(serviceId, pollingIndex, at)` 跨服务查

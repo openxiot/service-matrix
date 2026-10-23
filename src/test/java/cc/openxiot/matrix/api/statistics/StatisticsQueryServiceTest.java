@@ -6,7 +6,9 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService.DeviceStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarm;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -168,11 +170,13 @@ class StatisticsQueryServiceTest {
     @Test
     void servicesGroupByConfigIdAndKeepTheEmptyKey() {
         // 没配点表的服务落在空串键上（点表 id 是标识符不是显示名，前端据此显示「未定义」）
+        String cfg1 = "650000000000000000000001";
+        String cfg2 = "650000000000000000000002";
         ServiceStats stats = StatisticsQueryService.servicesOf(List.of(
-                service("cfg-1"), service("cfg-1"), service("cfg-2"), service(null)));
+                service(cfg1), service(cfg1), service(cfg2), service(null)));
 
         assertEquals(4, stats.total());
-        assertEquals(List.of(new Count("cfg-1", 2), new Count("", 1), new Count("cfg-2", 1)),
+        assertEquals(List.of(new Count(cfg1, 2), new Count("", 1), new Count(cfg2, 1)),
                 stats.byConfig());
         // 「分组的条数之和 == 总数」是构造出来的：两者出自同一次读取
         assertEquals(stats.total(),
@@ -204,7 +208,11 @@ class StatisticsQueryServiceTest {
 
     private static ModbusService service(String configId) {
         ModbusService service = new ModbusService();
-        service.configId = configId;
+        if (configId != null) {
+            ModbusConfig snapshot = new ModbusConfig();
+            snapshot.id = new ObjectId(configId);
+            service.configSnapshot = snapshot;
+        }
         return service;
     }
 

@@ -698,7 +698,7 @@ Base Path：`/matrix/v1/statistics`
 | --- | --- |
 | `from` / `to` | 实际生效的区间（`to` 缺省时补的是「现在」，回显给调用方） |
 | `devices` | `{total, online, byType: [{type, count}]}`；`type` 是设备 URN 的**第 4 段**（如 `dtu`） |
-| `services` | `{total, byConfig: [{configId, count}]}`；按服务所配的**点表 id** 分组，未配点表的落在 `""` 键上 |
+| `services` | `{total, byConfig: [{configId, count}]}`；按服务所配的**点表 id** 分组（取服务内嵌快照的 `configSnapshot.id`，点表之后改名/删除都不影响归属），未配点表的落在 `""` 键上 |
 | `alarms` | `{total, byText: [{text, count}], hourly: [{at, count}]}`；按**告警文本**（用户自己填的）分组 |
 | `failures` | `{total, hourly: [{at, count}]}` |
 

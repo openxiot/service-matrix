@@ -1,6 +1,7 @@
 package cc.openxiot.matrix.db.modbus.service.codec;
 
 import cc.openxiot.common.person.codec.PersonCodec;
+import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.codec.ModbusPollingCodec;
 import io.vertx.core.json.JsonArray;
@@ -41,8 +42,8 @@ public final class ModbusServiceCodec {
         if (service.version != null) {
             o.put("version", service.version);
         }
-        if (service.configId != null) {
-            o.put("configId", service.configId);
+        if (service.configSnapshot != null) {
+            o.put("configSnapshot", ModbusConfigCodec.encode(service.configSnapshot));
         }
         if (service.slaveId != null) {
             o.put("slaveId", service.slaveId);
@@ -116,7 +117,7 @@ public final class ModbusServiceCodec {
         ModbusService service = new ModbusService();
         service.name = o.getString("name");
         service.version = o.getInteger("version");
-        service.configId = o.getString("configId");
+        service.configSnapshot = ModbusConfigCodec.decode(o.getJsonObject("configSnapshot"));
         service.slaveId = o.getInteger("slaveId");
         service.device = DeviceOnCodec.decode(o.getJsonObject("device"));
         service.functions = ModbusPollingCodec.decode(o.getJsonArray("functions"));
