@@ -3,7 +3,7 @@ package cc.openxiot.matrix.db.modbus.history;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Bucket;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceHistoryCodec;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceLastPollingCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -127,26 +127,28 @@ class ModbusHistoryCodecTest {
 
     @Test
     void shadowKeepsStaleValuesAndOmitsAbsentError() {
-        // 有故障时 fields / recordedAt 照旧在（那是最后一次成功的值与时刻），
+        // 有故障时 value / recordedAt 照旧在（那是最后一次成功的值与时刻），
         // 前端靠 errorAt 判断「这个值从哪一刻起不再更新」
-        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
-        shadow.pollingIndex = 1;
-        Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put("进水温度", 61.5);
-        shadow.fields = fields;
+        ModbusServiceShadow shadow = new ModbusServiceShadow();
+        shadow.registerIndex = 1;
+        shadow.name = "进水温度";
+        shadow.unit = "℃";
+        shadow.value = 61.5;
         shadow.recordedAt = new Date(T0);
         shadow.lastError = "no response";
         shadow.errorAt = new Date(T0 + 60_000);
 
-        JsonObject failed = ModbusServiceLastPollingCodec.encode(shadow);
-        assertEquals(61.5, failed.getJsonObject("fields").getDouble("进水温度"));
+        JsonObject failed = ModbusServiceShadowCodec.encode(shadow);
+        assertEquals(1, failed.getInteger("registerIndex"));
+        assertEquals("进水温度", failed.getString("name"));
+        assertEquals(61.5, failed.getDouble("value"));
         assertEquals(T0, failed.getLong("recordedAt"));
         assertEquals("no response", failed.getString("lastError"));
         assertEquals(T0 + 60_000, failed.getLong("errorAt"));
 
         shadow.lastError = null;
         shadow.errorAt = null;
-        JsonObject healthy = ModbusServiceLastPollingCodec.encode(shadow);
+        JsonObject healthy = ModbusServiceShadowCodec.encode(shadow);
         assertFalse(healthy.containsKey("lastError"));
         assertFalse(healthy.containsKey("errorAt"));
     }

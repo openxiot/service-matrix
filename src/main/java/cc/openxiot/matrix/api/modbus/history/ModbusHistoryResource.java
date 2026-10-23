@@ -5,7 +5,7 @@ import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceLastPollingCodec;
+import cc.openxiot.matrix.db.modbus.history.codec.ModbusServiceShadowCodec;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusServicePollingHistoryCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -64,12 +64,12 @@ public class ModbusHistoryResource extends AbstractResource {
     SpaceService spaceService;
 
     /**
-     * 一个服务下所有方法的当前值：{@code {serviceId, functions: [...]}}。
+     * 一个服务下所有寄存器的当前值：{@code {serviceId, registers: [...]}}。
      *
-     * <p>每条带 {@code fields}（最后已知值）、{@code recordedAt}（那个值有多旧）、
-     * {@code lastError} / {@code errorAt}（从哪一刻起就不再更新）—— 前端要能显示
-     * 「最后已知值 + 它从哪一刻起不再更新」，而不是把陈旧值当最新值画。
-     * 没有影子的方法不在结果里：那是「从没调用过」，与「有值但很旧」不是一回事。</p>
+     * <p>每条带 {@code registerIndex}/{@code name}/{@code unit}、{@code value}（最后已知值）、
+     * {@code recordedAt}（那个值有多旧）、{@code lastError} / {@code errorAt}（从哪一刻起就不再更新）
+     * —— 前端要能显示「最后已知值 + 它从哪一刻起不再更新」，而不是把陈旧值当最新值画。
+     * 没有影子的寄存器不在结果里：那是「从没调用过」，与「有值但很旧」不是一回事。</p>
      */
     @GET
     @Path("/current/{spaceId}/{serviceId}")
@@ -84,7 +84,7 @@ public class ModbusHistoryResource extends AbstractResource {
                 .map(shadows -> OxResponse.ok(
                         new JsonObject()
                                 .put("serviceId", serviceId)
-                                .put("functions", ModbusServiceLastPollingCodec.encode(shadows)))
+                                .put("registers", ModbusServiceShadowCodec.encode(shadows)))
                 )
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

@@ -3,10 +3,10 @@ package cc.openxiot.matrix.api.modbus.history;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistoryRepository;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPollingRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusServicePollingHistoryRepository;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadow;
+import cc.openxiot.matrix.db.modbus.history.ModbusServiceShadowRepository;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -45,7 +45,7 @@ public class ModbusHistoryQueryService {
     public static final int MAX_FAILURE_LIMIT = 1_000;
 
     @Inject
-    ModbusServiceLastPollingRepository shadowRepo;
+    ModbusServiceShadowRepository registryShadowRepo;
 
     @Inject
     ModbusServiceHistoryRepository historyRepo;
@@ -83,16 +83,16 @@ public class ModbusHistoryQueryService {
     }
 
     /**
-     * 一个服务下所有方法的当前值。
+     * 一个服务下所有寄存器的当前值（逐寄存器影子）。
      *
-     * <p>没有影子的方法**不会出现在结果里** —— 那表示它从没被调用过（或从没成功过），
-     * 与「有值但很旧」是两回事，前端要能分开渲染。要完整的 methods 清单得读服务定义。</p>
+     * <p>没有影子的寄存器**不会出现在结果里** —— 那表示它从没被调用过（或从没成功过），
+     * 与「有值但很旧」是两回事，前端要能分开渲染。要完整的寄存器清单得读服务定义的点表快照。</p>
      */
-    public Uni<List<ModbusServiceLastPolling>> currentValues(String serviceId) {
+    public Uni<List<ModbusServiceShadow>> currentValues(String serviceId) {
         if (isBlank(serviceId)) {
             return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
         }
-        return shadowRepo.listByServiceId(serviceId);
+        return registryShadowRepo.listByServiceId(serviceId);
     }
 
     /**
