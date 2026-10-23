@@ -24,10 +24,10 @@ import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
+import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
@@ -401,9 +401,9 @@ class ModbusServiceServiceTest {
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
-        ModbusServiceLastPolling cached = shadow(null);
+        ModbusPollBaseline cached = shadow(null);
         baselines.put(key, cached);
-        ModbusServiceLastPolling next = shadow(null);
+        ModbusPollBaseline next = shadow(null);
         when(history.record(any(), any(), any(), eq(cached))).thenReturn(Uni.createFrom().item(next));
 
         service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, baselines).await().indefinitely();
@@ -423,7 +423,7 @@ class ModbusServiceServiceTest {
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
         baselines.put(key, shadow("DTU offline"));        // 缓存里是故障态
-        ModbusServiceLastPolling next = shadow(null);
+        ModbusPollBaseline next = shadow(null);
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().item(next));
 
         service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, baselines).await().indefinitely();
@@ -439,7 +439,7 @@ class ModbusServiceServiceTest {
         givenParentResult(parentResult(Status.TIMEOUT, "device timeout", null));
         ModbusPollBaselines baselines = new ModbusPollBaselines();
         ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
-        ModbusServiceLastPolling cached = shadow(null);
+        ModbusPollBaseline cached = shadow(null);
         baselines.put(key, cached);
         when(history.recordFailure(any(), any(), any(), eq(cached)))
                 .thenReturn(Uni.createFrom().item(shadow("device timeout")));
@@ -516,13 +516,8 @@ class ModbusServiceServiceTest {
         return config;
     }
 
-    private static ModbusServiceLastPolling shadow(String lastError) {
-        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
-        shadow.serviceId = SERVICE_ID;
-        shadow.pollingIndex = FUNCTION_INDEX;
-        shadow.fields = Map.of("进水温度", 61.5);
-        shadow.lastError = lastError;
-        return shadow;
+    private static ModbusPollBaseline shadow(String lastError) {
+        return new ModbusPollBaseline(Map.of("进水温度", 61.5), null, lastError);
     }
 
     private static ModbusPolling function() {

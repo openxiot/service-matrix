@@ -12,7 +12,7 @@ import cc.openxiot.matrix.api.modbus.poll.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollKey;
 import cc.openxiot.matrix.api.modbus.poll.ModbusPollReconciler;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.history.ModbusServiceLastPolling;
+import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.polling.response.field.ModbusPollingResponseField;
 import cc.openxiot.matrix.db.modbus.service.polling.ModbusPolling;
@@ -453,9 +453,9 @@ public class ModbusServiceService {
         ModbusPollKey key = baselines == null
                 ? null
                 : new ModbusPollKey(service.id.toHexString(), function.index);
-        ModbusServiceLastPolling cached = baselines == null ? null : baselines.get(key);
+        ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusServiceLastPolling> recorded = cached != null
+        Uni<ModbusPollBaseline> recorded = cached != null
                 ? historyService.record(service, function, values, cached)
                 : historyService.record(service, function, values);
         return recorded
@@ -509,9 +509,9 @@ public class ModbusServiceService {
         ModbusPollKey key = baselines == null
                 ? null
                 : new ModbusPollKey(service.id.toHexString(), function.index);
-        ModbusServiceLastPolling cached = baselines == null ? null : baselines.get(key);
+        ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusServiceLastPolling> recorded = cached != null
+        Uni<ModbusPollBaseline> recorded = cached != null
                 ? historyService.recordFailure(service, function, error, cached)
                 : historyService.recordFailure(service, function, error);
         return recorded

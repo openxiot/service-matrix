@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
+import cc.openxiot.matrix.api.modbus.poll.ModbusLastPollingPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusServiceAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusServiceHistory;
@@ -28,8 +29,10 @@ import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 /**
@@ -128,12 +131,16 @@ public class ModbusHistoryService {
      * @return 新的比对基准（= 写后的影子文档）；null 表示**这次什么都没写、没有新基准**，
      *         调用方据此保留它原有的基准而不是清空（没写就说明库里的状态没变，旧基准仍然有效）
      */
-    public Uni<ModbusServiceLastPolling> record(ModbusService service, ModbusPolling function, JsonObject values) {
+    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusPolling function, JsonObject values) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
-        return shadowRepo.find(service.id.toHexString(), function.index)
-                .chain(shadow -> record(service, function, values, shadow));
+        // 手动 invoke / 缓存未命中的兜底：从**逐寄存器影子**重建本读块的比对基准，
+        // 不再读已停写的 service-last-polling（见 ModbusPollBaseline）。
+        String serviceId = service.id.toHexString();
+        return registryShadowRepo.listByServiceId(serviceId)
+                .map(shadows -> blockBaseline(service, function, shadows))
+                .chain(baseline -> record(service, function, values, baseline));
     }
 
     /**
@@ -146,59 +153,51 @@ public class ModbusHistoryService {
      * （真·首次采集，会 {@code insert}）—— 而不是「我不知道」。拿不准就传库里读出来的那份；
      * 轮询器的判定见 {@code ModbusPollBaselines.usable}：故障态与没缓存都回退到读库。</p>
      */
-    public Uni<ModbusServiceLastPolling> record(ModbusService service, ModbusPolling function,
-                                           JsonObject values, ModbusServiceLastPolling baseline) {
+    public Uni<ModbusPollBaseline> record(ModbusService service, ModbusPolling function,
+                                      JsonObject values, ModbusPollBaseline baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
-        // 拷一份：JsonObject 内部的 map 是活的，直接塞进实体会被后续改动牵连
+        // 拷一份：JsonObject 内部的 map 是活的，直接塞进会带跑后续改动。
         Map<String, Object> sample = values == null
                 ? Map.of()
                 : new LinkedHashMap<>(values.getMap());
         String serviceId = service.id.toHexString();
         Date now = new Date();
-        ModbusServiceLastPolling shadow = baseline;
-        boolean failedBefore = shadow != null && shadow.lastError != null;
+        boolean failedBefore = baseline != null && baseline.lastError() != null;
 
         // 操作日志：每次调用一条（成功侧）。**它跟「值变没变」无关** —— 变化与否是值历史/影子的取舍
         //（那两条仍各自按变化/保活判定），操作日志记的是「这轮调用执行过、成了」。
-        // 放开关在链首：无论后续走「清影子 / 无变化早退 / 落明细」哪条，都先记下。
         ModbusServicePollingHistory log = pollingLog(serviceId, function.index,
                 sample.isEmpty() ? "write" : "read", true, now, sample.isEmpty() ? null : sample,
                 null, null, null);
-        Uni<ModbusServiceLastPolling> result;
+        Uni<ModbusPollBaseline> result;
         if (sample.isEmpty()) {
             // 写方法（response 为空）：没有读值可记。但「这次调用成功了」本身要落下来 ——
-            // 否则上一次失败留在影子上的故障态永远清不掉，前端会一直看到一条早已恢复的故障。
-            if (!failedBefore) {
-                result = Uni.createFrom().nullItem();
-            } else {
-                ModbusServiceLastPolling cleared = clearedShadow(shadow, serviceId, function.index);
-                result = shadowRepo.replace(cleared).replaceWith(cleared);
-            }
+            // 否则上次失败留在影子上的故障态永远清不掉（故障态在寄存器影子 / 内存基准里）。
+            result = failedBefore
+                    ? Uni.createFrom().item(new ModbusPollBaseline(
+                            baseline.valueByField(), baseline.recordedAt(), null))
+                    : Uni.createFrom().nullItem();
         } else {
             // 上次调用失败过：把这次成功当「首次采集」处理（基准置空 → 每个字段都落一条）。
             // 否则值恰好没变时，恢复的那一刻一个样本都不落，曲线上就分不清「已恢复」和「仍在故障」。
-            boolean fresh = shadow == null || failedBefore;
+            boolean fresh = baseline == null || failedBefore;
             ModbusHistoryPolicy.Decision decision = ModbusHistoryPolicy.decide(
-                    fresh ? null : shadow.fields,
-                    fresh ? null : shadow.recordedAt,
+                    fresh ? null : baseline.valueByField(),
+                    fresh ? null : baseline.recordedAt(),
                     sample, now, deadband, keepAliveSeconds * 1000L);
             if (!decision.hasRows()) {
                 // 绝大多数采集走这条：只记操作日志，值历史/影子一个操作都没有
                 //（见 Modbus-History-TODO.md 第四步的实测）。
                 result = Uni.createFrom().nullItem();
             } else {
-                // 先追加历史，成功后再动影子：中间失败则影子停在旧值，下次采集仍判为「变了」而重试。
-                // 影子的写必须在 chain 之内构造 —— 放外面（哪怕 Uni 是懒的）也等于把「先历史后影子」
-                // 这条约定寄托在 Mutiny 的懒执行上，读代码的人和测试都看不出来。
-                ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
-                        sample, now, null, null);
+                // 先追加明细，成功后再动寄存器侧：中间失败则影子停在旧值，下次采集仍判「变了」而重试。
                 result = historyRepo.insertAll(rows(serviceId, function.index, sample, decision, now))
-                        .chain(ignored -> shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
-                        // 寄存器中心的新路径（expand）：逐寄存器追加历史事件 + 更新当前值（影子）。
-                        // 失败不阻断 invoke —— 新存储写不上只影响寄存器读侧，值本身已经拿到了
-                        .chain(ignored -> registryEffects(service, sample, decision, now).replaceWith(next));
+                        // 逐寄存器：追加历史事件 + 更新当前值（影子）。失败不阻断 invoke ——
+                        // 新存储写不上只影响寄存器读侧，值本身已经拿到了
+                        .chain(ignored -> registryEffects(service, sample, decision, now))
+                        .map(ignored -> new ModbusPollBaseline(sample, now, null));
             }
         }
         return pollingHistoryRepo.insert(log).chain(ignored -> result);
@@ -212,13 +211,16 @@ public class ModbusHistoryService {
      *
      * @return 新的基准（这里就是故障态本身）；null = 没有写、基准不变
      */
-    public Uni<ModbusServiceLastPolling> recordFailure(ModbusService service, ModbusPolling function,
-                                                  Throwable error) {
+    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusPolling function,
+                                             Throwable error) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
-        return shadowRepo.find(service.id.toHexString(), function.index)
-                .chain(shadow -> recordFailure(service, function, error, shadow));
+        // 手动 invoke / 缓存未命中的兜底：从逐寄存器影子重建本读块的基准（见 record 3 参）。
+        String serviceId = service.id.toHexString();
+        return registryShadowRepo.listByServiceId(serviceId)
+                .map(shadows -> blockBaseline(service, function, shadows))
+                .chain(baseline -> recordFailure(service, function, error, baseline));
     }
 
     /**
@@ -234,38 +236,34 @@ public class ModbusHistoryService {
      * {@code ModbusPollBaselines.usable} 会判它不可用 → 下一次采集回退到读库。
      * 「故障态不吃内存基准」这条口径就是这样自然成立的，不需要额外的失效逻辑。</p>
      */
-    public Uni<ModbusServiceLastPolling> recordFailure(ModbusService service, ModbusPolling function,
-                                                  Throwable error, ModbusServiceLastPolling baseline) {
+    public Uni<ModbusPollBaseline> recordFailure(ModbusService service, ModbusPolling function,
+                                             Throwable error, ModbusPollBaseline baseline) {
         if (!recordable(service, function)) {
             return Uni.createFrom().nullItem();
         }
         String serviceId = service.id.toHexString();
         String message = messageOf(error);
         Date now = new Date();
-        ModbusServiceLastPolling shadow = baseline;
 
         // 操作日志：每次调用一条（失败侧）。分类 / 远端码 / 异常文本都在这儿，失败统计据此过滤。
-        // **重复失败也照记**：操作日志记的是操作本身（这次调用又失败了），去重是值历史/故障明细的事。
+        // **重复失败也照记**：操作日志记的是操作本身（这次调用又失败了），去重是值历史/影子的取舍。
         ModbusServicePollingHistory log = pollingLog(serviceId, function.index, "read", false, now, null,
                 typeOf(error).name(), remoteCodeOf(error), message);
-        Uni<ModbusServiceLastPolling> result;
-        if (shadow != null && message.equals(shadow.lastError)) {
-            // 同一个故障还在持续（DTU 离线是最典型的形态）：值历史/影子不再重复落。
-            // 故障持续多久由这条记录到下一行成功样本的间隔推出来，逐次打点不增加任何信息。
-            // 判定用 message 而不是分类：分类相同时 message 未必相同（异常码不同），
-            // 反过来 message 相同则分类必然相同 —— 用 message 是更严的那个键。
+        Uni<ModbusPollBaseline> result;
+        if (baseline != null && message.equals(baseline.lastError())) {
+            // 同一个故障还在持续（DTU 离线是最典型的形态）：寄存器影子/故障态不再重复落。
+            // 操作日志仍照记（每调用一条）；基准不变。判定用 message 而不是分类：
+            // 分类相同时 message 未必相同（异常码不同），反过来 message 相同则分类必然相同。
             result = Uni.createFrom().nullItem();
         } else {
-            ModbusServiceLastPolling next = shadowOf(shadow, serviceId, function.index,
-                    shadow == null ? null : shadow.fields,
-                    shadow == null ? null : shadow.recordedAt,
-                    message, now);
-            // 影子的写要**等到链里**才执行（deferred）：否则下面的三元会在 op-log insert 之前
-            // 就急切地把入流量落进影子，顺序（先 op-log 后影子）就破了。
-            result = Uni.createFrom().deferred(() ->
-                    (shadow == null ? shadowRepo.insert(next) : shadowRepo.replace(next))
-                            // 寄存器中心的新路径：逐寄存器记失败事件（曲线竖线）+ 更新当前值的故障态
-                            .chain(ignored -> registryFailureEffects(service, function, error, now).replaceWith(next)));
+            // 故障态基准：值/时刻原样保留最后一次成功的采集，只换上新故障消息。
+            ModbusPollBaseline failed = new ModbusPollBaseline(
+                    baseline == null ? null : baseline.valueByField(),
+                    baseline == null ? null : baseline.recordedAt(),
+                    message);
+            result = registryFailureEffects(service, function, error, now)
+                    // 逐寄存器：记失败事件（曲线竖线）+ 更新当前值的故障态（rollbackValve 在链内懒执行）
+                    .replaceWith(failed);
         }
         return pollingHistoryRepo.insert(log).chain(ignored -> result);
     }
@@ -339,7 +337,9 @@ public class ModbusHistoryService {
                 continue;
             }
             rows.add(registryEvent(serviceId, reg, now, null, message));
-            shadows.add(registryShadow(serviceId, reg, now, null, message, null));
+            // errorAt = now：这条故障首次出现的时刻；同故障持续时被 recordFailure 去重跳过、不会刷新
+            //（与 ModbusServiceShadow.errorAt 的文档「首次出现、持续期间不刷新」一致）
+            shadows.add(registryShadow(serviceId, reg, now, null, message, now));
         }
         return writeRegistry(rows, shadows, true);
     }
@@ -491,31 +491,46 @@ public class ModbusHistoryService {
     }
 
     /**
-     * 新的影子文档：{@code previous} 存在时带上它的 {@code _id}（替换文档改了 {@code _id} 会被 Mongo 拒）。
+     * 从逐寄存器影子重建**本读块**的比对基准（不再读已停写的 service-last-polling）。
      *
-     * <p>三个调用点的差别只在这几个入参上 —— 成功传新样本、清掉故障态；失败传上一次成功的值与时刻、
-     * 换上新故障。写成一个构造器是为了让「哪些字段活着传到下一次」一眼可见。</p>
+     * <p>块的字段 = 该读方法应答里定义的字段（名 == 寄存器名，见 {@code ModbusResponseParser}）。
+     * 每个字段取它寄存器影子的值 / 时刻 / 故障态；字段还没采到（无影子）说明基准里没有它，
+     * {@code ModbusHistoryPolicy.decide} 自会把它当「变化」处理。</p>
+     *
+     * <p>整个块一只影子都没有时返回 null —— 那才是真·首次采集（会 {@code insert} 全新影子）。</p>
      */
-    private static ModbusServiceLastPolling shadowOf(ModbusServiceLastPolling previous, String serviceId, Integer pollingIndex,
-                                                Map<String, Object> fields, Date recordedAt,
-                                                String lastError, Date errorAt) {
-        ModbusServiceLastPolling shadow = new ModbusServiceLastPolling();
-        if (previous != null) {
-            shadow.id = previous.id;
+    private static ModbusPollBaseline blockBaseline(ModbusService service, ModbusPolling function,
+                                                    List<ModbusServiceShadow> shadows) {
+        Map<String, ModbusServiceShadow> byName = new HashMap<>();
+        if (shadows != null) {
+            for (ModbusServiceShadow shadow : shadows) {
+                if (shadow != null && shadow.name != null) {
+                    byName.put(shadow.name, shadow);
+                }
+            }
         }
-        shadow.serviceId = serviceId;
-        shadow.pollingIndex = pollingIndex;
-        shadow.fields = fields;
-        shadow.recordedAt = recordedAt;
-        shadow.lastError = lastError;
-        shadow.errorAt = errorAt;
-        return shadow;
-    }
-
-    /** 调用成功、但没有读值（写方法）时清故障态：值与时刻原样保留。 */
-    private static ModbusServiceLastPolling clearedShadow(ModbusServiceLastPolling previous, String serviceId,
-                                                     Integer pollingIndex) {
-        return shadowOf(previous, serviceId, pollingIndex,
-                previous.fields, previous.recordedAt, null, null);
+        Set<String> defined = ModbusLastPollingPlan.definedFields(ModbusPolling.responseFields(function));
+        Map<String, Object> values = new LinkedHashMap<>();
+        Date last = null;
+        String lastError = null;
+        for (String field : defined) {
+            ModbusServiceShadow shadow = byName.get(field);
+            if (shadow == null) {
+                continue;
+            }
+            if (shadow.value != null) {
+                values.put(field, shadow.value);
+            }
+            if (shadow.recordedAt != null && (last == null || shadow.recordedAt.after(last))) {
+                last = shadow.recordedAt;
+            }
+            if (shadow.lastError != null) {
+                lastError = shadow.lastError;
+            }
+        }
+        if (values.isEmpty() && last == null && lastError == null) {
+            return null;
+        }
+        return new ModbusPollBaseline(values.isEmpty() ? null : values, last, lastError);
     }
 }
