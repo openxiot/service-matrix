@@ -46,14 +46,18 @@ public class ModbusAlarmRepository {
     @Inject
     ReactiveMongoClient mongoClient;
 
-    /** MongoDB 的重复键错误码。 */
+    /**
+     * MongoDB 的重复键错误码。
+     */
     private static final int DUPLICATE_KEY = 11000;
 
     private ReactiveMongoCollection<ModbusAlarm> collection() {
         return mongoClient.getDatabase("modbus").getCollection("service-alarms", ModbusAlarm.class);
     }
 
-    /** 按 id 查询单条告警（供详情/关闭入口用）。 */
+    /**
+     * 按 id 查询单条告警（供详情/关闭入口用）。
+     */
     public Uni<ModbusAlarm> findById(ObjectId id) {
         return collection().find(Filters.eq("_id", id)).collect().first();
     }
@@ -123,7 +127,9 @@ public class ModbusAlarmRepository {
      * <p>其它失败一律照常外传：调用方（采集链路）自己决定记日志还是咽下去。</p>
      */
     public Uni<Boolean> insertOpen(ModbusAlarm alarm) {
-        if (alarm.id == null) { alarm.id = new ObjectId(); }
+        if (alarm.id == null) {
+            alarm.id = new ObjectId();
+        }
         return collection().insertOne(alarm)
                 .map(ignored -> true)
                 .onFailure(ModbusAlarmRepository::isDuplicateKey)
@@ -286,19 +292,25 @@ public class ModbusAlarmRepository {
                 .map(UpdateResult::getModifiedCount);
     }
 
-    /** 处理的过滤条件：{@code _id} 定位到一条，且 {@code handled} 还不是 true（重复点击只生效一次）。 */
+    /**
+     * 处理的过滤条件：{@code _id} 定位到一条，且 {@code handled} 还不是 true（重复点击只生效一次）。
+     */
     static Bson handleFilter(ObjectId id) {
         return Filters.and(Filters.eq("_id", id), Filters.ne("handled", true));
     }
 
-    /** 处理的写语句：两个互不相干的字段各写各的 `$set`（不是整文档替换）。 */
+    /**
+     * 处理的写语句：两个互不相干的字段各写各的 `$set`（不是整文档替换）。
+     */
     static Bson handleUpdate(Person who) {
         return Updates.combine(
                 Updates.set("handled", true),
                 Updates.set("handledBy", handledByDocument(who)));
     }
 
-    /** 处理人落成一个显式 {@link Document}（理由见 {@link #handle}）。 */
+    /**
+     * 处理人落成一个显式 {@link Document}（理由见 {@link #handle}）。
+     */
     private static Document handledByDocument(Person who) {
         return new Document("id", who.id)
                 .append("name", who.name)
@@ -364,7 +376,9 @@ public class ModbusAlarmRepository {
                 .collect().asList();
     }
 
-    /** 级联删除一批服务的告警：与历史、故障同口径（服务 / 设备被删时一并删）。 */
+    /**
+     * 级联删除一批服务的告警：与历史、故障同口径（服务 / 设备被删时一并删）。
+     */
     public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
         if (serviceIds == null || serviceIds.isEmpty()) {
             return Uni.createFrom().item(0L);

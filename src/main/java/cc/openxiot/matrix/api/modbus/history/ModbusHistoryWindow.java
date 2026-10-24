@@ -54,9 +54,19 @@ public final class ModbusHistoryWindow {
     private ModbusHistoryWindow() {
     }
 
-    /** 一个降采样桶：{@code [at, until)} 内样本的折叠结果。{@code at} 与原始点的时刻同义，都是横轴坐标。 */
-    public record Bucket(long at, long until, int count, Object first, Object last,
-                         Double min, Double max, Double avg) {
+    /**
+     * 一个降采样桶：{@code [at, until)} 内样本的折叠结果。{@code at} 与原始点的时刻同义，都是横轴坐标。
+     */
+    public record Bucket(
+            long at,
+            long until,
+            int count,
+            Object first,
+            Object last,
+            Double min,
+            Double max,
+            Double avg
+    ) {
     }
 
     /**
@@ -67,11 +77,17 @@ public final class ModbusHistoryWindow {
      * @param buckets     降采样后的桶，按时间升序、已去掉空桶（{@code downsampled} 为 true 时才是要返回的点）
      * @param downsampled true = 用 {@code buckets}，false = 用 {@code samples}
      */
-    public record Window(ModbusHistorySample carryIn, List<ModbusHistorySample> samples,
-                         List<Bucket> buckets, boolean downsampled) {
+    public record Window(
+            ModbusHistorySample carryIn,
+            List<ModbusHistorySample> samples,
+            List<Bucket> buckets,
+            boolean downsampled
+    ) {
     }
 
-    /** 阶梯函数的一段：从 {@code at} 起，值一直是 {@code value}，直到下一段的 {@code at}。 */
+    /**
+     * 阶梯函数的一段：从 {@code at} 起，值一直是 {@code value}，直到下一段的 {@code at}。
+     */
     private record Step(long at, Object value) {
     }
 
@@ -85,8 +101,13 @@ public final class ModbusHistoryWindow {
      * @param to        区间终点（epoch 毫秒），必须大于 from
      * @param maxPoints 返回的点数上限；样本数不超过它时返回原始点，超过则降采样
      */
-    public static Window of(ModbusHistorySample carryIn, List<ModbusHistorySample> samples,
-                            long from, long to, int maxPoints) {
+    public static Window of(
+            ModbusHistorySample carryIn,
+            List<ModbusHistorySample> samples,
+            long from,
+            long to,
+            int maxPoints
+    ) {
         List<ModbusHistorySample> rows = samples == null ? List.of() : samples;
         // 点不多就直接给原始点：这一段本来就是「每个拐点都要看见」的精细区间，折叠只会让前端丢掉拐点
         if (rows.size() <= maxPoints) {
@@ -117,7 +138,9 @@ public final class ModbusHistoryWindow {
         return new Window(carryIn, rows, List.copyOf(buckets), true);
     }
 
-    /** 阶梯函数各段折叠到各桶的结果：桶的四个量 + 累加用的中间量。 */
+    /**
+     * 阶梯函数各段折叠到各桶的结果：桶的四个量 + 累加用的中间量。
+     */
     private static final class Fold {
 
         private final Object[] first;
@@ -126,7 +149,9 @@ public final class ModbusHistoryWindow {
         private final Double[] max;
         private final double[] weighted;
         private final long[] numericMillis;
-        /** 该桶是否已被阶梯函数覆盖过：用来判「这是覆盖到它的第一段」。不能用 first[b] != null —— 值本身可能是 null。 */
+        /**
+         * 该桶是否已被阶梯函数覆盖过：用来判「这是覆盖到它的第一段」。不能用 first[b] != null —— 值本身可能是 null。
+         */
         private final boolean[] covered;
 
         private Fold(int bucketCount) {
@@ -162,7 +187,9 @@ public final class ModbusHistoryWindow {
         }
     }
 
-    /** 阶梯函数的各段：carry-in 在最前（它的起点在窗口之前，会被裁到窗口内）。 */
+    /**
+     * 阶梯函数的各段：carry-in 在最前（它的起点在窗口之前，会被裁到窗口内）。
+     */
     private static List<Step> steps(ModbusHistorySample carryIn, List<ModbusHistorySample> rows) {
         List<Step> steps = new ArrayList<>(rows.size() + 1);
         if (carryIn != null && carryIn.at != null) {
