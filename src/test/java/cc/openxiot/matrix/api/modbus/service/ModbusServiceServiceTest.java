@@ -21,8 +21,8 @@ import static org.mockito.Mockito.when;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmReconciler;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
+import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
+import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
@@ -84,7 +84,7 @@ class ModbusServiceServiceTest {
     private ModbusServiceRepository repo;
     private ManipulationService manipulation;
     private ModbusHistoryService history;
-    private ModbusAlarmService alarms;
+    private ModbusAlarmWriteService alarms;
     private ModbusPollReconciler pollReconciler;
     private ModbusAlarmReconciler alarmReconciler;
 
@@ -93,7 +93,7 @@ class ModbusServiceServiceTest {
         repo = mock(ModbusServiceRepository.class);
         manipulation = mock(ManipulationService.class);
         history = mock(ModbusHistoryService.class);
-        alarms = mock(ModbusAlarmService.class);
+        alarms = mock(ModbusAlarmWriteService.class);
         when(alarms.evaluate(any(), any(), any())).thenReturn(Uni.createFrom().voidItem());
         // update 的写入路径会串三轮派生对账（轮询任务 / 影子 / 告警），都是可弃的副作用
         pollReconciler = mock(ModbusPollReconciler.class);
@@ -106,7 +106,7 @@ class ModbusServiceServiceTest {
         service.repo = repo;
         service.manipulationService = manipulation;
         service.historyService = history;
-        service.alarmService = alarms;
+        service.writeService = alarms;
         service.pollReconciler = pollReconciler;
         service.alarmReconciler = alarmReconciler;
         service.logger = Logger.getLogger(ModbusServiceServiceTest.class);

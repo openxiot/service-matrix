@@ -1,4 +1,5 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.service;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
@@ -16,7 +17,7 @@ import java.util.List;
 /**
  * 告警的读取（见 Modbus-Alarm.md 第九节）：一条按区间 + 筛选条件的清单。
  *
- * <p>与 {@link ModbusAlarmService} 分开：那边管写（采集侧评估、用户点处理），判定口径与副作用纪律
+ * <p>与 {@link ModbusAlarmWriteService} 分开：那边管写（采集侧评估、用户点处理），判定口径与副作用纪律
  * 是它的核心约束，混进查询代码会被淹掉；这边只管读，调用方只有 Resource。</p>
  *
  * <p><b>空间级查询是「逐服务各查一次再内存归并」</b>，与故障清单同口径：告警集合的索引是
@@ -27,7 +28,7 @@ import java.util.List;
  * <p>参数校验放在这里而不是 Resource：Resource 只做鉴权与编码，而校验是能被单测覆盖的部分。</p>
  */
 @ApplicationScoped
-public class ModbusAlarmQueryService {
+public class ModbusAlarmReadService {
 
     /**
      * 条数上限的缺省值与封顶值。
@@ -52,8 +53,13 @@ public class ModbusAlarmQueryService {
      * @param items     明细，按 {@code at} 倒序（最近的在前）
      * @param truncated true = 还有更早的没取回来（前端要提示「时间范围太宽」）
      */
-    public record AlarmResult(Date from, Date to, int limit, List<ModbusAlarm> items,
-                              boolean truncated) {
+    public record AlarmResult(
+            Date from,
+            Date to,
+            int limit,
+            List<ModbusAlarm> items,
+            boolean truncated
+    ) {
     }
 
     /**
@@ -72,8 +78,17 @@ public class ModbusAlarmQueryService {
      * @param open    {@code true} 只看未恢复、{@code false} 只看已恢复、{@code null} 都要
      * @param handled 同上，针对「是否已处理」
      */
-    public Uni<AlarmResult> alarms(String serviceId, Integer pollIndex, String field, String level,
-                                   Boolean open, Boolean handled, Date from, Date to, Integer limit) {
+    public Uni<AlarmResult> alarms(
+            String serviceId,
+            Integer pollIndex,
+            String field,
+            String level,
+            Boolean open,
+            Boolean handled,
+            Date from,
+            Date to,
+            Integer limit
+    ) {
         if (isBlank(serviceId)) {
             return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
         }
@@ -93,9 +108,17 @@ public class ModbusAlarmQueryService {
      *
      * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */
-    public Uni<AlarmResult> alarmsOfServices(List<String> serviceIds, Integer pollIndex, String field,
-                                             String level, Boolean open, Boolean handled,
-                                             Date from, Date to, Integer limit) {
+    public Uni<AlarmResult> alarmsOfServices(
+            List<String> serviceIds,
+            Integer pollIndex,
+            String field,
+            String level,
+            Boolean open,
+            Boolean handled,
+            Date from,
+            Date to,
+            Integer limit
+    ) {
         Date end = to == null ? new Date() : to;
         String err = checkRange(from, end);
         if (err == null) {
@@ -123,7 +146,7 @@ public class ModbusAlarmQueryService {
      * 合并各服务的结果：按 {@code at} 倒序，取前 {@code limit} 条；多出来的就说明还有更早的没取回来。
      *
      * <p>抽成静态方法是为了能单测：这个仓库跑不了要连库的测试，而「合并之后对不对」恰恰是最该被
-     * 断言的部分（见 {@code ModbusAlarmQueryServiceTest}）。</p>
+     * 断言的部分（见 {@code ModbusAlarmReadServiceTest}）。</p>
      *
      * <p>{@code at} 理论上不会缺（写入时必带），但真缺了也得排得出结果：按 0 算，倒序里落在最后 ——
      * 与故障合并同一条兜底。</p>

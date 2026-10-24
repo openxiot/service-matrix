@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModbusAlarm · 生命周期</title>
+<style>
+  :root{
+    --bg:#fafaf7; --card:#ffffff; --ink:#1f2328; --muted:#66707a;
+    --line:#e5e1d8; --line-strong:#d0cabc;
+    --brand:#7a5af0; --brand-soft:#efeaff;
+    --good:#1a7f4b; --good-soft:#e5f5ec;
+    --warn:#b7791f; --warn-soft:#fdf3df;
+    --danger:#b4453f; --danger-soft:#fbeae9;
+    --blue:#2a6fb0; --blue-soft:#e7f1fb;
+    --code:#f4f1ea;
+    --mono:"SF Mono","Menlo","Consolas","JetBrains Mono",monospace;
+    --serif:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15171c; --card:#1e2127; --ink:#e8eaed; --muted:#9aa3ad;
+      --line:#333742; --line-strong:#4a4f5c;
+      --brand:#a48dff; --brand-soft:#2a2440;
+      --good:#4ec98a; --good-soft:#173024;
+      --warn:#e0ae52; --warn-soft:#332a16;
+      --danger:#e07a74; --danger-soft:#3a2322;
+      --blue:#6ea8dc; --blue-soft:#1c2e40;
+      --code:#23262e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--serif); line-height:1.7; font-size:15px;
+    padding:48px 20px 96px;
+  }
+  .wrap{max-width:920px; margin:0 auto}
+
+  /* ---------- hero ---------- */
+  .hero{background:linear-gradient(135deg,var(--brand-soft),var(--card));
+    border:1px solid var(--line); border-radius:18px; padding:34px 38px; margin-bottom:38px}
+  .hero .kicker{color:var(--brand); font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; font-size:12px; margin:0 0 8px}
+  .hero h1{margin:0 0 10px; font-size:30px; letter-spacing:.5px}
+  .hero p{margin:0; color:var(--muted); font-size:15.5px}
+  .hero .tags{margin-top:16px; display:flex; gap:8px; flex-wrap:wrap}
+  .hero .tag{font-size:12.5px; padding:3px 10px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted)}
+  .hero .tag b{color:var(--ink); font-weight:600}
+
+  h2{margin:52px 0 14px; font-size:21px; letter-spacing:.3px;
+    padding-bottom:8px; border-bottom:2px solid var(--brand)}
+  h2 .no{color:var(--brand); margin-right:6px}
+  h3{margin:30px 0 8px; font-size:16px}
+  p{margin:10px 0}
+  a{color:var(--brand)}
+  .muted{color:var(--muted)}
+
+  /* ---------- callouts ---------- */
+  .callout{border:1px solid var(--line); border-left-width:4px; border-radius:10px;
+    padding:12px 16px; margin:16px 0; background:var(--card)}
+  .callout .ttl{font-weight:700; margin-bottom:4px; font-size:13.5px}
+  .callout p{margin:4px 0}
+  .callout.core{border-left-color:var(--brand)}
+  .callout.core .ttl{color:var(--brand)}
+  .callout.good{border-left-color:var(--good)}
+  .callout.good .ttl{color:var(--good)}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout.warn .ttl{color:var(--warn)}
+  .callout.danger{border-left-color:var(--danger)}
+  .callout.danger .ttl{color:var(--danger)}
+  .callout.blue{border-left-color:var(--blue)}
+  .callout.blue .ttl{color:var(--blue)}
+
+  ul,ol{list-style:none; margin:8px 0; padding-left:0}
+  li{padding:3px 0 3px 26px; position:relative}
+  li::before{content:""; position:absolute; left:8px; top:.86em; width:7px; height:7px;
+    border-radius:2px; background:var(--brand)}
+  li.good::before{background:var(--good)}
+  li.danger::before{background:var(--danger)}
+  li.warn::before{background:var(--warn)}
+
+  /* ---------- tables ---------- */
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14px;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:color-mix(in srgb,var(--card) 50%,var(--brand-soft));
+    font-weight:700; font-size:13px; letter-spacing:.02em; white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td code,th code{font-size:13px}
+  .num{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+  /* ---------- code ---------- */
+  pre{background:var(--code); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:13px; line-height:1.6}
+  code{font-family:var(--mono); background:var(--code); padding:1px 6px; border-radius:5px;
+    font-size:.92em}
+  pre code{background:none; padding:0}
+  .c{color:var(--muted)}
+
+  /* ---------- diagram ---------- */
+  .diagram{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 16px; margin:20px 0}
+  .diagram svg{width:100%; height:auto; display:block}
+  .figcap{text-align:center; color:var(--muted); font-size:12.5px; margin-top:8px}
+
+  .legend{display:flex; gap:18px; flex-wrap:wrap; justify-content:center; margin-top:12px; font-size:12.5px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .lg{width:12px; height:12px; border-radius:3px}
+
+  footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="kicker">Service-Matrix · Modbus</p>
+    <h1>ModbusAlarm：一次阈值告警的完整生命周期</h1>
+    <p>读方法的出值越过用户配的阈值时落一条告警。这张文档只讲两件事——<b>它怎么被「产生」出来</b>，
+      以及<b>落地之后被哪些地方「使用」</b>。完整的规则与设计口径见
+      <code>Modbus-Alarm.md</code>，这里是对着当前代码把它走读一遍。</p>
+    <div class="tags">
+      <span class="tag">存储 <b>modbus / service-alarms</b></span>
+      <span class="tag">判定 <b>ModbusAlarmPolicy</b></span>
+      <span class="tag">落库 <b>ModbusAlarmWriteService</b></span>
+      <span class="tag">查询/处理 <b>ModbusAlarmReadService / ModbusAlarmResource</b></span>
+      <span class="tag">对账 <b>ModbusAlarmReconciler</b></span>
+    </div>
+  </header>
+
+  <div class="callout core">
+    <div class="ttl">一句话记住它</div>
+    <p>「一次越限一条」的<strong>边沿事件</strong>：正常 → 越限落一条，持续越限<b>不重复落</b>，
+      回到正常后再越限才算新的一次。<strong>「开着」就是状态</strong>——某出值上有一条 <code>recoveredAt</code>
+      为空的告警行，就等于它「正在告警」;不另存一份告警态。</p>
+  </div>
+
+  <h2><span class="no">①</span>先看全貌：一条告警的一生</h2>
+  <p>下面是一条告警从配置、产生、读取到被处理/关闭的完整流程。后两节分别展开<b>产生</b>（右上→右下，
+    红色那条热路径）与<b>使用</b>（对账、查询、处理、级联删除）。</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ModbusAlarm 生命周期图">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <style>
+          .b{fill:#1e2127}
+        </style>
+      </defs>
+
+      <!-- Producer column -->
+      <g font-family="inherit" font-size="12.5">
+        <!-- config -->
+        <rect x="30" y="20" width="250" height="58" rx="10" fill="var(--brand-soft)" stroke="var(--brand)"/>
+        <text x="155" y="40" text-anchor="middle" font-weight="700">注册表中心 · 规则</text>
+        <text x="155" y="58" text-anchor="middle" fill="var(--muted)">configSnapshot.registries[].alarms[]</text>
+        <text x="155" y="72" text-anchor="middle" fill="var(--muted)">一条规则 = compare/threshold/level/text</text>
+
+        <!-- collect -->
+        <rect x="30" y="120" width="250" height="58" rx="10" fill="var(--blue-soft)" stroke="var(--blue)"/>
+        <text x="155" y="142" text-anchor="middle" font-weight="700">采集链路 execute()</text>
+        <text x="155" y="160" text-anchor="middle" fill="var(--muted)">轮询 / 手动 invoke</text>
+        <text x="155" y="174" text-anchor="middle" fill="var(--muted)">先 recordHistory,再 evaluateAlarms</text>
+
+        <!-- evaluate -->
+        <rect x="30" y="220" width="250" height="76" rx="10" fill="var(--danger-soft)" stroke="var(--danger)"/>
+        <text x="155" y="240" text-anchor="middle" font-weight="700">ModbusAlarmWriteService.evaluate()</text>
+        <text x="155" y="260" text-anchor="middle" fill="var(--muted)">闸门 hasEnabledAlarm（无规则零库操作）</text>
+        <text x="155" y="278" text-anchor="middle" fill="var(--muted)">mapOpenRuleByField：一次带索引读</text>
+        <text x="155" y="292" text-anchor="middle" fill="var(--muted)">先关后插 apply()</text>
+
+        <!-- row -->
+        <rect x="30" y="345" width="250" height="55" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>
+        <text x="155" y="366" text-anchor="middle" font-weight="700">service-alarms 一行 ModbusAlarm</text>
+        <text x="155" y="384" text-anchor="middle" fill="var(--muted)">快照 + 边沿(at/recoveredAt) + handled</text>
+
+        <!-- edge arrows (producer) -->
+        <path d="M155,78 L155,120" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+        <path d="M155,178 L155,220" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+        <path d="M155,296 L155,345" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+
+        <!-- reconcile feeder -->
+        <path d="M30,349 L14,349 C5,349 5,394 14,394 L30,394" fill="none" stroke="var(--warn)" marker-end="url(#arr)"/>
+        <text x="14" y="341" text-anchor="middle" fill="var(--warn)" font-size="11">对账</text>
+      </g>
+
+      <!-- Consumer column -->
+      <g font-family="inherit" font-size="12.5" fill="var(--ink)">
+        <text x="700" y="40" text-anchor="middle" font-weight="700" style="color:var(--brand)">使用（读与改）</text>
+
+        <rect x="575" y="60" width="250" height="66" rx="10" fill="var(--card)" stroke="var(--blue)"/>
+        <text x="700" y="82" text-anchor="middle" font-weight="700">GET /many/{spaceId}</text>
+        <text x="700" y="100" text-anchor="middle" fill="var(--muted)">ModbusAlarmReadService</text>
+        <text x="700" y="116" text-anchor="middle" fill="var(--muted)">区间·按服务合并且倒序</text>
+
+        <rect x="575" y="150" width="250" height="66" rx="10" fill="var(--card)" stroke="var(--good)"/>
+        <text x="700" y="172" text-anchor="middle" font-weight="700">POST /handle/{spaceId}/{id}</text>
+        <text x="700" y="190" text-anchor="middle" fill="var(--muted)">CAS 写回执 handled/handledBy</text>
+        <text x="700" y="206" text-anchor="middle" fill="var(--muted)">返回更新后的那条</text>
+
+        <rect x="575" y="240" width="250" height="66" rx="10" fill="var(--card)" stroke="var(--warn)"/>
+        <text x="700" y="262" text-anchor="middle" font-weight="700">对账 ModbusAlarmReconciler</text>
+        <text x="700" y="280" text-anchor="middle" fill="var(--muted)">定义变更 + 启动，按 DEFINITION 关</text>
+        <text x="700" y="296" text-anchor="middle" fill="var(--muted)">判据纯函数 ModbusAlarmPlan</text>
+
+        <rect x="575" y="330" width="250" height="66" rx="10" fill="var(--card)" stroke="var(--danger)"/>
+        <text x="700" y="352" text-anchor="middle" font-weight="700">级联删除 purge()</text>
+        <text x="700" y="370" text-anchor="middle" fill="var(--muted)">服务/设备被删 → deleteByServiceIds</text>
+        <text x="700" y="386" text-anchor="middle" fill="var(--muted)">真删，不是按 DEFINITION 关</text>
+
+        <!-- consumer view arrows -->
+        <path d="M700,126 L700,150" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+        <path d="M700,216 L700,240" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+      </g>
+
+      <!-- read arrows from row -->
+      <path d="M280,372 L575,372" fill="none" stroke="var(--muted)" marker-end="url(#arr)"/>
+      <path d="M280,88 L575,88" fill="none" stroke="var(--muted)" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+      <text x="430" y="78" text-anchor="middle" fill="var(--muted)" font-size="11">状态即这份行的查询</text>
+    </svg>
+    <div class="figcap">图 1 · 一条告警从配置到产生、再到被读取/处理/清理的完整回路</div>
+  </div>
+
+  <h2><span class="no">②</span>它长什么样：数据模型</h2>
+  <p>实体 <code>ModbusAlarm</code>，落在 <code>modbus</code> 库的 <code>service-alarms</code> 集合。
+    一个出值（<code>(serviceId, pollIndex, field)</code>）同时**最多一条**开着。</p>
+
+  <table>
+    <tr><th>分组</th><th>字段</th><th>含义</th></tr>
+    <tr>
+      <td rowspan="3">坐标</td>
+      <td><code>serviceId</code> / <code>pollIndex</code> / <code>field</code></td>
+      <td>哪个服务、哪个方法、哪个出值。位区的具名位也出现在 <code>field</code> 上（一位一个结果键）。</td>
+    </tr>
+    <tr><td><code>openKey</code></td>
+      <td><b>内部标识</b>，<code>serviceId#pollIndex#field</code>。唯一部分索引建在它上面。<b>绝不下发</b>。</td></tr>
+    <tr><td><code>ruleId</code></td>
+      <td>触发这条的是哪条规则（配置里的规则 <code>id</code>）。<b>绝不下发</b>，只在判定与对账时做身份比对。</td></tr>
+    <tr>
+      <td rowspan="6">触发那刻的<br>定义快照</td>
+      <td><code>compare</code> / <code>threshold</code> / <code>state</code></td>
+      <td>比较方式、数值阈值、<code>=</code> 的取值表状态名（三选其一触发）。</td>
+    </tr>
+    <tr><td><code>level</code></td><td>INFO / WARN / CRITICAL。</td></tr>
+    <tr><td><code>text</code></td><td>用户自定义文案。前后端一律<b>原样显示、永不翻译</b>。</td></tr>
+    <tr><td><code>unit</code></td><td>单位快照（可能 null）。</td></tr>
+    <tr><td><code>sample</code></td><td>触发那一刻的值（Number 或取值表描述串）。开着期间不刷新。</td></tr>
+    <tr><td><code>at</code></td><td><b>越限首次出现</b>的时刻（UTC），持续越限不刷新。</td></tr>
+    <tr>
+      <td rowspan="2">边沿 / 状态</td>
+      <td><code>recoveredAt</code></td>
+      <td><b>null = 仍在越限</b>——这就是状态本身，不另存一份告警态。</td></tr>
+    <tr><td><code>closeType</code></td><td>怎么关的：VALUE / DEFINITION / SUPERSEDED / HANDLED。见第五节。</td></tr>
+    <tr>
+      <td rowspan="2">处理回执</td>
+      <td><code>handled</code></td>
+      <td>是否被用户认领。null / false 都算未处理。</td></tr>
+    <tr><td><code>handledBy</code></td><td>第一个处理的人；处理时刻取它的 <code>timestamp</code>。</td></tr>
+  </table>
+
+  <div class="callout core">
+    <div class="ttl">为什么存「触发那一刻的快照」而不是引用</div>
+    <p>定义是活的、行是不可变的历史。只存引用的话，把阈值从 80 改成 60 会<b>悄悄改写每一条历史告警的含义</b>——
+      「当时为什么报」被一次无关的修改编辑掉了。与故障记录存 message 文本而不存错误码同一个道理。</p>
+  </div>
+
+  <h2><span class="no">③</span>它是怎么被「产生」的</h2>
+
+  <h3>3.1 规则从哪来：注册表中心，不是应答字段</h3>
+  <p>告警规则挂在<b>注册表中心</b>的每个寄存器上——<code>ModbusService.configSnapshot.registries[]</code>，
+    每个寄存器有一个 <code>alarms[]</code>（一组规则）加上 <code>name</code> / <code>unit</code>。
+    <code>ModbusAlarmPolicy.registerRules(service)</code> 把它展开成一张「出值 → 一组规则 → 单位」的判定表：</p>
+<pre><code>List&lt;ModbusFieldRule&gt; rules =<span class="c">// field, alarms[], unit</span>
+    ModbusAlarmPolicy.registerRules(service);</code></pre>
+  <p>规则为什么带 <code>id</code>:身份是配置里的 <code>id</code>,<strong>绝不用数组下标</strong>——
+    删掉第 0 条会让第 1 条正开着的告警「静默改嫁」到新的第 0 条,还能把关闭原因记成 VALUE(谎话)。</p>
+
+  <h3>3.2 挂在哪：采集链路的一处副作用</h3>
+  <p>产生告警的那条路径是采集本身。<code>ModbusServiceService.execute()</code> 读完帧、解出字段之后,
+    把两件<b>并列的副作用</b>串起来(串只是为了顺序确定,两者互不依赖、各有各的失败重试):</p>
+<pre><code>.chain(read -&gt; <span class="c">recordHistory</span>(service, poll, read, baselines)   <span class="c">// 采到什么</span>
+        .chain(ignored -&gt; <span class="c">evaluateAlarms</span>(service, poll, read))   <span class="c">// 值对不对</span>
+        .replaceWith(read));</code></pre>
+  <p><code>evaluateAlarms</code> 与历史<b>同一个壳</b>:失败只记日志、<code>recoverWithNull</code>,
+    既不改写 invoke 的成功响应、也不改写它的失败响应——值已经拿到了,告警是副产物。
+    失败不会丢:下一个仍越限的样本会重试插入、下一个仍正常的样本会重试关闭
+    (两个边沿各自对库幂等,所以这个特性<b>不需要</b>故障记录那套「先明细后影子」的顺序不变量)。</p>
+
+  <h3>3.3 判定：纯函数,零库操作</h3>
+  <p><code>ModbusAlarmWriteService.evaluate</code> 的完整流程:</p>
+  <ol>
+    <li><b>第一层闸门</b> <code>hasEnabledAlarm(rules)</code>:纯内存判断。没配告警的服务(绝大多数)在这里返回,
+      <b>一次数据库操作都不做</b>。</li>
+    <li><b>一次带索引读</b> <code>mapOpenRuleByField(serviceId, pollIndex)</code>:把「这个方法当前哪些出值开着、
+      各是哪条规则开的、处理过没有」一次查回来,投影只有 <code>field</code>/<code>ruleId</code>/<code>handled</code>。
+      一个方法配 3 个字段也只查这一次。</li>
+    <li><b>纯函数判定</b> <code>ModbusAlarmPolicy.decide(rules, sample, open)</code>:产出该开哪些、该关哪些。
+      无状态、可独立单测,比对的是<b>解析后的值</b>(阈值按工程单位)。</li>
+    <li><b>落库</b> <code>apply(...)</code>:按边沿写出动作。</li>
+  </ol>
+  <p>判定是<b>三态</b>而不是两态:<code>HIT</code> / <code>MISS</code> / <code>SKIP</code>(判不了)。
+  <code>SKIP</code> 必须区别于 <code>MISS</code>——一次截断/畸形的应答<b>不能</b>把一条开着的告警关掉(那是凭空恢复),
+  它在 apply 里什么都不做、只进日志(WARN)。</p>
+
+  <h3>3.4 选举:一个出值一组规则,一次采样只留最严重一条</h3>
+  <p>一个出值可以配一组分级规则(低于 20 告警 / 超过 26 提示 / 超过 28 警告 / 超过 30 严重),但<b>同时最多一条开着</b>。
+  命中多条时只留一条——<strong>级别最高</strong>的;级别相同则取<b>声明顺序里靠后</b>的那条。
+  于是不变式「一个出值同时最多一条开着」恰好就是唯一部分索引强制的东西,
+  <code>openKey</code> 因此仍然只有出值、不带规则标识。</p>
+
+  <h3>3.5 落库:先关、后插——顺序是语义的一部分</h3>
+  <p><code>apply</code> 把一次评估的动作分<b>两段串起来</b>:先并发关、再并发插。</p>
+<pre><code>return <b>all(closes)</b>.chain(() -&gt; <b>all(opens)</b>);   <span class="c">// 顺序不能靠 ops 列表——combine().all() 是并发的</span></code></pre>
+  <p>同一个出值可以「既关又开」(命中了另一条规则 ⇒ SUPERSEDED;开行的规则没换但已被处理过 ⇒ HANDLED)。
+  反过来(先插后关)时,新行会撞上唯一部分索引,被 <code>insertOpen</code> 当成「别的副本先开了」<b>静默吞掉</b>
+  (11000),于是这个出值一条开着的都没有——下一轮会自愈,但那个窗口里告警是消失的,
+  轮询一停就<b>永久丢</b>。这条顺序用 <code>InOrder</code> 单测钉住。</p>
+
+  <div class="callout warn">
+    <div class="ttl">并发护栏:唯一部分索引</div>
+    <p>poller(1 副本)与 API 副本(N 个)可能同时判定同一 <code>(service, poll, field)</code>:两边都读到
+      「没有未恢复的告警」→ 都插入。解法:插入带 <code>openKey</code>,靠
+      <code>{openKey: 1}</code> <b>unique + partialFilter</b> 挡第二条;捕获 11000 当作「别的副本先开了」
+      <b>吞掉</b>(吞掉之后不变式恰好还成立,所以这不是妥协)。关闭用按整个开行标识的 <code>updateMany</code>,
+      天然幂等。</p>
+  </div>
+
+  <h2><span class="no">④</span>它的四种「关闭」与触发线</h2>
+  <p><code>closeType</code> 四个值覆盖全部关闭路径,互斥:</p>
+  <table>
+    <tr><th>值</th><th>何时</th><th>页面文案</th></tr>
+    <tr><td><code>VALUE</code></td><td>值回到不命中任何规则</td><td>值恢复</td></tr>
+    <tr><td><code>SUPERSEDED</code></td><td>当前生效的是同一出值的<b>另一条</b>规则(升级或降级)</td><td>被取代</td></tr>
+    <tr><td><code>DEFINITION</code></td><td>定义不再覆盖这个键:出值被删、规则被删、或该出值所有规则都被停用</td><td>定义变更</td></tr>
+    <tr><td><code>HANDLED</code></td><td>这条已经被处理过、而那条规则<b>还在命中</b>:关掉它、另开一条未处理的新行</td><td>处理后再报</td></tr>
+  </table>
+  <div class="callout danger">
+    <div class="ttl">HANDLED:「处理」是「我知道了,以后还有越线再提醒我」,不是「到此为止」</div>
+    <p>没有这条边沿时,一条已处理而未恢复的行会一直挂着、把后续越线全挡在门外——用户再也收不到提醒,与他的本意正好相反。
+    于是把 <code>handled == true</code> 也当一个边沿:关掉这条,同时另开一条 <code>handled=false</code> 的新行。
+    新行的 <code>at</code> 与旧行的 <code>recoveredAt</code> 取<b>同一个 <code>now</code></b>(一次评估里的所有动作共用一个时刻),
+    读起来就是「这一刻旧的了结、新的开始」。回执不继承——新的一条要重新处理。</p>
+  </div>
+  <div class="callout warn">
+    <div class="ttl">不做防抖 + 永久保留 = 触发线(第十节)</div>
+    <p>一个在阈值附近来回抖的模拟量,按 5 秒周期<b>每天可以产生上千条永不删除的告警</b>。
+      触发线:<strong>实测若某个服务日均告警 &gt; 100 条,回来加回差（deadband）</strong>。会不会回头加防抖,是个有据可依的决定。</p>
+  </div>
+
+  <h2><span class="no">⑤</span>落地之后,它被谁「使用」</h2>
+  <p>使用分两类:一类是<b>读与改</b>的对外接口(前端告警页),一类是<b>后端自己的维护</b>(定义变更对账、级联删除)。</p>
+
+  <h3>5.1 读取:告警清单</h3>
+  <p><code>GET /matrix/v1/modbus/alarm/many/{spaceId}</code>,空间成员可访问。参数可筛
+  <code>serviceId</code> / <code>pollIndex</code> / <code>field</code> / <code>level</code> /
+  <code>open</code> / <code>handled</code> / <code>from</code> / <code>to</code> / <code>limit</code>:</p>
+  <ul>
+    <li><b>不传 <code>serviceId</code> = 整个空间(含子空间)</b>:把子树下所有服务的告警合成一条时间倒序的清单,
+      每条自带 <code>serviceId</code>。一条请求顶掉前端逐服务的扇出——告警页要的正是「这个项目现在哪儿在告警」。</li>
+    <li><code>open</code> / <code>handled</code> 不传 = 不限;它们的 <code>null</code> 与 <code>false</code> 必须区分
+      (「只看已恢复」不能等于「不限」),所以类型用 <code>Boolean</code> 而非 <code>boolean</code>。</li>
+    <li>空间级查询 = <strong>逐服务各查一次、再内存按 <code>at</code> 归并</strong>:理由与故障清单同——索引以
+      <code>serviceId</code> 打头,跨服务查等于全表扫。每个服务取 <code>limit + 1</code> 条,多出来的那条就用来判
+      「还有更早的没取回来」(<code>truncated</code>)。</li>
+  </ul>
+  <div class="callout blue">
+    <div class="ttl">运维口径:盯「只看未恢复」那张视图</div>
+    <p><code>open = true</code> 恰好等于「当前生效的告警」——一个出值同时最多一条开着。而 <strong>未处理计数可以大于它</strong>,
+      这不是 bug:被取代的行(<code>SUPERSEDED</code>)仍然算未处理,那是如实的(确实报过、确实没人处理过)。
+      要清掉它们,用「未处理」筛选逐条点处理;别指望 <code>open</code> 替你把它们筛掉。</p>
+  </div>
+
+  <h3>5.2 处理(回执)</h3>
+  <p><code>POST /matrix/v1/modbus/alarm/handle/{spaceId}/{id}</code>,无 body,处理人取当前账号;返回<b>更新后</b>的那条,
+  前端就地替换、不整页刷新。三件值得记的口径:</p>
+  <ul>
+    <li><b>写之前先判归属</b>:路径上的 <code>spaceId</code> 只证明你是成员,不证明这条告警属于这个空间。判法是
+      「这条告警的 <code>serviceId</code> 在 <code>subtreeServiceIds(spaceId)</code> 里吗」——与列表查询共用同一个函数,
+      于是「列表里看得到的就能点」恰好成立。</li>
+    <li><b>「已经处理过了」算成功,不算错</b>:CAS 改动为 0 时再读一次,行在就照常返回它(记一条日志)、行不在了才 not found。
+      那一次读就是为了分辨这两种解释。</li>
+    <li><code>handledBy</code> 记的是<b>第一个</b>处理的人:仓储那条 <code>updateOne</code> 的过滤条件带
+      <code>{handled: {$ne: true}}</code>,后点的不会把前一个顶掉。</li>
+  </ul>
+
+  <h3>5.3 后端维护:定义变更对账</h3>
+  <p>采集侧的自愈有一条够不着:规则被删、方法被删、或方法不再采,那条还开着的告警<b>再也判定不到</b>、永远挂着。
+  由 <code>ModbusAlarmReconciler</code> 兜,<b>两个时机、同一个实现</b>:定义变更(写入路径,只取该服务的开行)与
+  启动(全服务 × 全开行,兜「直接改库绕过写入路径」的残留)。</p>
+  <ul>
+    <li>判据是<b>纯函数</b> <code>ModbusAlarmPlan</code>:「按新定义,这个 (方法序号, 出值名) 上还有没有一条
+      <code>id</code> 等于这行 <code>ruleId</code>、且启用着的规则」,找不到的按 <code>DEFINITION</code> 关。
+      <b>判据细到规则,不是停在出值</b>——否则删掉「超过 30 严重」那条,按它开出来的行会被判成「还覆盖着」而永远留着。</li>
+    <li><b>对不认识的服务一律不动</b>:写入路径只传一个服务,这条拦的是将来某个调用方传半份服务列表时的误关。</li>
+    <li><b>行上没有 <code>ruleId</code> 的一律不动</b>:关闭是不可逆的动作,宁可留着,交给采集侧的胜者比对按 SUPERSEDED 接手。</li>
+    <li>只写库、不动内存,所以在哪个副本上改的定义,关就在哪个副本上落库。</li>
+  </ul>
+
+  <h3>5.4 后端维护:级联删除</h3>
+  <p>服务或依赖设备被删时,<code>ModbusHistoryService.purge</code> 把影子、历史、故障<b>与告警</b>一起
+  <code>deleteByServiceIds</code><b>真删</b>,而不是按 <code>DEFINITION</code> 关掉。理由:定义变更的「关掉」语义是
+  「这条告警的原因已不存在」,那是给人看的历史、得留着;而服务整个没了的时候,那条告警再没人能处理、也没人需要
+  「当时为什么报」——它就是存储垃圾。真正该保留的「这个点位历史上报过什么」在历史与故障记录里另有其份。</p>
+
+  <div class="callout core">
+    <div class="ttl">三条纪律串起整个写侧(仓储里)</div>
+    <ul style="margin:4px 0">
+      <li class="good">库里<b>没有一条整文档替换</b>:行落下之后只有两种改动——关闭(写 <code>recoveredAt</code>/<code>closeType</code>、<code>$unset openKey</code>)
+      与处理(写 <code>handled</code>/<code>handledBy</code>),是互不相交的字段,各写各的 <code>$set</code>,谁也盖不掉谁。</li>
+      <li class="good"><b>关闭按整个开行标识 <code>updateMany</code>,不定位到某条 <code>_id</code></b>:消除了「幽灵告警永远关不掉」,
+      采集热路径也只需要「存在性」而不需要身份。关闭只能写 <code>$unset openKey</code>,<b>绝不能 <code>$set openKey: null</code></b>
+      (<code>$exists</code> 对 null 成立,会让第二条这样的行撞唯一索引)。</li>
+      <li class="danger"><b>处理用 <code>updateOne</code> 绝不 <code>replaceOne</code></b>:替换会抹掉并行的关闭刚写的 <code>recoveredAt</code>;
+      过滤带 <code>{handled: {$ne: true}}</code> 让重复点击只生效一次。</li>
+    </ul>
+  </div>
+
+  <h2><span class="no">⑥</span>把「产生」与「使用」对上</h2>
+  <p>一句话收尾:<b>产生</b>靠采集链路上的 <code>ModbusAlarmWriteService.evaluate</code>——规则从注册表中心来,判定是
+    开着的行就是状态、一次越限一条、先关后插、唯一部分索引扛并发;这几条拼起来,保证「一个出值同时最多一条开着」。
+    <b>使用</b>到 <code>ModbusAlarmResource</code> 读(一条请求看完整个空间哪儿在告警)、
+    <code>ModbusAlarmWriteService.handle</code> 写回执、<code>ModbusAlarmReconciler</code> 在定义变更与启动时清残留、
+    <code>purge</code> 真删随服务消失的告警。两边的接口都对着 <b>同一份不可变的行</b>——快照保历史,
+    边沿字段就是状态。</p>
+
+  <footer>
+    本文档由代码走读生成,与 <code>Modbus-Alarm.md</code> 同源。命名的两处口径:这里「开着 / 产生 / 使用」单指
+    <code>openKey</code> 有值(未恢复)这一状态;规则身份一律用配置里的 <code>id</code>,不是数组下标。
+  </footer>
+
+</div>
+</body>
+</html>

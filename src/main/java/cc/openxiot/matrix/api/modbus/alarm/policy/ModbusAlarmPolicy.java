@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.policy;
 
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
@@ -52,23 +52,35 @@ public final class ModbusAlarmPolicy {
      */
     public static final List<String> LEVEL_ORDER = List.of("INFO", "WARN", "CRITICAL");
 
-    /** 告警级别白名单。前端 device.service.editor 里有一份同口径的常量（下拉选项），改动要同步。 */
+    /**
+     * 告警级别白名单。前端 device.service.editor 里有一份同口径的常量（下拉选项），改动要同步。
+     */
     public static final Set<String> LEVELS = Set.copyOf(LEVEL_ORDER);
 
-    /** 什么都没发生（绝大多数采集走这条）：调用方应当**一次数据库操作都不做**。 */
+    /**
+     * 什么都没发生（绝大多数采集走这条）：调用方应当**一次数据库操作都不做**。
+     */
     private static final Decision NOTHING =
             new Decision(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
 
     private ModbusAlarmPolicy() {
     }
 
-    /** 一个出值的判定结果。 */
+    /**
+     * 一个出值的判定结果。
+     */
     public enum Verdict {
-        /** 越限。 */
+        /**
+         * 越限。
+         */
         HIT,
-        /** 没越限。 */
+        /**
+         * 没越限。
+         */
         MISS,
-        /** 判不了（值缺失 / NaN / 类型对不上）：**不改状态**，一次畸形的应答不能把开着的告警关掉。 */
+        /**
+         * 判不了（值缺失 / NaN / 类型对不上）：**不改状态**，一次畸形的应答不能把开着的告警关掉。
+         */
         SKIP
     }
 
@@ -84,7 +96,9 @@ public final class ModbusAlarmPolicy {
     public record ModbusFieldRule(String field, List<ModbusRegistryAlarm> alarms, String unit) {
     }
 
-    /** 该开的告警：出值名 + 触发那一刻的配置（要快照进告警行，见 Modbus-Alarm.md 第四节）。 */
+    /**
+     * 该开的告警：出值名 + 触发那一刻的配置（要快照进告警行，见 Modbus-Alarm.md 第四节）。
+     */
     public record Open(String field, ModbusRegistryAlarm alarm, Object sample, String unit) {
     }
 
@@ -115,12 +129,18 @@ public final class ModbusAlarmPolicy {
      *                         「处理」的意思是「我知道了，以后还有越线再提醒我」，所以关掉旧的、重开新的
      * @param skips            判不了的规则，**只用来记日志**（见 {@link Skip}）
      *
-     * <p>四个关闭列表**互斥**：一个出值在一次判定里最多进其中一个（{@link #judge} 每个出值只调一次，
-     * 那里是 {@code if / else if} 链）。所以调用方可以按 closeType 各发一条 {@code updateMany}，
-     * 不必担心同一条行被两个原因先后改两次。</p>
+     *                         <p>四个关闭列表**互斥**：一个出值在一次判定里最多进其中一个（{@link #judge} 每个出值只调一次，
+     *                         那里是 {@code if / else if} 链）。所以调用方可以按 closeType 各发一条 {@code updateMany}，
+     *                         不必担心同一条行被两个原因先后改两次。</p>
      */
-    public record Decision(List<Open> opens, List<String> valueCloses, List<String> supersededCloses,
-                           List<String> definitionCloses, List<String> handledCloses, List<Skip> skips) {
+    public record Decision(
+            List<Open> opens,
+            List<String> valueCloses,
+            List<String> supersededCloses,
+            List<String> definitionCloses,
+            List<String> handledCloses,
+            List<Skip> skips
+    ) {
 
         /**
          * 有没有要**写库**的事；false 时调用方应当一次写操作都不做（稳态走这条）。
@@ -165,12 +185,16 @@ public final class ModbusAlarmPolicy {
         return false;
     }
 
-    /** 配置是否生效：{@code enabled} 缺省与 false 一个意思（配置留着、不告警）。 */
+    /**
+     * 配置是否生效：{@code enabled} 缺省与 false 一个意思（配置留着、不告警）。
+     */
     public static boolean isEnabled(ModbusRegistryAlarm alarm) {
         return alarm != null && Boolean.TRUE.equals(alarm.enabled);
     }
 
-    /** 一组规则里有没有启用的。 */
+    /**
+     * 一组规则里有没有启用的。
+     */
     private static boolean hasEnabled(List<ModbusRegistryAlarm> alarms) {
         if (alarms == null) {
             return false;
@@ -246,7 +270,9 @@ public final class ModbusAlarmPolicy {
         return Verdict.SKIP;
     }
 
-    /** {@code >} / {@code >=} / {@code <} / {@code <=}：只对数值有意义。 */
+    /**
+     * {@code >} / {@code >=} / {@code <} / {@code <=}：只对数值有意义。
+     */
     private static Verdict hitNumeric(Object value, ModbusRegistryAlarm alarm) {
         if (alarm.threshold == null || !(value instanceof Number number)) {
             return Verdict.SKIP;
@@ -290,17 +316,19 @@ public final class ModbusAlarmPolicy {
     /**
      * 判定一次采集。
      *
-     * @param rules          这组出值规则（由 {@link #registerRules(ModbusService)} 从寄存器中心搭出来）
-     * @param values         本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
+     * @param rules           这组出值规则（由 {@link #registerRules(ModbusService)} 从寄存器中心搭出来）
+     * @param values          本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
      * @param openRuleByField 这个方法当前**有未恢复告警**的出值 → 那条开着的行上的
      *                        {@link OpenAlarmRule}（哪条规则开的、有没有被处理过）。
      *                        无开着的不在表里；值里的 {@code ruleId} 可以是 {@code null}
      *                        （行上的 {@code ruleId} 缺失，只可能出现在更早的数据里）——
      *                        故调用方要用允许 null 值的 {@code Map}
      */
-    public static Decision decide(List<ModbusFieldRule> rules,
-                                  Map<String, Object> values,
-                                  Map<String, OpenAlarmRule> openRuleByField) {
+    public static Decision decide(
+            List<ModbusFieldRule> rules,
+            Map<String, Object> values,
+            Map<String, OpenAlarmRule> openRuleByField
+    ) {
         if (rules == null || rules.isEmpty()) {
             return NOTHING;
         }
@@ -353,14 +381,16 @@ public final class ModbusAlarmPolicy {
      *
      * @param unit 快照进告警行的单位（寄存器单位，见调用处）
      * @return 这个出值是否归「值判定」管（有启用的规则、且本次采样里有它）—— 是的话返回它的名字，
-     *         供 DEFINITION 那条逻辑排除
+     * 供 DEFINITION 那条逻辑排除
      */
-    private static Set<String> judge(String field,
-                                     List<ModbusRegistryAlarm> alarms,
-                                     String unit,
-                                     Map<String, Object> vals,
-                                     Map<String, OpenAlarmRule> open,
-                                     Acc acc) {
+    private static Set<String> judge(
+            String field,
+            List<ModbusRegistryAlarm> alarms,
+            String unit,
+            Map<String, Object> vals,
+            Map<String, OpenAlarmRule> open,
+            Acc acc
+    ) {
         if (field == null) {
             return Set.of();
         }
@@ -429,7 +459,9 @@ public final class ModbusAlarmPolicy {
         return Set.of(field);
     }
 
-    /** 判定过程中的几张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。 */
+    /**
+     * 判定过程中的几张累积表（判定的输出）。包一层是为了让 {@link #judge} 的入参不至于淹掉它自己。
+     */
     private static final class Acc {
 
         private final List<Open> opens = new ArrayList<>();

@@ -5,8 +5,8 @@ import cc.openxiot.matrix.api.modbus.service.parser.ModbusResponseParser;
 import cc.openxiot.matrix.api.modbus.service.validator.ModbusServiceValidator;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmReconciler;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmService;
+import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
+import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
@@ -62,7 +62,7 @@ public class ModbusServiceService {
 
     /** 阈值告警的评估（与历史并列的副作用，见 Modbus-Alarm.md）。 */
     @Inject
-    ModbusAlarmService alarmService;
+    ModbusAlarmWriteService writeService;
 
     /** 轮询任务表的对账（写入路径挂这里，见 Modbus-Service-Poller.md 第三节）。 */
     @Inject
@@ -483,7 +483,7 @@ public class ModbusServiceService {
      * 那是正确性要求（多副本下内存基准会漂移，见 Modbus-Service-Poller.md）。</p>
      */
     private Uni<Void> evaluateAlarms(ModbusService service, ModbusPoll poll, JsonObject values) {
-        return alarmService.evaluate(service, poll, values)
+        return writeService.evaluate(service, poll, values)
                 .onFailure().invoke(e -> logger.warnv(
                         "evaluate modbus alarms failed, service: {0}, function: {1}, error: {2}",
                         service.id, poll.index, e.getMessage()))

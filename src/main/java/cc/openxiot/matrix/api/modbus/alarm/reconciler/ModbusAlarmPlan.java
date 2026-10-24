@@ -1,4 +1,5 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.reconciler;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
@@ -91,8 +92,11 @@ public final class ModbusAlarmPlan {
     }
 
     /** 把一个出值（寄存器）上启用着的规则标识收进那张表（出值名或规则标识为空的都不算）。 */
-    private static void addRuleIds(Map<String, Set<String>> keys, String field,
-                                   List<ModbusRegistryAlarm> alarms) {
+    private static void addRuleIds(
+            Map<String, Set<String>> keys,
+            String field,
+            List<ModbusRegistryAlarm> alarms
+    ) {
         if (field == null || alarms == null) {
             return;
         }

@@ -1,9 +1,9 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.policy;
 
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Decision;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.ModbusFieldRule;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Open;
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy.Verdict;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy.Decision;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy.ModbusFieldRule;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy.Open;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy.Verdict;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import org.junit.jupiter.api.Test;

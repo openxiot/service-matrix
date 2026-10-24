@@ -1,6 +1,6 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.reconciler;
 
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPlan.Close;
+import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmPlan.Close;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;

@@ -1,4 +1,5 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.service;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
@@ -41,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 也不改写它的失败响应 —— 值已经拿到了，告警是副作用。</p>
  */
 @ApplicationScoped
-public class ModbusAlarmService {
+public class ModbusAlarmWriteService {
 
     /**
      * 「判不了」的日志每条最多报一次（进程内），超过这个规模就把记忆清空重来。
@@ -59,11 +60,15 @@ public class ModbusAlarmService {
     @Inject
     Logger logger;
 
-    /** 建索引开关，与点表 / 服务 / 历史共用同一个。 */
+    /**
+     * 建索引开关，与点表 / 服务 / 历史共用同一个。
+     */
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
-    /** 已经报过的「判不了」键（{@code serviceId#pollIndex#field#ruleId}），进程内去重。 */
+    /**
+     * 已经报过的「判不了」键（{@code serviceId#pollIndex#field#ruleId}），进程内去重。
+     */
     private final Set<String> reportedSkips = ConcurrentHashMap.newKeySet();
 
     void init(@Observes StartupEvent event) {
@@ -128,8 +133,7 @@ public class ModbusAlarmService {
         String hex = id.toHexString();
         return alarmRepo.handle(id, who)
                 .chain(changed -> alarmRepo.findById(id)
-                        .onItem().ifNull().failWith(() ->
-                                new IllegalArgumentException("modbus alarm not found: " + hex))
+                        .onItem().ifNull().failWith(() -> new IllegalArgumentException("modbus alarm not found: " + hex))
                         .invoke(ignored -> {
                             if (changed == null || changed == 0L) {
                                 logger.infov("modbus alarm was already handled, id: {0}", hex);
@@ -151,9 +155,14 @@ public class ModbusAlarmService {
      *
      * <p>其它动作之间确实互不依赖（开落在不同出值上，四类关闭按出值互斥），并发是对的。</p>
      */
-    private Uni<Void> apply(String serviceId, ModbusPoll poll, List<ModbusAlarmPolicy.ModbusFieldRule> rules,
-                            Map<String, Object> sample,
-                            Map<String, OpenAlarmRule> open, Date now) {
+    private Uni<Void> apply(
+            String serviceId,
+            ModbusPoll poll,
+            List<ModbusAlarmPolicy.ModbusFieldRule> rules,
+            Map<String, Object> sample,
+            Map<String, OpenAlarmRule> open,
+            Date now
+    ) {
         ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(rules, sample, open);
         reportSkips(serviceId, poll, decision.skips());
         if (decision.isEmpty()) {
@@ -215,8 +224,7 @@ public class ModbusAlarmService {
         for (ModbusAlarmPolicy.Skip skip : skips) {
             // 去重键细到**规则**：一个出值可以配一组规则，只报「这个出值判不了」的话，
             // 同一个出值里的第二条坏规则永远不会被报出来（字段改了名算新的，理由同前）
-            String key = ModbusAlarm.openKeyOf(serviceId, poll.index, skip.field())
-                    + "#" + skip.alarm().id;
+            String key = ModbusAlarm.openKeyOf(serviceId, poll.index, skip.field()) + "#" + skip.alarm().id;
             if (!firstTime(reportedSkips, key, MAX_REPORTED_SKIPS)) {
                 continue;
             }
@@ -240,9 +248,15 @@ public class ModbusAlarmService {
         return reported.add(key);
     }
 
-    /** 触发那一刻的定义快照进告警行：定义是活的、行是不可变的历史（见 Modbus-Alarm.md 第八节）。 */
-    private static ModbusAlarm rowOf(String serviceId, Integer pollIndex,
-                                     ModbusAlarmPolicy.Open hit, Date at) {
+    /**
+     * 触发那一刻的定义快照进告警行：定义是活的、行是不可变的历史（见 Modbus-Alarm.md 第八节）。
+     */
+    private static ModbusAlarm rowOf(
+            String serviceId,
+            Integer pollIndex,
+            ModbusAlarmPolicy.Open hit,
+            Date at
+    ) {
         ModbusAlarm row = new ModbusAlarm();
         row.serviceId = serviceId;
         row.pollIndex = pollIndex;

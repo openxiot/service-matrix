@@ -207,7 +207,7 @@ public class StatisticsQueryService {
      * 逐个服务取一条时间线再拍平：服务之间没有依赖，串行只会把总耗时乘上服务数。
      *
      * <p>空清单直接给空结果 —— 这个空间下一个服务都没有就不必查库（照
-     * {@code ModbusAlarmQueryService.alarmsOfServices} 的兜底）。</p>
+     * {@code ModbusAlarmReadService.alarmsOfServices} 的兜底）。</p>
      */
     private static <T> Uni<List<T>> mergeTimelines(List<Uni<List<T>>> queries) {
         if (queries.isEmpty()) {
@@ -361,7 +361,7 @@ public class StatisticsQueryService {
     /**
      * 窗口校验：{@code from} 必填、区间必须非空、不得超过 {@link #MAX_WINDOW}。
      *
-     * <p>与 {@code ModbusAlarmQueryService.checkRange} 的前两条逐字相同（连错误文案也一样：
+     * <p>与 {@code ModbusAlarmReadService.checkRange} 的前两条逐字相同（连错误文案也一样：
      * 前端对这两个接口的报错是同一套呈现），第三条是本接口独有的量级闸门。</p>
      *
      * @return 错误文案；null = 通过

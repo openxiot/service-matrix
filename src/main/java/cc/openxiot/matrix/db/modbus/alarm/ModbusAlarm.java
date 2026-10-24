@@ -67,7 +67,7 @@ public class ModbusAlarm {
      * <p>「处理」在业务上的意思是「我知道了，以后还有越线再提醒我」—— 不是「这事到此为止」。
      * 所以一条未恢复且已处理的行不能就这么一直挂着把后续的越线全挡住：只要那条规则还在命中，
      * 就把它按这个原因关掉、再开一条 {@code handled = false} 的新行，让同一件事重新回到未处理里。
-     * 新行的 {@code at} 与旧行的 {@code recoveredAt} 是同一个时刻（见 {@code ModbusAlarmService#apply}）。</p>
+     * 新行的 {@code at} 与旧行的 {@code recoveredAt} 是同一个时刻（见 {@code ModbusAlarmWriteService#apply}）。</p>
      *
      * <p>几种关闭原因**互斥**，判定侧按优先级只挑一个：换规则（{@link #CLOSE_SUPERSEDED}）比它更具体，
      * 排在前；值已回到正常时走 {@link #CLOSE_VALUE}（值恢复才是实情），它不参与。</p>

@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.modbus.service.validator;
 
-import cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy;
+import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
 import cc.openxiot.matrix.api.modbus.service.params.PollOnce;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;

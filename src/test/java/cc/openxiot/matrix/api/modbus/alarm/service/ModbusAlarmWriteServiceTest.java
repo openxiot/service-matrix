@@ -1,4 +1,5 @@
-package cc.openxiot.matrix.api.modbus.alarm;
+package cc.openxiot.matrix.api.modbus.alarm.service;
+
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link ModbusAlarmService} 的落库行为：不连数据库，用 mock 钉住几条不能破的约定
+ * {@link ModbusAlarmWriteService} 的落库行为：不连数据库，用 mock 钉住几条不能破的约定
  * （Modbus-Alarm.md 第三、四节）。
  *
  * <ul>
@@ -60,12 +61,12 @@ import static org.mockito.Mockito.when;
  *       CAS 改动为 0 时**再读一次**以分辨「别人先处理了」（算成功）与「行不在了」（not found）。</li>
  * </ul>
  */
-class ModbusAlarmServiceTest {
+class ModbusAlarmWriteServiceTest {
 
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
     private static final int FUNCTION_INDEX = 1;
 
-    private ModbusAlarmService service;
+    private ModbusAlarmWriteService service;
     private ModbusAlarmRepository alarmRepo;
     private Logger logger;
 
@@ -74,7 +75,7 @@ class ModbusAlarmServiceTest {
         alarmRepo = mock(ModbusAlarmRepository.class);
         logger = mock(Logger.class);
 
-        service = new ModbusAlarmService();
+        service = new ModbusAlarmWriteService();
         service.alarmRepo = alarmRepo;
         service.logger = logger;
     }
@@ -360,10 +361,10 @@ class ModbusAlarmServiceTest {
     void rememberedSkipsAreBounded() {
         // 记满就清空重来：坏定义比上限还多时，多报几轮是应该的；不清则会一直涨
         Set<String> reported = new HashSet<>();
-        assertTrue(ModbusAlarmService.firstTime(reported, "a", 2));
-        assertTrue(ModbusAlarmService.firstTime(reported, "b", 2));
+        assertTrue(ModbusAlarmWriteService.firstTime(reported, "a", 2));
+        assertTrue(ModbusAlarmWriteService.firstTime(reported, "b", 2));
         // 满了：清空重来，于是 a 又算第一次
-        assertTrue(ModbusAlarmService.firstTime(reported, "a", 2));
+        assertTrue(ModbusAlarmWriteService.firstTime(reported, "a", 2));
         assertTrue(reported.contains("a"));
     }
 

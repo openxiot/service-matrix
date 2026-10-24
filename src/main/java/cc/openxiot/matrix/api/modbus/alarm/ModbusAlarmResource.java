@@ -5,11 +5,14 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmReadService;
+import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.alarm.codec.ModbusAlarmCodec;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.unchecked.Unchecked;
 import io.vertx.core.json.JsonObject;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
@@ -57,10 +60,10 @@ public class ModbusAlarmResource extends AbstractResource {
     Logger logger;
 
     @Inject
-    ModbusAlarmQueryService queryService;
+    ModbusAlarmReadService readService;
 
     @Inject
-    ModbusAlarmService alarmService;
+    ModbusAlarmWriteService writeService;
 
     /** 空间级查询要先把空间下的服务 id 收齐，处理时要判归属（见 ModbusServiceService.subtreeServiceIds）。 */
     @Inject
@@ -115,9 +118,9 @@ public class ModbusAlarmResource extends AbstractResource {
         return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
                         ? serviceService.subtreeServiceIds(spaceId)
-                        .chain(ids -> queryService.alarmsOfServices(ids, pollIndex, field, level,
+                        .chain(ids -> readService.alarmsOfServices(ids, pollIndex, field, level,
                                 open, handled, millis(from), millis(to), limit))
-                        : queryService.alarms(serviceId, pollIndex, field, level,
+                        : readService.alarms(serviceId, pollIndex, field, level,
                         open, handled, millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()
@@ -144,7 +147,7 @@ public class ModbusAlarmResource extends AbstractResource {
      * 就能改别人的数据。判法是「这条告警的 {@code serviceId} 在传入空间的子树里吗」——
      * 与列表查询用的是同一个 {@code subtreeServiceIds}，所以「列表里看得到的就能点」恰好成立。</p>
      *
-     * <p>重复点击 / 并发点击算成功（理由见 {@link ModbusAlarmService#handle}）；
+     * <p>重复点击 / 并发点击算成功（理由见 {@link ModbusAlarmWriteService#handle}）；
      * 行不在了才是 not found。</p>
      */
     @POST
@@ -164,21 +167,21 @@ public class ModbusAlarmResource extends AbstractResource {
         Person who = currentUser();
 
         return requireSpaceMember(spaceId)
-                .chain(ignored -> queryService.findById(alarmId))
+                .chain(ignored -> readService.findById(alarmId))
                 .chain(row -> {
                     if (row == null) {
                         return Uni.createFrom().failure(
                                 new IllegalArgumentException("modbus alarm not found: " + id));
                     }
                     return serviceService.subtreeServiceIds(spaceId)
-                            .map(ids -> {
+                            .map(Unchecked.function(ids -> {
                                 if (row.serviceId == null || !ids.contains(row.serviceId)) {
                                     throw new IllegalArgumentException("No access to this alarm");
                                 }
                                 return row;
-                            });
+                            }));
                 })
-                .chain(ignored -> alarmService.handle(alarmId, who))
+                .chain(ignored -> writeService.handle(alarmId, who))
                 .map(updated -> OxResponse.ok(ModbusAlarmCodec.encode(updated)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -189,13 +192,13 @@ public class ModbusAlarmResource extends AbstractResource {
     /** 空间成员（告警的读与处理同口径：回执不是改配置，与 invoke 一样只要求成员）。 */
     private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
-                .chain(space -> {
+                .chain(Unchecked.function(space -> {
                     if (space == null) {
                         throw new IllegalArgumentException("No access to this space");
                     }
                     return orgAccessService.checkSpaceMember(space, getUserId())
                             .map(ignored -> space);
-                });
+                }));
     }
 
     private static Date millis(Long value) {
