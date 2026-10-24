@@ -39,7 +39,7 @@ import java.util.Map;
  * {@link ModbusShadowCodec}（当前值，按 serviceId 去重），设备卡走
  * {@link ManipulationService#getShadows}（按 did 去重、**一屏一次调用**），
  * 字段曲线走 {@link ModbusRegistryHistoryService#range}（按「点位 × 窗口 × 点数」去重）
- * 与其配套的 {@link ModbusPollHistoryService#failures}（按「方法 × 窗口」去重）。</p>
+ * 与其配套的 {@link ModbusPollingHistoryService#failures}（按「方法 × 窗口」去重）。</p>
  *
  * <h3>取数分组：**只给真正读它的卡片取**</h3>
  * <p>{@code overview} 是按窗口分组的，所以「哪些卡片需要 overview」决定了要发几次查询。

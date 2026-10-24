@@ -70,7 +70,7 @@ public class ModbusPollingHistoryResource extends AbstractResource {
      * 时说明还有更早的故障没取回来，前端应提示缩小时间范围。</p>
      *
      * <p>{@code serviceId} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的失败调用合成
-     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusPollHistoryCodec}），
+     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusPollingHistoryCodec}），
      * 前端据此认领归属。这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 —— 项目级的历史页
      * 要的正是「这个项目里哪儿在报错」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
      * 此时响应里**不出 {@code serviceId} 键**（与 Codec 里「null 不出键」同口径）：它不是某个服务的结果。</p>

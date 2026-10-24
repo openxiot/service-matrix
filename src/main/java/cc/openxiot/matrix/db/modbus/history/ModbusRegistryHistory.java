@@ -13,7 +13,7 @@ import java.util.Date;
  *
  * <p><b>以寄存器为中心</b>：一条 = 一只寄存器 × 一次读。成功的读落 {@link #value}（数值 /
  * {@code value-list} 的 description / 位展开的 0|1），读失败落 {@link #failure}=true 与
- * {@link #message}（见表 {@code service-failures} 的内容并入此处，见 {@code ModbusPollHistory}
+ * {@link #message}（见表 {@code service-failures} 的内容并入此处，见 {@code ModbusPollingHistory}
  * 的说明 —— 失败不再单独占一个集合）。曲线图（首页字段曲线 + 设备服务历史页）就是它的消费方：
  * 一条源同时供「值」（成功段）与「采集失败竖线」（{@code failure} 事件），不必再交叉查两大张表。</p>
  *

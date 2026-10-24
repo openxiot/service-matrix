@@ -70,7 +70,7 @@ public class ModbusPollingHistoryService {
 
     /**
      * **一批服务**在同一区间上的故障记录，合并成一条时间倒序的清单（空间级查询：
-     * {@code ModbusPollHistoryResource.failures} 不传 {@code serviceId} 时走这里）。
+     * {@code ModbusPollingHistoryResource.failures} 不传 {@code serviceId} 时走这里）。
      *
      * <p>为什么是「逐服务各查一次再合并」而不是一条跨服务的查询：故障集合的索引是
      * {@code (serviceId, pollIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
@@ -119,7 +119,7 @@ public class ModbusPollingHistoryService {
      * 取前 {@code limit} 条；多出来的就说明还有更早的没取回来。
      *
      * <p>抽成静态方法是为了能单测：这个仓库跑不了要连库的测试，而「合并之后对不对」恰恰是最该
-     * 被断言的部分（见 {@code ModbusPollHistoryServiceTest}）。</p>
+     * 被断言的部分（见 {@code ModbusPollingHistoryServiceTest}）。</p>
      */
     static FailureResult merge(Date from, Date to, int limit, List<ModbusPollingHistory> rows) {
         List<ModbusPollingHistory> sorted = new ArrayList<>(rows);

@@ -39,7 +39,7 @@ import java.util.Date;
  * 且它有自己的权限粒度（成员可处理，不需要管理员）与保留口径（永久保留，不挂 TTL）。
  * 与历史接口当初另起一段同理。</p>
  *
- * <p><b>按空间鉴权</b>，与 {@code ModbusPollHistoryResource} 同口径：路径上的 {@code spaceId}
+ * <p><b>按空间鉴权</b>，与 {@code ModbusPollingHistoryResource} 同口径：路径上的 {@code spaceId}
  * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「告警是否属于该空间」。
  * 唯一例外是不传 {@code serviceId} 时（见 {@link #many}）：那种查法没有 id 可依，
  * spaceId 同时决定了「查哪些服务」—— 取该空间及其**子空间**下的全部服务，与空间图同口径。</p>

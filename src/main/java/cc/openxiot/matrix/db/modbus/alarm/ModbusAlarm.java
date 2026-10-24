@@ -11,7 +11,7 @@ import org.bson.types.ObjectId;
 /**
  * 一次阈值告警（库 {@code modbus}、集合 {@code service-alarms}）。
  *
- * <p>在此之前只知道「采到没采到」（失败与否在操作日志 {@code ModbusPollHistory.ok} 上），
+ * <p>在此之前只知道「采到没采到」（失败与否在操作日志 {@code ModbusPollingHistory.ok} 上），
  * 这张表记的是**采到了但值不对**：读方法的出值越过用户配的阈值就落一条，前端列出来、点「处理」回执。
  * 判定口径见 {@link cc.openxiot.matrix.api.modbus.alarm.ModbusAlarmPolicy}，设计见 {@code Modbus-Alarm.md}。</p>
  *
