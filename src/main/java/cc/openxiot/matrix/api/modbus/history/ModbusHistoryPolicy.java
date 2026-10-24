@@ -23,7 +23,9 @@ import java.util.Objects;
  */
 public final class ModbusHistoryPolicy {
 
-    /** {@code values} 为空时的结果（没有可落的东西）。 */
+    /**
+     * {@code values} 为空时的结果（没有可落的东西）。
+     */
     private static final Decision NOTHING = new Decision(List.of(), List.of());
 
     private ModbusHistoryPolicy() {
@@ -35,9 +37,13 @@ public final class ModbusHistoryPolicy {
      * @param changedFields   值变了、按正常样本落的字段
      * @param keepaliveFields 值没变、因保活周期到点而落的字段（同一次采集里不会与前者重叠）
      */
-    public record Decision(List<String> changedFields, List<String> keepaliveFields) {
-
-        /** 有没有东西要落；false 时调用方应当**一次数据库操作都不做**（绝大多数采集走这条）。 */
+    public record Decision(
+            List<String> changedFields,
+            List<String> keepaliveFields
+    ) {
+        /**
+         * 有没有东西要落；false 时调用方应当**一次数据库操作都不做**（绝大多数采集走这条）。
+         */
         public boolean hasRows() {
             return !changedFields.isEmpty() || !keepaliveFields.isEmpty();
         }
@@ -53,12 +59,14 @@ public final class ModbusHistoryPolicy {
      * @param deadband        死区，仅对数值生效；0 = 精确比较（取绝对值，负数视为同值）
      * @param keepAliveMillis 保活周期（毫秒）；{@code <= 0} = 关闭保活
      */
-    public static Decision decide(Map<String, Object> baseline,
-                                  Date recordedAt,
-                                  Map<String, Object> values,
-                                  Date now,
-                                  double deadband,
-                                  long keepAliveMillis) {
+    public static Decision decide(
+            Map<String, Object> baseline,
+            Date recordedAt,
+            Map<String, Object> values,
+            Date now,
+            double deadband,
+            long keepAliveMillis
+    ) {
         if (values == null || values.isEmpty()) {
             return NOTHING;
         }
