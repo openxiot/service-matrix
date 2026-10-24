@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModbusHistory · 存储与读取</title>
+<style>
+  :root{
+    --bg:#fafaf7; --card:#ffffff; --ink:#1f2328; --muted:#66707a;
+    --line:#e5e1d8; --line-strong:#d0cabc;
+    --brand:#7a5af0; --brand-soft:#efeaff;
+    --good:#1a7f4b; --good-soft:#e5f5ec;
+    --warn:#b7791f; --warn-soft:#fdf3df;
+    --danger:#b4453f; --danger-soft:#fbeae9;
+    --blue:#2a6fb0; --blue-soft:#e7f1fb;
+    --teal:#0f766e; --teal-soft:#e0f2ef;
+    --code:#f4f1ea;
+    --mono:"SF Mono","Menlo","Consolas","JetBrains Mono",monospace;
+    --serif:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15171c; --card:#1e2127; --ink:#e8eaed; --muted:#9aa3ad;
+      --line:#333742; --line-strong:#4a4f5c;
+      --brand:#a48dff; --brand-soft:#2a2440;
+      --good:#4ec98a; --good-soft:#173024;
+      --warn:#e0ae52; --warn-soft:#332a16;
+      --danger:#e07a74; --danger-soft:#3a2322;
+      --blue:#6ea8dc; --blue-soft:#1c2e40;
+      --teal:#3fb8ad; --teal-soft:#0f2a28;
+      --code:#23262e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--serif); line-height:1.7; font-size:15px; padding:48px 20px 96px}
+  .wrap{max-width:920px; margin:0 auto}
+
+  .hero{background:linear-gradient(135deg,var(--brand-soft),var(--card));
+    border:1px solid var(--line); border-radius:18px; padding:34px 38px; margin-bottom:38px}
+  .hero .kicker{color:var(--brand); font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; font-size:12px; margin:0 0 8px}
+  .hero h1{margin:0 0 10px; font-size:30px; letter-spacing:.5px}
+  .hero p{margin:0; color:var(--muted); font-size:15.5px}
+  .hero .tags{margin-top:16px; display:flex; gap:8px; flex-wrap:wrap}
+  .hero .tag{font-size:12.5px; padding:3px 10px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted)}
+  .hero .tag b{color:var(--ink); font-weight:600}
+
+  h2{margin:52px 0 14px; font-size:21px; letter-spacing:.3px;
+    padding-bottom:8px; border-bottom:2px solid var(--brand)}
+  h2 .no{color:var(--brand); margin-right:6px}
+  h3{margin:30px 0 8px; font-size:16px}
+  p{margin:10px 0}
+  a{color:var(--brand)}
+  .muted{color:var(--muted)}
+
+  .callout{border:1px solid var(--line); border-left-width:4px; border-radius:10px;
+    padding:12px 16px; margin:16px 0; background:var(--card)}
+  .callout .ttl{font-weight:700; margin-bottom:4px; font-size:13.5px}
+  .callout p{margin:4px 0}
+  .callout.core{border-left-color:var(--brand)} .callout.core .ttl{color:var(--brand)}
+  .callout.good{border-left-color:var(--good)} .callout.good .ttl{color:var(--good)}
+  .callout.warn{border-left-color:var(--warn)} .callout.warn .ttl{color:var(--warn)}
+  .callout.danger{border-left-color:var(--danger)} .callout.danger .ttl{color:var(--danger)}
+  .callout.blue{border-left-color:var(--blue)} .callout.blue .ttl{color:var(--blue)}
+
+  ul,ol{list-style:none; margin:8px 0; padding-left:0}
+  li{padding:3px 0 3px 26px; position:relative}
+  li::before{content:""; position:absolute; left:8px; top:.86em; width:7px; height:7px;
+    border-radius:2px; background:var(--brand)}
+  li.good::before{background:var(--good)}
+  li.danger::before{background:var(--danger)}
+  li.warn::before{background:var(--warn)}
+  li.blue::before{background:var(--blue)}
+
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14px;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:color-mix(in srgb,var(--card) 50%,var(--brand-soft));
+    font-weight:700; font-size:13px; letter-spacing:.02em; white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td code,th code{font-size:13px}
+  .num{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+  pre{background:var(--code); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:13px; line-height:1.6}
+  code{font-family:var(--mono); background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em}
+  pre code{background:none; padding:0}
+  .c{color:var(--muted)}
+
+  .diagram{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 16px; margin:20px 0}
+  .diagram svg{width:100%; height:auto; display:block}
+  .figcap{text-align:center; color:var(--muted); font-size:12.5px; margin-top:8px}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; justify-content:center; margin-top:12px; font-size:12.5px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .lg{width:12px; height:12px; border-radius:3px}
+
+  footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="kicker">Service-Matrix · Modbus</p>
+    <h1>ModbusHistory：采了什么，就记什么</h1>
+    <p>读方法一次执行的结果，按落库规则记成历史。这与告警是<b>两件事</b>：那边记「值不对」，这边记
+      <b>「采到什么」</b>。流畅文档只讲三件事——<b>存哪、怎么写、怎么读</b>。完整规则见
+      <code>Modbus-History.md</code>,这里是对着当前代码走读。</p>
+    <div class="tags">
+      <span class="tag">存储 <b>service-registry-histories / service-polling-histories / service-shadows</b></span>
+      <span class="tag">写 <b>ModbusHistoryWriteService</b></span>
+      <span class="tag">判定 <b>ModbusHistoryPolicy</b></span>
+      <span class="tag">读·曲线 <b>ModbusRegistryHistoryService</b></span>
+      <span class="tag">读·故障 <b>ModbusPollingHistoryService</b></span>
+      <span class="tag">整形 <b>ModbusRegistryHistoryWindow</b></span>
+    </div>
+  </header>
+
+  <div class="callout core">
+    <div class="ttl">一句话记住它</div>
+    <p>历史是<b>副作用</b>：值已经拿到了,才去记它。写挂在采集链路的 <code>record</code>(成功)与
+      <code>recordFailure</code>(失败)两个入口,手动 invoke 和轮询走<b>同一个</b>入口;读有两个接口:
+      一只寄存器的<b>区间曲线</b>(<code>/registry/range</code>)和整个空间的<b>故障清单</b>(<code>/polling/failures</code>)。</p>
+  </div>
+
+  <h2><span class="no">①</span>先看全貌：写、存、读</h2>
+  <p>下面一张图串起「采集 → 落库 → 读取」。后三节分别展开 <b>存</b>(三张表)、<b>写</b>(判定 + 影子不变量)、
+    <b>读</b>(两个接口 + 窗口整形)。</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 860 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ModbusHistory 写读流程图">
+      <defs>
+        <marker id="h-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- ============ 写链路（左） ============ -->
+      <g font-family="inherit" font-size="12.5">
+        <rect x="24" y="18" width="250" height="56" rx="10" fill="var(--blue-soft)" stroke="var(--blue)"/>
+        <text x="149" y="40" text-anchor="middle" font-weight="700">采集 execute()</text>
+        <text x="149" y="60" text-anchor="middle" fill="var(--muted)">轮询 / 手动 invoke → 解出字段值</text>
+
+        <rect x="24" y="96" width="250" height="92" rx="10" fill="var(--teal-soft)" stroke="var(--teal)"/>
+        <text x="149" y="116" text-anchor="middle" font-weight="700">ModbusHistoryWriteService</text>
+        <text x="149" y="136" text-anchor="middle" fill="var(--muted)">record() / recordFailure()</text>
+        <text x="149" y="154" text-anchor="middle" fill="var(--muted)">Policy 判定：变位 / 死区 / 保活</text>
+        <text x="149" y="172" text-anchor="middle" fill="var(--muted)">先写明细 → 再更新影子</text>
+
+        <rect x="24" y="210" width="250" height="64" rx="10" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <text x="149" y="232" text-anchor="middle" font-weight="700">操作日志（每次调用一条）</text>
+        <text x="149" y="252" text-anchor="middle" fill="var(--muted)">service-polling-histories</text>
+        <text x="149" y="268" text-anchor="middle" fill="var(--muted)">ok / type/remoteCode / message</text>
+
+        <rect x="24" y="300" width="250" height="64" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>
+        <text x="149" y="322" text-anchor="middle" font-weight="700">寄存器历史 + 影子</text>
+        <text x="149" y="342" text-anchor="middle" fill="var(--muted)">service-registry-histories（逐事件）</text>
+        <text x="149" y="358" text-anchor="middle" fill="var(--muted)">service-shadows（当前值 / 故障态）</text>
+
+        <rect x="24" y="392" width="250" height="56" rx="10" fill="var(--danger-soft)" stroke="var(--danger)"/>
+        <text x="149" y="414" text-anchor="middle" font-weight="700">选 record → evaluate 告警</text>
+        <text x="149" y="434" text-anchor="middle" fill="var(--muted)">历史是副作用，失败只记日志</text>
+
+        <path d="M149,74 L149,96" fill="none" stroke="var(--muted)" marker-end="url(#h-arr)"/>
+        <path d="M149,188 L149,210" fill="none" stroke="var(--muted)" marker-end="url(#h-arr)"/>
+        <path d="M60,274 L60,300" fill="none" stroke="var(--muted)" marker-end="url(#h-arr)"/>
+        <path d="M149,364 L149,392" fill="none" stroke="var(--muted)" marker-end="url(#h-arr)"/>
+      </g>
+
+      <!-- ============ 读侧（右） ============ -->
+      <g font-family="inherit" font-size="12.5">
+        <text x="700" y="40" text-anchor="middle" font-weight="700" style="color:var(--brand)">读（两个接口）</text>
+
+        <rect x="578" y="60" width="246" height="78" rx="10" fill="var(--card)" stroke="var(--blue)"/>
+        <text x="701" y="82" text-anchor="middle" font-weight="700">GET /registry/range/{spaceId}</text>
+        <text x="701" y="100" text-anchor="middle" fill="var(--muted)">一只寄存器区间曲线</text>
+        <text x="701" y="118" text-anchor="middle" fill="var(--muted)">carry-in + 点，多则降采样成桶</text>
+
+        <rect x="578" y="162" width="246" height="78" rx="10" fill="var(--card)" stroke="var(--danger)"/>
+        <text x="701" y="184" text-anchor="middle" font-weight="700">GET /polling/failures/{spaceId}</text>
+        <text x="701" y="202" text-anchor="middle" fill="var(--muted)">空间故障清单（逐服务聚合）</text>
+        <text x="701" y="220" text-anchor="middle" fill="var(--muted)">items 倒序 + byType/byRemoteCode 汇总</text>
+
+        <!-- 故障 -> 操作日志 -->
+        <path d="M578,201 L330,201 L330,238" fill="none" stroke="var(--danger)" stroke-dasharray="4 3" marker-end="url(#h-arr)"/>
+        <text x="445" y="192" text-anchor="middle" fill="var(--danger)" font-size="11">故障读 → 操作日志</text>
+        <!-- 曲线 -> 寄存器历史 -->
+        <path d="M578,99 L330,99 L330,334" fill="none" stroke="var(--blue)" stroke-dasharray="4 3" marker-end="url(#h-arr)"/>
+        <text x="448" y="222" text-anchor="middle" fill="var(--blue)" font-size="11">曲线读 → 寄存器历史</text>
+
+        <rect x="578" y="280" width="246" height="60" rx="10" fill="var(--teal-soft)" stroke="var(--teal)"/>
+        <text x="701" y="300" text-anchor="middle" font-weight="700">ModbusRegistryHistoryWindow</text>
+        <text x="701" y="320" text-anchor="middle" fill="var(--muted)">纯内存降采样（maxPoints 上限 500/2000）</text>
+
+        <rect x="578" y="368" width="246" height="60" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>
+        <text x="701" y="388" text-anchor="middle" font-weight="700">TTL 保留（缺省 90 天）</text>
+        <text x="701" y="408" text-anchor="middle" fill="var(--muted)">寄存器历史 + 操作日志都挂</text>
+      </g>
+    </svg>
+    <div class="figcap">图 1 · 采集如何落成三张表，以及两条读接口各自读哪一张</div>
+  </div>
+
+  <h2><span class="no">②</span>存了三张表，主角是「逐寄存器」的</h2>
+  <p>历史从「按方法」迁移成「<b>逐寄存器</b>」：一条历史事件就是一个寄存器的一次出值。定位一看就懂——
+    曲线按点取、当前值按影子取、操作按日志取。</p>
+
+  <table>
+    <tr><th>集合</th><th>实体</th><th>一条是什么</th><th>关键字段</th><th>TTL</th></tr>
+    <tr>
+      <td><code>service-registry-histories</code></td>
+      <td><code>ModbusRegistryHistory</code></td>
+      <td>一只寄存器的一次事件（成功值 / 失败标记）</td>
+      <td><code>serviceId, registerIndex, name, unit, at, value, failure, message</code></td>
+      <td>✅ 缺省 90 天</td>
+    </tr>
+    <tr>
+      <td><code>service-polling-histories</code></td>
+      <td><code>ModbusPollingHistory</code></td>
+      <td>一次调用（操作日志,每个调用必落一条）</td>
+      <td><code>serviceId, pollIndex, operation, ok, type, remoteCode, message, at</code></td>
+      <td>✅ 缺省 90 天</td>
+    </tr>
+    <tr>
+      <td><code>service-shadows</code></td>
+      <td><code>ModbusShadow</code></td>
+      <td>一只寄存器的<b>当前值 / 故障态</b>(不落历史,只当状态)</td>
+      <td><code>serviceId, registerIndex, value, recordedAt, lastError, errorAt</code></td>
+      <td>❌ 不设</td>
+    </tr>
+  </table>
+
+  <div class="callout core">
+    <div class="ttl">三张表各司其职，别混</div>
+    <p><b>寄存器历史</b>是给人看的曲线;<b>操作日志</b>记「这轮调用发生没发生、成没成」——它是审计不是曲线,
+      所以失败统计(filter 清单、byType 汇总)从这里出;<b>影子</b>不是历史,它是「当下状态」,写侧当比对基准、
+      读侧当当前值。<b>影子没有 TTL</b>:它是状态不是明细,删了当前值就没了。</p>
+  </div>
+
+  <h2><span class="no">③</span>怎么写：两条判定,一条不变量</h2>
+
+  <h3>3.1 挂在哪:采集链路里的一处副作用</h3>
+  <p><code>ModbusServiceService.execute</code> 解出字段后,把 <b>先记历史、再评告警</b> 串起来
+    (串只是为了顺序确定——历史是「采到什么」、告警是「值对不对」,出问题时先看前者):</p>
+<pre><code>.chain(read -&gt; <span class="c">recordHistory</span>(service, poll, read, baselines)   <span class="c">// 这里写 ModbusHistory</span>
+        .chain(ignored -&gt; <span class="c">evaluateAlarms</span>(service, poll, read))   <span class="c">// 这里是 ModbusAlarm</span>
+        .replaceWith(read));</code></pre>
+  <p>两者都是<b>副作用</b>:失败只记日志、<code>recoverWithNull</code>,<b>既不改写 invoke 的成功响应、
+    也不改写失败响应</b>——值已经拿到了。</p>
+
+  <h3>3.2 影子 / 基准:一条不变量</h3>
+  <p>写之前要拿「上次的值」才知道这次变没变。这个基准(基线)有两个来源,<b>落库规则一份不复制</b>:</p>
+  <ul>
+    <li><b>手动 invoke</b>:每次都从库里重建(<code>ModbusHistoryWriteService.record</code> 三参版,读影子 → blockBaseline)。
+      <code>ModbusPollBaseline</code> 就是「字段→值 + recordedAt + lastError」那份基准。</li>
+    <li><b>轮询器</b>:用自己的<b>内存基准缓存</b>(<code>ModbusPollBaselines</code>),省掉每次读库——
+      单副本才成立;故障态 / 没缓存时 <code>usable</code> 判定为不可用 → <b>回退到读库</b>。</li>
+  </ul>
+  <div class="callout danger">
+    <div class="ttl">「先写明细 → 再更新影子」是正确性,不是顺序偏好</div>
+    <p>反过来的话:明细写失败而影子已经前进,那次变化就<b>永久丢了</b>(下次比较基准已经是新值)。
+      按现在的顺序,失败时影子停在旧态,下次采集仍判「变了」而重试。失败记录同理:影子留着旧故障,
+      下次同样的故障仍会被重判并重试落库。<code>ModbusHistoryWriteService.record</code> 的类注释把这个写得很死。</p>
+  </div>
+
+  <h3>3.3 一次采集,Policy 判定落哪些字段</h3>
+  <p><code>ModbusHistoryPolicy.decide</code> 逐字段判,三条规则:</p>
+  <table>
+    <tr><th>规则</th><th>判据</th><th>谁靠它</th></tr>
+    <tr><td>变位</td><td>值 ≠ 基准值 → 落一条正常样本</td><td>开关量</td></tr>
+    <tr><td>死区</td><td><code>|值 − 基准值| ≥ deadband</code> 才算变</td><td>模拟量</td></tr>
+    <tr><td>保活打点</td><td>距上次落库 ≥ 保活周期 → 值没变也强制落一条</td><td>区分「值稳定」和「采集挂了」</td></tr>
+  </table>
+  <div class="callout good">
+    <div class="ttl">死区为什么要有</div>
+    <p>没有死区,缩放后的温度每次都在变(61.5 → 61.6),压缩率会退化成 0。数值一律按
+      <code>doubleValue()</code> 比(影子从库读回来可能是 Integer/Long/Double,与本次算的类型未必一致,
+      按类型比会把「没变」误判成「变了」)。</p>
+  </div>
+
+  <h3>3.4 成功 record / 失败 recordFailure,各写什么</h3>
+  <p><code>record</code> 与 <code>recordFailure</code> 各有<b>一对</b>入口(参数多一个的是基准由调用方给),
+    落库逻辑只实现一份:</p>
+  <table>
+    <tr><th>入口</th><th>操作日志</th><th>寄存器历史</th><th>影子</th></tr>
+    <tr>
+      <td><b>record</b>（成功）</td>
+      <td>每次调用一条(<code>operation = read/write, ok = true</code>)</td>
+      <td>判为「变了 / 保活」的字段,能解析到寄存器就各追加一条成功事件</td>
+      <td>各 <code>upsertValue</code> 更新当前值、清故障态</td>
+    </tr>
+    <tr>
+      <td><b>recordFailure</b>（失败）</td>
+      <td>每次调用一条(<code>ok = false</code>,带 type/remoteCode/message)</td>
+      <td>该读方法每个可读寄存器各记一条失败事件(曲线竖线)</td>
+      <td>各 <code>upsertFailure</code> 更新故障态(值/时刻保留上次成功)</td>
+    </tr>
+  </table>
+  <ul>
+    <li><b>操作日志与「值变没变」无关</b>:它记的是「这轮调用执行过、成没成」。所以重复失败也照记,
+      去重是值历史/影子的取舍——同一场故障(<code>lastError</code> 相同)不再重复落寄存器侧。</li>
+    <li><b>写方法</b>(应答为空):没有读值可记,但「这次成功」要落下来——否则上次失败留在影子上的故障态永远清不掉。</li>
+    <li><b>上次失败过、这次成功</b>:把这次当「首次采集」处理(基准置空 → 每个字段都落一条)。
+      否则值恰好没变时,恢复的那一刻一个样本都不落,曲线上分不清「已恢复」和「仍在故障」。</li>
+    <li><b>绝大多数采集走「什么都不写」</b>(值没变、没到保活):只落一条操作日志,寄存器历史/影子零操作。</li>
+  </ul>
+
+  <h3>3.5 级联清理</h3>
+  <p><code>purge</code> 在服务/设备被删时,把<b>四个</b>仓储一起并删除:寄存器历史、影子、操作日志、<b>告警</b>
+    (与历史同命——服务没了,告警再也没人处理,是存储垃圾)。</p>
+
+  <h2><span class="no">④</span>怎么读:两个接口</h2>
+
+  <h3>4.1 一只寄存器的区间曲线</h3>
+  <p><code>GET /matrix/v1/modbus/history/registry/range/{spaceId}</code>,空间成员可访问:</p>
+  <table>
+    <tr><th>参数</th><th>语义</th></tr>
+    <tr><td><code>serviceId</code> / <code>pollIndex</code> / <code>field</code></td><td>点名这条曲线。
+      <code>field</code> 是<b>寄存器名</b>(逐寄存器后,由服务定义的 <code>registries[]</code> 解析成 registerIndex);
+      <code>pollIndex</code> 为兼容旧前端仍接收、仅忽略。</td></tr>
+    <tr><td><code>from</code> / <code>to</code></td><td>epoch 毫秒;<code>from</code> 必填,<code>to</code> 缺省 = 到现在。</td></tr>
+    <tr><td><code>maxPoints</code></td><td>返回点数上限,缺省 500、封顶 2000。</td></tr>
+  </table>
+  <p>响应:<code>{serviceId, pollIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}</code>。
+    <code>points</code> 是原始样本(未超 maxPoints)或降采样桶(超了);<code>carryIn</code> 是窗口起点之前最近那条,
+    没有就不出键——不带它曲线从起点就是空白。</p>
+  <div class="callout warn">
+    <div class="ttl">区间有硬上限,超了报错而不是静默截断</div>
+    <p>一次最多取回 <code>MAX_ROWS = 20000</code> 条原始样本。超出<b>报错</b>(<code>time range too wide...</code>)——
+      截断会把曲线的尾巴悄悄抹掉,前端看起来一切正常;报错至少能让人缩小时间范围。多取一条正是为了判「超了」。</p>
+  </div>
+
+  <h3>4.2 整个空间的故障清单</h3>
+  <p><code>GET /matrix/v1/modbus/history/polling/failures/{spaceId}</code>,空间成员可访问:</p>
+  <table>
+    <tr><th>参数</th><th>语义</th></tr>
+    <tr><td><code>serviceId</code></td><td><b>不传 = 整个空间(含子空间)</b>:子树下所有服务的失败的调用合成一条倒序清单。</td></tr>
+    <tr><td><code>pollIndex</code> / <code>type</code></td><td>可筛一个方法、一个故障分类;不传不限。</td></tr>
+    <tr><td><code>from</code> / <code>to</code> / <code>limit</code></td><td>区间 + 条数(<code>limit + 1</code> 判截断)。</td></tr>
+  </table>
+  <p>响应:<code>{from, to, limit, truncated, items, summary}</code>。<code>items</code> 按时间倒序;
+    <code>summary</code> 是这批 item 按 <b>byType</b>(分类)与 <b>byRemoteCode</b>(远端原始码)的聚合,两者一起看。</p>
+  <div class="callout blue">
+    <div class="ttl">空间级查询 = 逐服务各查一次、再内存归并</div>
+    <p>与告警/故障清单同一口径:索引以 <code>serviceId</code> 打头,跨服务查等于丢索引前缀做全表扫;一个空间下
+      服务只有十几条。每个服务取 <code>limit + 1</code> 条,多出来那条用来判「还有更早的没取回来」。</p>
+  </div>
+
+  <h2><span class="no">⑤</span>曲线的整形:carry-in、降采样、maxPoints</h2>
+  <p>区间读把原始事件喂给 <code>ModbusRegistryHistoryWindow</code>(纯内存、可单测),它决定:
+    <code>downsampled = true</code> 时点被折叠成桶 <code>{at, until, count, first, last, min, max, avg}</code>
+    (阶梯函数折叠),否则原样给原始样本。历史页与看板字段曲线<b>共用同一份整形</b>——
+    数据源一个是寄存器历史服务、一个是看板的字段曲线,响应是同一份形状、同一套 <code>points/carryIn/downsampled</code>
+    分流,前端 `decodeRange` 只写一份。</p>
+
+  <div class="callout core">
+    <div class="ttl">carry-in 为什么必须是「成功」事件</div>
+    <p>失败事件没落到值。曲线从窗口起点的状态,由<code>from</code> 之前最近一条<b>成功</b>续上;
+      若那是失败,就当「这次没有更早的样本」——否则会把一段「离线」画成一段「值」。</p>
+  </div>
+
+  <h2><span class="no">⑥</span>保留:TTL 只管明细,不管状态</h2>
+  <p><code>modbus.history.retention-days</code> 缺省 <b>90 天</b>(不设 env 也生效,部署起就开始删 90 天前明细;
+    想先观察就显式设 0)。由 <code>ModbusHistoryRetention</code> 把天数翻译成 TTL 秒数,落到<b>寄存器历史与操作日志
+    两个集合</b>的 <code>at</code> 上建 <code>expireAfter</code> 索引;影子不挂 TTL。</p>
+
+  <div class="callout warn">
+    <div class="ttl">存储的是 Azure DocumentDB(Postgres 底)</div>
+    <p>它跑在开源 DocumentDB 引擎上、不是 MongoDB 本体。服务端认不认「自定义字段上的 TTL」只能<b>实测</b>
+      (<code>Modbus-History.md</code> 第六节有冒烟)。<code>ModbusHistoryRetention</code> 只算口径、不管能不能删,
+      仓储照既有索引方向 <code>Action</code> 执行。</p>
+  </div>
+
+  <footer>
+    本文档对当前代码走读生成,与 <code>Modbus-History.md</code> 同源。命名用最新口径:
+    写侧 <code>ModbusHistoryWriteService</code>,寄存器曲线读 <code>ModbusRegistryHistory*</code>,
+    跨两者通用的判定/保留保持 <code>ModbusHistoryPolicy / ModbusHistoryRetention</code>。
+  </footer>
+
+</div>
+</body>
+</html>
