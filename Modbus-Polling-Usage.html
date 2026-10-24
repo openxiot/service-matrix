@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModbusPolling · 运行时与接口</title>
+<style>
+  :root{
+    --bg:#fafaf7; --card:#ffffff; --ink:#1f2328; --muted:#66707a;
+    --line:#e5e1d8; --line-strong:#d0cabc;
+    --brand:#7a5af0; --brand-soft:#efeaff;
+    --good:#1a7f4b; --good-soft:#e5f5ec;
+    --warn:#b7791f; --warn-soft:#fdf3df;
+    --danger:#b4453f; --danger-soft:#fbeae9;
+    --blue:#2a6fb0; --blue-soft:#e7f1fb;
+    --teal:#0f766e; --teal-soft:#e0f2ef;
+    --code:#f4f1ea;
+    --mono:"SF Mono","Menlo","Consolas","JetBrains Mono",monospace;
+    --serif:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15171c; --card:#1e2127; --ink:#e8eaed; --muted:#9aa3ad;
+      --line:#333742; --line-strong:#4a4f5c;
+      --brand:#a48dff; --brand-soft:#2a2440;
+      --good:#4ec98a; --good-soft:#173024;
+      --warn:#e0ae52; --warn-soft:#332a16;
+      --danger:#e07a74; --danger-soft:#3a2322;
+      --blue:#6ea8dc; --blue-soft:#1c2e40;
+      --teal:#3fb8ad; --teal-soft:#0f2a28;
+      --code:#23262e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--serif); line-height:1.7; font-size:15px; padding:48px 20px 96px}
+  .wrap{max-width:920px; margin:0 auto}
+
+  .hero{background:linear-gradient(135deg,var(--brand-soft),var(--card));
+    border:1px solid var(--line); border-radius:18px; padding:34px 38px; margin-bottom:38px}
+  .hero .kicker{color:var(--brand); font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; font-size:12px; margin:0 0 8px}
+  .hero h1{margin:0 0 10px; font-size:30px; letter-spacing:.5px}
+  .hero p{margin:0; color:var(--muted); font-size:15.5px}
+  .hero .tags{margin-top:16px; display:flex; gap:8px; flex-wrap:wrap}
+  .hero .tag{font-size:12.5px; padding:3px 10px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted)}
+  .hero .tag b{color:var(--ink); font-weight:600}
+
+  h2{margin:52px 0 14px; font-size:21px; letter-spacing:.3px;
+    padding-bottom:8px; border-bottom:2px solid var(--brand)}
+  h2 .no{color:var(--brand); margin-right:6px}
+  h3{margin:30px 0 8px; font-size:16px}
+  p{margin:10px 0}
+  a{color:var(--brand)}
+  .muted{color:var(--muted)}
+
+  .callout{border:1px solid var(--line); border-left-width:4px; border-radius:10px;
+    padding:12px 16px; margin:16px 0; background:var(--card)}
+  .callout .ttl{font-weight:700; margin-bottom:4px; font-size:13.5px}
+  .callout p{margin:4px 0}
+  .callout.core{border-left-color:var(--brand)} .callout.core .ttl{color:var(--brand)}
+  .callout.good{border-left-color:var(--good)} .callout.good .ttl{color:var(--good)}
+  .callout.warn{border-left-color:var(--warn)} .callout.warn .ttl{color:var(--warn)}
+  .callout.danger{border-left-color:var(--danger)} .callout.danger .ttl{color:var(--danger)}
+  .callout.blue{border-left-color:var(--blue)} .callout.blue .ttl{color:var(--blue)}
+
+  ul,ol{list-style:none; margin:8px 0; padding-left:0}
+  li{padding:3px 0 3px 26px; position:relative}
+  li::before{content:""; position:absolute; left:8px; top:.86em; width:7px; height:7px;
+    border-radius:2px; background:var(--brand)}
+  li.good::before{background:var(--good)}
+  li.danger::before{background:var(--danger)}
+  li.warn::before{background:var(--warn)}
+  li.blue::before{background:var(--blue)}
+
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14px;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:color-mix(in srgb,var(--card) 50%,var(--brand-soft));
+    font-weight:700; font-size:13px; letter-spacing:.02em; white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td code,th code{font-size:13px}
+  .num{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+  pre{background:var(--code); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:13px; line-height:1.6}
+  code{font-family:var(--mono); background:var(--code); padding:1px 6px; border-radius:5px; font-size:.92em}
+  pre code{background:none; padding:0}
+  .c{color:var(--muted)}
+
+  .diagram{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 16px; margin:20px 0}
+  .diagram svg{width:100%; height:auto; display:block}
+  .figcap{text-align:center; color:var(--muted); font-size:12.5px; margin-top:8px}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; justify-content:center; margin-top:12px; font-size:12.5px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .lg{width:12px; height:12px; border-radius:3px}
+
+  footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="kicker">Service-Matrix · Modbus</p>
+    <h1>ModbusPolling：到点就采，系统替我跑</h1>
+    <p>配置好「该多久跑一次」之后，任务表 + 内存时间轮 + 一个调度循环替你把服务方法按时采一遍。
+      这份文档讲 <b>它怎么把定义变成任务、怎么定时派发、怎么认领不打架</b>，以及那个唯一的查询接口。
+      完整口径见 <code>Modbus-Service-Poller.md</code>,这里是对着代码走读。</p>
+    <div class="tags">
+      <span class="tag">存储 <b>modbus / polls</b></span>
+      <span class="tag">调度 <b>ModbusPollingScheduler</b></span>
+      <span class="tag">时刻 <b>ModbusPollingSchedule</b></span>
+      <span class="tag">任务 <b>ModbusPollingPlan</b></span>
+      <span class="tag">对账 <b>ModbusPollingReconciler</b></span>
+      <span class="tag">接口 <b>GET /matrix/v1/modbus/polling/{spaceId}</b></span>
+    </div>
+  </header>
+
+  <div class="callout core">
+    <div class="ttl">一句话记住它</div>
+    <p>一个 jar 双部署:<b>api N 副本不采</b>(缺省),<b>poller 1 副本采</b>——靠 <code>modbus.poll.enabled</code>
+      (缺省 <b>false</b>)区分。<b>写到库里的就是反向契约</b>:任务表 <code>modbus/polls</code> 一行的
+      <code>nextRunAt</code> 就是「下次该跑的时刻」,调度按它来、接口按它看,谁都能查、谁都能抢。</p>
+  </div>
+
+  <h2><span class="no">①</span>先看全貌:定义怎么变成一次采集</h2>
+  <p>下面把「配置入表 → 定时派发 → 认领执行 → 写回状态」串起来,后几节逐个展开。</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 860 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ModbusPolling 运行时流程图">
+      <defs>
+        <marker id="p-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- 左：定义 → 任务（入表） -->
+      <g font-family="inherit" font-size="12.5">
+        <rect x="24" y="20" width="250" height="58" rx="10" fill="var(--brand-soft)" stroke="var(--brand)"/>
+        <text x="149" y="40" text-anchor="middle" font-weight="700">服务定义 polls[]</text>
+        <text x="149" y="58" text-anchor="middle" fill="var(--muted)">interval / polling / 读功能码</text>
+        <text x="149" y="72" text-anchor="middle" fill="var(--muted)">ModbusPollingPlan.shouldPoll</text>
+
+        <rect x="24" y="106" width="250" height="58" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>
+        <text x="149" y="128" text-anchor="middle" font-weight="700">任务表 modbus/polls</text>
+        <text x="149" y="146" text-anchor="middle" fill="var(--muted)">nextRunAt / lease / lastRunAt</text>
+        <text x="149" y="160" text-anchor="middle" fill="var(--muted)">写入路径对账生成</text>
+
+        <!-- 中间：调度 -->
+        <rect x="24" y="196" width="250" height="92" rx="10" fill="var(--teal-soft)" stroke="var(--teal)"/>
+        <text x="149" y="216" text-anchor="middle" font-weight="700">调度线程 tick()</text>
+        <text x="149" y="234" text-anchor="middle" fill="var(--muted)">内存时间轮取到点 &amp; 设备不忙</text>
+        <text x="149" y="252" text-anchor="middle" fill="var(--muted)">claim：租约 + 前推 nextRunAt</text>
+        <text x="149" y="270" text-anchor="middle" fill="var(--muted)">→ 工作线程池 invokePolled</text>
+
+        <rect x="24" y="320" width="250" height="66" rx="10" fill="var(--danger-soft)" stroke="var(--danger)"/>
+        <text x="149" y="342" text-anchor="middle" font-weight="700">ModbusServiceService.execute()</text>
+        <text x="149" y="360" text-anchor="middle" fill="var(--muted)">采一次 → record 历史 → 评告警</text>
+        <text x="149" y="378" text-anchor="middle" fill="var(--muted)">写回 lastStatus/lastError → 重排</text>
+
+        <rect x="24" y="412" width="250" height="40" rx="10" fill="var(--card)" stroke="var(--line-strong)"/>
+        <text x="149" y="436" text-anchor="middle" fill="var(--muted)">结果状态落回任务行 + 内存</text>
+
+        <path d="M149,78 L149,106" fill="none" stroke="var(--muted)" marker-end="url(#p-arr)"/>
+        <path d="M149,164 L149,196" fill="none" stroke="var(--muted)" marker-end="url(#p-arr)"/>
+        <path d="M149,288 L149,320" fill="none" stroke="var(--muted)" marker-end="url(#p-arr)"/>
+        <path d="M149,386 L149,412" fill="none" stroke="var(--muted)" marker-end="url(#p-arr)"/>
+      </g>
+
+      <!-- 右：接口 + 多副本 -->
+      <g font-family="inherit" font-size="12.5">
+        <text x="700" y="40" text-anchor="middle" font-weight="700" style="color:var(--brand)">对外 / 集群</text>
+
+        <rect x="578" y="60" width="246" height="76" rx="10" fill="var(--card)" stroke="var(--blue)"/>
+        <text x="701" y="80" text-anchor="middle" font-weight="700">GET /polling/{spaceId}</text>
+        <text x="701" y="98" text-anchor="middle" fill="var(--muted)">任务 + 运行时状态</text>
+        <text x="701" y="116" text-anchor="middle" fill="var(--muted)">ask poller 副本才见真内存读数</text>
+
+        <rect x="578" y="160" width="246" height="86" rx="10" fill="var(--card)" stroke="var(--teal)"/>
+        <text x="701" y="180" text-anchor="middle" font-weight="700">多副本认领（租约）</text>
+        <text x="701" y="198" text-anchor="middle" fill="var(--muted)">poller 1 副本 + api N 副本</text>
+        <text x="701" y="216" text-anchor="middle" fill="var(--muted)">claim 抢不到 = 别处跑了，不失败</text>
+        <text x="701" y="232" text-anchor="middle" fill="var(--muted)">leaseUntil 过期别人可抢</text>
+
+        <rect x="578" y="270" width="246" height="76" rx="10" fill="var(--card)" stroke="var(--warn)"/>
+        <text x="701" y="290" text-anchor="middle" font-weight="700">对账 ModbusPollingReconciler</text>
+        <text x="701" y="308" text-anchor="middle" fill="var(--muted)">写入路径置脏 / reconcile-seconds</text>
+        <text x="701" y="326" text-anchor="middle" fill="var(--muted)">全量幂等重算，nextRunAt 库值优先</text>
+      </g>
+    </svg>
+    <div class="figcap">图 1 · 定义入表 → 调度派发 → 认领执行 → 写回状态;右上是查询接口与多副本抢租约</div>
+  </div>
+
+  <h2><span class="no">②</span>它是什么:三样东西</h2>
+  <ul>
+    <li><b>任务表(persisted)</b>:集合 <code>modbus/polls</code>,一行一个「方法该多久跑一次 + 上次跑成什么样」。
+      字段 <code>serviceId / pollIndex / did / interval / nextRunAt / leaseOwner / leaseUntil / lastRunAt / lastStatus / lastError / failCount</code>。</li>
+    <li><b>内存时间轮(in-memory)</b>:调度循环里的一张小表,只活在 poller 进程,拿任务、限流、按设备串行都用它。</li>
+    <li><b>对账(reconcile)</b>:让库表和内存时间轮<b>跟着服务定义走</b>——定义改了规矩就改,幂等重算不怕丢事件。</li>
+  </ul>
+  <div class="callout warn">
+    <div class="ttl">任务表不落「运行时态」?落一部分</div>
+    <p>任务行里 <code>nextRunAt / leaseOwner / leaseUntil / lastRunAt</code> 等就是给「谁在跑、何时再跑」落库的;
+      <code>inFlight / queueSize / busyDevices</code> 这类<b>本进程</b>的内存读数则不落库——接口里它们只对 poller 副本有意义。</p>
+  </div>
+
+  <h2><span class="no">③</span>定义 → 任务:三条入表口径</h2>
+  <p><code>ModbusPollingPlan</code> 纯函数,判断「哪些方法该被轮询」并把一份定义展开成任务清单。入表<b>三条同时成立</b>:</p>
+  <ol>
+    <li><code>interval != null</code>(配了周期);</li>
+    <li><code>polling != false</code>(三态:null = 有周期即跑,false = 留着周期先不跑);</li>
+    <li>请求帧是<b>读</b>功能码(fc 01/02/03/04)。</li>
+  </ol>
+  <div class="callout danger">
+    <div class="ttl">第三条与校验器重复,是故意的</div>
+    <p>校验器管「写进来的定义合不合规」,这里管「库里<b>已经存在</b>的定义能不能被定时器跑」。历史数据、直接改库、
+      将来放宽校验,都能让一份<b>写方法</b>带着 <code>interval</code> 出现在库里——而让服务端定时往寄存器里<b>写值</b>是危险动作,
+      判定最后一道闸必须在<b>执行侧</b>,不能只在写入侧。所以这里对 request 一律空值安全。</p>
+  </div>
+  <p>任务清单的 <code>_id</code> 在<b>计划里就生成</b>(内存时间轮的任务放进去那一刻就得有 id——抢租约、写结果、认领都靠它),
+    库里已有这一行时以行上的 <code>_id</code> 为准。<code>did</code> / <code>interval</code> 冗余进任务表只为调度:
+    按设备串行、算下一次时刻都不必回查定义。</p>
+
+  <h2><span class="no">④</span>时刻算法:不漂移、错过不补、抖动</h2>
+  <p><code>ModbusPollingSchedule</code> 纯函数,三条口径在调度循环与单测共用同一份:</p>
+  <table>
+    <tr><th>口径</th><th>做法</th><th>为什么</th></tr>
+    <tr><td><b>不漂移</b></td><td>基准 = 上一次<b>开始跑</b>时刻 + interval,不是「跑完 + interval」</td><td>否则一次慢应答(2 秒)会让周期变 <code>interval + 耗时</code>,长期慢慢跑偏</td></tr>
+    <tr><td><b>错过不补</b></td><td>基准已过期(停机/新增)时,只排一次、从当下起算完整周期</td><td>补跑没意义——那些时刻的值已经采不到了,连跑只会堵 RS485 总线</td></tr>
+    <tr><td><b>抖动</b></td><td>±10%(缺省)周期,只加在重排结果上,不拉到当下/过去</td><td>同一定义里的周期常是同一整数,不抖就整点齐发;拉到过去会让时间轮空转</td></tr>
+  </table>
+  <p>几个入口:首次入表 <code>insertRunAt</code>(不立刻跑,避免对账一次加一批同时上总线)、启动恢复 <code>restoreRunAt</code>
+    (按库里 <code>lastRunAt</code> 接着排,不是从头——否则滚动发布会把任务全挤到同一秒爆发;停机错过的返回 now)、
+    采集后重排 <code>nextRunAt</code>(锚在 runStartAt,周期不被耗时吃掉)。到期判定 <code>isDue</code>(闭区间)与
+    租约 <code>leaseExpired / leaseClaimable</code> 都在这。</p>
+
+  <h2><span class="no">⑤</span>调度循环:一个线程表 + 一池工人</h2>
+  <p><code>ModbusPollingScheduler</code> 的 <code>tick()</code>(单线程 <code>scheduleAtFixedRate</code>,唤醒粒度 <code>wakeup-millis</code> 缺省 1s)
+    每轮:</p>
+  <ol>
+    <li>需要的话<b>全量对账</b>(被写入路径置脏,或距上次对账超过 <code>reconcile-seconds</code> 缺省 300s);</li>
+    <li>从<b>内存时间轮</b>取「到点、且设备不忙」的任务;</li>
+    <li>逐个<b>认领</b>(<code>claim</code>:租约 + 前推 nextRunAt + 记 lastRunAt,<b>一次原子写</b>);
+      认领不到 = 别的副本在跑,直接重排、不计失败;</li>
+    <li>认领到的丢给<b>工作线程池</b>:<code>invokePolled</code> 调一次 → 写回结果状态 → 回填下一次时刻。</li>
+  </ol>
+  <div class="callout danger">
+    <div class="ttl">认领那一刻就落库前推 nextRunAt:一次崩溃不会立刻重跑</div>
+    <p>任务在「派发那一刻」就前推并写库,而不是「采完」才写。于是进程崩溃时,那个任务不会按旧时刻立刻重跑,
+      而只会<b>多等一个周期</b>——把「忙死」错成「正确补采一次」是时序 bug。</p>
+  </div>
+  <h3>线程模型(改代码前先读)</h3>
+  <ul>
+    <li><b>调度线程</b>(单线程 ScheduledExecutorService):独占内存时间轮(不加锁)与任务对象的<b>全部字段</b>。
+      工作线程只读 <code>ownerId/serviceId/pollIndex</code>,算好的下一次时刻<b>回填给调度线程</b>,不直接改时间轮。</li>
+    <li><b>工作线程池</b>:<code>modbus.poll.concurrency</code>(缺省 20)个,池大小即并发上限;时间轮 pump 按同一个数限流,池里不会排队。</li>
+    <li><b>按 did 串行</b>:同一条 RS485 总线上的方法不能并发,由时间轮的 <code>busyDevices</code> 保证。</li>
+  </ul>
+  <div class="callout good">
+    <div class="ttl">为什么不用 vertx.setPeriodic</div>
+    <p>它回调跑在 event loop 上,而调度步要读库(对账、认领租约、写结果),在 event loop 上 <code>await()</code>
+      会被 Quarkus 直接拒;轮询也完全不需要 event loop 的低延迟。停机时 <code>stop</code> 等手续收尾,
+      <b>不释放租约</b>——被中断的那一帧可能已在总线上,让租约自然到期比立刻放给别人重发安全。</p>
+  </div>
+
+  <h2><span class="no">⑥</span>认领与多副本:同一个客户端</h2>
+  <p><code>ModbusPollingRepository.claim</code> 做一件事:能抢则原子地「租约 + 前推 nextRunAt + 记 lastRunAt」。
+    抢不到的那次调用<b>不是失败</b>——它说明另一个副本正跑着这条,直接重排即可。判据:
+    租约已过期(<code>leaseUntil</code> 空或已过)或持有者就是自己(上一次没放干净,重入同一任务不该被自己挡住)。
+    停机不释放租约,代价是停机后最多 <code>lease-seconds</code> 缺省 60s 的空窗,换来「帧可能已在总线上」的安全。</p>
+
+  <h2><span class="no">⑦</span>接口:查任务和运行时状态</h2>
+  <p><code>GET /matrix/v1/modbus/polling/{spaceId}</code>,空间<b>成员</b>可访问。返回该空间下所有服务的轮询任务:
+    <code>{spaceId, enabled, instanceId, queueSize, busyDevices, inFlight, lastTickAt, items: [...]}</code>。</p>
+  <ul>
+    <li><code>items</code>:任务行 + 运行时状态,<b>服务名一起带</b>(前端不必再查定义才知道这条任务是谁的)。</li>
+    <li>任务表里<b>没有的方法不出现</b>——没配周期或被 <code>polling=false</code> 关掉的方法就不该有任务,
+      与「有任务但很久没跑」不是一回事(后者 <code>lastRunAt</code> 会说话)。</li>
+    <li><b>内存读数是本进程的</b>:poller 与 api 是同一份代码的两个部署,问到 api 副本时 <code>items</code> 照旧对(读库),
+      但 <code>queueSize</code> 一定是 0——它不跑调度。看「谁在采」要问 poller 那个副本,或看每条任务的 <code>leaseOwner</code>。</li>
+  </ul>
+
+  <h2><span class="no">⑧</span>对账:幂等重算,不做增量事件</h2>
+  <p><code>ModbusPollingReconciler</code> 让 <code>modbus/polls</code> 与内存时间轮<b>跟着服务定义走</b>。它做的是<b>幂等的从 <code>modbus.services</code> 全量重算</b>,
+    而不是增量事件——丢了事件、改错了库、poller 停机几天,都能靠下一次对账修回来。两个时机:
+    写入路径(<code>ModbusServiceService</code> 的 create/update,与影子、告警并列 <code>reconcileDerived</code>)和
+    调度线程的周期兜底(<code>reconcile-seconds</code>)。<b>库里 <code>nextRunAt</code> 优先</b>:对账不是重排,别把一次采集往后推。</p>
+  <div class="callout core">
+    <div class="ttl">和影子/告警的关联</div>
+    <p>写入路径 <code>reconcileDerived</code> 一次管三样派生数据:<b>轮询任务</b>(本页)、<b>影子</b>(由
+      <code>ModbusShadowPlan</code> 判孤儿删,service-shadows 那套)、<b>告警</b>(由 <code>ModbusAlarmReconciler</code> 判陈旧关)。
+      都是「定义改了就跟着改」的幂等对账,失败只记日志、不让一次定义维护跟着失败。</p>
+  </div>
+
+  <footer>
+    本文档对当前代码走读生成,与 <code>Modbus-Service-Poller.md</code> 同源。命名用最新口径:
+    调度层 <code>ModbusPolling*</code>(Scheduler / Schedule / Plan / Reconciler / Wheel),帧层 <code>ModbusPoll*</code>(service/poll)保持短名;
+    影子计划 <code>ModbusShadowPlan</code>。配项:<code>modbus.poll.enabled</code>(缺省 false) /
+    <code>concurrency</code> 20 / <code>wakeup-millis</code> 1000 / <code>reconcile-seconds</code> 300 /
+    <code>lease-seconds</code> 60 / <code>invoke-timeout-seconds</code> 10。
+  </footer>
+
+</div>
+</body>
+</html>
