@@ -3,7 +3,8 @@ package cc.openxiot.matrix.api.modbus.history.registry;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryRange;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryRangeCodec;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -80,7 +81,9 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
                 .chain(ignored -> registryService.range(serviceId, pollIndex, field,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(
-                        ModbusHistoryRangeCodec.encode(serviceId, pollIndex, field, result)))
+                        ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
+                                serviceId, pollIndex, field,
+                                result.from(), result.to(), result.maxPoints(), result.window()))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }

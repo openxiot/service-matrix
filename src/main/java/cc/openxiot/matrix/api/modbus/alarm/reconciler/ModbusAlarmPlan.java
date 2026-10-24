@@ -48,7 +48,7 @@ import java.util.TreeSet;
  * <p><b>不认识的服务一律不动</b>：{@code services} 里没有某个 {@code serviceId}，
  * 只说明**这一次对账没拿到它的定义**，不是「它的告警已经陈旧」的证据。这个保守口径让两条调用路径
  * （写入路径只传那一个服务、启动路径传全部）行为一致，也免掉了「传入的服务不全 ⇒ 误关一片」这个
- * 静默而严重的走法。真正该消失的行归**级联删除**（{@code ModbusHistoryService.purge}）。</p>
+ * 静默而严重的走法。真正该消失的行归**级联删除**（{@code ModbusHistoryWriteService.purge}）。</p>
  *
  * <p><b>行上没有 {@code ruleId} 的也不动</b>：判据是拿它去比对的，没有它就说不出「这条规则还在不在」。
  * 这种行只可能来自更早的数据，而采集侧的胜者比对会把它按 {@code SUPERSEDED} 接手 ——

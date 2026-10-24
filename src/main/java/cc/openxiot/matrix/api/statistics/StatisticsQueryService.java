@@ -46,7 +46,7 @@ import java.util.function.Function;
  * 跨服务查会丢掉索引前缀（与 {@code ModbusPollHistoryService} 的说明同一条）。</p>
  *
  * <p><b>不做聚合管道</b>：全后端的 {@code Aggregates} / {@code $group} 零命中，分桶与归并一律在内存里做
- * （与 {@code ModbusHistoryWindow} 的降采样、{@code ModbusAlarmCodec.encodeSummary} 的计数同一路线），
+ * （与 {@code ModbusRegistryHistoryWindow} 的降采样、{@code ModbusAlarmCodec.encodeSummary} 的计数同一路线），
  * 免得把「DocumentDB 支持哪些算子」这件事引进依赖。</p>
  *
  * <p>校验（{@link #checkRange}）与三份归并（{@link #devicesOf} / {@link #servicesOf} /

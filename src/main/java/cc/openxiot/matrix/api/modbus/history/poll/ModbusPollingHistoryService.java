@@ -13,7 +13,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * 故障清单的读取（见 Modbus-History.md 第五节）。与 {@link ModbusHistoryService} 分开：
+ * 故障清单的读取（见 Modbus-History.md 第五节）。与 {@link ModbusHistoryWriteService} 分开：
  * 那边只管写，且「先明细后影子」的写入顺序是它的核心约束，混进查询代码会被淹掉。
  *
  * <p>Grep 请求按数据源拆成两个 service：本类是 polling 侧的故障列表；区间曲线在

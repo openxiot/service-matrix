@@ -49,7 +49,7 @@ import java.util.Map;
  * 两个入口的差别仅在于基准从哪来 —— 判定规则一份都不复制。</p>
  */
 @ApplicationScoped
-public class ModbusHistoryService {
+public class ModbusHistoryWriteService {
 
     /**
      * 失败原因文本的长度上限：上游描述可能很长，而越长越容易让「同一条故障」被判成不同的两条。

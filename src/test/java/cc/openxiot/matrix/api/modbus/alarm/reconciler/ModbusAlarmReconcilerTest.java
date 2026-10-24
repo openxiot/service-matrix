@@ -186,7 +186,7 @@ class ModbusAlarmReconcilerTest {
         // 级联删除又崩在中途」留下的开行，这一趟不会去关。不为此松开那条保守口径 ——
         // 它的正面价值是「写入路径只传一个服务，判宽了会把别的服务的告警误关一片」，
         // 而那比这里兜住的局面严重得多。
-        // 服务级联删除归 ModbusServiceService → ModbusHistoryService.purge；那边失败留下的行
+        // 服务级联删除归 ModbusServiceService → ModbusHistoryWriteService.purge；那边失败留下的行
         // 与影子 / 历史 / 故障记录是同一个失败模式（只记日志、不重试），且页面按空间子树查、看不见它。
         // 这条测试钉的是「对账在后、级联在前」这个分工。
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()

@@ -60,7 +60,7 @@ public class ModbusAlarmReconciler {
      *
      * <p><b>不覆盖「服务已被删除」留下的开行</b> —— {@link ModbusAlarmPlan} 对不认识的服务一律不动
      * （见那里的类注释：那是它最要紧的一条保守口径）。服务级联删除归
-     * {@code ModbusServiceService} → {@code ModbusHistoryService.purge}；那一趟失败时留下的行是存储垃圾，
+     * {@code ModbusServiceService} → {@code ModbusHistoryWriteService.purge}；那一趟失败时留下的行是存储垃圾，
      * 与影子 / 历史 / 故障记录同一个失败模式（只记日志、不重试），而且页面按空间子树查，看不见它。
      * 换句话说，这里与那里是**分工**：对账在后，级联在前。</p>
      *

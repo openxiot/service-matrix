@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 阈值告警的评估：一次采集之后，「该开哪些、该关哪些」的落库（见 Modbus-Alarm.md）。
  *
- * <p>与 {@code ModbusHistoryService} 的关系是**并列的两件副作用**，不是串在成功路径上：
+ * <p>与 {@code ModbusHistoryWriteService} 的关系是**并列的两件副作用**，不是串在成功路径上：
  * 挂了新的历史行、也挂了告警行，两件事各有各的失败重试（下一个仍越限的样本会重试插入、
  * 下一个仍正常的样本会重试关闭）—— 因为它们各自对库幂等，所以这个特性比故障记录简单的地方
  * 就在于**不需要「先明细后影子」那套顺序不变量**。</p>
@@ -92,7 +92,7 @@ public class ModbusAlarmWriteService {
             return Uni.createFrom().voidItem();
         }
         String serviceId = service.id.toHexString();
-        // 拷一份：JsonObject 内部的 map 是活的（与 ModbusHistoryService 同一条理由）
+        // 拷一份：JsonObject 内部的 map 是活的（与 ModbusHistoryWriteService 同一条理由）
         Map<String, Object> sample = values == null
                 ? Map.of()
                 : new LinkedHashMap<>(values.getMap());

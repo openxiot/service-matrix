@@ -30,7 +30,7 @@ public class ModbusPollBaselines {
      * 能不能吃内存基准：**故障态的不能吃**。
      *
      * <p>故障时 {@code valueByField} / {@code recordedAt} 保留的是「最后一次成功采集」，
-     * 但故障态本身（{@code lastError}）必须让 {@code ModbusHistoryService} 看见 ——
+     * 但故障态本身（{@code lastError}）必须让 {@code ModbusHistoryWriteService} 看见 ——
      * 它决定了「恢复后的第一次成功要强制落全字段」。缓存里那份的故障可能已经被 api 副本清掉了
      * （手动 invoke 成功过一次），拿它当基准会把一次新的同类故障并进上一次的账上。</p>
      */

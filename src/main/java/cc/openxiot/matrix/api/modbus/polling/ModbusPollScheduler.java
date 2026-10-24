@@ -355,7 +355,7 @@ public class ModbusPollScheduler {
     }
 
     /**
-     * 失败原因文本：与 {@code ModbusHistoryService} 同口径（没 message 就用类名，超长截断）——
+     * 失败原因文本：与 {@code ModbusHistoryWriteService} 同口径（没 message 就用类名，超长截断）——
      * 这里的 message 来自同一个异常体系，长度风险也一样。
      */
     private static String messageOf(Throwable error) {

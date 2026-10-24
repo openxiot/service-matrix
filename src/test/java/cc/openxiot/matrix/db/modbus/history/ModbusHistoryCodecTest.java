@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.db.modbus.history;
 
-import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistorySampleCodec;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow.Bucket;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistorySample;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistorySampleCodec;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryWindow.Bucket;
 import cc.openxiot.matrix.db.modbus.history.codec.ModbusPollingHistoryCodec;
 import cc.openxiot.matrix.db.modbus.shadow.codec.ModbusShadowCodec;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
@@ -98,7 +98,7 @@ class ModbusHistoryCodecTest {
     void bucketAlwaysCarriesEveryKeyEvenWhenStatisticsAreNull() {
         // 非数值点位折叠后没有极值可言，但**键必须在**（值为 null）：
         // 前端画图时按键直接读，不该为「这一桶恰好没有数值」写分支
-        JsonObject json = ModbusHistorySampleCodec.encode(
+        JsonObject json = ModbusRegistryHistorySampleCodec.encode(
                 new Bucket(T0, T0 + 1000, 3, "ON", "OFF", null, null, null));
 
         assertEquals(T0, json.getLong("at"));
@@ -116,7 +116,7 @@ class ModbusHistoryCodecTest {
     @Test
     void sampleCarriesAtAndValueOnly() {
         // 样本是内存载体：只出 at / value 两列，没有也不再可能有 keepalive
-        JsonObject sample = ModbusHistorySampleCodec.encode(filterSample(T0, 61.5));
+        JsonObject sample = ModbusRegistryHistorySampleCodec.encode(filterSample(T0, 61.5));
         assertEquals(T0, sample.getLong("at").longValue());
         assertEquals(61.5, sample.getDouble("value"));
         assertFalse(sample.containsKey("keepalive"));
@@ -162,7 +162,7 @@ class ModbusHistoryCodecTest {
     }
 
     /** 一个样例样本：只填 codec 会读的两列。 */
-    private static ModbusHistorySample filterSample(long at, Object value) {
-        return new ModbusHistorySample(new Date(at), value);
+    private static ModbusRegistryHistorySample filterSample(long at, Object value) {
+        return new ModbusRegistryHistorySample(new Date(at), value);
     }
 }

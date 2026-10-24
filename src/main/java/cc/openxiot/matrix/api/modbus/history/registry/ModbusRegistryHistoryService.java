@@ -5,8 +5,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistorySample;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryWindow;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -17,13 +17,13 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * 区间曲线的读取（见 Modbus-History.md 第五节）。与 {@link ModbusHistoryService} 分开：
+ * 区间曲线的读取（见 Modbus-History.md 第五节）。与 {@link ModbusHistoryWriteService} 分开：
  * 那边只管写，且「先明细后影子」的写入顺序是它的核心约束，混进查询代码会被淹掉。
  *
  * <p><b>区间读取的硬上限</b>：一次最多取回 {@link #MAX_ROWS} 条原始样本，超了**报错**而不是静默截断
  * —— 截断会把曲线的尾巴悄悄抹掉（前端看起来一切正常），而报错至少能让人把时间范围缩小。
  * 上限只挡「一个月 × 5 秒」这种量级；正常区间（几百到几千条）连边都碰不到，降采样在内存里做
- * （见 {@link ModbusHistoryWindow}：逻辑必须能单测，而这个仓库跑不了要连库的测试）。</p>
+ * （见 {@link ModbusRegistryHistoryWindow}：逻辑必须能单测，而这个仓库跑不了要连库的测试）。</p>
  */
 @ApplicationScoped
 public class ModbusRegistryHistoryService {
@@ -49,7 +49,7 @@ public class ModbusRegistryHistoryService {
             Date from,
             Date to,
             int maxPoints,
-            ModbusHistoryWindow.Window window
+            ModbusRegistryHistoryWindow.Window window
     ) {
     }
 
@@ -95,11 +95,11 @@ public class ModbusRegistryHistoryService {
                             }
                             // carry-in 必须是**成功**事件才有值（失败事件没落到值）：曲线从窗口起点的状态
                             // 由最后一次成功续上
-                            ModbusHistorySample carryIn =
+                            ModbusRegistryHistorySample carryIn =
                                     carry != null && !Boolean.TRUE.equals(carry.failure)
                                             ? sampleOf(carry) : null;
                             return new RangeResult(from, end, points,
-                                    ModbusHistoryWindow.of(carryIn, samplesOf(events),
+                                    ModbusRegistryHistoryWindow.of(carryIn, samplesOf(events),
                                             from.getTime(), end.getTime(), points));
                         })));
     }
@@ -108,7 +108,7 @@ public class ModbusRegistryHistoryService {
 
     /**
      * field 名 → 服务点表快照里的寄存器。name != 寄存器名（服务没了 / 字段写错 / 纯命令老服务）
-     * 一律报错 —— 与「serviceId is required」的报错风格一致，且与 {@link ModbusHistoryService#record}
+     * 一律报错 —— 与「serviceId is required」的报错风格一致，且与 {@link ModbusHistoryWriteService#record}
      * 的「名字对上才写寄存器侧」同一条匹配规则。
      */
     private static ModbusRegistry resolveRegister(ModbusService service, String field) {
@@ -124,9 +124,9 @@ public class ModbusRegistryHistoryService {
         throw new IllegalArgumentException("field not a readable register: " + field);
     }
 
-    /** 区间内的事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
-    private static List<ModbusHistorySample> samplesOf(List<ModbusRegistryHistory> events) {
-        List<ModbusHistorySample> samples = new ArrayList<>();
+    /** 区间内的事件 → 喂给 {@link ModbusRegistryHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
+    private static List<ModbusRegistryHistorySample> samplesOf(List<ModbusRegistryHistory> events) {
+        List<ModbusRegistryHistorySample> samples = new ArrayList<>();
         if (events != null) {
             for (ModbusRegistryHistory event : events) {
                 if (event != null && !Boolean.TRUE.equals(event.failure)) {
@@ -137,10 +137,10 @@ public class ModbusRegistryHistoryService {
         return samples;
     }
 
-    /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
-     *  用内存样本 {@link ModbusHistorySample} 当中间载体，与看板字段曲线那条路共用同一套已测的整形逻辑。 */
-    private static ModbusHistorySample sampleOf(ModbusRegistryHistory event) {
-        return new ModbusHistorySample(event.at, event.value);
+    /** 寄存器成功事件 → 喂给 {@link ModbusRegistryHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
+     *  用内存样本 {@link ModbusRegistryHistorySample} 当中间载体，与看板字段曲线那条路共用同一套已测的整形逻辑。 */
+    private static ModbusRegistryHistorySample sampleOf(ModbusRegistryHistory event) {
+        return new ModbusRegistryHistorySample(event.at, event.value);
     }
 
     // ===== 参数 =====

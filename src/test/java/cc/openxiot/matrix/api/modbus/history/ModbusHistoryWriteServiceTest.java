@@ -43,7 +43,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link ModbusHistoryService} 的写入行为：不连数据库，用 mock 钉住几条不能破的约定
+ * {@link ModbusHistoryWriteService} 的写入行为：不连数据库，用 mock 钉住几条不能破的约定
  * （Modbus-History.md 第二节、第四节）。
  *
  * <ul>
@@ -58,14 +58,14 @@ import static org.mockito.Mockito.when;
  *       这里猜一个只会把排查方向带偏。</li>
  * </ul>
  */
-class ModbusHistoryServiceTest {
+class ModbusHistoryWriteServiceTest {
 
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
     private static final int FUNCTION_INDEX = 1;
     private static final String TIMEOUT = "parent device error, status=408";
     private static final String CRC_ERROR = "modbus response crc mismatch: 0103020064B9AE";
 
-    private ModbusHistoryService service;
+    private ModbusHistoryWriteService service;
     private ModbusRegistryHistoryRepository registryHistoryRepo;
     private ModbusShadowRepository registryShadowRepo;
     private ModbusPollingHistoryRepository pollingHistoryRepo;
@@ -76,7 +76,7 @@ class ModbusHistoryServiceTest {
         registryShadowRepo = mock(ModbusShadowRepository.class);
         pollingHistoryRepo = mock(ModbusPollingHistoryRepository.class);
 
-        service = new ModbusHistoryService();
+        service = new ModbusHistoryWriteService();
         service.registryHistoryRepo = registryHistoryRepo;
         service.registryShadowRepo = registryShadowRepo;
         service.pollingHistoryRepo = pollingHistoryRepo;

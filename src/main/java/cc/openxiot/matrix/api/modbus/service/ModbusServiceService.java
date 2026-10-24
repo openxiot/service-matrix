@@ -7,7 +7,7 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
+import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWriteService;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
@@ -58,7 +58,7 @@ public class ModbusServiceService {
     ManipulationService manipulationService;
 
     @Inject
-    ModbusHistoryService historyService;
+    ModbusHistoryWriteService historyWriteService;
 
     /** 阈值告警的评估（与历史并列的副作用，见 Modbus-Alarm.md）。 */
     @Inject
@@ -259,7 +259,7 @@ public class ModbusServiceService {
      * 调用一个方法：读一次服务定义 → 组装父设备调用 → 按 response 规则解应答。
      *
      * <p>返回「字段 → 值」；写方法（response 为空）应答是请求回显、没有读值，返回空对象
-     * —— 回显的写入值**不能**当读值返回：{@link ModbusHistoryService#record} 把非空的 values
+     * —— 回显的写入值**不能**当读值返回：{@link ModbusHistoryWriteService#record} 把非空的 values
      * 当采集样本落库，回显会把写回声灌进采集历史曲线。调用方知道自己发了什么，成功即 200。</p>
      *
      * <p>父设备报错、帧非法、CRC 不符、异常码等一律以 {@link IllegalArgumentException} 抛出，
@@ -456,8 +456,8 @@ public class ModbusServiceService {
         ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
 
         Uni<ModbusPollBaseline> recorded = cached != null
-                ? historyService.record(service, poll, values, cached)
-                : historyService.record(service, poll, values);
+                ? historyWriteService.record(service, poll, values, cached)
+                : historyWriteService.record(service, poll, values);
         return recorded
                 .onItem().invoke(next -> {
                     if (baselines != null) {
@@ -512,8 +512,8 @@ public class ModbusServiceService {
         ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
 
         Uni<ModbusPollBaseline> recorded = cached != null
-                ? historyService.recordFailure(service, poll, error, cached)
-                : historyService.recordFailure(service, poll, error);
+                ? historyWriteService.recordFailure(service, poll, error, cached)
+                : historyWriteService.recordFailure(service, poll, error);
         return recorded
                 .onItem().invoke(next -> {
                     if (baselines != null) {
@@ -532,7 +532,7 @@ public class ModbusServiceService {
      * 服务行已经删掉了，清理失败留下的是存储垃圾，不该把这次删除回滚成失败。
      */
     private Uni<Void> purgeHistory(List<String> serviceIds) {
-        return historyService.purge(serviceIds)
+        return historyWriteService.purge(serviceIds)
                 .onFailure().invoke(e -> logger.warnv("purge modbus history failed, services: {0}, error: {1}", serviceIds, e.getMessage()))
                 .onFailure().recoverWithNull();
     }

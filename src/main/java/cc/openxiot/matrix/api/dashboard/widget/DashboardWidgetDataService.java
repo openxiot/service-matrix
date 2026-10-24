@@ -1,9 +1,10 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryRangeCodec;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistorySample;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWindow;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryRange;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryRangeCodec;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistorySample;
+import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryWindow;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -114,7 +115,7 @@ public class DashboardWidgetDataService {
 
     /** 一条字段曲线一次区间查询可取回的寄存器事件数上限。
      *  看板曲线本来就要降采样到 {@code maxPoints}（默认 500），所以这里不必像历史页那样
-     *  超限即报错 —— 取回这一段内的事件交给 {@link ModbusHistoryWindow} 折叠，超出的按最新丢弃。
+     *  超限即报错 —— 取回这一段内的事件交给 {@link ModbusRegistryHistoryWindow} 折叠，超出的按最新丢弃。
      *  上限只为了挡住「一个月 × 秒级采集」把内存撑爆的角落。 */
     private static final int MAX_EVENTS = 20_000;
 
@@ -365,7 +366,7 @@ public class DashboardWidgetDataService {
      * 是哪条曲线、为什么。
      *
      * <p>一次区间查询同时带回成功与失败事件，在内存里筛开：成功的排成值曲线（配合 carry-in 与
-     * 降采样，见 {@link ModbusHistoryWindow}），失败事件的时刻做成竖线 —— **值与竖线同一条源**
+     * 降采样，见 {@link ModbusRegistryHistoryWindow}），失败事件的时刻做成竖线 —— **值与竖线同一条源**
      * （不再像旧模型那样交叉查 {@code service-histories} 的两张表）。</p>
      */
     private Uni<Map<String, CurveFetched>> fetchCurves(Map<String, CurveQuery> curves) {
@@ -379,7 +380,7 @@ public class DashboardWidgetDataService {
                         .asTuple()
                         .map(tuple -> {
                             List<Date> failures = new ArrayList<>();
-                            List<ModbusHistorySample> samples = new ArrayList<>();
+                            List<ModbusRegistryHistorySample> samples = new ArrayList<>();
                             for (ModbusRegistryHistory event : tuple.getItem2()) {
                                 if (event == null) {
                                     continue;
@@ -395,16 +396,16 @@ public class DashboardWidgetDataService {
                             // carry-in 必须是**成功**事件才有值（失败事件没落到值）：
                             // 失败那次读接下来仍持续旧值，曲线从窗口起点的状态由最后一次成功续上
                             ModbusRegistryHistory carryIn = tuple.getItem1();
-                            ModbusHistorySample carryInSample =
+                            ModbusRegistryHistorySample carryInSample =
                                     carryIn != null && !Boolean.TRUE.equals(carryIn.failure)
                                             ? sampleOf(carryIn) : null;
                             long from = curve.window().from().getTime();
                             long to = curve.window().to().getTime();
-                            ModbusHistoryWindow.Window window = ModbusHistoryWindow.of(
+                            ModbusRegistryHistoryWindow.Window window = ModbusRegistryHistoryWindow.of(
                                     carryInSample, samples, from, to, curve.maxPoints());
-                            JsonObject body = ModbusHistoryRangeCodec.encode(curve.serviceId(),
-                                    curve.registerIndex(), curve.field(),
-                                    curve.window().from(), curve.window().to(), curve.maxPoints(), window);
+                            JsonObject body = ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
+                                    curve.serviceId(), curve.registerIndex(), curve.field(),
+                                    curve.window().from(), curve.window().to(), curve.maxPoints(), window));
                             return new CurveFetched(body, failures, null);
                         })
                         .onFailure().recoverWithItem(
@@ -412,10 +413,10 @@ public class DashboardWidgetDataService {
         return joinAll(queries);
     }
 
-    /** 寄存器成功事件 → 喂给 {@link ModbusHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
-     *  用内存样本 {@link ModbusHistorySample} 当中间载体，与历史区间那条路共用同一套已测的整形逻辑。 */
-    private static ModbusHistorySample sampleOf(ModbusRegistryHistory event) {
-        return new ModbusHistorySample(event.at, event.value);
+    /** 寄存器成功事件 → 喂给 {@link ModbusRegistryHistoryWindow} 的临时样本（只取窗口化要用的 {@code at}/{@code value}）。
+     *  用内存样本 {@link ModbusRegistryHistorySample} 当中间载体，与历史区间那条路共用同一套已测的整形逻辑。 */
+    private static ModbusRegistryHistorySample sampleOf(ModbusRegistryHistory event) {
+        return new ModbusRegistryHistorySample(event.at, event.value);
     }
 
     /** 寄存器影子按 {@code registerIndex} 索引（一个服务下每只寄存器一条，见 {@code ModbusShadow}）。 */
@@ -715,7 +716,7 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 字段曲线的 data：**{@code /history/range} 的响应体**（由 {@link ModbusHistoryRangeCodec} 编，
+     * 字段曲线的 data：**{@code /history/range} 的响应体**（由 {@link ModbusRegistryHistoryRangeCodec} 编，
      * 与历史页那条路逐字同一份形状）+ 三样展示元数据。
      *
      * <ul>

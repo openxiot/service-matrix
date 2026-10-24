@@ -24,7 +24,7 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
-import cc.openxiot.matrix.api.modbus.history.ModbusHistoryService;
+import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWriteService;
 import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollBaselines;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
@@ -83,7 +83,7 @@ class ModbusServiceServiceTest {
     private ModbusServiceService service;
     private ModbusServiceRepository repo;
     private ManipulationService manipulation;
-    private ModbusHistoryService history;
+    private ModbusHistoryWriteService history;
     private ModbusAlarmWriteService alarms;
     private ModbusPollReconciler pollReconciler;
     private ModbusAlarmReconciler alarmReconciler;
@@ -92,7 +92,7 @@ class ModbusServiceServiceTest {
     void setUp() {
         repo = mock(ModbusServiceRepository.class);
         manipulation = mock(ManipulationService.class);
-        history = mock(ModbusHistoryService.class);
+        history = mock(ModbusHistoryWriteService.class);
         alarms = mock(ModbusAlarmWriteService.class);
         when(alarms.evaluate(any(), any(), any())).thenReturn(Uni.createFrom().voidItem());
         // update 的写入路径会串三轮派生对账（轮询任务 / 影子 / 告警），都是可弃的副作用
@@ -105,7 +105,7 @@ class ModbusServiceServiceTest {
         service = new ModbusServiceService();
         service.repo = repo;
         service.manipulationService = manipulation;
-        service.historyService = history;
+        service.historyWriteService = history;
         service.writeService = alarms;
         service.pollReconciler = pollReconciler;
         service.alarmReconciler = alarmReconciler;
@@ -311,7 +311,7 @@ class ModbusServiceServiceTest {
     @Test
     void writeMethodSendsTheWriteFrameAndReturnsEmpty() {
         // 写方法（fc 06）：帧按字段 + invoke 给的值**现组**，应答是请求回显 —— 返回空对象。
-        // 回显写入值会被 ModbusHistoryService 当成一次采集样本灌进历史曲线（它的口径是
+        // 回显写入值会被 ModbusHistoryWriteService 当成一次采集样本灌进历史曲线（它的口径是
         // 「values 非空即为一次采样」），所以这里必须是空的。
         ModbusPoll write = writeFunction(null);
         givenService(modbusService(), write);

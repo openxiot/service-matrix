@@ -49,9 +49,9 @@ import java.util.List;
  * <p>空桶不出点：值没变的时段由前后两点之间的直线表示 —— 那些时刻本来就没有样本，
  * 补一堆空桶既不增加信息，又正好把降采样省下的流量还回去。</p>
  */
-public final class ModbusHistoryWindow {
+public final class ModbusRegistryHistoryWindow {
 
-    private ModbusHistoryWindow() {
+    private ModbusRegistryHistoryWindow() {
     }
 
     /**
@@ -78,8 +78,8 @@ public final class ModbusHistoryWindow {
      * @param downsampled true = 用 {@code buckets}，false = 用 {@code samples}
      */
     public record Window(
-            ModbusHistorySample carryIn,
-            List<ModbusHistorySample> samples,
+            ModbusRegistryHistorySample carryIn,
+            List<ModbusRegistryHistorySample> samples,
             List<Bucket> buckets,
             boolean downsampled
     ) {
@@ -102,13 +102,13 @@ public final class ModbusHistoryWindow {
      * @param maxPoints 返回的点数上限；样本数不超过它时返回原始点，超过则降采样
      */
     public static Window of(
-            ModbusHistorySample carryIn,
-            List<ModbusHistorySample> samples,
+            ModbusRegistryHistorySample carryIn,
+            List<ModbusRegistryHistorySample> samples,
             long from,
             long to,
             int maxPoints
     ) {
-        List<ModbusHistorySample> rows = samples == null ? List.of() : samples;
+        List<ModbusRegistryHistorySample> rows = samples == null ? List.of() : samples;
         // 点不多就直接给原始点：这一段本来就是「每个拐点都要看见」的精细区间，折叠只会让前端丢掉拐点
         if (rows.size() <= maxPoints) {
             return new Window(carryIn, rows, List.of(), false);
@@ -118,7 +118,7 @@ public final class ModbusHistoryWindow {
         int bucketCount = (int) Math.max(1L, Math.min(maxPoints, ceilDiv(to - from, bucketMillis)));
 
         int[] count = new int[bucketCount];
-        for (ModbusHistorySample row : rows) {
+        for (ModbusRegistryHistorySample row : rows) {
             if (row != null && row.at != null) {
                 count[bucketOf(row.at.getTime(), from, bucketMillis, bucketCount)]++;
             }
@@ -190,12 +190,12 @@ public final class ModbusHistoryWindow {
     /**
      * 阶梯函数的各段：carry-in 在最前（它的起点在窗口之前，会被裁到窗口内）。
      */
-    private static List<Step> steps(ModbusHistorySample carryIn, List<ModbusHistorySample> rows) {
+    private static List<Step> steps(ModbusRegistryHistorySample carryIn, List<ModbusRegistryHistorySample> rows) {
         List<Step> steps = new ArrayList<>(rows.size() + 1);
         if (carryIn != null && carryIn.at != null) {
             steps.add(new Step(carryIn.at.getTime(), carryIn.value));
         }
-        for (ModbusHistorySample row : rows) {
+        for (ModbusRegistryHistorySample row : rows) {
             if (row != null && row.at != null) {
                 steps.add(new Step(row.at.getTime(), row.value));
             }
