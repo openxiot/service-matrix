@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.matrix.api.dashboard.web.params.WebDashboardLayoutDto;
+import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetStructureValidator;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.dashboard.web.widget.WebDashboardWidgetSize;
 import org.junit.jupiter.api.Test;
@@ -478,8 +479,34 @@ class WidgetStructureValidatorTest {
     @Test
     void device_keysRequired() {
         assertInvalid("config.did is required", widget("device", config("pid", "p1")));
-        assertInvalid("config.pid is required", widget("device", config("did", "d1")));
+        assertInvalid("config.pid or config.pids is required", widget("device", config("did", "d1")));
+        // 旧写法（单属性）与新写法（多属性）都要认：库里存着前者的卡，重新保存一次也得能过
         assertValid(widget("device", config("did", "d1", "pid", "p1")));
+        assertValid(widget("device", config("did", "d1", "pids", List.of("p1", "p2"))));
+    }
+
+    @Test
+    void device_pidsShape() {
+        assertInvalid("config.pids must be an array", widget("device", config("did", "d1", "pids", "p1")));
+        assertInvalid("config.pids must not be empty", widget("device", config("did", "d1", "pids", List.of())));
+        assertInvalid("config.pids must contain strings",
+                widget("device", config("did", "d1", "pids", List.of("p1", 2))));
+        // 同一只属性印两遍，卡上没有任何东西说明那是同一个数
+        assertInvalid("config.pids has a duplicate",
+                widget("device", config("did", "d1", "pids", List.of("p1", "p1"))));
+    }
+
+    @Test
+    void device_pidsLimit() {
+        List<String> tooMany = new ArrayList<>();
+        for (int i = 0; i < DashboardWidgetStructureValidator.MAX_DEVICE_PIDS + 1; i++) {
+            tooMany.add("p" + i);
+        }
+        assertInvalid("config.pids has too many entries",
+                widget("device", config("did", "d1", "pids", tooMany)));
+
+        tooMany.remove(tooMany.size() - 1);
+        assertValid(widget("device", config("did", "d1", "pids", tooMany)));
     }
 
     @Test

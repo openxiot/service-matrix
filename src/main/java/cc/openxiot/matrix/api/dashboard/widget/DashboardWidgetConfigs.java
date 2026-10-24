@@ -2,6 +2,7 @@ package cc.openxiot.matrix.api.dashboard.widget;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 读卡片 {@code config} 的一小组防御性取值器，供两个校验器共用。
@@ -51,5 +52,23 @@ public final class DashboardWidgetConfigs {
             }
         }
         return result;
+    }
+
+    /**
+     * 设备卡要显示的属性清单（完整的 pid）。
+     *
+     * <p>新配置写 {@code pids}（一张卡多个属性），改造前的卡只有一个 {@code pid}。
+     * 两种写法都要认：库里存着旧配置，渲染与保存两条路都会碰到它。形状错误（{@code pids}
+     * 不是数组、元素不是字符串）不在这里报 —— 那是结构校验的事，这里只求读得出清单。</p>
+     */
+    public static List<String> pids(Map<String, Object> config) {
+        if (config == null) {
+            return List.of();
+        }
+        if (config.containsKey("pids")) {
+            return strList(config.get("pids"));
+        }
+        String pid = str(config.get("pid"));
+        return pid == null ? List.of() : List.of(pid);
     }
 }

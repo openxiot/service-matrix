@@ -446,6 +446,52 @@ class WidgetDataServiceTest {
     }
 
     /**
+     * 多属性卡：{@code config.pids} 走新形状 —— 型号放外层，读数逐个落在 {@code fields} 里，
+     * 外层<b>没有</b> {@code pid}/{@code value}（旧形状留给手机端，两种不能混着给）。
+     *
+     * <p>三只属性各演示一态：有值、读失败、尚未上报。</p>
+     */
+    @Test
+    void render_deviceCard_multipleFields() {
+        stubDevice("did-1", "tr_aaa");
+        stubShadows(
+                new JsonObject().put("pid", PID).put("value", 23.5),
+                new JsonObject().put("pid", "did-1.1.2").put("status", -422).put("description", "property cannot read"));
+
+        JsonObject data = data(render(devicePids("w1", "did-1", List.of(PID, "did-1.1.2", "did-1.1.3"))), 0);
+
+        assertEquals("tr_aaa", data.getString("type"));
+        assertFalse(data.containsKey("pid"));
+        assertFalse(data.containsKey("value"));
+        JsonArray fields = data.getJsonArray("fields");
+        assertEquals(3, fields.size());
+
+        assertEquals(PID, fields.getJsonObject(0).getString("pid"));
+        assertEquals(23.5, fields.getJsonObject(0).getDouble("value"));
+
+        assertEquals("did-1.1.2", fields.getJsonObject(1).getString("pid"));
+        assertEquals("property cannot read", fields.getJsonObject(1).getString("error"));
+        assertFalse(fields.getJsonObject(1).containsKey("value"));
+
+        // 尚未上报：只有 pid，两个「有值」的键都不给
+        assertEquals("did-1.1.3", fields.getJsonObject(2).getString("pid"));
+        assertFalse(fields.getJsonObject(2).containsKey("value"));
+        assertFalse(fields.getJsonObject(2).containsKey("error"));
+    }
+
+    /** 一只属性的多属性卡与单属性卡同一套摆放规则：给 {@code {type?, fields:[...]}}。 */
+    @Test
+    void render_deviceCard_singlePidInArrayIsStillNewShape() {
+        stubDevice("did-1", "tr_aaa");
+        stubShadows(new JsonObject().put("pid", PID).put("value", 7));
+
+        JsonObject data = data(render(devicePids("w1", "did-1", List.of(PID))), 0);
+
+        assertFalse(data.containsKey("pid"));
+        assertEquals(7, data.getJsonArray("fields").getJsonObject(0).getInteger("value"));
+    }
+
+    /**
      * 一屏多张设备卡**只调一次**影子接口，did 去重后一起给它。
      */
     @Test
@@ -1020,6 +1066,11 @@ class WidgetDataServiceTest {
 
     private static WebDashboardWidget device(String id, String did, String pid) {
         return widget(id, "device", "W12H200", config("did", did, "pid", pid));
+    }
+
+    /** 多属性设备卡：新配置写 {@code pids}，不再带 {@code pid}。 */
+    private static WebDashboardWidget devicePids(String id, String did, List<String> pids) {
+        return widget(id, "device", "W12H200", config("did", did, "pids", pids));
     }
 
     /**

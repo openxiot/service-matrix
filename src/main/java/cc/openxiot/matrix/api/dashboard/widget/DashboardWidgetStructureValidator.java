@@ -42,6 +42,9 @@ public final class DashboardWidgetStructureValidator {
     /** 一张服务卡片最多显示几个字段：一次调用虽然返回全部字段，但卡片放不下太多行。 */
     public static final int MAX_SERVICE_FIELDS = 12;
 
+    /** 一张设备卡片最多显示几个属性。与服务卡同一档：卡片再大也放不下更多统计量。 */
+    public static final int MAX_DEVICE_PIDS = 12;
+
     private static final Set<String> TYPES = Set.of("stat", "line", "distribution", "device", "service");
 
     private static final Set<String> STAT_METRICS = Set.of(
@@ -230,14 +233,52 @@ public final class DashboardWidgetStructureValidator {
         if (DashboardWidgetConfigs.str(config.get("did")) == null) {
             return "config.did is required";
         }
-        if (DashboardWidgetConfigs.str(config.get("pid")) == null) {
-            return "config.pid is required";
+        String pidsErr = validateDevicePids(config);
+        if (pidsErr != null) {
+            return pidsErr;
         }
         String display = DashboardWidgetConfigs.str(config.get("display"));
         if (display != null && !DISPLAYS.contains(display)) {
             return "config.display must be one of " + DISPLAYS;
         }
         return booleanErr(config, "showUnit");
+    }
+
+    /**
+     * 设备卡的属性清单。**两种写法都要认**：新配置写 {@code pids}（一张卡多个属性），
+     * 改造前的卡只有一个 {@code pid} —— 库里存着旧的，重新保存一次也应当能过。
+     *
+     * <p>与 {@code config.fields} 同一套校验（非空、不超上限、元素为非空串、不重复）：
+     * 重复的 pid 会让同一张卡把同一个数印两遍，而卡上没有任何东西说明那是同一只属性。</p>
+     */
+    private static String validateDevicePids(Map<String, Object> config) {
+        if (!config.containsKey("pids")) {
+            if (DashboardWidgetConfigs.str(config.get("pid")) == null) {
+                return "config.pid or config.pids is required";
+            }
+            return null;
+        }
+        Object raw = config.get("pids");
+        if (!(raw instanceof List<?> pids)) {
+            return "config.pids must be an array";
+        }
+        if (pids.isEmpty()) {
+            return "config.pids must not be empty";
+        }
+        if (pids.size() > MAX_DEVICE_PIDS) {
+            return "config.pids has too many entries: at most " + MAX_DEVICE_PIDS;
+        }
+        Set<String> seen = new HashSet<>();
+        for (Object pid : pids) {
+            String value = DashboardWidgetConfigs.str(pid);
+            if (value == null) {
+                return "config.pids must contain strings";
+            }
+            if (!seen.add(value)) {
+                return "config.pids has a duplicate: " + value;
+            }
+        }
+        return null;
     }
 
     private static String validateService(Map<String, Object> config) {

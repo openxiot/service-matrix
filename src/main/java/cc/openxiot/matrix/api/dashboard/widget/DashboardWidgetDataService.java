@@ -872,8 +872,7 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 设备卡的 data：{@code {pid, type?, value?}} / {@code {pid, type?, error?}}，三态由
-     * <b>有没有 {@code value}</b> 与 <b>有没有 {@code error}</b> 决定：
+     * 设备卡的 data。读数那三态由 <b>有没有 {@code value}</b> 与 <b>有没有 {@code error}</b> 决定：
      *
      * <ul>
      *   <li>有 {@code value} —— 正常，读数是设备最后一次上报的值；</li>
@@ -883,38 +882,67 @@ public class DashboardWidgetDataService {
      *   <li>两个都没有 —— 尚未上报（影子压根没有这个 pid，或有这个 pid 但没有值）。</li>
      * </ul>
      *
-     * <p>{@code type} 是设备型号，<b>只要有就给</b>：前端拿它去产品规格里查这个属性的名字与单位。
+     * <p>{@code type} 是设备型号，<b>只要有就给</b>：前端拿它去产品规格里查这些属性的名字与单位。
      * 查不到型号时也给（卡片会退回显示 pid 原文），但不编一个假的。</p>
+     *
+     * <p><b>两种形状，由配置决定</b>：{@code config.pids}（一张卡多个属性）给
+     * {@code {type?, fields: [{pid, value?|error?}]}}；改造前的单 pid 配置仍给原来的
+     * {@code {pid, type?, value?|error?}}。**旧形状一个字都不能改** —— 手机端与 iOS 的设备卡
+     * 还按 {@code data.pid} / {@code data.value} / {@code data.error} 直接读，而手机端编辑器
+     * 至今只写 {@code config.pid}，所以它会一直落在旧形状上。</p>
      *
      * <p><b>值一律原样搬运</b>：不缩放、不按 {@code format} 换算、不把布尔翻译成「开/关」——
      * 服务端只给原始值，展示层的解释留在前端（§D5 与修订（十））。</p>
      */
     private static JsonObject deviceData(Map<String, Object> config, DeviceFetched fetched) {
+        DeviceEntity device = fetched.devices().get(configString(config, "did"));
+        JsonObject data = new JsonObject();
+        if (device != null && device.type != null && !device.type.isBlank()) {
+            data.put("type", device.type);
+        }
+        if (config != null && config.containsKey("pids")) {
+            JsonArray fields = new JsonArray();
+            for (String pid : DashboardWidgetConfigs.pids(config)) {
+                fields.add(deviceField(pid, fetched.shadows().get(pid)));
+            }
+            // 空清单按「取不到数据」处理：结构校验已经拦住了空数组，这里只是不给出一张空卡
+            return fields.isEmpty() ? null : data.put("fields", fields);
+        }
         String pid = configString(config, "pid");
         if (pid == null) {
             return null;
         }
-        JsonObject data = new JsonObject().put("pid", pid);
-        DeviceEntity device = fetched.devices().get(configString(config, "did"));
-        if (device != null && device.type != null && !device.type.isBlank()) {
-            data.put("type", device.type);
-        }
+        // 旧形状：pid 在最外层，值是同级的 value/error（手机端按这个读）
+        data.put("pid", pid);
         JsonObject element = fetched.shadows().get(pid);
-        if (element == null) {
-            return data;
+        if (element != null) {
+            copyReading(element, data);
         }
+        return data;
+    }
+
+    /** 多属性形状里的一只属性：{@code {pid, value?}} / {@code {pid, error?}}，规则同上。 */
+    private static JsonObject deviceField(String pid, JsonObject element) {
+        JsonObject field = new JsonObject().put("pid", pid);
+        if (element != null) {
+            copyReading(element, field);
+        }
+        return field;
+    }
+
+    /** 把一个影子元素里的读数搬进 {@code target}：成功给 {@code value}，失败给 {@code error}。 */
+    private static void copyReading(JsonObject element, JsonObject target) {
         // 「缺 status 就是成功」与 PropertyOperationCodec.Get.RESULT.decode 同一条规则
         // （那边读 status 的缺省也是 COMPLETED）：非负即成功，元素上就只有 value。
         int status = element.getInteger("status", Status.COMPLETED);
         if (status < 0) {
-            data.put("error", errorText(element, status));
-        } else {
-            Object value = element.getValue("value");
-            if (value != null) {
-                data.put("value", value);
-            }
+            target.put("error", errorText(element, status));
+            return;
         }
-        return data;
+        Object value = element.getValue("value");
+        if (value != null) {
+            target.put("value", value);
+        }
     }
 
     /**
