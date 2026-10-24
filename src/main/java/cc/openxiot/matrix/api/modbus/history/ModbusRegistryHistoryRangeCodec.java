@@ -9,7 +9,7 @@ import io.vertx.core.json.JsonObject;
  *
  * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code DashboardWidgetDataService}）下发的是**同一份形状**，
  * 只是另外缀上 {@code unit} / {@code step} / {@code failures}。前端两条路共用同一个
- * {@code ModbusHistoryCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
+ * {@code ModbusRegistryHistoryRangeCodec.decodeRange}，后端要是各写一份编码，一边改了键名、或漏了
  * 「没有 carry-in 时不出键」那条规则，另一边的表现是**静默地少一段曲线** —— 图还是画得出来，
  * 只是窗口开头缺一截，看着像那段时间没采到。</p>
  *
@@ -31,7 +31,7 @@ public final class ModbusRegistryHistoryRangeCodec {
      *
      * <p>看板的字段曲线（{@code DashboardWidgetDataService}）也走这里（数据源换成逐寄存器历史
      * {@code ModbusRegistryHistory}，但响应是同一份形状、同一套 {@code points} / {@code carryIn} /
-     * {@code downsampled} 分流）—— 两条消费方共用同一个 {@code ModbusHistoryCodec.decodeRange}，
+     * {@code downsampled} 分流）—— 两条消费方共用同一个 {@code ModbusRegistryHistoryRangeCodec.decodeRange}，
      * 后端要是各写一份编码，一边改了键名、或漏了「没有 carry-in 时不出键」那条规则，
      * 另一边的表现是**静默地少一段曲线**。</p>
      *
