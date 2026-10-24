@@ -8,7 +8,7 @@ import java.util.Map;
 
 /**
  * 轮询一次：
- * {@code {"service": "<服务 id>", "function": <方法序号>, "values": {"设定温度": 70}}}。
+ * {@code {"service": "<服务 id>", "pollIndex": <方法序号>, "values": {"设定温度": 70}}}。
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
