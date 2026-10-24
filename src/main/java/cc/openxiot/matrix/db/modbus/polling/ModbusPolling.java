@@ -14,8 +14,8 @@ import org.bson.types.ObjectId;
  * 那是接口直接返回的、空间图投影查询也在用的文档，混进实时状态会让「读定义」变成「读实时状态」。
  * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, pollIndex)}。</p>
  *
- * <p>只有**读方法、有 {@code interval}、{@code polling != false}** 才入表（口径见 {@code ModbusPollPlan}）；
- * 定义改了由对账（{@code ModbusPollReconciler}）跟着改，服务删了跟着删。
+ * <p>只有**读方法、有 {@code interval}、{@code polling != false}** 才入表（口径见 {@code ModbusPollingPlan}）；
+ * 定义改了由对账（{@code ModbusPollingReconciler}）跟着改，服务删了跟着删。
  * 也就是说**这张表随时可以从 {@code ModbusService} 全量重建** —— 它不是数据源，是索引。</p>
  *
  * <p>{@link #leaseOwner} / {@link #leaseUntil} 是「扩容是安全操作」的前提（见 Modbus-Service-Poller.md 第六节）：

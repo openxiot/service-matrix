@@ -19,13 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusPollPlan}：谁会进任务表。
+ * {@link ModbusPollingPlan}：谁会进任务表。
  *
  * <p>最要紧的一条是**写方法不入表**：让服务端定时往寄存器里写值是危险动作，
  * 校验器那道闸拦的是「写进来的定义」，而库里可能已经有历史数据、或被人直接改过 ——
  * 执行侧必须自己再判一次。这个用例就是钉住那道闸。</p>
  */
-class ModbusPollPlanTest {
+class ModbusPollingPlanTest {
 
     private static final long NOW = 1_700_000_000_000L;
 
@@ -41,7 +41,7 @@ class ModbusPollPlanTest {
 
     @Test
     void pollingTrueWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.TRUE)));
+        assertTrue(ModbusPollingPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.TRUE)));
     }
 
     /**
@@ -49,7 +49,7 @@ class ModbusPollPlanTest {
      */
     @Test
     void defaultPollingWithIntervalIsPolled() {
-        assertTrue(ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, null)));
+        assertTrue(ModbusPollingPlan.shouldPoll(poll(1, READ_REQUEST, 10, null)));
     }
 
     /**
@@ -57,13 +57,13 @@ class ModbusPollPlanTest {
      */
     @Test
     void pollingFalseIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.FALSE)));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, READ_REQUEST, 10, Boolean.FALSE)));
     }
 
     @Test
     void withoutIntervalIsNotPolled() {
-        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, null, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, READ_REQUEST, 0, Boolean.TRUE)));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, READ_REQUEST, null, Boolean.TRUE)));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, READ_REQUEST, 0, Boolean.TRUE)));
     }
 
     /**
@@ -73,7 +73,7 @@ class ModbusPollPlanTest {
     void writeFunctionsAreNotPolledEvenWithAnInterval() {
         for (String fc : List.of("05", "06", "0F", "10")) {
             ModbusRequest request = ModbusRequests.write(fc, 1);
-            assertTrue(!ModbusPollPlan.shouldPoll(poll(1, request, 10, Boolean.TRUE)),
+            assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, request, 10, Boolean.TRUE)),
                     "write function must not be polled: fc " + fc);
         }
     }
@@ -84,20 +84,20 @@ class ModbusPollPlanTest {
      */
     @Test
     void requestsWithoutFunctionCodeAreNotPolled() {
-        assertNull(ModbusPollPlan.functionFc(null));
-        assertNull(ModbusPollPlan.functionFc(new ModbusRequest()));
-        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, null, 10, Boolean.TRUE)));
-        assertTrue(!ModbusPollPlan.shouldPoll(poll(1, new ModbusRequest(), 10, Boolean.TRUE)));
+        assertNull(ModbusPollingPlan.functionFc(null));
+        assertNull(ModbusPollingPlan.functionFc(new ModbusRequest()));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, null, 10, Boolean.TRUE)));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll(1, new ModbusRequest(), 10, Boolean.TRUE)));
     }
 
     @Test
     void functionFcReadsTheRequestFunctionCode() {
         // functionFc 原样返回（大小写不在这里归一，判定读写的 isRead 自己归一）
-        assertEquals("03", ModbusPollPlan.functionFc(READ_REQUEST));
-        assertEquals("06", ModbusPollPlan.functionFc(WRITE_REQUEST));
-        assertEquals("0f", ModbusPollPlan.functionFc(ModbusRequests.write("0f", 0)));
+        assertEquals("03", ModbusPollingPlan.functionFc(READ_REQUEST));
+        assertEquals("06", ModbusPollingPlan.functionFc(WRITE_REQUEST));
+        assertEquals("0f", ModbusPollingPlan.functionFc(ModbusRequests.write("0f", 0)));
         // 小写 fc 照样算写方法
-        assertTrue(!ModbusPollPlan.shouldPoll(
+        assertTrue(!ModbusPollingPlan.shouldPoll(
                 poll(1, ModbusRequests.write("0f", 1), 10, Boolean.TRUE)));
     }
 
@@ -107,8 +107,8 @@ class ModbusPollPlanTest {
     @Test
     void withoutIndexIsNotPolled() {
         ModbusPoll poll = poll(null, READ_REQUEST, 10, Boolean.TRUE);
-        assertTrue(!ModbusPollPlan.shouldPoll(poll));
-        assertTrue(!ModbusPollPlan.shouldPoll(null));
+        assertTrue(!ModbusPollingPlan.shouldPoll(poll));
+        assertTrue(!ModbusPollingPlan.shouldPoll(null));
     }
 
     /**
@@ -122,7 +122,7 @@ class ModbusPollPlanTest {
         service.polls.get(2).interval = 10;
         service.polls.get(2).polling = Boolean.FALSE;     // index 2 被关掉
 
-        List<ModbusPolling> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(2, tasks.size());
         assertEquals(1, tasks.get(0).pollIndex);
@@ -148,7 +148,7 @@ class ModbusPollPlanTest {
         service.polls.get(0).interval = 10;
         service.polls.get(1).interval = 60;
 
-        List<ModbusPolling> tasks = ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(NOW + 10_000, tasks.get(0).nextRunAt.getTime());
         assertEquals(NOW + 60_000, tasks.get(1).nextRunAt.getTime());
@@ -162,8 +162,8 @@ class ModbusPollPlanTest {
         ModbusService service = service(1);
         service.polls.get(0).interval = 10;
 
-        assertTrue(ModbusPollPlan.tasksOf(service, null, NOW, 0, new Random(1L)).isEmpty());
-        assertTrue(ModbusPollPlan.tasksOf(service, "  ", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(service, null, NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(service, "  ", NOW, 0, new Random(1L)).isEmpty());
     }
 
     /**
@@ -175,7 +175,7 @@ class ModbusPollPlanTest {
         service.polls.get(0).interval = 10;
         service.id = null;
 
-        assertTrue(ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
     }
 
     @Test
@@ -183,8 +183,8 @@ class ModbusPollPlanTest {
         ModbusService service = service(1);
         service.polls = null;
 
-        assertTrue(ModbusPollPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
-        assertTrue(ModbusPollPlan.tasksOf(null, "did-1", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(null, "did-1", NOW, 0, new Random(1L)).isEmpty());
     }
 
     // -- helpers --

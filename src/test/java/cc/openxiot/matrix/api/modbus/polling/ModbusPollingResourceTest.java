@@ -58,7 +58,7 @@ class ModbusPollingResourceTest {
     ModbusPollingRepository pollRepo;
 
     @InjectMock
-    ModbusPollScheduler scheduler;
+    ModbusPollingScheduler scheduler;
 
     @InjectMock
     OrgAccessService orgAccessService;

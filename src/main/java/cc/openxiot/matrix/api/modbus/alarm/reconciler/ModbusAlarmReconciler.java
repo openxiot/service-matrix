@@ -37,7 +37,7 @@ import java.util.List;
  * {@code modbus.poll.enabled=true} 时才起调度器。而告警判定挂在**采集链路**上，手动 invoke 也会评 ——
  * 关掉轮询开关不该让残留从此没人扫。</p>
  *
- * <p><b>只写库，不动内存</b>：所以它没有 {@code ModbusPollReconciler} 那种「跨进程要等下一次周期」
+ * <p><b>只写库，不动内存</b>：所以它没有 {@code ModbusPollingReconciler} 那种「跨进程要等下一次周期」
  * 的延迟问题 —— 在哪个副本上改的定义，关就在哪个副本上落库。</p>
  *
  * <p>失败照常上抛，由调用方处置：写入路径那边只记日志（与轮询任务、影子同壳），

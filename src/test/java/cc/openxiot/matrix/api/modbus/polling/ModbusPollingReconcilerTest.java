@@ -36,9 +36,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link ModbusPollReconciler} 的一条不变式：**进时间轮的任务必须带上库里那一行的 {@code _id}**。
+ * {@link ModbusPollingReconciler} 的一条不变式：**进时间轮的任务必须带上库里那一行的 {@code _id}**。
  *
- * <p>这条不变式被现网打破过：库里**已经有这一行**时，计划对象（{@code ModbusPollPlan.tasksOf} 现算的）
+ * <p>这条不变式被现网打破过：库里**已经有这一行**时，计划对象（{@code ModbusPollingPlan.tasksOf} 现算的）
  * 身上没有 id，而当时内存任务就是从这个对象上取 id 的 —— 于是任务每周期进一次轮、
  * {@code claim} 每次都因为 {@code task.id == null} 跳过：日志里每周期一条
  * {@code modbus poll task has no id}，而设备一次都没被采到。
@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class ModbusPollReconcilerTest {
+class ModbusPollingReconcilerTest {
 
     private static final String SID = "6aa759bb4e45b0b6122d2ed5";
     private static final String DID = "0324C2F9BE34A6F8920CA026A88CE087";
@@ -68,13 +68,13 @@ class ModbusPollReconcilerTest {
     SpaceRepository spaceRepo;
 
     @Mock
-    ModbusPollBaselines baselines;
+    ModbusPollingBaselines baselines;
 
     @Mock
     Logger logger;
 
     @InjectMocks
-    ModbusPollReconciler reconciler;
+    ModbusPollingReconciler reconciler;
 
     /**
      * 库里已经有这一行：内存任务用的是**行上的** {@code _id}，不是计划对象那个 null。
@@ -88,7 +88,7 @@ class ModbusPollReconcilerTest {
 
         reconcile();
 
-        ModbusPollTask task = pumpOne();
+        ModbusPollingTask task = pumpOne();
         assertEquals(rowId, task.id);
         assertEquals(30, task.intervalSeconds);
         assertEquals(SPACE_ID, task.ownerId, "归属也要解析出来（没有归属的任务一次也调不出去）");
@@ -129,7 +129,7 @@ class ModbusPollReconcilerTest {
         givenRows(row(first));
 
         reconcile();
-        ModbusPollTask task = pumpOne();       // 出轮 = 在飞
+        ModbusPollingTask task = pumpOne();       // 出轮 = 在飞
         assertEquals(first, task.id);
 
         givenRows(row(second));
@@ -152,8 +152,8 @@ class ModbusPollReconcilerTest {
     /**
      * 取到点的那一个任务（{@code Long.MAX_VALUE} 当「现在」：轮里所有任务都算到点）。
      */
-    private ModbusPollTask pumpOne() {
-        List<ModbusPollTask> due = reconciler.wheel().pump(Long.MAX_VALUE, 10);
+    private ModbusPollingTask pumpOne() {
+        List<ModbusPollingTask> due = reconciler.wheel().pump(Long.MAX_VALUE, 10);
         assertEquals(1, due.size(), "这一轮只该有一个任务到点");
         return due.get(0);
     }

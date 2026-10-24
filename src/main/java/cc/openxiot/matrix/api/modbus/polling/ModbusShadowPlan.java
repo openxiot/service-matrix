@@ -26,9 +26,9 @@ import java.util.Set;
  * **不进周期对账** —— 那要扫「服务 × 影子」，而影子的陈旧只可能来自定义变更，
  * 定义变更必经写入路径；直接改库的情况由启动那次兜住。</p>
  */
-public final class ModbusLastPollingPlan {
+public final class ModbusShadowPlan {
 
-    private ModbusLastPollingPlan() {
+    private ModbusShadowPlan() {
     }
 
     /**

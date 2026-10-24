@@ -23,11 +23,11 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingReconciler;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWriteService;
-import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollBaselines;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaseline;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaselines;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
@@ -85,7 +85,7 @@ class ModbusServiceServiceTest {
     private ManipulationService manipulation;
     private ModbusHistoryWriteService history;
     private ModbusAlarmWriteService alarms;
-    private ModbusPollReconciler pollReconciler;
+    private ModbusPollingReconciler pollReconciler;
     private ModbusAlarmReconciler alarmReconciler;
 
     @BeforeEach
@@ -96,7 +96,7 @@ class ModbusServiceServiceTest {
         alarms = mock(ModbusAlarmWriteService.class);
         when(alarms.evaluate(any(), any(), any())).thenReturn(Uni.createFrom().voidItem());
         // update 的写入路径会串三轮派生对账（轮询任务 / 影子 / 告警），都是可弃的副作用
-        pollReconciler = mock(ModbusPollReconciler.class);
+        pollReconciler = mock(ModbusPollingReconciler.class);
         alarmReconciler = mock(ModbusAlarmReconciler.class);
         when(pollReconciler.applyService(any())).thenReturn(Uni.createFrom().voidItem());
         when(pollReconciler.reconcileShadows(any())).thenReturn(Uni.createFrom().voidItem());
@@ -392,7 +392,7 @@ class ModbusServiceServiceTest {
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());
 
-        JsonObject values = service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, new ModbusPollBaselines())
+        JsonObject values = service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, new ModbusPollingBaselines())
                 .await().indefinitely();
 
         assertEquals(100, values.getInteger("进水温度"));
@@ -408,11 +408,11 @@ class ModbusServiceServiceTest {
     void invokePolledUsesTheCachedBaselineAndCachesTheNewOne() {
         givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
-        ModbusPollBaselines baselines = new ModbusPollBaselines();
-        ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
-        ModbusPollBaseline cached = shadow(null);
+        ModbusPollingBaselines baselines = new ModbusPollingBaselines();
+        ModbusPollingKey key = new ModbusPollingKey(SERVICE_ID, FUNCTION_INDEX);
+        ModbusPollingBaseline cached = shadow(null);
         baselines.put(key, cached);
-        ModbusPollBaseline next = shadow(null);
+        ModbusPollingBaseline next = shadow(null);
         when(history.record(any(), any(), any(), eq(cached))).thenReturn(Uni.createFrom().item(next));
 
         service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, baselines).await().indefinitely();
@@ -429,10 +429,10 @@ class ModbusServiceServiceTest {
     void invokePolledFallsBackToTheDatabaseWhenTheCacheIsFaulted() {
         givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.COMPLETED, null, FRAME));
-        ModbusPollBaselines baselines = new ModbusPollBaselines();
-        ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
+        ModbusPollingBaselines baselines = new ModbusPollingBaselines();
+        ModbusPollingKey key = new ModbusPollingKey(SERVICE_ID, FUNCTION_INDEX);
         baselines.put(key, shadow("DTU offline"));        // 缓存里是故障态
-        ModbusPollBaseline next = shadow(null);
+        ModbusPollingBaseline next = shadow(null);
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().item(next));
 
         service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, baselines).await().indefinitely();
@@ -448,9 +448,9 @@ class ModbusServiceServiceTest {
     void invokePolledRecordsFailureAgainstTheCachedBaseline() {
         givenService(modbusService(), poll());
         givenParentResult(parentResult(Status.TIMEOUT, "device timeout", null));
-        ModbusPollBaselines baselines = new ModbusPollBaselines();
-        ModbusPollKey key = new ModbusPollKey(SERVICE_ID, FUNCTION_INDEX);
-        ModbusPollBaseline cached = shadow(null);
+        ModbusPollingBaselines baselines = new ModbusPollingBaselines();
+        ModbusPollingKey key = new ModbusPollingKey(SERVICE_ID, FUNCTION_INDEX);
+        ModbusPollingBaseline cached = shadow(null);
         baselines.put(key, cached);
         when(history.recordFailure(any(), any(), any(), eq(cached)))
                 .thenReturn(Uni.createFrom().item(shadow("device timeout")));
@@ -533,8 +533,8 @@ class ModbusServiceServiceTest {
         return config;
     }
 
-    private static ModbusPollBaseline shadow(String lastError) {
-        return new ModbusPollBaseline(Map.of("进水温度", 61.5), null, lastError);
+    private static ModbusPollingBaseline shadow(String lastError) {
+        return new ModbusPollingBaseline(Map.of("进水温度", 61.5), null, lastError);
     }
 
     private static ModbusPoll poll() {

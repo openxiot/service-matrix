@@ -14,7 +14,7 @@ import java.util.TreeSet;
  * 内存时间轮：按 {@code nextRunAt} 有序的任务表 + 「谁正在飞」的记账。
  *
  * <p><b>只在调度线程上访问，不加同步</b>。两个共享结构（任务的飞行态、内存基准）都只被工作线程回填，
- * 由 {@code ModbusPollScheduler} 用并发容器隔开；这个类本身不跨线程。</p>
+ * 由 {@code ModbusPollingScheduler} 用并发容器隔开；这个类本身不跨线程。</p>
  *
  * <p>三条不变量，改这个类之前先读：</p>
  *
@@ -30,21 +30,21 @@ import java.util.TreeSet;
  *       不重排、不丢弃，周期到了就该采，只是得排队（这也是不引入 Clock、不引入队列的原因）。</li>
  * </ul>
  */
-public final class ModbusPollWheel {
+public final class ModbusPollingWheel {
 
-    private static final Comparator<ModbusPollTask> ORDER = Comparator
-            .comparingLong((ModbusPollTask task) -> task.nextRunAt)
+    private static final Comparator<ModbusPollingTask> ORDER = Comparator
+            .comparingLong((ModbusPollingTask task) -> task.nextRunAt)
             .thenComparing(task -> task.serviceId)
             .thenComparingInt(task -> task.pollIndex);
 
     /** 等下一次到点的任务，按 {@code nextRunAt} 有序。 */
-    private final TreeSet<ModbusPollTask> waiting = new TreeSet<>(ORDER);
+    private final TreeSet<ModbusPollingTask> waiting = new TreeSet<>(ORDER);
 
     /** 键 → 唯一活着的那个任务对象（在轮里的或在飞的，不在已退休的）。 */
-    private final Map<ModbusPollKey, ModbusPollTask> byKey = new HashMap<>();
+    private final Map<ModbusPollingKey, ModbusPollingTask> byKey = new HashMap<>();
 
     /** 已派发、还没回填的任务。 */
-    private final Map<ModbusPollKey, ModbusPollTask> inFlight = new HashMap<>();
+    private final Map<ModbusPollingKey, ModbusPollingTask> inFlight = new HashMap<>();
 
     /** 正在飞的任务占用的设备（同一 did 串行）。 */
     private final Set<String> busyDevices = new HashSet<>();
@@ -57,13 +57,13 @@ public final class ModbusPollWheel {
      *
      * @param concurrency 并发上限（工作线程池大小）
      */
-    public List<ModbusPollTask> pump(long now, int concurrency) {
-        List<ModbusPollTask> started = new ArrayList<>();
-        Iterator<ModbusPollTask> iterator = waiting.iterator();
+    public List<ModbusPollingTask> pump(long now, int concurrency) {
+        List<ModbusPollingTask> started = new ArrayList<>();
+        Iterator<ModbusPollingTask> iterator = waiting.iterator();
         // inFlight 在这一轮里是边取边长的，所以判它就够 —— 再加一次 started.size() 会把上限折半
         while (iterator.hasNext() && inFlight.size() < concurrency) {
-            ModbusPollTask task = iterator.next();
-            if (!ModbusPollSchedule.isDue(task.nextRunAt, now)) {
+            ModbusPollingTask task = iterator.next();
+            if (!ModbusPollingSchedule.isDue(task.nextRunAt, now)) {
                 break;      // 有序：后面那些只会更晚
             }
             if (busyDevices.contains(task.did)) {
@@ -82,7 +82,7 @@ public final class ModbusPollWheel {
      *
      * <p>对账期间被要求删除的任务（{@link #retired}）在这里离场 —— 不打断已经在飞的那一帧。</p>
      */
-    public void finish(ModbusPollTask task, long nextRunAt) {
+    public void finish(ModbusPollingTask task, long nextRunAt) {
         inFlight.remove(task.key());
         busyDevices.remove(task.did);
         if (task.retired) {
@@ -100,9 +100,9 @@ public final class ModbusPollWheel {
      * @return false = 这个任务正在飞、且它依赖的设备变了，**这一轮不动它**（在飞的那一帧不能换设备），
      *         留给下一次对账
      */
-    public boolean offer(ModbusPollTask task, long nextRunAt) {
-        ModbusPollKey key = task.key();
-        ModbusPollTask live = byKey.get(key);
+    public boolean offer(ModbusPollingTask task, long nextRunAt) {
+        ModbusPollingKey key = task.key();
+        ModbusPollingTask live = byKey.get(key);
         if (live == null) {
             task.nextRunAt = nextRunAt;
             byKey.put(key, task);
@@ -139,8 +139,8 @@ public final class ModbusPollWheel {
     }
 
     /** 对账要删的任务：在飞的话标记退休（跑完自然离场），否则立刻出轮。 */
-    public void remove(ModbusPollKey key) {
-        ModbusPollTask task = byKey.get(key);
+    public void remove(ModbusPollingKey key) {
+        ModbusPollingTask task = byKey.get(key);
         if (task == null) {
             return;
         }
@@ -159,7 +159,7 @@ public final class ModbusPollWheel {
     }
 
     /** 当前活着的任务的键（在轮里的 + 在飞的）：对账据此找出该摘掉的那些。 */
-    public Set<ModbusPollKey> keys() {
+    public Set<ModbusPollingKey> keys() {
         return Set.copyOf(byKey.keySet());
     }
 

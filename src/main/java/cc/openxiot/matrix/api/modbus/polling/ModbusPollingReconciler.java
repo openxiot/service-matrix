@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 轮询任务表的对账：让 {@code modbus.polls} 与内存时间轮跟着**服务定义**走
  * （见 Modbus-Service-Poller.md 第三节）。
  *
- * <p>任务表是派生数据：口径完全由定义决定（{@code ModbusPollPlan.shouldPoll}），随时可以从
+ * <p>任务表是派生数据：口径完全由定义决定（{@code ModbusPollingPlan.shouldPoll}），随时可以从
  * {@code modbus.services} 全量重建。所以对账做成**幂等的重算**，不做增量事件 ——
  * 丢了事件、改错了库、poller 停机几天，都能靠下一次对账修回来。</p>
  *
@@ -51,7 +51,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <h2>为什么写入路径不直接改内存表</h2>
  *
  * <p>写入路径跑在 HTTP 线程上（api 副本处理定义维护请求），而内存表只由调度线程改
- * （见 {@link ModbusPollWheel} 的类注释：不加锁）。两个线程同时改同一个 {@code TreeSet} 是数据竞争，
+ * （见 {@link ModbusPollingWheel} 的类注释：不加锁）。两个线程同时改同一个 {@code TreeSet} 是数据竞争，
  * 而且这种竞争不会报错、只会让时间轮静默丢掉几个任务。所以写路径只把 {@link #dirty} 置起来，
  * 由下一次唤醒在调度线程上重建 —— 唤醒周期是 {@code modbus.poll.wakeup-millis}（缺省 1 秒），
  * 比人手改定义的往返快得多，等于没有延迟。</p>
@@ -64,7 +64,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 是「同代码双部署」这套方案的固有代价。</p>
  */
 @ApplicationScoped
-public class ModbusPollReconciler {
+public class ModbusPollingReconciler {
 
     /** 空间 → 根空间 id 的解析缓存：归属每次对账解析一次就够（空间几乎不动），别每次采集都查一遍。 */
     private static final int MAX_CACHED_SPACES = 1000;
@@ -82,7 +82,7 @@ public class ModbusPollReconciler {
     SpaceRepository spaceRepo;
 
     @Inject
-    ModbusPollBaselines baselines;
+    ModbusPollingBaselines baselines;
 
     @Inject
     Logger logger;
@@ -92,7 +92,7 @@ public class ModbusPollReconciler {
     int jitterPercent;
 
     /** 内存时间轮：本类持有（对账是唯一往里放东西的地方），调度器通过 {@link #wheel()} 取用。 */
-    private final ModbusPollWheel wheel = new ModbusPollWheel();
+    private final ModbusPollingWheel wheel = new ModbusPollingWheel();
 
     private final Map<String, String> rootBySpace = new ConcurrentHashMap<>();
 
@@ -116,7 +116,7 @@ public class ModbusPollReconciler {
     // ===== 对外 =====
 
     /** 内存时间轮（调度器用）。 */
-    public ModbusPollWheel wheel() {
+    public ModbusPollingWheel wheel() {
         return wheel;
     }
 
@@ -144,7 +144,7 @@ public class ModbusPollReconciler {
         }
         String serviceId = service.id.toHexString();
         long now = System.currentTimeMillis();
-        List<ModbusPolling> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
+        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(service, didOf(service), now,
                 jitterPercent, ThreadLocalRandom.current());
         return pollRepo.findByServiceId(serviceId)
                 .chain(existing -> sequence(taskWrites(serviceId, planned, existing)))
@@ -224,12 +224,12 @@ public class ModbusPollReconciler {
         }
         String serviceId = service.id.toHexString();
         return registryShadowRepo.listByServiceId(serviceId).chain(shadows -> {
-            List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, shadows);
+            List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
             if (fixes.isEmpty()) {
                 return Uni.createFrom().voidItem();
             }
             List<ObjectId> orphans = new ArrayList<>();
-            for (ModbusLastPollingPlan.Fix fix : fixes) {
+            for (ModbusShadowPlan.Fix fix : fixes) {
                 if (fix.orphan()) {
                     orphans.add(fix.shadow().id);
                 }
@@ -255,7 +255,7 @@ public class ModbusPollReconciler {
             }
         }
 
-        Set<ModbusPollKey> plannedKeys = new HashSet<>();
+        Set<ModbusPollingKey> plannedKeys = new HashSet<>();
         List<Uni<Void>> steps = new ArrayList<>();
         for (ModbusService service : services) {
             if (service == null || service.id == null) {
@@ -289,9 +289,9 @@ public class ModbusPollReconciler {
     }
 
     private Uni<Void> reconcileService(ModbusService service, List<ModbusPolling> polls,
-                                       Set<ModbusPollKey> plannedKeys, long now) {
+                                       Set<ModbusPollingKey> plannedKeys, long now) {
         String serviceId = service.id.toHexString();
-        List<ModbusPolling> planned = ModbusPollPlan.tasksOf(service, didOf(service), now,
+        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(service, didOf(service), now,
                 jitterPercent, ThreadLocalRandom.current());
         List<ModbusPolling> existing = polls.stream()
                 .filter(poll -> serviceId.equals(poll.serviceId))
@@ -308,14 +308,14 @@ public class ModbusPollReconciler {
             return sequence(taskWrites(serviceId, planned, existing)).chain(() -> {
                 List<Uni<Void>> offers = new ArrayList<>(planned.size());
                 for (ModbusPolling task : planned) {
-                    ModbusPollKey key = new ModbusPollKey(serviceId, task.pollIndex);
+                    ModbusPollingKey key = new ModbusPollingKey(serviceId, task.pollIndex);
                     plannedKeys.add(key);
                     ModbusPolling row = rowOf(existing, task.pollIndex);
                     // id 以库里的那一行为准：计划对象上的 id 只在「这一轮要插入」时才等于落库后的 _id。
                     // 反过来（读计划对象的 id）会让库里已有的任务永远带着 null id 进时间轮 ——
                     // 表现就是每周期一条 "modbus poll task has no id"、一次采集也不发生。
                     ObjectId id = row == null ? task.id : row.id;
-                    ModbusPollTask memory = ModbusPollTask.of(task, id, ownerId);
+                    ModbusPollingTask memory = ModbusPollingTask.of(task, id, ownerId);
                     // 库里的 nextRunAt 优先：对账不是重排，别把一次采集往后推
                     long nextRunAt = row != null && row.nextRunAt != null
                             ? row.nextRunAt.getTime()
@@ -365,8 +365,8 @@ public class ModbusPollReconciler {
     }
 
     /** 内存表里计划之外的都摘掉（含它们的基准缓存）。 */
-    private void pruneWheel(Set<ModbusPollKey> planned) {
-        for (ModbusPollKey key : wheel.keys()) {
+    private void pruneWheel(Set<ModbusPollingKey> planned) {
+        for (ModbusPollingKey key : wheel.keys()) {
             if (!planned.contains(key)) {
                 wheel.remove(key);
                 baselines.forget(key);

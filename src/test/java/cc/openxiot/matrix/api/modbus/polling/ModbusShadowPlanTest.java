@@ -17,13 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusLastPollingPlan}：定义改了之后，寄存器影子该跟着动哪些。
+ * {@link ModbusShadowPlan}：定义改了之后，寄存器影子该跟着动哪些。
  *
  * <p>寄存器是**原子单位**：现有寄存器由 {@code configSnapshot.registries} 给出，唯一的陈旧形态是
  * **孤儿寄存器**（定义里已删掉的 registerIndex）必须主动删 —— 它的影子再也不会被更新，
  * 却一直出现在当前值接口里。寄存器没有「废弃字段键」，所以对非孤儿一律不改。</p>
  */
-class ModbusLastPollingPlanTest {
+class ModbusShadowPlanTest {
 
     private static final String SERVICE_ID = new ObjectId().toHexString();
 
@@ -34,7 +34,7 @@ class ModbusLastPollingPlanTest {
         ModbusShadow alive = shadow(SERVICE_ID, 1);
         ModbusShadow orphan = shadow(SERVICE_ID, 2);
 
-        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(alive, orphan));
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(alive, orphan));
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
@@ -49,7 +49,7 @@ class ModbusLastPollingPlanTest {
         service.configSnapshot.registries.add(new ModbusRegistry()); // index == null → 不算活寄存器
         ModbusShadow orphan = shadow(SERVICE_ID, 5);
 
-        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, List.of(orphan));
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(orphan));
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
@@ -61,9 +61,9 @@ class ModbusLastPollingPlanTest {
     void consistentShadowsProduceNoFix() {
         ModbusService service = service(1);
 
-        assertTrue(ModbusLastPollingPlan.plan(service, List.of(shadow(SERVICE_ID, 1))).isEmpty());
-        assertTrue(ModbusLastPollingPlan.plan(service, List.of()).isEmpty());
-        assertTrue(ModbusLastPollingPlan.plan(service, null).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow(SERVICE_ID, 1))).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(service, List.of()).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(service, null).isEmpty());
     }
 
     /** 拿不到定义就不动任何影子：宁可留一张陈旧影子，也不要把用户的当前值删掉。 */
@@ -78,10 +78,10 @@ class ModbusLastPollingPlanTest {
 
         List<ModbusShadow> shadows = List.of(shadow(SERVICE_ID, 9));
 
-        assertTrue(ModbusLastPollingPlan.plan(null, shadows).isEmpty());
-        assertTrue(ModbusLastPollingPlan.plan(noRegistries, shadows).isEmpty());
-        assertTrue(ModbusLastPollingPlan.plan(noSnapshot, shadows).isEmpty());
-        assertTrue(ModbusLastPollingPlan.plan(noId, shadows).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(null, shadows).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(noRegistries, shadows).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(noSnapshot, shadows).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(noId, shadows).isEmpty());
     }
 
     /** 影子是别的服务的：对账按服务做，串了就是 bug —— 不动它，也不要把它当孤儿删掉。 */
@@ -90,7 +90,7 @@ class ModbusLastPollingPlanTest {
         ModbusService service = service(1);
         ModbusShadow other = shadow(new ObjectId().toHexString(), 9);
 
-        assertTrue(ModbusLastPollingPlan.plan(service, List.of(other)).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(service, List.of(other)).isEmpty());
     }
 
     /** 多个修复按 registerIndex 升序（调用方按顺序写库，日志里也好读）；活着的不出现在结果里。 */
@@ -102,7 +102,7 @@ class ModbusLastPollingPlanTest {
                 shadow(SERVICE_ID, 1),
                 shadow(SERVICE_ID, 2)));
 
-        List<ModbusLastPollingPlan.Fix> fixes = ModbusLastPollingPlan.plan(service, shadows);
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
 
         assertEquals(2, fixes.size());
         assertEquals(2, fixes.get(0).shadow().registerIndex);
@@ -118,8 +118,8 @@ class ModbusLastPollingPlanTest {
         word.bitList = List.of(bit(0, "running"), bit(1, null));
 
         assertEquals(Set.of("status", "running"),
-                ModbusLastPollingPlan.definedFields(List.of(word, field(null), field("  "))));
-        assertTrue(ModbusLastPollingPlan.definedFields(null).isEmpty());
+                ModbusShadowPlan.definedFields(List.of(word, field(null), field("  "))));
+        assertTrue(ModbusShadowPlan.definedFields(null).isEmpty());
     }
 
     // -- helpers --

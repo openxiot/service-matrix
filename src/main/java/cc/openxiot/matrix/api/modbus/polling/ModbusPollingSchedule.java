@@ -19,9 +19,9 @@ import java.util.random.RandomGenerator;
  *       （否则时间轮会空转）。</li>
  * </ul>
  */
-public final class ModbusPollSchedule {
+public final class ModbusPollingSchedule {
 
-    private ModbusPollSchedule() {
+    private ModbusPollingSchedule() {
     }
 
     /**

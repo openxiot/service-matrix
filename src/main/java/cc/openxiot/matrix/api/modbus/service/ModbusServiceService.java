@@ -3,22 +3,22 @@ package cc.openxiot.matrix.api.modbus.service;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.modbus.service.parser.ModbusResponseParser;
 import cc.openxiot.matrix.api.modbus.service.validator.ModbusServiceValidator;
-import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
-import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.alarm.reconciler.ModbusAlarmReconciler;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.modbus.history.ModbusHistoryWriteService;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollBaselines;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollKey;
-import cc.openxiot.matrix.api.modbus.polling.ModbusPollReconciler;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaselines;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingKey;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingReconciler;
+import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaseline;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.api.modbus.history.ModbusPollBaseline;
 import cc.openxiot.matrix.db.modbus.service.ModbusService;
 import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
 import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.service.DeviceOn;
 import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
+import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cn.geekcity.xiot.spec.codec.vertx.operation.ActionOperationCodec;
 import cn.geekcity.xiot.spec.operation.ActionOperation;
@@ -66,7 +66,7 @@ public class ModbusServiceService {
 
     /** 轮询任务表的对账（写入路径挂这里，见 Modbus-Service-Poller.md 第三节）。 */
     @Inject
-    ModbusPollReconciler pollReconciler;
+    ModbusPollingReconciler pollReconciler;
 
     /** 告警的定义变更对账（写入路径挂这里，见 Modbus-Alarm.md 第五节末）。 */
     @Inject
@@ -295,7 +295,7 @@ public class ModbusServiceService {
             String ownerId,
             String serviceId,
             Integer pollIndex,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
         return invoke(ownerId, serviceId, pollIndex, null, baselines);
     }
@@ -305,7 +305,7 @@ public class ModbusServiceService {
             String serviceId,
             Integer pollIndex,
             Map<String, Object> values,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
         String err = checkId(serviceId);
         if (err != null) {
@@ -326,7 +326,7 @@ public class ModbusServiceService {
             ModbusService service,
             int pollIndex,
             Map<String, Object> values,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
         ModbusPoll poll = findPoll(service, pollIndex);
         if (poll == null) {
@@ -360,7 +360,7 @@ public class ModbusServiceService {
             ModbusService service,
             ModbusPoll poll,
             Map<String, Object> values,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
         String coordinateErr = ModbusServiceValidator.checkDevice(service.device);
         if (coordinateErr != null) {
@@ -448,14 +448,14 @@ public class ModbusServiceService {
             ModbusService service,
             ModbusPoll poll,
             JsonObject values,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
-        ModbusPollKey key = baselines == null
+        ModbusPollingKey key = baselines == null
                 ? null
-                : new ModbusPollKey(service.id.toHexString(), poll.index);
-        ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
+                : new ModbusPollingKey(service.id.toHexString(), poll.index);
+        ModbusPollingBaseline cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusPollBaseline> recorded = cached != null
+        Uni<ModbusPollingBaseline> recorded = cached != null
                 ? historyWriteService.record(service, poll, values, cached)
                 : historyWriteService.record(service, poll, values);
         return recorded
@@ -498,20 +498,20 @@ public class ModbusServiceService {
      *
      * <p>基准的处理与 {@link #recordHistory} 同一处口径。注意故障态下的基准**必须**回退到读库：
      * 缓存的 {@code lastError} 可能已经被 api 副本上的手动调用清掉了，拿它当基准会把一次新的同类故障
-     * 并进上一次的账上（见 {@code ModbusPollBaselines.usable}）。</p>
+     * 并进上一次的账上（见 {@code ModbusPollingBaselines.usable}）。</p>
      */
     private Uni<Void> recordFailure(
             ModbusService service,
             ModbusPoll poll,
             Throwable error,
-            ModbusPollBaselines baselines
+            ModbusPollingBaselines baselines
     ) {
-        ModbusPollKey key = baselines == null
+        ModbusPollingKey key = baselines == null
                 ? null
-                : new ModbusPollKey(service.id.toHexString(), poll.index);
-        ModbusPollBaseline cached = baselines == null ? null : baselines.get(key);
+                : new ModbusPollingKey(service.id.toHexString(), poll.index);
+        ModbusPollingBaseline cached = baselines == null ? null : baselines.get(key);
 
-        Uni<ModbusPollBaseline> recorded = cached != null
+        Uni<ModbusPollingBaseline> recorded = cached != null
                 ? historyWriteService.recordFailure(service, poll, error, cached)
                 : historyWriteService.recordFailure(service, poll, error);
         return recorded

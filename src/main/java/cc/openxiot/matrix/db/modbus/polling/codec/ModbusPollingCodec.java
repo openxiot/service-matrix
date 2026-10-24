@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * {@link ModbusPolling} → JSON（轮询任务查询接口用）。
  *
- * <p>只出不进：任务表是**派生数据**（口径由服务定义决定，见 {@code ModbusPollPlan}），
+ * <p>只出不进：任务表是**派生数据**（口径由服务定义决定，见 {@code ModbusPollingPlan}），
  * 不由请求体决定 —— 所以没有 decode。要改任务就去改服务定义，对账会跟着改。</p>
  *
  * <p>null 的字段**不出键**（与 {@code ModbusServiceLastPollingCodec} 同口径）：

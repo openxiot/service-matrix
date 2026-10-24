@@ -60,7 +60,7 @@ public class ModbusPollingResource extends AbstractResource {
     ModbusPollingRepository pollRepo;
 
     @Inject
-    ModbusPollScheduler scheduler;
+    ModbusPollingScheduler scheduler;
 
     @Inject
     OrgAccessService orgAccessService;

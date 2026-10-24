@@ -38,7 +38,7 @@ import java.util.random.RandomGenerator;
  *
  * <ul>
  *   <li><b>调度线程</b>：{@link ScheduledExecutorService} 单线程，{@code scheduleAtFixedRate} 唤醒。
- *       它独占**内存时间轮**（{@link ModbusPollWheel} 不加锁）与**任务对象的全部字段**——
+ *       它独占**内存时间轮**（{@link ModbusPollingWheel} 不加锁）与**任务对象的全部字段**——
  *       工作线程只读 {@code ownerId} / {@code serviceId} / {@code pollIndex}，
  *       算好的下一次时刻**回填到调度线程**，不直接改时间轮。</li>
  *   <li><b>工作线程池</b>：{@code modbus.poll.concurrency} 个，池大小即并发上限。
@@ -64,13 +64,13 @@ import java.util.random.RandomGenerator;
  * 按旧的时刻立刻重跑，而只会多等一个周期（见 Modbus-Service-Poller.md 第四节）。</p>
  */
 @ApplicationScoped
-public class ModbusPollScheduler {
+public class ModbusPollingScheduler {
 
     @Inject
-    ModbusPollReconciler reconciler;
+    ModbusPollingReconciler reconciler;
 
     @Inject
-    ModbusPollBaselines baselines;
+    ModbusPollingBaselines baselines;
 
     @Inject
     ModbusServiceService serviceService;
@@ -225,8 +225,8 @@ public class ModbusPollScheduler {
 
     /** 到点的任务：认领一个、派发一个。 */
     private void dispatch(long now) {
-        List<ModbusPollTask> due = reconciler.wheel().pump(now, Math.max(1, concurrency));
-        for (ModbusPollTask task : due) {
+        List<ModbusPollingTask> due = reconciler.wheel().pump(now, Math.max(1, concurrency));
+        for (ModbusPollingTask task : due) {
             try {
                 claim(task, now);
             } catch (Exception e) {
@@ -241,10 +241,10 @@ public class ModbusPollScheduler {
      * 认领并派发。认领前先算出下一次时刻 —— 它要和租约**写在同一行**（见
      * {@code ModbusPollingRepository.claim}），所以这里先算、认领不到就丢掉重算。
      */
-    private void claim(ModbusPollTask task, long now) {
+    private void claim(ModbusPollingTask task, long now) {
         long nextRunAt = nextRunAt(now, now, task);
         if (task.id == null) {
-            // 守卫，不是流程：对账给每个入轮的任务都带上 id（见 ModbusPollTask.of 的注释）。
+            // 守卫，不是流程：对账给每个入轮的任务都带上 id（见 ModbusPollingTask.of 的注释）。
             // 真到了这里就是不变式破了 —— 任务一次都跑不了、每周期重复一遍，所以记 error 而不是 warn，
             // 并且**照样放回时间轮**：它会在下一次对账时被重建成带 id 的（丢掉它反而会静默地不采）
             logger.errorv("modbus poll task has no id, key: {0}", task.key());
@@ -268,7 +268,7 @@ public class ModbusPollScheduler {
     }
 
     /** 工作线程：调一次 → 写结果 → 把下一次时刻回填到调度线程。 */
-    private void run(ModbusPollTask task, long startedAt) {
+    private void run(ModbusPollingTask task, long startedAt) {
         Throwable failure = null;
         try {
             invoke(task);
@@ -293,9 +293,9 @@ public class ModbusPollScheduler {
      * {@code ModbusFailureType} 里没有 TIMEOUT 这一类，裸的 {@code TimeoutException} 会被归成
      * {@code UNKNOWN} —— 一个挂死的 DTU 会被记成「不知道什么原因」，排查方向就丢了。
      */
-    private void invoke(ModbusPollTask task) {
+    private void invoke(ModbusPollingTask task) {
         if (task.ownerId == null) {
-            // 归属解析不出来（设备所在空间查不到，见 ModbusPollReconciler）：不猜一个归属去调设备
+            // 归属解析不出来（设备所在空间查不到，见 ModbusPollingReconciler）：不猜一个归属去调设备
             throw ModbusInvokeException.of(ModbusFailureType.CONFIG_ERROR,
                     "owner space is unknown for poll task, did=" + task.did);
         }
@@ -310,7 +310,7 @@ public class ModbusPollScheduler {
     }
 
     /** 写回结果状态（**副作用**：写失败只记日志，不影响下一轮调度）。 */
-    private void recordOutcome(ModbusPollTask task, Throwable failure) {
+    private void recordOutcome(ModbusPollingTask task, Throwable failure) {
         if (task.id == null) {
             return;
         }
@@ -327,12 +327,12 @@ public class ModbusPollScheduler {
     }
 
     /** 回填下一次时刻，把任务放回时间轮。 */
-    private void finish(ModbusPollTask task, long nextRunAt) {
+    private void finish(ModbusPollingTask task, long nextRunAt) {
         reconciler.wheel().finish(task, nextRunAt);
     }
 
-    private long nextRunAt(long now, long startedAt, ModbusPollTask task) {
-        return ModbusPollSchedule.nextRunAt(now, startedAt, Math.max(1, task.intervalSeconds),
+    private long nextRunAt(long now, long startedAt, ModbusPollingTask task) {
+        return ModbusPollingSchedule.nextRunAt(now, startedAt, Math.max(1, task.intervalSeconds),
                 jitterPercent, random);
     }
 

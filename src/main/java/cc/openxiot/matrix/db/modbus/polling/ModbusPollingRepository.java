@@ -154,7 +154,7 @@ public class ModbusPollingRepository  {
      *
      * <p>可认领的三种情形：没人持有（{@code leaseUntil} 为 null / 缺失）、租约已过期、**持有者还是自己**
      * （缺省的单副本部署下永远命中这一条，等于空跑）。与
-     * {@code ModbusPollSchedule.leaseClaimable} 是同一份口径，改一处要改两处。</p>
+     * {@code ModbusPollingSchedule.leaseClaimable} 是同一份口径，改一处要改两处。</p>
      *
      * <p>注意必须显式写 {@code eq("leaseUntil", null)}：Mongo 的 {@code $lt} 有类型分桶，
      * 单写 {@code lt("leaseUntil", now)} 匹配不到字段缺失的文档 —— 而「从没被跑过」的任务正是这一种。</p>
