@@ -1,25 +1,26 @@
-# 将 Modbus 配置，生成具体的 Modbus 服务
+# 将 Modbus 配置，生成具体的 Modbus设备
 
 ## 一、设计思想
 
 Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一台物理设备的寄存器 / 线圈点表。
 把它变成「可调用的东西」有两条路，本项目走过前一条、最终落在后一条：
 
-* **生成设备实例**（**已废弃**）：把点表展开成一台虚拟设备的实例定义，作为依赖设备（DTU）的子设备挂进设备表，
+* **生成虚拟设备实例**（**已废弃**）：把点表展开成一台虚拟设备的实例定义，作为依赖设备（DTU）的子设备挂进设备表，
   读属性 / 写属性 / 执行方法都复用通用的设备接口（`DeviceResource`）。
   优点是不用另设接口；缺点是每个请求都要经过设备拦截器翻译指令（虚拟 action ↔ 父设备“发送”），
   步骤繁多，且要读好几次数据库。
-* **生成 Modbus 服务**（**现行方案，本文档**）：把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**
-  一次性展开成一份 `ModbusService` 文档；调用时只读这一条记录即可组装出父设备调用。
-  优点是简单、一次数据库访问；缺点是需要单独设计一套 API（`ModbusServiceResource`）。
+* **生成 Modbus设备**（**现行方案，本文档**；原名「Modbus 服务」，2026-10-25 改名，见变更记录）：
+  把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**
+  一次性展开成一份 `ModbusDevice` 文档；调用时只读这一条记录即可组装出父设备调用。
+  优点是简单、一次数据库访问；缺点是需要单独设计一套 API（`ModbusDeviceResource`）。
 
 前者的代码（虚拟设备资源 / 实体 / 仓储、`DeviceInterceptor`、`DeviceManipulator`、以及 `DeviceService` 里
 为虚拟子设备做的 online 归一）已整体删除，见变更记录。**现在只剩这一条路径**：
-通用的设备线（`DeviceResource` 直接调 `ManipulationService`）+ 点表配置线 + Modbus 服务线。
+通用的设备线（`DeviceResource` 直接调 `ManipulationService`）+ 点表配置线 + Modbus设备线。
 
 ## 二、示例
 
-./modbus-service-example.json
+./modbus-device-example.json
 
 文件里 8 个方法把两侧的形态都覆盖了：读方法四个（fc 03 / 01）与写方法四个（fc 05 / 06 / 0F / 10）。
 顶层的 `"id": "xxxx"` 只是占位 —— **创建时不由请求体决定**，POST 填什么都会被忽略、由服务端生成。
@@ -38,13 +39,13 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
 | `interval` / `polling` | 可选：`polling` 缺省按有没有 `interval` 判定 | **不许有**：那等于周期性写寄存器，校验直接拒 |
 
 示例里方法 2/3/4 看不到 `interval`/`polling`、方法 5~8 看不到 `response`，都是「空」而不是「漏了」。
-逐条的校验规则见第七节；`ModbusServiceCodecTest.documentedExampleFileIsValid` 会拿这个文件真跑一遍校验，
+逐条的校验规则见第七节；`ModbusDeviceCodecTest.documentedExampleFileIsValid` 会拿这个文件真跑一遍校验，
 规则改了忘改示例会被测试挡住。
 
 ## 三、数据模型（落库 `modbus`/`services`，Panache 生成 ObjectId，对外十六进制字符串）
 
 ```
-ModbusService                       name / version / configSnapshot / slaveId / device / polls[] / creator / updater
+ModbusDevice                        name / version / configSnapshot / slaveId / device / polls[] / creator / updater
 ModbusConfig（快照）                id / owner / slave / visibility / registries[] / commands[] / lifecycle / creator / updater
                                     ← 创建服务时整份拷贝进 configSnapshot；之后点表改动/删除不影响该服务
 DeviceOn                            did / siid / aiid / argument / space  ← 依赖的设备：调用坐标 + 所在空间，前端创建时写入
@@ -59,7 +60,7 @@ ModbusResponseFieldBit        offset / field / alarms[] ← 位区里的具名�
 ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level / text
 ```
 
-> **单次 vs 周期，别混**：这里 `ModbusPoll`（单个 `poll`，`ModbusService.polls[]` 里的一个元素）
+> **单次 vs 周期，别混**：这里 `ModbusPoll`（单个 `poll`，`ModbusDevice.polls[]` 里的一个元素）
 > 是**单次轮询 / 一个读块** —— 定义了「读哪儿、发什么帧、怎么解应答」这一个可调用的方法，`pollIndex`
 > 给它编号。`ModbusPolling`（`modbus.polls` 集合里的轮询任务）是**周期轮询任务** —— 到点按 `interval`
 > 自动调某一个 `poll`。前者是「做什么」，后者是「多久做一次」。
@@ -71,7 +72,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
   当前选中的点表原样写进请求体，之后点表被修改/删除都不影响这条服务 —— 服务不再依赖点表集合。
   读服务的地方一律读它，**不再回查 `configs`**：寄存器缓存网格（`ModbusShadowService`）用它出
   可读寄存器、详情/清单页用它显示「源点表」、设备页用它取寄存器名、统计按 `configSnapshot.id`
-  分组（`ModbusServiceRepository.findConfigKeysBySpaceId` 只投影 `configSnapshot._id`）。
+  分组（`ModbusDeviceRepository.findConfigKeysBySpaceId` 只投影 `configSnapshot._id`）。
   落库形状与点表文档同形（嵌套 `_id`），迁移脚本见
   `docs/migrations/modbus-service-config-snapshot.js`（configId → configSnapshot）。
 * `slaveId` 是服务级从站地址（1..247），创建时从快照的 `slave.slaveId` 拷贝、可在界面改；
@@ -80,7 +81,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
   故提到 device 级、对该服务的所有方法共用（不同型号 piid 不同：s710ym 是 1/2/2、dtu.json 是 1/1/1，
   由前端按型号写入，后端不去产品定义推算）。
 * `device.space` 记录该设备所在的空间（`cc.openxiot.matrix.db.space.SpaceOn`，`DeviceEntity.space`
-  用的是同一个类）。空间图要按空间反查服务（`ModbusServiceRepository.findBriefBySpaceId`，见第六节），
+  用的是同一个类）。空间图要按空间反查服务（`ModbusDeviceRepository.findBriefBySpaceId`，见第六节），
   落库时带上就不必再到设备表里绕一圈。它不参与校验：缺省的服务只是不出现在按空间的查询里。
 * `poll.request` = **请求帧的结构化定义**（`ModbusRequest`），**不是**一整串 hex：
   `slaveId` / `fc` / `start` 三个标量，读方法再给 `quantity`、写方法再给 `fields[]`。
@@ -145,13 +146,13 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/matrix/v1/modbus/service/many/{spaceId}` | 空间成员 | 列出设备落点在该空间的服务 |
-| GET | `/matrix/v1/modbus/service/parent/{spaceId}/{did}` | 空间成员 | 按依赖设备 did 列出（路径里的 `parent` 暂未随字段改名） |
-| GET | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间成员 | 指定 ID 查找 |
-| POST | `/matrix/v1/modbus/service/one/{spaceId}` | 空间管理员 | 创建（body = 完整 ModbusService） |
-| PUT | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
-| DELETE | `/matrix/v1/modbus/service/one/{spaceId}/{id}` | 空间管理员 | 删除 |
-| POST | `/matrix/v1/modbus/service/invoke/{spaceId}` | 空间成员 | 调用方法（单次轮询，`PollOnce`），body `{"service": "<id>", "pollIndex": <单次轮询的序号>, "values": {"字段名": 值}}`（`values` 只在写方法上用，见第五节） |
+| GET | `/matrix/v1/modbus/device/many/{spaceId}` | 空间成员 | 列出设备落点在该空间的服务 |
+| GET | `/matrix/v1/modbus/device/parent/{spaceId}/{did}` | 空间成员 | 按依赖设备 did 列出（路径里的 `parent` 暂未随字段改名） |
+| GET | `/matrix/v1/modbus/device/one/{spaceId}/{id}` | 空间成员 | 指定 ID 查找 |
+| POST | `/matrix/v1/modbus/device/one/{spaceId}` | 空间管理员 | 创建（body = 完整 ModbusDevice） |
+| PUT | `/matrix/v1/modbus/device/one/{spaceId}/{id}` | 空间管理员 | 修改（缺省字段保留既有值） |
+| DELETE | `/matrix/v1/modbus/device/one/{spaceId}/{id}` | 空间管理员 | 删除 |
+| POST | `/matrix/v1/modbus/device/invoke/{spaceId}` | 空间成员 | 调用方法（单次轮询，`PollOnce`），body `{"service": "<id>", "pollIndex": <单次轮询的序号>, "values": {"字段名": 值}}`（`values` 只在写方法上用，见第五节） |
 | GET | `/matrix/v1/modbus/shadows/{spaceId}?serviceIds=a,b,c` | 空间成员 | **寄存器缓存网格**：一次读一个/多个服务的全部可读寄存器当前缓存值（独立资源，见 `ModbusShadowResource`/`ModbusShadowService`；`serviceIds` 缺省则该空间全取，可用逗号或重复参数） |
 | GET | `/matrix/v1/modbus/poll/{spaceId}` | 空间成员 | 该空间下服务的**轮询任务**与运行时状态（另起一段路径，见 `Modbus-Service-Poller.md` 第八节） |
 
@@ -166,13 +167,13 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 的接口：它筛 `device.space.spaceId`（与空间图同一字段、同一索引），设备搬走后副本陈旧的服务不在其中；
 要看整个项目的服务用空间图 `/matrix/v1/space/graph/{rootId}`（按子孙空间逐个查）。
 
-**删除设备会级联删掉该设备下的服务**（`DeviceResource.removeOne` / `removeDevices` → `ModbusServiceRepository.deleteByDeviceDids`）：
+**删除设备会级联删掉该设备下的服务**（`DeviceResource.removeOne` / `removeDevices` → `ModbusDeviceRepository.deleteByDeviceDids`）：
 按 `device.did` 匹配、**不限组织**。设备先删服务、再删设备行，任一步失败整链失败还能重试；
 反过来会出现「设备行已删、服务永久孤儿」（既查不出来、也删不掉）。点表 `configs` 不引用设备，不参与级联。
 
 ## 五、invoke 的调用链与返回
 
-`ModbusServiceService.invoke`：按 id **读一次** `ModbusService` 文档 → 取该 `pollIndex` 的 poll →
+`ModbusDeviceService.invoke`：按 id **读一次** `ModbusDevice` 文档 → 取该 `pollIndex` 的 poll →
 **按 `request` 现组帧**（`ModbusFrameCodec.encodeRequest(poll.request, values)`）→
 组装依赖设备的 `ActionOperation`（did/siid/aiid 取 `device`，in 填 `{argument: 帧}`）→
 交 `ManipulationService.invokeActions`（DTU 的“发送”把帧透传到 RS485）→ 把应答帧按
@@ -187,7 +188,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
   字段名即 `request.fields[].field`，值就是原始值（位是布尔、寄存器是数值），不做 scale 换算。
   **读方法给了 `values` 直接报错** —— 静默忽略一个用户以为生效了的载荷，比报错糟得多。
   写字段里没有缺省值的必须给、给了未声明的字段名报错、类型不符 / 越界报错，
-  这套判定是 `ModbusServiceValidator.validateInvoke`，在 `execute` **之前**拦下：
+  这套判定是 `ModbusDeviceValidator.validateInvoke`，在 `execute` **之前**拦下：
   它是**调用方的请求错误**（与「poll not found」同类），与设备故障不是一回事，
   因此不进 `service-failures`。
 
@@ -235,16 +236,16 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 ## 六、空间图里的服务
 
 `/matrix/v1/space/graph/{rootId}` 在 `spaces` / `devices` 之外平级返回 `services`：取该根空间下全部子孙空间，
-逐个按空间并行查设备（`DeviceService.getBySpaceId`）与服务（`ModbusServiceService.getBriefBySpaceId`），
+逐个按空间并行查设备（`DeviceService.getBySpaceId`）与服务（`ModbusDeviceService.getBriefBySpaceId`），
 再各自拍平成一张表。
 
 * 两个列表走 `SpaceResource` 里同一个泛型 helper（`bySpace(spaceIds, loader)`），
   再 `Uni.combine().all().unis(...)` 并行等齐。
-* 服务侧 `ModbusServiceRepository.findBriefBySpaceId` 用 Mongo 投影（`FindOptions.projection`）只带
+* 服务侧 `ModbusDeviceRepository.findBriefBySpaceId` 用 Mongo 投影（`FindOptions.projection`）只带
   `_id` / `name` / `device.did` / `device.space.spaceId` 回来（命中 `device.space.spaceId` 索引）：
   文档里的 polls / response 一个字节都不上网络。代价是返回的实体只有这几个字段有值——
   **别当完整定义用**，要详情另按 id 查。
-* `services` 用 `ModbusServiceCodec.encodeBrief(List)` 出**精简视图**，只有五个字段：
+* `services` 用 `ModbusDeviceCodec.encodeBrief(List)` 出**精简视图**，只有五个字段：
 
   ```json
   { "id": "65f0c0ffee0123456789abcd", "name": "1 号冷水机组", "type": "modbus",
@@ -252,13 +253,13 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
   ```
 
   `type` 固定 `modbus`，供前端把服务和设备混在一张表里渲染；`did` / `spaceId` 是依赖设备及其落点，
-  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/service/one/{spaceId}/{id}`。
+  供清单里把服务与设备对上（同表渲染、按空间或设备筛选）；详情另调 `/matrix/v1/modbus/device/one/{spaceId}/{id}`。
   整份定义（polls / response）动辄几十 KB，一个图里挂几十个服务就不适合整份带出来了。
 
 ## 七、校验
 
-规则实现在 `ModbusServiceValidator`（纯静态函数，返回 `null` = 通过，否则是给前端的错误文案），
-`ModbusServiceService` 只负责把文案转成 `IllegalArgumentException`。
+规则实现在 `ModbusDeviceValidator`（纯静态函数，返回 `null` = 通过，否则是给前端的错误文案），
+`ModbusDeviceService` 只负责把文案转成 `IllegalArgumentException`。
 
 * `name`：服务名称（展示用）必填。
 * `version`：必填，且**必须等于 `2`**（定义格式口径）。旧口径的定义硬拒，不静默降级读成 null。
@@ -298,7 +299,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
   是危险动作），以及**必须同时给 `interval`**（开了轮询却没有周期，服务端无从知道多久调一次）。
   前者以前是间接成立的（`polling=true` 要求 `interval`、而 `interval` 不许配在写方法上），
   绕了一层，读代码的人看不出这条规矩，现在是一条显式拒绝。
-* `values`（`invoke` 的入参，**执行期**校验 `ModbusServiceValidator.validateInvoke`）：
+* `values`（`invoke` 的入参，**执行期**校验 `ModbusDeviceValidator.validateInvoke`）：
   读方法给了 `values` 报错；写方法逐字段查 —— 没有缺省值的字段必须给、给了未声明的字段名报错、
   类型不符 / 越界报错（取值判定与定义期的缺省值共用同一处）。这是**调用方的请求错误**，
   与「poll not found」同类，在 `execute` 之前拦下，**不进** `service-failures`。
@@ -327,6 +328,28 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
     两边各写一份迟早漂移。
 
 ## 八、变更记录
+
+### 2026-10-25
+
+* **`ModbusService` 一族整体改名为 `ModbusDevice`，接口路径同步**。实体是「把一条点表展开成可调用方法」
+  的那份定义，与通用设备线上的 `Device` 不是一回事，但旧名里的「服务」在代码、接口、界面上都指向同一物；
+  本次统一为「Modbus设备」：
+  * 类与包：`ModbusService` / `ModbusServiceRepository` / `ModbusServiceService` /
+    `ModbusServiceResource` / `ModbusServiceValidator` / `ModbusServiceCodec` →
+    `ModbusDevice` / `ModbusDeviceRepository` / `ModbusDeviceService` / `ModbusDeviceResource` /
+    `ModbusDeviceValidator` / `ModbusDeviceCodec`；包 `api/modbus/service`、`db/modbus/service` →
+    `…/device`。
+  * 接口：`/matrix/v1/modbus/service/{many,parent,one,invoke}/{…}` → `/matrix/v1/modbus/device/{…}`；
+    OpenAPI tag 改为 `Modbus Device`。**请求 / 响应体的字段一个没动**（`service` / `serviceId` /
+    `pollIndex` / `services` 等键名照旧）。
+  * **无需数据迁移**：Mongo 库 `modbus`、集合 `services`、文档形状都不变 —— 改的只是 Java 类名、
+    包名与 HTTP 路径。空间图的 `services` 键、看板的 `services` 键同样不动（前端照旧渲染）。
+  * 消费者同步：webapp-matrix 的定义类 / codec / Angular 客户端改名、URL 换路径、界面文案
+    「Modbus服务」→「Modbus设备」；android-matrix 只改 Retrofit 路径与注释（模型类名不动）。
+  * 历史记录里的旧类名（`ModbusServiceLastPolling` / `ModbusServiceHistory` / `ModbusServiceFailure` /
+    `ModbusServiceAlarm`）**照原样保留**，它们记录的是当时存在过、后来已删的类。
+* 文档（本文件一~七节、`Modbus-History.md`、`Modbus-Alarm.md`、`Modbus-Service-Poller.md`、
+  两份 TODO、`API.md`）按新名更新；各文件的变更记录按惯例保持原样，旧名在其中读作历史。
 
 ### 2026-10-23
 

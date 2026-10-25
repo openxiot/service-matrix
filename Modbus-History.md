@@ -1,6 +1,6 @@
 # Modbus 采集数据的历史存储
 
-本文档只解决一件事：`ModbusService.polls[]` 里的轮询被调出来后，
+本文档只解决一件事：`ModbusDevice.polls[]` 里的轮询被调出来后，
 **成功了**解出来的「字段 → 值」往哪存、怎么取，**失败了**的故障又往哪存、怎么取。
 
 * **数据来源**：手动 `invoke` 与服务端自动轮询（`poll.interval` / `poll.polling`）。
@@ -175,7 +175,7 @@ ModbusServiceFailure   serviceId / pollIndex / type / remoteCode / message / at
 
 ## 五、读取
 
-三个接口，都在 `/matrix/v1/modbus/history` 之下（另起一段路径而不挂在 `/modbus/service` 下：
+三个接口，都在 `/matrix/v1/modbus/history` 之下（另起一段路径而不挂在 `/modbus/device` 下：
 服务定义是用户维护的配置，采集数据是设备跑出来的时间序列，生命周期与权限粒度将来可能分开）。
 **鉴权与 `invoke` 同口径**：路径上带 `spaceId` 只作鉴权锚点，要求该空间的**成员**；
 判定通过后一律按 id 查，不再校验「服务是否属于该空间」。
@@ -268,7 +268,7 @@ GET /polling/failures/{spaceId}?serviceId&pollIndex&type&from&to&limit
   历史和失败记录也不再有消费者 —— 服务没了，前端就没有入口能查到这些点位；
   告警同理，而且它比前两者更绝对：一条没人能处理的告警没有任何意义，见 `Modbus-Alarm.md` 第五节末）。
   四处都在 `ModbusHistoryService.purge(...)` 的同一个 `Uni.combine()` 里。
-  要改成「删服务但保留历史」，改 `ModbusServiceService` 里那两处级联调用即可。
+  要改成「删服务但保留历史」，改 `ModbusDeviceService` 里那两处级联调用即可。
 
 ### TTL 在本部署上已实证可用（2026-09-13，staging）
 

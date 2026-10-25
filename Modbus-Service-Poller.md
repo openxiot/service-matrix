@@ -1,4 +1,4 @@
-# Modbus 服务轮询：执行侧设计
+# Modbus设备轮询：执行侧设计
 
 `MODBUS.md` 定义了 `poll.interval` / `poll.polling` 的**语义与校验**，`Modbus-History.md` 定义了
 采到的值**落到哪里**（影子 + 历史）。这份文档回答剩下的那个问题：**谁按时去跑，怎么保证不重复、不丢、不把总线打死。**
@@ -79,7 +79,7 @@ poller 因此不承担「读写与保留」的额外职责：它只负责按时�
 是那里的硬约束（两边分开写，影子迟早和实际值脱节），poller 只是它的第二个调用方。
 
 **阈值告警同样挂在采集链路上，poller 不为它做任何事**（`Modbus-Alarm.md`）：
-判定在 `ModbusServiceService.execute` 里、与 `recordHistory` 并列，所以轮询与手动 invoke 都自动带上，
+判定在 `ModbusDeviceService.execute` 里、与 `recordHistory` 并列，所以轮询与手动 invoke 都自动带上，
 poller 既不需要扩影子、也不需要维护内存基准。三条理由：
 * **不扩影子**是**正确性**理由 —— 影子是全量替换写的且**没有事务**，让告警判定成为该文档的第二个写者，
   一次并发就会把 `fields` / `recordedAt` / `lastError` 或告警态悄悄覆盖掉，而「先明细后影子」
@@ -132,7 +132,7 @@ api:    每次 invoke 都读库（N 副本，各副本的内存基准会漂）
 
 ## 五、任务表与对账
 
-运行时状态（`lastRunAt` / `nextRunAt` / 租约）**不写进 `ModbusService` 定义文档** ——
+运行时状态（`lastRunAt` / `nextRunAt` / 租约）**不写进 `ModbusDevice` 定义文档** ——
 那是接口直接返回的文档，空间图那套投影查询也在用它，混进运行时状态会让「读定义」变成「读实时状态」。
 另起一个派生集合：
 
@@ -255,7 +255,7 @@ modbus.polls
    manipulation 按 `Ownership(did, appId, ownerId)` 三元组查归属，查不到就报 "device not owned"。
    现在口径统一为 **`ownerId` = 设备所在的根空间 id**，服务端由 `device.space.spaceId` 反推
    （`SpaceEntity.rootSpaceId()`）。轮询器没有请求头也不受影响：从任务里的 `device.space.spaceId`
-   取根空间即可，`ModbusService.orgId`（已删）不用再管。见 `MODBUS.md` 变更记录 2026-09-13 首条。
+   取根空间即可，`ModbusDevice.orgId`（已删）不用再管。见 `MODBUS.md` 变更记录 2026-09-13 首条。
    落地补充：归属**每次对账解析一次**（结果缓存在内存任务对象上），解析不出来（空间查不到、
    定义里也没有 `device.space.rootId`）时该任务不派发、报 `CONFIG_ERROR`，而不是猜一个归属去调设备。
 2. ~~**租约现在做还是以后做**~~ —— **已定（2026-09-13）：现在就做**，按本节末的写法。

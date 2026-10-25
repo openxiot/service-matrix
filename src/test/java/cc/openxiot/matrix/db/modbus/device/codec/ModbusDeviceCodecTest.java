@@ -32,13 +32,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusDeviceCodec} 等 Codec 的 JSON 互转：按 modbus-service-example.json 的口径解请求体，
+ * {@link ModbusDeviceCodec} 等 Codec 的 JSON 互转：按 modbus-device-example.json 的口径解请求体，
  * 编回去再解一次应完全一致（encode∘decode 稳定），并且实体字段名与对外 JSON 名（如 value-list）对得上。
  */
 class ModbusDeviceCodecTest {
 
     /**
-     * 与 modbus-service-example.json 同形（方法的 index 按唯一性重排过）。
+     * 与 modbus-device-example.json 同形（方法的 index 按唯一性重排过）。
      *
      * <p>request 是**结构化**的：读方法给 slaveId/fc/start/quantity，写方法给 fields
      * （字段名 / 偏移 / 格式 / 字节序 / 缺省值）。名字里的「读8个线圈」与 quantity 8 一致，
@@ -149,7 +149,7 @@ class ModbusDeviceCodecTest {
     }
 
     /**
-     * 文档示例文件（模块根目录下的 modbus-service-example.json）必须真的过得了校验。
+     * 文档示例文件（模块根目录下的 modbus-device-example.json）必须真的过得了校验。
      *
      * <p>它是用户复制粘贴的模板，覆盖了 01/03 读与 05/06/0F/10 写各自的字段形态。规则改了却忘了
      * 改它，比没有示例更糟 —— 照着抄一份必然被拒。文件在模块根目录（surefire 的工作目录就是模块目录），
@@ -157,7 +157,7 @@ class ModbusDeviceCodecTest {
      */
     @Test
     void documentedExampleFileIsValid() throws Exception {
-        String text = Files.readString(Path.of("modbus-service-example.json"));
+        String text = Files.readString(Path.of("modbus-device-example.json"));
         ModbusDevice service = ModbusDeviceCodec.decode(new JsonObject(text));
 
         assertNull(ModbusDeviceValidator.validate(service));

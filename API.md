@@ -669,7 +669,7 @@ Base Path：`/matrix/v1/statistics`
 
 ### 8.1 数据看板总览 `GET /overview/{spaceId}`
 
-一次取回数据看板（首页）一屏要用的全部数字：设备、Modbus 服务、阈值告警、Modbus 故障。
+一次取回数据看板（首页）一屏要用的全部数字：设备、Modbus设备、阈值告警、Modbus 故障。
 范围是**该空间及其全部后代空间**（项目 = 根空间 + 子空间，设备与服务可以挂在任一子空间上），
 与 `GET /space/graph/{rootId}` 同一条路径。
 

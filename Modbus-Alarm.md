@@ -9,7 +9,7 @@
 |---|---|---|
 | 1 | 配置模型（`ModbusResponseFieldAlarm` + 两处 `alarms` + Codec） | **已落地**（见第二、三节） |
 | 2 | 判定口径 `ModbusAlarmPolicy`（纯函数） | **已落地**（见第四、五节） |
-| 3 | 定义校验 `ModbusServiceValidator.validateAlarm` | **已落地**（见第六节） |
+| 3 | 定义校验 `ModbusDeviceValidator.validateAlarm` | **已落地**（见第六节） |
 | 0 | Azure DocumentDB 上验「唯一部分索引」 | **已落地：成立**（2026-09-14 staging 冒烟，见第七节） |
 | 4 | 告警文档 `ModbusAlarm` + 仓储 + Codec | **已落地**（见第八节） |
 | 5 | 采集链路接线 `ModbusAlarmService.evaluate` | **已落地**（见第四、五节；一处边界见第五节末） |
@@ -28,7 +28,7 @@
 **2026-09-16 补记：那个零成本窗口已经关上了。** 上面这段（2026-09-14）当时成立 ——
 `modbus/service-alarms` 一行都没落过、采集侧没部署过、没有服务配过 `alarm` 键。
 但现在 staging 上已有真实数据：24 条告警行（20 条 `VALUE` 关闭、3 条 `SUPERSEDED` 关闭、
-1 条仍开着且 `handled=true`）、2 个 Modbus 服务、620 条采集历史。
+1 条仍开着且 `handled=true`）、2 个 Modbus设备、620 条采集历史。
 **从此以后，任何改动都要按「有存量数据」来设计** —— 这也是第四个边沿（第 10 行）只加关行判据、
 绝不改写既有行的直接原因。
 
@@ -172,7 +172,7 @@ ModbusResponseFieldBit.alarms   : List<ModbusResponseFieldAlarm>
 **轮询一停就永久丢**。所以 `apply` 是**两段** `chain`：先并发关（三类原因一起），再并发插 ——
 不能靠 `ops` 列表的先后，`Uni.combine().all()` 是**并发**的。
 `ModbusAlarmServiceTest.supersededRowIsClosedBeforeTheWinnerIsInserted` 用 `InOrder` 钉住它，
-与 `ModbusServiceServiceTest` 里那条 `InOrder` 同一性质：**顺序写错了不报错，只是悄悄丢告警**。
+与 `ModbusDeviceServiceTest` 里那条 `InOrder` 同一性质：**顺序写错了不报错，只是悄悄丢告警**。
 
 ## 五、状态与边沿：开着的行就是状态
 
@@ -290,7 +290,7 @@ ModbusResponseFieldBit.alarms   : List<ModbusResponseFieldAlarm>
 
 | 时机 | 挂在哪 | 读什么 |
 |---|---|---|
-| 定义变更 | `ModbusServiceService.update` 尾部，与轮询任务、影子并排（`reconcileDerived`） | 该服务的开行（带索引） |
+| 定义变更 | `ModbusDeviceService.update` 尾部，与轮询任务、影子并排（`reconcileDerived`） | 该服务的开行（带索引） |
 | 启动 | `ModbusAlarmReconciler.init(@Observes StartupEvent)` | 全部服务的定义 + 全部开行 |
 
 * **不进周期对账**：与影子同一条理由 —— 陈旧只可能来自定义变更，而定义变更必经写入路径；
@@ -316,7 +316,7 @@ ModbusResponseFieldBit.alarms   : List<ModbusResponseFieldAlarm>
 
 ## 六、校验
 
-实现拆成两层：`ModbusServiceValidator.validateAlarms`（一组规则的共性）逐条委托
+实现拆成两层：`ModbusDeviceValidator.validateAlarms`（一组规则的共性）逐条委托
 `validateAlarm`（单条规则，规则清单见 `MODBUS.md` 第七节）。几条口径：
 
 * **只在 `enabled == true` 时校验**：半配置合法，与 `validatePolling` 同一条规矩
@@ -498,7 +498,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 | GET | `/many/{spaceId}` | 空间成员 | `serviceId`（不传 = **整个空间含子空间**）、`pollIndex`、`field`、`level`、`open`、`handled`、`from`/`to`、`limit` |
 | POST | `/handle/{spaceId}/{id}` | **空间成员** | 无 body，处理人取 `currentUser()`；返回更新后的那条 |
 
-路径另起一段（不挂在 `/modbus/history` 或 `/modbus/service` 之下）：告警是**第三件事** ——
+路径另起一段（不挂在 `/modbus/history` 或 `/modbus/device` 之下）：告警是**第三件事** ——
 既不是用户维护的配置，也不是设备跑出来的时间序列，而是判定出来的事件，且它有自己的权限粒度
 （成员可处理、不需要管理员）与保留口径（永久保留，不挂 TTL）。与历史接口当初另起一段同理。
 
@@ -543,7 +543,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 
 * **`handle` 写之前先判归属**：路径上的 `spaceId` 只证明「你是这个空间的成员」，不证明
   「这条告警属于这个空间」。判法是「先按 id 读出那行 → 它的 `serviceId` 在
-  `ModbusServiceService.subtreeServiceIds(spaceId)` 里吗 → 才写」。用的是与列表查询**同一个**函数，
+  `ModbusDeviceService.subtreeServiceIds(spaceId)` 里吗 → 才写」。用的是与列表查询**同一个**函数，
   于是「列表里看得到的就能点」恰好成立。
 * **非法 id 必须在进库之前先挡**（`ObjectId.isValid(id)`）：Panache 的 `findById(String)` 在构造
   `ObjectId` 时就抛，而那是个普通 `RuntimeException`，落不到 Resource 那个
@@ -558,10 +558,10 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 
 ### 空间 → 服务清单
 
-`subtreeServiceIds` 从 `ModbusHistoryResource` **下沉**到 `ModbusServiceService`（它本就是
+`subtreeServiceIds` 从 `ModbusHistoryResource` **下沉**到 `ModbusDeviceService`（它本就是
 「空间 → 服务」），故障清单与告警清单共用。选下沉而不是复制那 15 行：两处的口径必须一致，
 复制之后「一处改了另一处忘了」不会报错，只会让两个页面的可见范围悄悄不同
-（`SpaceService` 只依赖仓储与账号查询，注入进 `ModbusServiceService` 不成环）。
+（`SpaceService` 只依赖仓储与账号查询，注入进 `ModbusDeviceService` 不成环）。
 
 ## 十、不做防抖的代价（触发线）
 
@@ -630,15 +630,15 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   空清单给空结果而不是报错；`at` 缺失按 0 算落最后；**合并不按 `open` / `handled` 分堆**
   （那是筛选参数的职责，不是排序的 —— 列表要的是时间线）。
   只测 `merge` 这一个静态函数：它是那个「逐服务截一刀再合并仍等于全局前 `limit` 条」论证的落点。
-* `ModbusServiceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
+* `ModbusDeviceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
   告警评估失败**不改写**一次已成功采集的响应，也不变成一条故障记录。
-* `ModbusServiceValidatorTest`（告警那一段 15 例）：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
+* `ModbusDeviceValidatorTest`（告警那一段 15 例）：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
   超长 `text`、`string` 字段配告警、`value-list` 字段配 `>`、`=` 缺 `state`、`state` 不在描述里、
   两个都给、都不给、位上配 `>` 或 `0.5`、写方法上配告警）+ `enabled != true` 时全部放行；
   一组规则才有的：合法的一组（含方向相反的低侧/高侧）、`id` 缺失 / 空白 / 超长 / 组内重复、
   **`id` 的唯一性只在同一位内要求**（位与父字段各是一组）、条数上限 8（8 条过、9 条拒）、
   数组里的空元素照拒、停用的规则既不查 `id` 也不占名额。
-* `ModbusServiceCodecTest`：示例体收进 `alarms` 数组（encode∘decode 稳定性、数组原序保持、
+* `ModbusDeviceCodecTest`：示例体收进 `alarms` 数组（encode∘decode 稳定性、数组原序保持、
   `id` 保真）+ 「没配就不出键」+ 空对象 / **空数组** / 「元素全是空对象」都读作「没配」。
 * `ModbusAlarmCodecTest`（9 例）：全字段行；**`openKey` 绝不出现**（行内带着它、出去没有它）；
   `null 不出键`；`=` 的取值表状态（有 `state` 无 `threshold`）；字符串样本原样出去；
