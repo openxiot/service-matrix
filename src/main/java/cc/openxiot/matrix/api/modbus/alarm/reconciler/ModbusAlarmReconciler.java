@@ -2,8 +2,8 @@ package cc.openxiot.matrix.api.modbus.alarm.reconciler;
 
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,7 +23,7 @@ import java.util.List;
  *
  * <table border="1">
  *   <tr><th>时机</th><th>挂在哪</th><th>读什么</th></tr>
- *   <tr><td>定义变更</td><td>{@code ModbusServiceService} 的 update（与轮询任务、影子同一处）</td>
+ *   <tr><td>定义变更</td><td>{@code ModbusDeviceService} 的 update（与轮询任务、影子同一处）</td>
  *       <td>该服务的开行（带索引）</td></tr>
  *   <tr><td>启动</td><td>本类的 {@code StartupEvent}</td>
  *       <td>全部服务的定义 + 全部开行</td></tr>
@@ -50,7 +50,7 @@ public class ModbusAlarmReconciler {
     ModbusAlarmRepository alarmRepo;
 
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Inject
     Logger logger;
@@ -60,7 +60,7 @@ public class ModbusAlarmReconciler {
      *
      * <p><b>不覆盖「服务已被删除」留下的开行</b> —— {@link ModbusAlarmPlan} 对不认识的服务一律不动
      * （见那里的类注释：那是它最要紧的一条保守口径）。服务级联删除归
-     * {@code ModbusServiceService} → {@code ModbusHistoryWriteService.purge}；那一趟失败时留下的行是存储垃圾，
+     * {@code ModbusDeviceService} → {@code ModbusHistoryWriteService.purge}；那一趟失败时留下的行是存储垃圾，
      * 与影子 / 历史 / 故障记录同一个失败模式（只记日志、不重试），而且页面按空间子树查，看不见它。
      * 换句话说，这里与那里是**分工**：对账在后，级联在前。</p>
      *
@@ -82,7 +82,7 @@ public class ModbusAlarmReconciler {
      * <p>「再也不采」也算 —— 方法被删、{@code polling} 关掉、告警被整个关掉，三种在
      * {@link ModbusAlarmPlan} 里是同一条判据。</p>
      */
-    public Uni<Void> reconcile(ModbusService service) {
+    public Uni<Void> reconcile(ModbusDevice service) {
         if (service == null || service.id == null) {
             return Uni.createFrom().voidItem();
         }

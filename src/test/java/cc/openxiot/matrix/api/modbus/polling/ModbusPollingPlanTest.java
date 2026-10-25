@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -116,7 +116,7 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
-        ModbusService service = service(3, 1, 2);
+        ModbusDevice service = service(3, 1, 2);
         service.polls.get(0).interval = 30;               // index 3
         service.polls.get(1).interval = 10;               // index 1
         service.polls.get(2).interval = 10;
@@ -144,7 +144,7 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfSchedulesEachFunctionByItsOwnInterval() {
-        ModbusService service = service(1, 2);
+        ModbusDevice service = service(1, 2);
         service.polls.get(0).interval = 10;
         service.polls.get(1).interval = 60;
 
@@ -159,7 +159,7 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfWithoutDeviceIsEmpty() {
-        ModbusService service = service(1);
+        ModbusDevice service = service(1);
         service.polls.get(0).interval = 10;
 
         assertTrue(ModbusPollingPlan.tasksOf(service, null, NOW, 0, new Random(1L)).isEmpty());
@@ -171,7 +171,7 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfWithoutIdIsEmpty() {
-        ModbusService service = service(1);
+        ModbusDevice service = service(1);
         service.polls.get(0).interval = 10;
         service.id = null;
 
@@ -180,7 +180,7 @@ class ModbusPollingPlanTest {
 
     @Test
     void tasksOfWithoutFunctionsIsEmpty() {
-        ModbusService service = service(1);
+        ModbusDevice service = service(1);
         service.polls = null;
 
         assertTrue(ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
@@ -205,8 +205,8 @@ class ModbusPollingPlanTest {
     /**
      * 建一个带 n 个读方法（index 1..n）的服务，周期都还没配。
      */
-    private static ModbusService service(int... indexes) {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice service(int... indexes) {
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId();
         service.name = "svc";
         service.polls = new ArrayList<>();

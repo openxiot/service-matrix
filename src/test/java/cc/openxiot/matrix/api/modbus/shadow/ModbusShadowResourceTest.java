@@ -12,9 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Modbus 影子（寄存器缓存网格）接口的空间口径：路径上的 {@code spaceId} 是鉴权锚点，
- * 查询要该空间的**成员**（与 {@code ModbusServiceResource} / {@code DeviceResource} 同口径）。
+ * 查询要该空间的**成员**（与 {@code ModbusDeviceResource} / {@code DeviceResource} 同口径）。
  *
  * <p>全部走 {@code @InjectMock}，不连 Mongo。</p>
  */
@@ -45,7 +45,7 @@ class ModbusShadowResourceTest {
     ModbusShadowService shadowService;
 
     @InjectMock
-    ModbusServiceService service;
+    ModbusDeviceService service;
 
     @InjectMock
     OrgAccessService orgAccessService;
@@ -116,7 +116,7 @@ class ModbusShadowResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void getShadows_noServiceIds_resolvesAllBySpace() {
         allowSpaceMember();
-        ModbusService s = new ModbusService();
+        ModbusDevice s = new ModbusDevice();
         s.id = new ObjectId(SVC1);
         when(service.listBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(s)));
         when(shadowService.registerCaches(List.of(SVC1))).thenReturn(Uni.createFrom().item(grid()));

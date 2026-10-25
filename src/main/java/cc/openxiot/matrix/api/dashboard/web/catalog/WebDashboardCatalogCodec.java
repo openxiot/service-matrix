@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.codec.ModbusDeviceCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -25,16 +25,16 @@ import java.util.List;
  * {@code unit}、{@code valueList}（枚举）、{@code bitList}（位），以及 {@code poll.name}。
  * 做投影裁剪能省些体积，但换来的是「卡片侧将来要别的字段又得改接口」——
  * 这是**编辑时的一次性取数**（进编辑态取一次），不是每次刷新都拉的，不值得为此收窄契约。
- * 复用 {@link ModbusServiceCodec#encode(List)} 而不是另写一份，正是为了与
- * {@code /modbus/service/one/{id}} 的下发形状**逐字相同**：前端因此能直接复用
- * 已有的 {@code ModbusServiceCodec.decode}，不必为一个新形状再写一个解码器。</p>
+ * 复用 {@link ModbusDeviceCodec#encode(List)} 而不是另写一份，正是为了与
+ * {@code /modbus/device/one/{id}} 的下发形状**逐字相同**：前端因此能直接复用
+ * 已有的 {@code ModbusDeviceCodec.decode}，不必为一个新形状再写一个解码器。</p>
  */
 public final class WebDashboardCatalogCodec {
 
     private WebDashboardCatalogCodec() {
     }
 
-    public static JsonObject encode(List<DeviceEntity> devices, List<ModbusService> services) {
+    public static JsonObject encode(List<DeviceEntity> devices, List<ModbusDevice> services) {
         JsonArray deviceArr = new JsonArray();
         if (devices != null) {
             for (DeviceEntity device : devices) {
@@ -45,7 +45,7 @@ public final class WebDashboardCatalogCodec {
         }
         return new JsonObject()
                 .put("devices", deviceArr)
-                .put("services", ModbusServiceCodec.encode(services));
+                .put("services", ModbusDeviceCodec.encode(services));
     }
 
     /** {@code did} 就是设备的 {@code _id}；{@code online} 恒给（false 与「没有这个字段」不是一回事）。 */

@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm.policy;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -86,7 +86,7 @@ public final class ModbusAlarmPolicy {
 
     /**
      * 判定的最小单元：一个可告警「出值」及其规则。由调用方从寄存器中心搭出来 ——
-     * {@link #registerRules(ModbusService)} 把 {@code configSnapshot.registries[]} 里带启用告警的
+     * {@link #registerRules(ModbusDevice)} 把 {@code configSnapshot.registries[]} 里带启用告警的
      * 寄存器展开成这张表（{@code field} 即寄存器名、{@code unit} 即寄存器单位）。
      *
      * @param field  出值名（写进告警行 / 比 {@code values} 的键）
@@ -299,7 +299,7 @@ public final class ModbusAlarmPolicy {
      * openKey 的 pollIndex）仍由调用方从判定的继承关系带过去，本表只管「哪个出值有哪些规则、
      * 单位是什么」。</p>
      */
-    public static List<ModbusFieldRule> registerRules(ModbusService service) {
+    public static List<ModbusFieldRule> registerRules(ModbusDevice service) {
         if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
             return List.of();
         }
@@ -316,7 +316,7 @@ public final class ModbusAlarmPolicy {
     /**
      * 判定一次采集。
      *
-     * @param rules           这组出值规则（由 {@link #registerRules(ModbusService)} 从寄存器中心搭出来）
+     * @param rules           这组出值规则（由 {@link #registerRules(ModbusDevice)} 从寄存器中心搭出来）
      * @param values          本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
      * @param openRuleByField 这个方法当前**有未恢复告警**的出值 → 那条开着的行上的
      *                        {@link OpenAlarmRule}（哪条规则开的、有没有被处理过）。

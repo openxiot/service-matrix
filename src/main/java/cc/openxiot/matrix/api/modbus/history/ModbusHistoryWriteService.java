@@ -12,9 +12,9 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -83,7 +83,7 @@ public class ModbusHistoryWriteService {
     Logger logger;
 
     /**
-     * 建索引开关，与点表 / 服务共用同一个（见 ModbusServiceService）。
+     * 建索引开关，与点表 / 服务共用同一个（见 ModbusDeviceService）。
      */
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
@@ -130,13 +130,13 @@ public class ModbusHistoryWriteService {
      * 记一次采集结果，**基准从库里读**（手动 invoke 走这条）。写方法（没有读值）、
      * 未落库的服务定义等一律静默跳过。
      *
-     * <p>失败（数据库不可用等）由调用方决定怎么处置：{@code ModbusServiceService} 只记日志、
+     * <p>失败（数据库不可用等）由调用方决定怎么处置：{@code ModbusDeviceService} 只记日志、
      * 不让 invoke 跟着失败 —— 值已经拿到了，历史只是副作用。</p>
      *
      * @return 新的比对基准（= 写后的影子文档）；null 表示**这次什么都没写、没有新基准**，
      * 调用方据此保留它原有的基准而不是清空（没写就说明库里的状态没变，旧基准仍然有效）
      */
-    public Uni<ModbusPollingBaseline> record(ModbusService service, ModbusPoll poll, JsonObject values) {
+    public Uni<ModbusPollingBaseline> record(ModbusDevice service, ModbusPoll poll, JsonObject values) {
         if (!recordable(service, poll)) {
             return Uni.createFrom().nullItem();
         }
@@ -159,7 +159,7 @@ public class ModbusHistoryWriteService {
      * 轮询器的判定见 {@code ModbusPollingBaselines.usable}：故障态与没缓存都回退到读库。</p>
      */
     public Uni<ModbusPollingBaseline> record(
-            ModbusService service,
+            ModbusDevice service,
             ModbusPoll poll,
             JsonObject values,
             ModbusPollingBaseline baseline
@@ -214,13 +214,13 @@ public class ModbusHistoryWriteService {
     /**
      * 记一次 function 执行失败，**基准从库里读**。同一条故障持续存在时**一个数据库操作都不做**。
      *
-     * <p>失败（数据库不可用等）由调用方处置，与 {@link #record} 同口径：{@code ModbusServiceService}
+     * <p>失败（数据库不可用等）由调用方处置，与 {@link #record} 同口径：{@code ModbusDeviceService}
      * 只记日志，不改写对调用方的错误响应 —— 该报的错照旧往下报。</p>
      *
      * @return 新的基准（这里就是故障态本身）；null = 没有写、基准不变
      */
     public Uni<ModbusPollingBaseline> recordFailure(
-            ModbusService service,
+            ModbusDevice service,
             ModbusPoll poll,
             Throwable error
     ) {
@@ -248,7 +248,7 @@ public class ModbusHistoryWriteService {
      * 「故障态不吃内存基准」这条口径就是这样自然成立的，不需要额外的失效逻辑。</p>
      */
     public Uni<ModbusPollingBaseline> recordFailure(
-            ModbusService service,
+            ModbusDevice service,
             ModbusPoll poll,
             Throwable error,
             ModbusPollingBaseline baseline
@@ -292,7 +292,7 @@ public class ModbusHistoryWriteService {
      * 它就是存储垃圾。真正该保留的「这个点位历史上报过什么」在历史与故障记录里另有其份。</p>
      *
      * <p>失败照常往上抛：服务已经删掉了，这里留下的是存储垃圾，该怎么处置由调用方定 ——
-     * {@code ModbusServiceService} 的选择是只记日志，不让业务操作跟着失败。</p>
+     * {@code ModbusDeviceService} 的选择是只记日志，不让业务操作跟着失败。</p>
      */
     public Uni<Void> purge(List<String> serviceIds) {
         if (serviceIds == null || serviceIds.isEmpty()) {
@@ -312,7 +312,7 @@ public class ModbusHistoryWriteService {
     /**
      * 能不能记：服务已落库、方法有序号。否则静默跳过 —— 也不产生基准。
      */
-    private static boolean recordable(ModbusService service, ModbusPoll poll) {
+    private static boolean recordable(ModbusDevice service, ModbusPoll poll) {
         return service != null && service.id != null && poll != null && poll.index != null;
     }
 
@@ -322,7 +322,7 @@ public class ModbusHistoryWriteService {
      * 失败静默（不拖累 invoke）。
      */
     private Uni<Void> registryEffects(
-            ModbusService service,
+            ModbusDevice service,
             Map<String, Object> sample,
             ModbusHistoryPolicy.Decision decision, Date now
     ) {
@@ -344,7 +344,7 @@ public class ModbusHistoryWriteService {
      * 寄存器历史 + 当前值的**失败侧**写入：该读方法应答里的每个可读寄存器各记一条失败 + 更新故障态。
      */
     private Uni<Void> registryFailureEffects(
-            ModbusService service,
+            ModbusDevice service,
             ModbusPoll poll,
             Throwable error, Date now
     ) {
@@ -445,7 +445,7 @@ public class ModbusHistoryWriteService {
     /**
      * 字段名 → 点表快照里的寄存器；名字对不上（位名、写方法应答）给 null，不写寄存器侧。
      */
-    private static ModbusRegistry registerOf(ModbusService service, String fieldName) {
+    private static ModbusRegistry registerOf(ModbusDevice service, String fieldName) {
         if (service == null || service.configSnapshot == null
                 || service.configSnapshot.registries == null || fieldName == null) {
             return null;
@@ -532,7 +532,7 @@ public class ModbusHistoryWriteService {
      * 那才是真·首次采集（会 {@code insert} 全新影子）。</p>
      */
     private static ModbusPollingBaseline blockBaseline(
-            ModbusService service,
+            ModbusDevice service,
             ModbusPoll poll,
             List<ModbusShadow> shadows
     ) {

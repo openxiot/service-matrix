@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.modbus.shadow;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
@@ -23,13 +23,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Modbus 服务**影子**（寄存器缓存网格）API：一次读取一个/多个服务的全部可读寄存器缓存实况。
+ * Modbus设备**影子**（寄存器缓存网格）API：一次读取一个/多个服务的全部可读寄存器缓存实况。
  *
  * <p>这是对「设备影子」（{@code DeviceResource.getShadows}）的 Modbus 侧对应：设备影子给设备属性，
  * 这里给的是**服务点表里所有可读寄存器的最后一次轮询快照**（读侧投影，见
- * {@code ModbusServiceService.registerCaches}），按 {@code serviceId} 归组。</p>
+ * {@code ModbusDeviceService.registerCaches}），按 {@code serviceId} 归组。</p>
  *
- * <p><b>按空间鉴权</b>（与 {@code ModbusServiceResource} 同口径）：路径上的 {@code spaceId} 是当前项目空间，
+ * <p><b>按空间鉴权</b>（与 {@code ModbusDeviceResource} 同口径）：路径上的 {@code spaceId} 是当前项目空间，
  * 查询要该空间的**成员**（{@link OrgAccessService#checkSpaceMember}）。{@code spaceId} 只作鉴权锚点：
  * 判定通过后按 {@code serviceIds} 操作，不校验「服务是否真属于该空间」。</p>
  *
@@ -37,7 +37,7 @@ import java.util.Map;
  */
 @Path("/matrix/v1/modbus/shadows")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "Modbus Shadow", description = "Modbus Service shadow (register cache) API")
+@Tag(name = "Modbus Shadow", description = "Modbus Device shadow (register cache) API")
 @RequestScoped
 public class ModbusShadowResource extends AbstractResource {
 
@@ -50,7 +50,7 @@ public class ModbusShadowResource extends AbstractResource {
 
     /** 仅用于「不带 serviceIds 时按空间取全部服务」的定义查询（见 {@link #resolveServiceIds}）。 */
     @Inject
-    ModbusServiceService service;
+    ModbusDeviceService service;
 
     @Inject
     SpaceService spaceService;

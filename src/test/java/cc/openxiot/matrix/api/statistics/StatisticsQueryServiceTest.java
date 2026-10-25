@@ -7,7 +7,7 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -206,8 +206,8 @@ class StatisticsQueryServiceTest {
         return device;
     }
 
-    private static ModbusService service(String configId) {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice service(String configId) {
+        ModbusDevice service = new ModbusDevice();
         if (configId != null) {
             ModbusConfig snapshot = new ModbusConfig();
             snapshot.id = new ObjectId(configId);

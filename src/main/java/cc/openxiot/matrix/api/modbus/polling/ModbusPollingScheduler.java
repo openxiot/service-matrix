@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import io.quarkus.runtime.ShutdownEvent;
@@ -73,7 +73,7 @@ public class ModbusPollingScheduler {
     ModbusPollingBaselines baselines;
 
     @Inject
-    ModbusServiceService serviceService;
+    ModbusDeviceService serviceService;
 
     @Inject
     ModbusPollingRepository pollRepo;

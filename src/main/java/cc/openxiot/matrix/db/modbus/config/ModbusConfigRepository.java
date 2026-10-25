@@ -21,7 +21,7 @@ import java.util.List;
  * 内部再转 ObjectId，接口契约与 id 生成方式解耦。非法 id（非 24 位十六进制）按「未命中」处理，不抛错。
  * 归属主体（org/user）经 {@code ModbusConfig#owner} 子文档表达，读/改/删的鉴权在
  * {@link cc.openxiot.matrix.api.modbus.config.ModbusConfigService} 里按 owner 判（例仿
- * {@code ModbusServiceService} 的「按 id 取再判权」先例，id 是不可猜的 ObjectId）。</p>
+ * {@code ModbusDeviceService} 的「按 id 取再判权」先例，id 是不可猜的 ObjectId）。</p>
  */
 @ApplicationScoped
 public class ModbusConfigRepository  {

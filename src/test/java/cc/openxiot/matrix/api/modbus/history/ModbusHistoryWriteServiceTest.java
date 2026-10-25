@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaseline;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
@@ -15,8 +15,8 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -534,16 +534,16 @@ class ModbusHistoryWriteServiceTest {
 
     // ===== 夹具 =====
 
-    private static ModbusService modbusService() {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice modbusService() {
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId(SERVICE_ID);
         service.name = "1 号冷水机组";
         return service;
     }
 
     /** 带点表快照（含一只可读寄存器「进水温度」）的服务：走寄存器中心的新写入路径。 */
-    private static ModbusService modbusServiceWithRegistries() {
-        ModbusService service = modbusService();
+    private static ModbusDevice modbusServiceWithRegistries() {
+        ModbusDevice service = modbusService();
         ModbusRegistry reg = new ModbusRegistry();
         reg.index = 1;
         reg.name = "进水温度";

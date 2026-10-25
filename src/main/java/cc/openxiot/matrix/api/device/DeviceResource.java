@@ -6,7 +6,7 @@ import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
 import cc.openxiot.matrix.api.device.request.DeviceUpdateSpaceRequest;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
@@ -46,9 +46,9 @@ public class DeviceResource extends AbstractResource {
     @Inject
     ManipulationService manipulationService;
 
-    /** 删设备时级联清理该设备下的 Modbus 服务（按 device.did 匹配） */
+    /** 删设备时级联清理该设备下的 Modbus设备（按 device.did 匹配） */
     @Inject
-    ModbusServiceService modbusServiceService;
+    ModbusDeviceService modbusServiceService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -94,7 +94,7 @@ public class DeviceResource extends AbstractResource {
     ) {
         return requireSpaceAdmin(spaceId)
                 .chain(space -> manipulationService.removeDevice(space.rootSpaceId(), did))
-                // 级联清理该设备下的 Modbus 服务（按 device.did 匹配，不限组织）：
+                // 级联清理该设备下的 Modbus设备（按 device.did 匹配，不限组织）：
                 // 服务先删、设备行后删，任一步失败整链失败还能重试，不会留下删不掉的服务
                 .chain(ignore -> modbusServiceService.deleteByDeviceDids(List.of(did)))
                 .chain(ignore -> deviceService.deleteByDeviceIds(List.of(did)))
@@ -208,7 +208,7 @@ public class DeviceResource extends AbstractResource {
     ) {
         return requireSpaceAdmin(spaceId)
                 .chain(space -> manipulationService.removeDevices(space.rootSpaceId(), did))
-                // 级联清理这批设备下的 Modbus 服务（一次删完，不限组织）
+                // 级联清理这批设备下的 Modbus设备（一次删完，不限组织）
                 .chain(ignore -> modbusServiceService.deleteByDeviceDids(did))
                 .chain(ignore -> deviceService.deleteByDeviceIds(did))
                 .replaceWith(OxResponse.ok())

@@ -1,8 +1,8 @@
 package cc.openxiot.matrix.typedef.modbus.frame;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequest;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequestField;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequestField;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -211,7 +211,7 @@ public final class ModbusFrameCodec {
      */
     public static String encodeRequest(ModbusRequest request, Map<String, Object> values) {
         if (request == null) {
-            throw new IllegalArgumentException("modbus service request is not set");
+            throw new IllegalArgumentException("modbus device request is not set");
         }
         int slave = request.slaveId == null ? DEFAULT_SLAVE_ID : request.slaveId;
         String fc = normalizeFc(request.fc);
@@ -531,7 +531,7 @@ public final class ModbusFrameCodec {
      * 把 16/32 位原始数值按字节序排成 Modbus 线上字节（大端为基准）。
      *
      * <p>ABCD 大端 / DCBA 全反 / BADC 字内字节交换 / CDAB 字交换；两字节时后三者同为交换两字节。
-     * 四种排布都是自逆的，故编码与解码共用本方法；单字节原样返回。{@code ModbusService}（方案二）
+     * 四种排布都是自逆的，故编码与解码共用本方法；单字节原样返回。{@code ModbusDevice}（方案二）
      * 解应答字段时同样复用。</p>
      */
     private static byte[] toBytes(long bits, int width, String byteOrder) {
@@ -586,7 +586,7 @@ public final class ModbusFrameCodec {
         return frame;
     }
 
-    /** 校验帧尾 CRC16。{@code ModbusService}（方案二）按字段切分应答数据区时复用。 */
+    /** 校验帧尾 CRC16。{@code ModbusDevice}（方案二）按字段切分应答数据区时复用。 */
     public static boolean checkCrc(byte[] frame) {
         if (frame.length <= CRC_SIZE) {
             return false;

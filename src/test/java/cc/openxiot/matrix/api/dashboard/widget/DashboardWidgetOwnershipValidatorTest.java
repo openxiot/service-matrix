@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,12 +18,12 @@ import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.dashboard.web.WebDashboardWidget;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.service.DeviceOn;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.DeviceOn;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.quarkus.test.InjectMock;
@@ -59,7 +59,7 @@ class WidgetOwnershipValidatorTest {
     SpaceService spaceService;
 
     @InjectMock
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @InjectMock
     DeviceRepository deviceRepo;
@@ -147,7 +147,7 @@ class WidgetOwnershipValidatorTest {
      */
     @Test
     void service_staleRootIdSnapshotButLiveSpaceIdIsInSubtree_belongs() {
-        ModbusService stale = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
+        ModbusDevice stale = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
         stale.device.space.rootId = OTHER_ID;
         stubService(stale);
 
@@ -164,7 +164,7 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_withoutSpace_doesNotBelongAndDoesNotThrow() {
-        ModbusService orphan = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
+        ModbusDevice orphan = service(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
         orphan.device.space = null;
         stubService(orphan);
 
@@ -297,7 +297,7 @@ class WidgetOwnershipValidatorTest {
         when(deviceRepo.findByDeviceIds(anyList())).thenReturn(Uni.createFrom().item(List.of(devices)));
     }
 
-    private void stubService(ModbusService service) {
+    private void stubService(ModbusDevice service) {
         when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(service));
     }
 
@@ -322,8 +322,8 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    private static ModbusService service(String id, String spaceId, ModbusPoll... polls) {
-        ModbusService s = new ModbusService();
+    private static ModbusDevice service(String id, String spaceId, ModbusPoll... polls) {
+        ModbusDevice s = new ModbusDevice();
         s.id = new ObjectId(id);
         s.name = "1 号冷水机组";
         s.device = new DeviceOn();

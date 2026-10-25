@@ -110,7 +110,7 @@ for target in "$@"; do
     continue
   fi
 
-  url="$BASE_URL/matrix/v1/modbus/service/one/$space/$id"
+  url="$BASE_URL/matrix/v1/modbus/device/one/$space/$id"
   resp="$(curl -sS -m 30 -H "Authorization: Bearer $TOKEN" "$url")" || {
     echo "[错误] $id GET 请求失败" >&2
     fail=1

@@ -27,11 +27,11 @@ import java.util.Date;
 /**
  * 一个点位的区间曲线（见 Modbus-History.md 第五节）。
  *
- * <p><b>另起一段路径</b>（不挂在 {@code /modbus/service} 之下）：服务定义与采集数据是两回事 ——
+ * <p><b>另起一段路径</b>（不挂在 {@code /modbus/device} 之下）：服务定义与采集数据是两回事 ——
  * 前者是用户维护的配置，后者是设备跑出来的时间序列，生命周期与权限粒度将来都可能分开
  * （比如给只读的历史看板单独授权）。</p>
  *
- * <p><b>按空间鉴权</b>，与 {@code ModbusServiceResource.invoke} 同口径：路径上的 {@code spaceId}
+ * <p><b>按空间鉴权</b>，与 {@code ModbusDeviceResource.invoke} 同口径：路径上的 {@code spaceId}
  * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「服务是否属于该空间」。</p>
  *
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recordedAt} 同口径），
@@ -90,7 +90,7 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
 
     // -- helper methods --
 
-    /** 空间成员（读历史与 invoke 同口径，见 {@code ModbusServiceResource}）。 */
+    /** 空间成员（读历史与 invoke 同口径，见 {@code ModbusDeviceResource}）。 */
     private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {

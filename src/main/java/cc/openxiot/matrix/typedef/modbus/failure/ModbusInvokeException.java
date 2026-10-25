@@ -5,7 +5,7 @@ package cc.openxiot.matrix.typedef.modbus.failure;
  *
  * <p>分类定在抛出的地方：只有那里知道是 CRC 不符还是从站异常码、异常码是几号。
  * 事后从 message 文本里反推分类，等于把协议语义压成了字符串匹配 —— 这正是引入本异常要避免的。
- * {@code ModbusResponseParser} 与 {@code ModbusServiceService} 的失败点一律抛本异常，
+ * {@code ModbusResponseParser} 与 {@code ModbusDeviceService} 的失败点一律抛本异常，
  * 记录端只做透传（见 {@code ModbusHistoryWriteService.recordFailure}）。</p>
  *
  * <p><b>继承 {@link IllegalArgumentException}</b>：资源层按

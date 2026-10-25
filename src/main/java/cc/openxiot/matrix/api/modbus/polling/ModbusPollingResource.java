@@ -3,12 +3,12 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.polling.codec.ModbusPollingCodec;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -54,7 +54,7 @@ public class ModbusPollingResource extends AbstractResource {
     Logger logger;
 
     @Inject
-    ModbusServiceService serviceService;
+    ModbusDeviceService serviceService;
 
     @Inject
     ModbusPollingRepository pollRepo;
@@ -89,7 +89,7 @@ public class ModbusPollingResource extends AbstractResource {
                 .chain(briefs -> {
                     Map<String, String> nameById = new HashMap<>();
                     List<String> serviceIds = new java.util.ArrayList<>(briefs.size());
-                    for (ModbusService brief : briefs) {
+                    for (ModbusDevice brief : briefs) {
                         serviceIds.add(brief.id.toHexString());
                         nameById.put(brief.id.toHexString(), brief.name);
                     }

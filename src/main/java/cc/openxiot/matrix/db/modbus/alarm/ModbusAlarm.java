@@ -33,7 +33,7 @@ import org.bson.types.ObjectId;
  * <p>{@link #text} 是**用户自己填的**（如「温度过高」），前后端一律原样显示、**永不翻译**。</p>
  */
 @RegisterForReflection
-@Schema(description = "Modbus 服务出值的一次阈值告警")
+@Schema(description = "Modbus设备出值的一次阈值告警")
 public class ModbusAlarm {
 
     @BsonId
@@ -74,7 +74,7 @@ public class ModbusAlarm {
      */
     public static final String CLOSE_HANDLED = "HANDLED";
 
-    @Schema(description = "服务 id（ModbusService 主键的十六进制字符串）", required = true)
+    @Schema(description = "服务 id（ModbusDevice 主键的十六进制字符串）", required = true)
     public String serviceId;
 
     @Schema(description = "方法序号（ModbusPoll.index）", examples = {"1"}, required = true)

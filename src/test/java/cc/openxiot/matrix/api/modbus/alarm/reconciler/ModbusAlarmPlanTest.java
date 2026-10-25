@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -89,7 +89,7 @@ class ModbusAlarmPlanTest {
 
     @Test
     void deletedFieldCloses() {
-        ModbusService service = service(field("回水温度", alarm(true)));
+        ModbusDevice service = service(field("回水温度", alarm(true)));
         assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
     }
 
@@ -97,21 +97,21 @@ class ModbusAlarmPlanTest {
     void registryAlarmCoversAnyReadBlock() {
         // 告警属寄存器（寄存器中心），不属某个读方法：点表里这条寄存器还配着告警，
         // 无论开行挂在哪一个方法序号上都说明它还被覆盖 —— 一个都不动
-        ModbusService service = service(field("进水温度", alarm(true)));
+        ModbusDevice service = service(field("进水温度", alarm(true)));
         assertTrue(plan(service, open(1, "进水温度"), open(2, "进水温度")).isEmpty());
     }
 
     @Test
     void renamedFieldClosesTheOldName() {
         // 寄存器改名：旧名的开行再也判定不到（新名是另一条，由采集链路自己去开/关）
-        ModbusService service = service(field("进水温度2", alarm(true)));
+        ModbusDevice service = service(field("进水温度2", alarm(true)));
         assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
     }
 
     @Test
     void pointTableWithNoEnabledAlarmsCloses() {
         // 点表里没有任何启用告警（这里连一条规则都没有）：任何开行都判定不到 —— 全部残留
-        ModbusService service = service(field("进水温度"));
+        ModbusDevice service = service(field("进水温度"));
         assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
     }
 
@@ -158,7 +158,7 @@ class ModbusAlarmPlanTest {
     void oneStatementPerFunctionWithAllItsStaleFields() {
         // 关闭是按整个开行标识 updateMany 的 —— 同一个方法上的多个出值合成一条语句，不是一条一个
         // （一条一个会让一轮对账的写语句数量放大成出值数倍）
-        ModbusService service = service(
+        ModbusDevice service = service(
                 field("进水温度", alarm(true)), field("回水温度"), field("压力"),
                 field("出水温度"));
         List<Close> closes = ModbusAlarmPlan.plan(List.of(service), List.of(
@@ -177,8 +177,8 @@ class ModbusAlarmPlanTest {
     @Test
     void orderIsDeterministic() {
         // 顺序稳定只是为了让日志与测试可读；真正要紧的是「同一批输入得到同一批输出」
-        ModbusService one = service(SID, field("b"));
-        ModbusService two = service(OTHER_SID, field("a"));
+        ModbusDevice one = service(SID, field("b"));
+        ModbusDevice two = service(OTHER_SID, field("a"));
         List<ModbusAlarm> rows = List.of(
                 row(OTHER_SID, 1, "a"), row(SID, 2, "b"), row(SID, 3, "c"));
 
@@ -190,7 +190,7 @@ class ModbusAlarmPlanTest {
     @Test
     void nullFunctionIndexSortsFirst() {
         // 坐标不全的行（没有方法序号）排在最前
-        ModbusService service = service(field("a"));
+        ModbusDevice service = service(field("a"));
         List<Close> closes = ModbusAlarmPlan.plan(List.of(service),
                 List.of(row(SID, 1, "a"), row(SID, null, "b")));
 
@@ -201,7 +201,7 @@ class ModbusAlarmPlanTest {
 
     // ===== 夹具 =====
 
-    private static List<Close> plan(ModbusService service, ModbusAlarm... rows) {
+    private static List<Close> plan(ModbusDevice service, ModbusAlarm... rows) {
         return ModbusAlarmPlan.plan(List.of(service), List.of(rows));
     }
 
@@ -227,12 +227,12 @@ class ModbusAlarmPlanTest {
      * 服务夹具：告警现在属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段，
      * 故这里用寄存器列表直接构建服务的点表快照。
      */
-    private static ModbusService service(ModbusRegistry... registries) {
+    private static ModbusDevice service(ModbusRegistry... registries) {
         return service(SID, registries);
     }
 
-    private static ModbusService service(String serviceId, ModbusRegistry... registries) {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice service(String serviceId, ModbusRegistry... registries) {
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId(serviceId);
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = new ArrayList<>(List.of(registries));

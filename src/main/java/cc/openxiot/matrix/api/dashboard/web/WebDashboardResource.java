@@ -85,7 +85,7 @@ public class WebDashboardResource extends AbstractResource {
     @Path("/layout/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> save(@PathParam("spaceId") String spaceId, WebDashboardLayoutDto body) {
-        // 与 ModbusServiceResource.createOne 一样在链外取：链上的回调可能已经不在请求线程上，
+        // 与 ModbusDeviceResource.createOne 一样在链外取：链上的回调可能已经不在请求线程上，
         // 那时安全上下文（当前用户）不一定还在
         Person who = currentUser();
         return access.spaceAdmin(spaceId)

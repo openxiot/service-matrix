@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmReadService;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.space.SpaceService;
@@ -34,7 +34,7 @@ import java.util.Date;
 /**
  * Modbus 阈值告警的读取与处理（见 Modbus-Alarm.md 第九节）。
  *
- * <p><b>另起一段路径</b>（不挂在 {@code /modbus/history} 或 {@code /modbus/service} 之下）：
+ * <p><b>另起一段路径</b>（不挂在 {@code /modbus/history} 或 {@code /modbus/device} 之下）：
  * 告警是第三件事 —— 它既不是用户维护的配置，也不是设备跑出来的时间序列，而是**判定出来的事件**，
  * 且它有自己的权限粒度（成员可处理，不需要管理员）与保留口径（永久保留，不挂 TTL）。
  * 与历史接口当初另起一段同理。</p>
@@ -65,9 +65,9 @@ public class ModbusAlarmResource extends AbstractResource {
     @Inject
     ModbusAlarmWriteService writeService;
 
-    /** 空间级查询要先把空间下的服务 id 收齐，处理时要判归属（见 ModbusServiceService.subtreeServiceIds）。 */
+    /** 空间级查询要先把空间下的服务 id 收齐，处理时要判归属（见 ModbusDeviceService.subtreeServiceIds）。 */
     @Inject
-    ModbusServiceService serviceService;
+    ModbusDeviceService serviceService;
 
     @Inject
     OrgAccessService orgAccessService;

@@ -13,11 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -52,7 +52,7 @@ class ModbusPollingResourceTest {
     private static final long NOW = 1_700_000_000_000L;
 
     @InjectMock
-    ModbusServiceService serviceService;
+    ModbusDeviceService serviceService;
 
     @InjectMock
     ModbusPollingRepository pollRepo;
@@ -74,8 +74,8 @@ class ModbusPollingResourceTest {
         return s;
     }
 
-    private ModbusService brief() {
-        ModbusService svc = new ModbusService();
+    private ModbusDevice brief() {
+        ModbusDevice svc = new ModbusDevice();
         svc.id = new ObjectId(SID);
         svc.name = "1 号冷水机组";
         return svc;

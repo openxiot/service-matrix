@@ -24,7 +24,7 @@ import java.util.function.Function;
  * 两边的壳都只负责在「身份 → 尺寸 → 位置 → config」这个顺序里插入各自的尺寸/位置检查，
  * 其余都走这里，因此任一端的规格改动不会让另一端的校验跟着漂移。</p>
  *
- * <p>与 {@code ModbusServiceValidator} 同风格：纯函数、无状态、不碰数据库，返回 {@code null} 表示通过，
+ * <p>与 {@code ModbusDeviceValidator} 同风格：纯函数、无状态、不碰数据库，返回 {@code null} 表示通过，
  * 否则返回给前端看的错误文案。错误文案一律带 {@code widgets[i]} 前缀（i 是卡片在数组里的下标），
  * 这是循环层（每个看板各壳的 {@code validateWidgets}）加上的 —— 本类的方法返回的都是不带前缀的
  * 单张卡错误。</p>

@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.modbus.service.DeviceOn;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.device.DeviceOn;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -71,7 +71,7 @@ class DashboardCatalogCodecTest {
     }
 
     /**
-     * 服务整份下发，形状与 {@code /modbus/service/one/{id}} 逐字相同，前端直接复用已有的解码器。
+     * 服务整份下发，形状与 {@code /modbus/device/one/{id}} 逐字相同，前端直接复用已有的解码器。
      */
     @Test
     void encodeService_reusesTheFullServiceShape() {
@@ -88,7 +88,7 @@ class DashboardCatalogCodecTest {
         assertEquals("int16", field.getString("format"));
         assertEquals("℃", field.getString("unit"));
         // 位名是独立的可选字段（用户在下拉里选它配一张卡），所以位清单也要在。
-        // 线上的键是**连字符**的 `bit-list`（实体里叫 bitList）—— 前端 ModbusServiceCodec
+        // 线上的键是**连字符**的 `bit-list`（实体里叫 bitList）—— 前端 ModbusDeviceCodec
         // 就是按这个键解的，所以这里必须钉住线上拼写，不能跟着实体字段名走
         assertEquals("进水阀", field.getJsonArray("bit-list").getJsonObject(0).getString("field"));
     }
@@ -103,7 +103,7 @@ class DashboardCatalogCodecTest {
         return d;
     }
 
-    private static ModbusService service() {
+    private static ModbusDevice service() {
         ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
@@ -123,7 +123,7 @@ class DashboardCatalogCodecTest {
         poll.name = "读温度";
         poll.response = ModbusResponses.of(field);
 
-        ModbusService service = new ModbusService();
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
         service.name = "1 号冷水机组";
         service.device = new DeviceOn();

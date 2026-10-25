@@ -11,7 +11,7 @@ import java.util.List;
  *
  * <p>只出不进：影子是采集写进去的派生状态，不由请求体决定，所以没有 decode。</p>
  *
- * <p>{@code lastError} / {@code errorAt} 为 null 时**不出键**（与 {@code ModbusServiceCodec} 同口径）：
+ * <p>{@code lastError} / {@code errorAt} 为 null 时**不出键**（与 {@code ModbusDeviceCodec} 同口径）：
  * 前端判「有没有故障」看 {@code lastError} 在不在，而不是判一个显式的 null。
  * {@code value} / {@code recordedAt} 是**最后一次成功**采集的值与时刻，有故障时它们照旧存在。</p>
  *

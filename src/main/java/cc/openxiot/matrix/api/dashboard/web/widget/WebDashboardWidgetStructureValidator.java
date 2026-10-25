@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 
 /**
  * Web 看板卡片配置的**结构性**校验外壳：纯函数、无状态、不碰数据库 —— 返回 {@code null} 表示通过，
- * 否则返回给前端看的错误文案。照 {@code ModbusServiceValidator} 的风格，由调用方转成
+ * 否则返回给前端看的错误文案。照 {@code ModbusDeviceValidator} 的风格，由调用方转成
  * {@link IllegalArgumentException}。
  *
  * <p><b>本类只管「配置本身合不合法」，不管「你能不能写」和「这个设备是不是你的」</b>：</p>

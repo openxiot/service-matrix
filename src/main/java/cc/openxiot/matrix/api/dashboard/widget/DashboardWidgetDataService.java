@@ -14,8 +14,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cn.geekcity.xiot.spec.status.Status;
 import io.smallrye.mutiny.Uni;
@@ -85,7 +85,7 @@ public class DashboardWidgetDataService {
      * 服务端手里已经有一份，前端再解一遍就要多一次异步、多一份备忘、多一个请求。</p>
      */
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     /**
      * 设备卡的数据源：设备影子（最后一次上报的值）。
@@ -848,7 +848,7 @@ public class DashboardWidgetDataService {
     }
 
     /** 字段名 → 服务点表快照里的寄存器；没配快照 / 名字对不上给 null。 */
-    private static ModbusRegistry registerOf(ModbusService service, String fieldName) {
+    private static ModbusRegistry registerOf(ModbusDevice service, String fieldName) {
         if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
             return null;
         }
@@ -866,7 +866,7 @@ public class DashboardWidgetDataService {
     }
 
     /** 从取数结果里取服务定义；服务没取到（失败/不存在）给 {@code null}。 */
-    private static ModbusService serviceOf(Map<String, ServiceFetched> services, String serviceId) {
+    private static ModbusDevice serviceOf(Map<String, ServiceFetched> services, String serviceId) {
         ServiceFetched fetched = services == null ? null : services.get(serviceId);
         return fetched == null ? null : fetched.service();
     }
@@ -1034,7 +1034,7 @@ public class DashboardWidgetDataService {
      * <p>定义与影子一起取：定义用来把配置的字段名解析到寄存器、并产出 {@code unit} / {@code bit}，
      * 两者缺一个卡片都画不出来，分两次取只会多一个中间状态。</p>
      */
-    private record ServiceFetched(Map<Integer, ModbusShadow> registryShadows, ModbusService service,
+    private record ServiceFetched(Map<Integer, ModbusShadow> registryShadows, ModbusDevice service,
                                   String error) {
     }
 

@@ -4,12 +4,12 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -37,12 +37,12 @@ class ModbusShadowServiceTest {
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
 
     private ModbusShadowService shadowService;
-    private ModbusServiceRepository repo;
+    private ModbusDeviceRepository repo;
     private ModbusShadowRepository registryShadowRepo;
 
     @BeforeEach
     void setUp() {
-        repo = mock(ModbusServiceRepository.class);
+        repo = mock(ModbusDeviceRepository.class);
         registryShadowRepo = mock(ModbusShadowRepository.class);
         shadowService = new ModbusShadowService();
         shadowService.repo = repo;
@@ -84,7 +84,7 @@ class ModbusShadowServiceTest {
 
     @Test
     void registerCacheWithoutSnapshotReturnsEmpty() {
-        ModbusService svc = service();
+        ModbusDevice svc = service();
         svc.polls = List.of(readFunction(1, "进水温度"));
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
@@ -109,7 +109,7 @@ class ModbusShadowServiceTest {
         String id2 = "65f0c0ffee0123456789abcf";
         givenService(List.of(readFunction(1, "进水温度")));
         // 第二个服务：同样的点表，但从未被调用（no-data）
-        ModbusService svc2 = service();
+        ModbusDevice svc2 = service();
         svc2.id = new ObjectId(id2);
         when(repo.findById(id2)).thenReturn(Uni.createFrom().item(svc2));
         when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
@@ -144,13 +144,13 @@ class ModbusShadowServiceTest {
     // ---- 夹具 ----
 
     private void givenService(List<ModbusPoll> polls) {
-        ModbusService svc = service();
+        ModbusDevice svc = service();
         svc.polls = polls;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
     }
 
-    private static ModbusService service() {
-        ModbusService svc = new ModbusService();
+    private static ModbusDevice service() {
+        ModbusDevice svc = new ModbusDevice();
         svc.id = new ObjectId(SERVICE_ID);
         svc.configSnapshot = registerConfig();
         return svc;

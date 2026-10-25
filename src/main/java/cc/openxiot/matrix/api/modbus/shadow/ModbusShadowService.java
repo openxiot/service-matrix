@@ -4,9 +4,9 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,20 +20,20 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Modbus 服务的「当前值」读投影：寄存器缓存网格。
+ * Modbus设备的「当前值」读投影：寄存器缓存网格。
  *
  * <p>把点表里所有可读寄存器与各方法最后一次轮询快照（{@code ModbusServiceLastPolling}）归并成
  * 「按寄存器」的缓存视图 —— 一次读取看到整张点表的缓存实况。纯读侧投影，不落库、不写盘。</p>
  *
- * <p>与 {@code ModbusServiceService} 是两回事：那边是服务的**定义维护 + 方法调用**（写路径，
- * 落历史 / 影子 / 告警），这里只做**读**。需要解析「服务 → 点表」时用 {@code ModbusServiceRepository}，
+ * <p>与 {@code ModbusDeviceService} 是两回事：那边是服务的**定义维护 + 方法调用**（写路径，
+ * 落历史 / 影子 / 告警），这里只做**读**。需要解析「服务 → 点表」时用 {@code ModbusDeviceRepository}，
  * 不依赖调用逻辑。</p>
  */
 @ApplicationScoped
 public class ModbusShadowService {
 
     @Inject
-    ModbusServiceRepository repo;
+    ModbusDeviceRepository repo;
 
     @Inject
     ModbusShadowRepository registryShadowRepo;

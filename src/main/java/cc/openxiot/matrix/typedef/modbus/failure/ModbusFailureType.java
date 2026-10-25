@@ -23,7 +23,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   <li><b>平台侧</b>：{@link #TRANSPORT_ERROR} —— 与设备无关，查服务间调用。</li>
  * </ul>
  */
-@Schema(description = "Modbus 服务执行失败的分类")
+@Schema(description = "Modbus设备执行失败的分类")
 public enum ModbusFailureType {
 
     /** 设备没回：DTU / 从站离线、超时，或父设备的应答里根本没有帧。 */

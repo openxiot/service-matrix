@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,11 +35,11 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.poll.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -90,7 +90,7 @@ class WidgetDataServiceTest {
     ModbusRegistryHistoryRepository registryHistoryRepo;
 
     @InjectMock
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @InjectMock
     ModbusShadowRepository registryShadowRepo;
@@ -1120,7 +1120,7 @@ class WidgetDataServiceTest {
      * 不再是已删的 {@code ModbusServiceLastPolling}），convert 成服务定义里每只寄存器的影子：
      * 字段名 == 寄存器名，没有该字段 = 那只寄存器还没采到（value 空，卡片据此显示 {@code -}）。
      */
-    private void stubService(ShadowInput input, ModbusService definition) {
+    private void stubService(ShadowInput input, ModbusDevice definition) {
         when(registryShadowRepo.listByServiceId(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(input == null ? List.of() : convertShadows(input, definition)));
         when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
@@ -1129,7 +1129,7 @@ class WidgetDataServiceTest {
     /**
      * 把输入的「字段 → 值 + 失败态」按服务定义里的每只寄存器展平成逐寄存器影子。
      */
-    private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusService definition) {
+    private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusDevice definition) {
         List<ModbusShadow> shadows = new ArrayList<>();
         if (input != null && definition != null && definition.configSnapshot != null
                 && definition.configSnapshot.registries != null) {
@@ -1173,7 +1173,7 @@ class WidgetDataServiceTest {
      * 一个方法：{@code primary} 是主字段（带单位），{@code bit} 是它位区里的一个位名
      * （没有单位）。两者可以都给 —— 那正是「位名与父字段并存」的实际情况。
      */
-    private static ModbusService serviceDef(int pollIndex, String primary, String unit, String second,
+    private static ModbusDevice serviceDef(int pollIndex, String primary, String unit, String second,
                                             String... bits) {
         List<ModbusResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
@@ -1188,7 +1188,7 @@ class WidgetDataServiceTest {
         poll.name = primary;
         poll.response = ModbusResponses.of(fields);
 
-        ModbusService definition = new ModbusService();
+        ModbusDevice definition = new ModbusDevice();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
         definition.polls = List.of(poll);

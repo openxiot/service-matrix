@@ -1,14 +1,14 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
-import cc.openxiot.matrix.db.modbus.service.DeviceOn;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.DeviceOn;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.space.SpaceRepository;
@@ -56,7 +56,7 @@ class ModbusPollingReconcilerTest {
     private static final long NOW = 1_700_000_000_000L;
 
     @Mock
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Mock
     ModbusPollingRepository pollRepo;
@@ -173,8 +173,8 @@ class ModbusPollingReconcilerTest {
     /**
      * 一个读保持寄存器（fc 03）的方法，周期 30 秒 —— 与现网那条报了 bug 的任务同形。
      */
-    private static ModbusService service() {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice service() {
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId(SID);
         DeviceOn device = new DeviceOn();
         device.did = DID;

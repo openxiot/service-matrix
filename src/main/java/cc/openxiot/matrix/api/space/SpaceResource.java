@@ -4,9 +4,9 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
-import cc.openxiot.matrix.api.modbus.service.ModbusServiceService;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.codec.ModbusServiceCodec;
+import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.codec.ModbusDeviceCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -46,7 +46,7 @@ public class SpaceResource extends AbstractResource {
     DeviceService deviceService;
 
     @Inject
-    ModbusServiceService modbusServiceService;
+    ModbusDeviceService modbusServiceService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -219,13 +219,13 @@ public class SpaceResource extends AbstractResource {
                     // 服务只出精简视图（id/name/type）：投影在 Mongo 侧就把 functions/response 挡掉了，只回来 id/name。
                     List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
                     Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
-                    Uni<List<ModbusService>> services = bySpace(spaceIds, modbusServiceService::getBriefBySpaceId);
+                    Uni<List<ModbusDevice>> services = bySpace(spaceIds, modbusServiceService::getBriefBySpaceId);
                     return Uni.combine().all().unis(devices, services).asTuple()
                             .map(tuple -> {
                                 Map<String, Object> graph = new HashMap<>();
                                 graph.put("spaces", spaces);
                                 graph.put("devices", tuple.getItem1());
-                                graph.put("services", ModbusServiceCodec.encodeBrief(tuple.getItem2()));
+                                graph.put("services", ModbusDeviceCodec.encodeBrief(tuple.getItem2()));
                                 return OxResponse.ok(graph);
                             });
                 })

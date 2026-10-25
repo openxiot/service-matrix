@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 
 /**
  * 轮询任务的身份：{@code (serviceId, pollIndex)}，与 {@code modbus.polls} 的唯一索引同口径。
@@ -12,7 +12,7 @@ import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
 public record ModbusPollingKey(String serviceId, Integer pollIndex) {
 
     /** 从定义文档与其中的一个方法取出键；服务还没落库（没有 id）时返回 null。 */
-    public static ModbusPollingKey of(ModbusService service, ModbusPoll poll) {
+    public static ModbusPollingKey of(ModbusDevice service, ModbusPoll poll) {
         if (service == null || service.id == null || poll == null) {
             return null;
         }

@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.history.registry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistorySample;
 import cc.openxiot.matrix.api.modbus.history.ModbusRegistryHistoryWindow;
 import io.smallrye.mutiny.Uni;
@@ -40,7 +40,7 @@ public class ModbusRegistryHistoryService {
 
     /** 只用来把 field 名解析成寄存器序号（只读服务定义的点表快照，见 {@link #resolveRegister}）。 */
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     /**
      * 区间查询的结果：规范化之后的入参（Resource 要原样回给前端）加上整形后的点。
@@ -111,7 +111,7 @@ public class ModbusRegistryHistoryService {
      * 一律报错 —— 与「serviceId is required」的报错风格一致，且与 {@link ModbusHistoryWriteService#record}
      * 的「名字对上才写寄存器侧」同一条匹配规则。
      */
-    private static ModbusRegistry resolveRegister(ModbusService service, String field) {
+    private static ModbusRegistry resolveRegister(ModbusDevice service, String field) {
         if (service == null || service.configSnapshot == null
                 || service.configSnapshot.registries == null) {
             throw new IllegalArgumentException("field not a readable register: " + field);

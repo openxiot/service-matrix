@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.jboss.logging.Logger;
@@ -51,7 +51,7 @@ class ModbusAlarmReconcilerTest {
     private static final String RULE_ID = "r1";
 
     @Mock
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Mock
     ModbusAlarmRepository alarmRepo;
@@ -143,7 +143,7 @@ class ModbusAlarmReconcilerTest {
 
     @Test
     void repositoryFailureIsPropagated() {
-        // 读失败照常外传：调用方（ModbusServiceService 的 reconcileDerived）只记日志，
+        // 读失败照常外传：调用方（ModbusDeviceService 的 reconcileDerived）只记日志，
         // 不让一次定义维护跟着失败 —— 咽在本类里会让那条日志失去「哪个服务」的上下文
         when(alarmRepo.listOpenByServiceId(anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("alarm table is down")));
@@ -186,7 +186,7 @@ class ModbusAlarmReconcilerTest {
         // 级联删除又崩在中途」留下的开行，这一趟不会去关。不为此松开那条保守口径 ——
         // 它的正面价值是「写入路径只传一个服务，判宽了会把别的服务的告警误关一片」，
         // 而那比这里兜住的局面严重得多。
-        // 服务级联删除归 ModbusServiceService → ModbusHistoryWriteService.purge；那边失败留下的行
+        // 服务级联删除归 ModbusDeviceService → ModbusHistoryWriteService.purge；那边失败留下的行
         // 与影子 / 历史 / 故障记录是同一个失败模式（只记日志、不重试），且页面按空间子树查、看不见它。
         // 这条测试钉的是「对账在后、级联在前」这个分工。
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
@@ -252,7 +252,7 @@ class ModbusAlarmReconcilerTest {
 
     // ===== 夹具 =====
 
-    private void reconcile(ModbusService service) {
+    private void reconcile(ModbusDevice service) {
         reconciler.reconcile(service).await().indefinitely();
     }
 
@@ -271,8 +271,8 @@ class ModbusAlarmReconcilerTest {
         return row;
     }
 
-    private static ModbusService serviceWithoutId() {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice serviceWithoutId() {
+        ModbusDevice service = new ModbusDevice();
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = List.of(poll(field("进水温度", true)));
         service.configSnapshot = snapshot;
@@ -280,8 +280,8 @@ class ModbusAlarmReconcilerTest {
     }
 
     /** 服务夹具：告警现属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段。 */
-    private static ModbusService service(String serviceId, ModbusRegistry... registries) {
-        ModbusService service = new ModbusService();
+    private static ModbusDevice service(String serviceId, ModbusRegistry... registries) {
+        ModbusDevice service = new ModbusDevice();
         service.id = new ObjectId(serviceId);
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = new ArrayList<>(List.of(registries));

@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.dashboard.web.catalog;
 import cc.openxiot.matrix.api.dashboard.widget.DashboardWidgetOwnershipValidator;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -41,7 +41,7 @@ public class WebDashboardCatalogService {
     DeviceRepository deviceRepo;
 
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     /** 本项目的候选设备与服务，一次子树查询两路并发。 */
     public Uni<JsonObject> catalog(SpaceEntity space) {

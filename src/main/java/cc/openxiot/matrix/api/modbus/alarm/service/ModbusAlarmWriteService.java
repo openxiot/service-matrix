@@ -5,8 +5,8 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link ModbusAlarmRepository#insertOpen}（唯一部分索引 + 重复键吞掉），
  * 关闭走按整个开行标识的 {@code updateMany}。这些口径都在仓储里，本类只负责「判什么、什么时候判」。</p>
  *
- * <p>失败由调用方处置：{@code ModbusServiceService} 只记日志，既不改写 invoke 的成功响应、
+ * <p>失败由调用方处置：{@code ModbusDeviceService} 只记日志，既不改写 invoke 的成功响应、
  * 也不改写它的失败响应 —— 值已经拿到了，告警是副作用。</p>
  */
 @ApplicationScoped
@@ -84,7 +84,7 @@ public class ModbusAlarmWriteService {
      * @param values 本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）；写方法为空对象
      * @return 完成信号；**失败照常往上抛**，由调用方决定记日志还是咽下去
      */
-    public Uni<Void> evaluate(ModbusService service, ModbusPoll poll, JsonObject values) {
+    public Uni<Void> evaluate(ModbusDevice service, ModbusPoll poll, JsonObject values) {
         // 第一层闸门：没配告警的服务（也就是绝大多数）在这里返回，**一次数据库操作都不做**
         List<ModbusAlarmPolicy.ModbusFieldRule> rules = ModbusAlarmPolicy.registerRules(service);
         if (service == null || service.id == null || poll == null || poll.index == null

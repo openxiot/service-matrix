@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.space.SpaceRepository;
@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <table border="1">
  *   <tr><th>时机</th><th>挂在哪</th><th>做到哪一步</th></tr>
- *   <tr><td>写入路径</td><td>{@code ModbusServiceService} 的 create / update / delete</td>
+ *   <tr><td>写入路径</td><td>{@code ModbusDeviceService} 的 create / update / delete</td>
  *       <td>{@link #applyService} / {@link #applyRemoval}：**只写库**，再把内存表置脏</td></tr>
  *   <tr><td>启动</td><td>调度器的 {@code StartupEvent}（仅 {@code modbus.poll.enabled=true}）</td>
  *       <td>{@link #reconcileAll}：库 + 内存表</td></tr>
@@ -70,7 +70,7 @@ public class ModbusPollingReconciler {
     private static final int MAX_CACHED_SPACES = 1000;
 
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Inject
     ModbusPollingRepository pollRepo;
@@ -102,7 +102,7 @@ public class ModbusPollingReconciler {
     /** 上一次全量对账的时刻（周期兜底用它计时）。 */
     private final AtomicLong lastReconciledAt = new AtomicLong();
 
-    /** 建索引开关，与点表 / 服务 / 历史共用同一个（见 ModbusServiceService）。 */
+    /** 建索引开关，与点表 / 服务 / 历史共用同一个（见 ModbusDeviceService）。 */
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
@@ -136,9 +136,9 @@ public class ModbusPollingReconciler {
     /**
      * 写入路径：某个服务的定义刚被创建 / 修改，把任务表对齐到它（**只写库**，内存表置脏）。
      *
-     * <p>调用方的约定（{@code ModbusServiceService}）：失败只记日志，不让定义维护的操作跟着失败。</p>
+     * <p>调用方的约定（{@code ModbusDeviceService}）：失败只记日志，不让定义维护的操作跟着失败。</p>
      */
-    public Uni<Void> applyService(ModbusService service) {
+    public Uni<Void> applyService(ModbusDevice service) {
         if (service == null || service.id == null) {
             return Uni.createFrom().voidItem();
         }
@@ -200,7 +200,7 @@ public class ModbusPollingReconciler {
     private Uni<Void> sweepShadows() {
         return serviceRepo.listAll().chain(services -> {
             List<Uni<Void>> steps = new ArrayList<>(services.size());
-            for (ModbusService service : services) {
+            for (ModbusDevice service : services) {
                 steps.add(reconcileShadows(service)
                         .onFailure().invoke(e -> logger.warnv(
                                 "sweep modbus shadows failed, service: {0}, error: {1}",
@@ -218,7 +218,7 @@ public class ModbusPollingReconciler {
      * <p>只在**定义变更的写入路径 + 启动**做，不进周期对账：那要扫「服务 × 影子」，
      * 而影子的陈旧只可能来自定义变更。</p>
      */
-    public Uni<Void> reconcileShadows(ModbusService service) {
+    public Uni<Void> reconcileShadows(ModbusDevice service) {
         if (service == null || service.id == null) {
             return Uni.createFrom().voidItem();
         }
@@ -247,9 +247,9 @@ public class ModbusPollingReconciler {
 
     // ===== 全量对账 =====
 
-    private Uni<Void> reconcileAll(List<ModbusService> services, List<ModbusPolling> polls, long now) {
+    private Uni<Void> reconcileAll(List<ModbusDevice> services, List<ModbusPolling> polls, long now) {
         Set<String> liveServiceIds = new HashSet<>();
-        for (ModbusService service : services) {
+        for (ModbusDevice service : services) {
             if (service != null && service.id != null) {
                 liveServiceIds.add(service.id.toHexString());
             }
@@ -257,7 +257,7 @@ public class ModbusPollingReconciler {
 
         Set<ModbusPollingKey> plannedKeys = new HashSet<>();
         List<Uni<Void>> steps = new ArrayList<>();
-        for (ModbusService service : services) {
+        for (ModbusDevice service : services) {
             if (service == null || service.id == null) {
                 continue;
             }
@@ -288,7 +288,7 @@ public class ModbusPollingReconciler {
         return sequence(steps);
     }
 
-    private Uni<Void> reconcileService(ModbusService service, List<ModbusPolling> polls,
+    private Uni<Void> reconcileService(ModbusDevice service, List<ModbusPolling> polls,
                                        Set<ModbusPollingKey> plannedKeys, long now) {
         String serviceId = service.id.toHexString();
         List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(service, didOf(service), now,
@@ -386,7 +386,7 @@ public class ModbusPollingReconciler {
      * <p>解析结果按空间 id 缓存（{@code rootBySpace}）：空间几乎不动，一次对账解析一次就够，
      * 不必每次采集都查一遍空间表。</p>
      */
-    private Uni<String> resolveOwnerId(ModbusService service) {
+    private Uni<String> resolveOwnerId(ModbusDevice service) {
         SpaceOn space = service.device == null ? null : service.device.space;
         String spaceId = space == null ? null : space.spaceId;
         String fallback = space == null || space.rootId == null ? "" : space.rootId;
@@ -403,7 +403,7 @@ public class ModbusPollingReconciler {
             found = spaceRepo.findById(spaceId);
         } catch (RuntimeException e) {
             // spaceId 不是合法的 ObjectId（历史数据 / 手工改库）：findById 在构造期就抛
-            logger.warnv("invalid space id on modbus service, spaceId: {0}", spaceId);
+            logger.warnv("invalid space id on modbus device, spaceId: {0}", spaceId);
             return Uni.createFrom().item(fallback);
         }
         return found
@@ -420,7 +420,7 @@ public class ModbusPollingReconciler {
 
     // ===== 内部 =====
 
-    private static String didOf(ModbusService service) {
+    private static String didOf(ModbusDevice service) {
         return service.device == null ? null : service.device.did;
     }
 

@@ -5,11 +5,11 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.service.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.service.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.smallrye.mutiny.Uni;
@@ -77,7 +77,7 @@ import java.util.Set;
 public class DashboardWidgetOwnershipValidator {
 
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Inject
     DeviceRepository deviceRepo;
@@ -118,7 +118,7 @@ public class DashboardWidgetOwnershipValidator {
                             .unis(loadServices(serviceIds), loadDevices(dids))
                             .asTuple()
                             .map(tuple -> {
-                                Map<String, ModbusService> services = tuple.getItem1();
+                                Map<String, ModbusDevice> services = tuple.getItem1();
                                 Map<String, DeviceEntity> devices = tuple.getItem2();
                                 for (ServiceRef ref : serviceRefs) {
                                     String err = checkServiceRef(spaceIds, services, ref);
@@ -236,8 +236,8 @@ public class DashboardWidgetOwnershipValidator {
      * ObjectId 的十六进制大小写不敏感，客户端提交大写 hex 时两种写法不相等，
      * 按实体 id 建索引会让一个完全合法的引用被判成「不存在」。
      */
-    private Uni<Map<String, ModbusService>> loadServices(List<String> ids) {
-        Map<String, ModbusService> byId = new LinkedHashMap<>();
+    private Uni<Map<String, ModbusDevice>> loadServices(List<String> ids) {
+        Map<String, ModbusDevice> byId = new LinkedHashMap<>();
         if (ids.isEmpty()) {
             return Uni.createFrom().item(byId);
         }
@@ -246,7 +246,7 @@ public class DashboardWidgetOwnershipValidator {
                 .andFailFast()
                 .map(services -> {
                     for (int i = 0; i < ids.size(); i++) {
-                        ModbusService service = services.get(i);
+                        ModbusDevice service = services.get(i);
                         if (service != null) {
                             byId.put(ids.get(i), service);
                         }
@@ -271,9 +271,9 @@ public class DashboardWidgetOwnershipValidator {
         });
     }
 
-    private static String checkServiceRef(Set<String> spaceIds, Map<String, ModbusService> services,
+    private static String checkServiceRef(Set<String> spaceIds, Map<String, ModbusDevice> services,
                                           ServiceRef ref) {
-        ModbusService service = services.get(ref.serviceId());
+        ModbusDevice service = services.get(ref.serviceId());
         if (service == null) {
             return "service not found: " + ref.serviceId();
         }
@@ -306,7 +306,7 @@ public class DashboardWidgetOwnershipValidator {
      * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
      * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
      */
-    private static ModbusPoll findFunctionByField(ModbusService service, String field) {
+    private static ModbusPoll findFunctionByField(ModbusDevice service, String field) {
         if (service == null || service.polls == null) {
             return null;
         }
@@ -318,7 +318,7 @@ public class DashboardWidgetOwnershipValidator {
         return null;
     }
 
-    private static ModbusPoll findPoll(ModbusService service, Integer index) {
+    private static ModbusPoll findPoll(ModbusDevice service, Integer index) {
         if (service.polls == null) {
             return null;
         }
@@ -334,7 +334,7 @@ public class DashboardWidgetOwnershipValidator {
      * 字段名要认两类：功能码 {@code response} 里直接定义的字段，以及**位区里每个位自己的名字**
      * （{@code bit-list[].field}）。
      *
-     * <p>位是独立点位（见方案 §5.7 与 {@code ModbusService.ts} 的说明）：一次 01/02 调用返回的是
+     * <p>位是独立点位（见方案 §5.7 与 {@code ModbusDevice.ts} 的说明）：一次 01/02 调用返回的是
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */

@@ -8,8 +8,8 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
-import cc.openxiot.matrix.db.modbus.service.ModbusServiceRepository;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -37,7 +37,7 @@ import java.util.function.Function;
  *
  * <p><b>服务</b>这一次同时给出三样东西：总数、按点表分组的条数、以及告警与故障要逐服务查的 id 清单。
  * 三者出自**同一次读取**，故「按点表分组的条数之和 == 服务总数」是构造出来的，不靠约定 ——
- * 这也是这里不复用 {@code ModbusServiceService.subtreeServiceIds} 的原因（它只带 id 与名字，
+ * 这也是这里不复用 {@code ModbusDeviceService.subtreeServiceIds} 的原因（它只带 id 与名字，
  * 点表得再查一次，两次读之间没有共同的真值）。过滤条件与它逐字相同
  * （{@code device.space.spaceId} 逐空间取再拍平去重），所以「服务总量」与告警页看到的范围一致。</p>
  *
@@ -71,7 +71,7 @@ public class StatisticsQueryService {
     public static final String UNKNOWN = "UNKNOWN";
 
     @Inject
-    ModbusServiceRepository serviceRepo;
+    ModbusDeviceRepository serviceRepo;
 
     @Inject
     ModbusAlarmRepository alarmRepo;
@@ -166,7 +166,7 @@ public class StatisticsQueryService {
                 .chain(spaces -> {
                     List<String> spaceIds = spaces.stream().map(space -> space.id.toString()).toList();
                     Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
-                    Uni<List<ModbusService>> services = bySpace(spaceIds, serviceRepo::findConfigKeysBySpaceId);
+                    Uni<List<ModbusDevice>> services = bySpace(spaceIds, serviceRepo::findConfigKeysBySpaceId);
                     // 两轮：服务的 id 清单是后两件事的查询范围，只能等它回来
                     return Uni.combine().all().unis(devices, services).asTuple()
                             .chain(tuple -> {
@@ -189,13 +189,13 @@ public class StatisticsQueryService {
     }
 
     /**
-     * 服务的 id 清单：一次读取顺便去重（{@code ModbusServiceService.subtreeServiceIds} 的 id 部分）。
+     * 服务的 id 清单：一次读取顺便去重（{@code ModbusDeviceService.subtreeServiceIds} 的 id 部分）。
      *
      * <p>服务文档的 {@code _id} 即使只投影 {@code configSnapshot._id} 也由 Mongo 默认带出（与
-     * {@code ModbusServiceRepository.findBriefBySpaceId} 同一条）。逐空间取不会取到重复的，
+     * {@code ModbusDeviceRepository.findBriefBySpaceId} 同一条）。逐空间取不会取到重复的，
      * 去重是保险：重复的 id 会让告警多查一次、行被数两遍。</p>
      */
-    private static List<String> serviceIds(List<ModbusService> services) {
+    private static List<String> serviceIds(List<ModbusDevice> services) {
         return services.stream()
                 .filter(service -> service != null && service.id != null)
                 .map(service -> service.id.toHexString())
@@ -250,10 +250,10 @@ public class StatisticsQueryService {
     }
 
     /** 服务：总数、按源点表 id（{@code configSnapshot.id}）的条数。两者同源，故分组的条数之和恒等于总数。 */
-    static ServiceStats servicesOf(List<ModbusService> rows) {
+    static ServiceStats servicesOf(List<ModbusDevice> rows) {
         List<String> configIds = new ArrayList<>();
         if (rows != null) {
-            for (ModbusService service : rows) {
+            for (ModbusDevice service : rows) {
                 if (service != null) {
                     configIds.add(configKey(service.configSnapshot));
                 }

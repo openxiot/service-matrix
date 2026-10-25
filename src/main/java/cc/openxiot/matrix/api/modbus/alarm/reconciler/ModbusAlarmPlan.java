@@ -4,7 +4,7 @@ import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.service.ModbusService;
+import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -77,7 +77,7 @@ public final class ModbusAlarmPlan {
      * <p>启用着却没有 {@code id} 的规则（校验器挡着新数据，只可能是老数据）收不进来：
      * 它开出来的行 {@code ruleId} 也是 null，同样落进「行上没有 ruleId ⇒ 不动」那条。</p>
      */
-    static Map<String, Set<String>> configuredRules(ModbusService service) {
+    static Map<String, Set<String>> configuredRules(ModbusDevice service) {
         Map<String, Set<String>> keys = new HashMap<>();
         if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
             return keys;
@@ -114,14 +114,14 @@ public final class ModbusAlarmPlan {
      * <p>结果按 {@code (serviceId, pollIndex)} 排好序，且每个方法只出现一次 ——
      * 关闭是按整个开行标识 {@code updateMany} 的，一个方法一条语句就够。</p>
      */
-    public static List<Close> plan(Collection<ModbusService> services, Collection<ModbusAlarm> open) {
+    public static List<Close> plan(Collection<ModbusDevice> services, Collection<ModbusAlarm> open) {
         List<Close> closes = new ArrayList<>();
         if (services == null || open == null || open.isEmpty()) {
             return closes;
         }
 
         Map<String, Map<String, Set<String>>> covered = new HashMap<>();
-        for (ModbusService service : services) {
+        for (ModbusDevice service : services) {
             if (service == null || service.id == null) {
                 continue;
             }
