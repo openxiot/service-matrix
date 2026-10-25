@@ -432,4 +432,33 @@ class SpaceServiceTest {
         assertEquals("updated", result.name);
         assertEquals("org-1", result.accesses.get(0).id);
     }
+
+    /**
+     * 客户端（网页 / 安卓只发 id + name 的那类）常把根空间的 parentId 发成空串。
+     * 空串不是「换父级」：真去 findById("") 就是 new ObjectId("") → 抛异常，改名都会失败。
+     */
+    @Test
+    void update_blankParentId_keepsExistingParent() {
+        ObjectId id = new ObjectId();
+
+        SpaceEntity existing = new SpaceEntity();
+        existing.id = id;
+        existing.parentId = null;
+        existing.name = "old";
+
+        when(spaceRepository.findById(any(ObjectId.class)))
+                .thenReturn(Uni.createFrom().item(existing));
+        when(spaceRepository.persistOrUpdateEntity(any())).thenReturn(Uni.createFrom().item(existing));
+
+        SpaceEntity input = new SpaceEntity();
+        input.id = id;
+        input.parentId = "";
+        input.name = "renamed";
+
+        SpaceEntity result = service.update(input).await().indefinitely();
+
+        assertEquals("renamed", result.name);
+        assertNull(result.parentId);
+        verify(spaceRepository, never()).findById("");
+    }
 }

@@ -244,7 +244,11 @@ public class SpaceService {
                     existing.sortOrder = space.sortOrder;
                     existing.attributes = space.attributes;
 
-                    if (space.parentId != null && !space.parentId.equals(existing.parentId)) {
+                    // 空白 parentId = 调用方没提父级（根空间、或只改名字的客户端），不是「要把父级
+                    // 改成空串」：再往下走会拿 "" 去 findById，new ObjectId("") 直接抛异常，
+                    // 根空间连名字都改不了。判断口径与 create 那条一致。
+                    if (space.parentId != null && !space.parentId.isBlank()
+                            && !space.parentId.equals(existing.parentId)) {
                         return spaceRepository.findById(space.parentId)
                                 .chain(parent -> {
                                     if (parent == null) {
