@@ -259,9 +259,9 @@ public class DashboardWidgetDataService {
                 if ("alarmCount".equals(source)) {
                     yield Source.OVERVIEW;
                 }
-                yield "serviceField".equals(source) ? Source.FIELD : Source.NONE;
+                yield "fdField".equals(source) ? Source.FIELD : Source.NONE;
             }
-            case "service" -> Source.SERVICE;
+            case "fd" -> Source.SERVICE;
             case "device" -> Source.DEVICE;
             default -> Source.NONE;
         };
@@ -603,7 +603,7 @@ public class DashboardWidgetDataService {
             return "widget type is required";
         }
         return switch (widget.type()) {
-            case "stat", "line", "distribution", "service", "device" -> null;
+            case "stat", "line", "distribution", "fd", "device" -> null;
             default -> UNSUPPORTED_TYPE + widget.type();
         };
     }
@@ -692,7 +692,7 @@ public class DashboardWidgetDataService {
             // 和现有 dashboard 页一样，由前端拿配置清单一并做
             // serviceType 与 fdType 同源（都是现场设备类型分布）：校验器/预置/前端仍发 serviceType，
             // 一并渲染，别让现有卡片报 "dimension is not supported yet: serviceType"。
-            case "serviceType", "fdType" -> overview.fds().byConfig();
+            case "fdType" -> overview.fds().byConfig();
             case "alarmType" -> overview.alarms().byText();
             default -> null;
         };

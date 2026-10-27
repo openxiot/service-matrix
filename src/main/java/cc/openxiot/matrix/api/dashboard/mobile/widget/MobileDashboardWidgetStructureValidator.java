@@ -45,7 +45,7 @@ public final class MobileDashboardWidgetStructureValidator {
      * 它同样是一行，但没人要过，开不开是产品口径，不是渲染能力问题（想开就在这行加 {@code "device"}，
      * 文案跟着改）。</p>
      */
-    private static final Set<String> HALF_TYPES = Set.of("stat", "service");
+    private static final Set<String> HALF_TYPES = Set.of("stat", "fd");
 
     private MobileDashboardWidgetStructureValidator() {
     }

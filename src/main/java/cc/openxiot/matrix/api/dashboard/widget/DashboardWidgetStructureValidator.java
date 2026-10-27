@@ -45,19 +45,19 @@ public final class DashboardWidgetStructureValidator {
     /** 一张设备卡片最多显示几个属性。与服务卡同一档：卡片再大也放不下更多统计量。 */
     public static final int MAX_DEVICE_PIDS = 12;
 
-    private static final Set<String> TYPES = Set.of("stat", "line", "distribution", "device", "service");
+    private static final Set<String> TYPES = Set.of("stat", "line", "distribution", "device", "fd");
 
     private static final Set<String> STAT_METRICS = Set.of(
             "devices.total", "devices.online", "fds.total",
             "alarms.today", "alarms.window", "failures.total");
 
     private static final Set<String> DIMENSIONS = Set.of(
-            "deviceType", "serviceType", "alarmType", "failureType");
+            "deviceType", "fdType", "alarmType", "failureType");
 
     /** 需要窗口的分布维度：告警与故障都按时间区间统计，设备/服务类型是当前快照。 */
     private static final Set<String> WINDOWED_DIMENSIONS = Set.of("alarmType", "failureType");
 
-    private static final Set<String> LINE_SOURCES = Set.of("alarmCount", "serviceField");
+    private static final Set<String> LINE_SOURCES = Set.of("alarmCount", "fdField");
 
     /**
      * 目前只实现 {@code pie}。{@code bar} 与 {@code gauge} 同属 P3，所以现在提交它们也会被拒 ——
@@ -149,7 +149,7 @@ public final class DashboardWidgetStructureValidator {
             case "line" -> validateLine(config);
             case "distribution" -> validateDistribution(config);
             case "device" -> validateDevice(config);
-            case "service" -> validateService(config);
+            case "fd" -> validateFd(config);
             default -> "type must be one of " + TYPES;
         };
     }
@@ -281,7 +281,7 @@ public final class DashboardWidgetStructureValidator {
         return null;
     }
 
-    private static String validateService(Map<String, Object> config) {
+    private static String validateFd(Map<String, Object> config) {
         if (DashboardWidgetConfigs.str(config.get("fdid")) == null) {
             return "config.fdid is required";
         }

@@ -80,7 +80,7 @@ public final class WebDashboardPresetLayouts {
 
                 // ── 第二、三行：4 张 M（各 12 列），两两一行 ──
                 distribution("w_preset_device_type", "设备类型分布", "deviceType", null),
-                distribution("w_preset_fd_type", "现场设备类型分布", "serviceType", null),
+                distribution("w_preset_fd_type", "现场设备类型分布", "fdType", null),
                 distribution("w_preset_alarm_type", "告警类型分布", "alarmType", window(24)),
                 alarmLine("w_preset_alarm_curve", "告警曲线")
         );
