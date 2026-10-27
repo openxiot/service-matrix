@@ -35,7 +35,7 @@ public final class ModbusPollingTask {
      */
     public ObjectId id;
 
-    public final String serviceId;
+    public final String fdid;
 
     public final Integer pollIndex;
 
@@ -54,9 +54,9 @@ public final class ModbusPollingTask {
     /** 对账要求删除、但它正在飞：不打断这一帧，跑完不再回轮（见 {@link ModbusPollingWheel#finish}）。 */
     boolean retired;
 
-    public ModbusPollingTask(ObjectId id, String serviceId, Integer pollIndex, String did) {
+    public ModbusPollingTask(ObjectId id, String fdid, Integer pollIndex, String did) {
         this.id = id;
-        this.serviceId = serviceId;
+        this.fdid = fdid;
         this.pollIndex = pollIndex;
         this.did = did;
     }
@@ -70,7 +70,7 @@ public final class ModbusPollingTask {
      * 而权威的那个 id 在库里那一行上。</p>
      */
     public static ModbusPollingTask of(ModbusPolling poll, ObjectId id, String ownerId) {
-        ModbusPollingTask task = new ModbusPollingTask(id, poll.serviceId, poll.pollIndex, poll.did);
+        ModbusPollingTask task = new ModbusPollingTask(id, poll.fdid, poll.pollIndex, poll.did);
         task.intervalSeconds = poll.interval == null ? 0 : poll.interval;
         task.ownerId = ownerId;
         task.nextRunAt = poll.nextRunAt == null ? 0L : poll.nextRunAt.getTime();
@@ -78,7 +78,7 @@ public final class ModbusPollingTask {
     }
 
     public ModbusPollingKey key() {
-        return new ModbusPollingKey(serviceId, pollIndex);
+        return new ModbusPollingKey(fdid, pollIndex);
     }
 
     @Override

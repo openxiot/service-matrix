@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * {@link ModbusShadow} 的数据访问（Panache，实体固定落库 {@code modbus}/集合 {@code service-shadows}）。
  *
- * <p>按 {@code (serviceId, registerIndex)} 键、写入只有「不存在 insert / 已存在 replace」两条路
+ * <p>按 {@code (fdid, registerIndex)} 键、写入只有「不存在 insert / 已存在 replace」两条路
  * （与 {@code ModbusServiceLastPollingRepository} 同口径）：调用方先读影子拿到比对基准，
  * 手里的 {@code _id} 直接复用，省一次 upsert 语义的边界情况。</p>
  */
@@ -33,34 +33,34 @@ public class ModbusShadowRepository {
     ReactiveMongoClient mongoClient;
 
     private ReactiveMongoCollection<ModbusShadow> collection() {
-        return mongoClient.getDatabase("modbus").getCollection("service-shadows", ModbusShadow.class);
+        return mongoClient.getDatabase("modbus").getCollection("fd-shadows", ModbusShadow.class);
     }
 
-    /** 启动时确保 {@code (serviceId, registerIndex)} 唯一索引存在（幂等；失败仅告警，不阻断启动）。 */
+    /** 启动时确保 {@code (fdid, registerIndex)} 唯一索引存在（幂等；失败仅告警，不阻断启动）。 */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "registerIndex"), new IndexOptions().unique(true))
+                .createIndex(Indexes.ascending("fdid", "registerIndex"), new IndexOptions().unique(true))
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
 
     /** 取某只寄存器的当前值，没有则 null：既是前端要的最新值，也是下一次采集的比对基准。 */
-    public Uni<ModbusShadow> find(String serviceId, Integer registerIndex) {
-        if (serviceId == null || registerIndex == null) {
+    public Uni<ModbusShadow> find(String fdid, Integer registerIndex) {
+        if (fdid == null || registerIndex == null) {
             return Uni.createFrom().nullItem();
         }
         return collection()
-                .find(Filters.and(Filters.eq("serviceId", serviceId), Filters.eq("registerIndex", registerIndex)))
+                .find(Filters.and(Filters.eq("fdid", fdid), Filters.eq("registerIndex", registerIndex)))
                 .collect().first();
     }
 
-    /** 某个服务下所有寄存器的当前值，按寄存器序号升序。只返回**有影子**的寄存器。 */
-    public Uni<List<ModbusShadow>> listByServiceId(String serviceId) {
-        if (serviceId == null || serviceId.isBlank()) {
+    /** 某个现场设备下所有寄存器的当前值，按寄存器序号升序。只返回**有影子**的寄存器。 */
+    public Uni<List<ModbusShadow>> listByFdid(String fdid) {
+        if (fdid == null || fdid.isBlank()) {
             return Uni.createFrom().item(List.of());
         }
         return collection()
-                .find(Filters.eq("serviceId", serviceId),
+                .find(Filters.eq("fdid", fdid),
                         new FindOptions().sort(Sorts.ascending("registerIndex")))
                 .collect().asList();
     }
@@ -79,7 +79,7 @@ public class ModbusShadowRepository {
     }
 
     /**
-     * 按 {@code (serviceId, registerIndex)} **幂等写一条成功结果**（不存在插入、存在覆盖），不读先查。
+     * 按 {@code (fdid, registerIndex)} **幂等写一条成功结果**（不存在插入、存在覆盖），不读先查。
      *
      * <p>轮询成功时逐寄存器更新「当前值」用这条：一次 upsert 就够、不必每寄存器先查一次再决定
      * insert/replace（{@code _id} 也不用手工带）。**清掉故障态**（{@code lastError}/errorAt 置空）：
@@ -87,7 +87,7 @@ public class ModbusShadowRepository {
      */
     public Uni<Void> upsertValue(ModbusShadow shadow) {
         List<Bson> sets = new ArrayList<>();
-        sets.add(Updates.set("serviceId", shadow.serviceId));
+        sets.add(Updates.set("fdid", shadow.fdid));
         sets.add(Updates.set("registerIndex", shadow.registerIndex));
         sets.add(Updates.set("value", shadow.value));
         sets.add(Updates.set("recordedAt", shadow.recordedAt));
@@ -97,14 +97,14 @@ public class ModbusShadowRepository {
     }
 
     /**
-     * 按 {@code (serviceId, registerIndex)} **幂等记一次失败**（不存在插入、存在覆盖）。
+     * 按 {@code (fdid, registerIndex)} **幂等记一次失败**（不存在插入、存在覆盖）。
      *
      * <p>只 $set 故障态 {@code lastError}/errorAt，**不动 {@code value}/recordedAt**
      * —— 那两只保留「最后一次成功的采集」，前端要靠它们显示最后已知值（及它有多旧）。</p>
      */
     public Uni<Void> upsertFailure(ModbusShadow shadow) {
         List<Bson> sets = new ArrayList<>();
-        sets.add(Updates.set("serviceId", shadow.serviceId));
+        sets.add(Updates.set("fdid", shadow.fdid));
         sets.add(Updates.set("registerIndex", shadow.registerIndex));
         sets.add(Updates.set("lastError", shadow.lastError));
         sets.add(Updates.set("errorAt", shadow.errorAt));
@@ -112,7 +112,7 @@ public class ModbusShadowRepository {
     }
 
     private static Bson filterOf(ModbusShadow shadow) {
-        return Filters.and(Filters.eq("serviceId", shadow.serviceId), Filters.eq("registerIndex", shadow.registerIndex));
+        return Filters.and(Filters.eq("fdid", shadow.fdid), Filters.eq("registerIndex", shadow.registerIndex));
     }
 
     private Uni<Void> upsert(Bson filter, Bson update) {
@@ -122,12 +122,12 @@ public class ModbusShadowRepository {
     }
 
     /** 级联删除一批服务的影子（服务被删后派生状态再也收不到更新，留着只会越来越陈旧）。 */
-    public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    public Uni<Long> deleteByFdids(List<String> fdids) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
         return collection()
-                .deleteMany(Filters.in("serviceId", serviceIds))
+                .deleteMany(Filters.in("fdid", fdids))
                 .map(DeleteResult::getDeletedCount);
     }
 

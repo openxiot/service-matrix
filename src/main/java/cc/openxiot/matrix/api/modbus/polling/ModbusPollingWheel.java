@@ -34,7 +34,7 @@ public final class ModbusPollingWheel {
 
     private static final Comparator<ModbusPollingTask> ORDER = Comparator
             .comparingLong((ModbusPollingTask task) -> task.nextRunAt)
-            .thenComparing(task -> task.serviceId)
+            .thenComparing(task -> task.fdid)
             .thenComparingInt(task -> task.pollIndex);
 
     /** 等下一次到点的任务，按 {@code nextRunAt} 有序。 */

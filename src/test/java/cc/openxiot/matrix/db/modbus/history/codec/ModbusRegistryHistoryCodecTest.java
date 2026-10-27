@@ -58,7 +58,7 @@ class ModbusRegistryHistoryCodecTest {
 
     private static ModbusRegistryHistory event(Integer index, boolean failure, Double value, String message) {
         ModbusRegistryHistory e = new ModbusRegistryHistory();
-        e.serviceId = "svc-1";
+        e.fdid = "svc-1";
         e.registerIndex = index == null ? 1 : index;
         e.name = "温度";
         e.unit = "℃";

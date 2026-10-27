@@ -172,7 +172,7 @@ ModbusResponseFieldBit.alarms   : List<ModbusResponseFieldAlarm>
 **轮询一停就永久丢**。所以 `apply` 是**两段** `chain`：先并发关（三类原因一起），再并发插 ——
 不能靠 `ops` 列表的先后，`Uni.combine().all()` 是**并发**的。
 `ModbusAlarmServiceTest.supersededRowIsClosedBeforeTheWinnerIsInserted` 用 `InOrder` 钉住它，
-与 `ModbusDeviceServiceTest` 里那条 `InOrder` 同一性质：**顺序写错了不报错，只是悄悄丢告警**。
+与 `FieldDeviceServiceTest` 里那条 `InOrder` 同一性质：**顺序写错了不报错，只是悄悄丢告警**。
 
 ## 五、状态与边沿：开着的行就是状态
 
@@ -303,7 +303,7 @@ ModbusResponseFieldBit.alarms   : List<ModbusResponseFieldAlarm>
 * 失败口径与轮询任务、影子同壳：写入路径那边只记日志、不让一次定义维护跟着失败；启动那次自己兜住。
 
 **删除走的是另一条路**：服务或依赖设备被删除时，`ModbusHistoryService.purge` 把影子、历史、故障
-**与告警**一起 `deleteByServiceIds` 真删，而不是按 `DEFINITION` 关掉。关掉的语义是「这条告警的原因
+**与告警**一起 `deleteByDeviceIds` 真删，而不是按 `DEFINITION` 关掉。关掉的语义是「这条告警的原因
 是定义不再覆盖它」，那是一条给人看的历史，得留着；而服务整个没了的时候，那条告警再也没人能处理
 （页面按空间的子树查，查不到它）、也没人需要「当时为什么报」—— 它就是存储垃圾。
 真正该保留的「这个点位历史上报过什么」在历史与故障记录里另有其份。
@@ -433,7 +433,7 @@ public Boolean handled;      public Person handledBy;
 // —— 触发时的样本 ——
 public Object  sample;       // 那一刻的值（Number 或 description），开着期间不刷新
 // —— 内部，不下发 ——
-public String  openKey;      // 未恢复时才有：serviceId#pollIndex#field
+public String  openKey;      // 未恢复时才有：fdId#pollIndex#field
 public String  ruleId;       // 触发这条的是哪条规则（配置里那条规则的 id）
 ```
 
@@ -558,10 +558,10 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
 
 ### 空间 → 服务清单
 
-`subtreeServiceIds` 从 `ModbusHistoryResource` **下沉**到 `ModbusDeviceService`（它本就是
+`subtreeFdIds` 从 `ModbusHistoryResource` **下沉**到 `FieldDeviceService`（它本就是
 「空间 → 服务」），故障清单与告警清单共用。选下沉而不是复制那 15 行：两处的口径必须一致，
 复制之后「一处改了另一处忘了」不会报错，只会让两个页面的可见范围悄悄不同
-（`SpaceService` 只依赖仓储与账号查询，注入进 `ModbusDeviceService` 不成环）。
+（`SpaceService` 只依赖仓储与账号查询，注入进 `FieldDeviceService` 不成环）。
 
 ## 十、不做防抖的代价（触发线）
 
@@ -630,15 +630,15 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
   空清单给空结果而不是报错；`at` 缺失按 0 算落最后；**合并不按 `open` / `handled` 分堆**
   （那是筛选参数的职责，不是排序的 —— 列表要的是时间线）。
   只测 `merge` 这一个静态函数：它是那个「逐服务截一刀再合并仍等于全局前 `limit` 条」论证的落点。
-* `ModbusDeviceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
-  告警评估失败**不改写**一次已成功采集的响应，也不变成一条故障记录。
-* `ModbusDeviceValidatorTest`（告警那一段 15 例）：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
+* `FieldDeviceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到 **同一份**采样（`InOrder`）；
+  告警评估失败 **不改写**一次已成功采集的响应，也不变成一条故障记录。
+* `FieldDeviceValidatorTest`（告警那一段 15 例）：逐条拒绝（未知 `compare`、未知 `level`、空 `text`、
   超长 `text`、`string` 字段配告警、`value-list` 字段配 `>`、`=` 缺 `state`、`state` 不在描述里、
   两个都给、都不给、位上配 `>` 或 `0.5`、写方法上配告警）+ `enabled != true` 时全部放行；
   一组规则才有的：合法的一组（含方向相反的低侧/高侧）、`id` 缺失 / 空白 / 超长 / 组内重复、
   **`id` 的唯一性只在同一位内要求**（位与父字段各是一组）、条数上限 8（8 条过、9 条拒）、
   数组里的空元素照拒、停用的规则既不查 `id` 也不占名额。
-* `ModbusDeviceCodecTest`：示例体收进 `alarms` 数组（encode∘decode 稳定性、数组原序保持、
+* `FieldDeviceCodecTest`：示例体收进 `alarms` 数组（encode∘decode 稳定性、数组原序保持、
   `id` 保真）+ 「没配就不出键」+ 空对象 / **空数组** / 「元素全是空对象」都读作「没配」。
 * `ModbusAlarmCodecTest`（9 例）：全字段行；**`openKey` 绝不出现**（行内带着它、出去没有它）；
   `null 不出键`；`=` 的取值表状态（有 `state` 无 `threshold`）；字符串样本原样出去；
@@ -803,7 +803,7 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     原话不成立正是因为多了一件事，译文不提这件事就还是假话），以及方案列过的 `汇总` /
     `告警配置` 实测没被任何页面用到，故未加。
 * **第七步落地：查询服务与接口**（`api/modbus/alarm/ModbusAlarmQueryService` +
-  `ModbusAlarmResource`；`ModbusAlarmService.handle`；`subtreeServiceIds` 下沉）。
+  `ModbusAlarmResource`；`ModbusAlarmService.handle`；`subtreeFdIds` 下沉）。
   几处值得记下的口径：
   * **单服务那条路只是批量那条路的一个元素**：`alarms(...)` 直接转调
     `alarmsOfServices(List.of(serviceId), …)` —— 排序与截断的口径只有一份，日后不会改漏一边。
@@ -813,9 +813,9 @@ public String  ruleId;       // 触发这条的是哪条规则（配置里那条
     行不在了才 not found。那一次读就是为了分辨两种解释 —— 报错会为一件恰好如愿的事弹红字。
   * **`/handle` 的非法 id 在进库之前先挡**（`ObjectId.isValid`）：Panache 在构造 `ObjectId` 时就抛
     普通 `RuntimeException`，落不到 `IllegalArgumentException` 的兜底里。
-  * **归属判据与列表查询共用 `subtreeServiceIds`**：于是「列表里看得到的就能点」恰好成立，
+  * **归属判据与列表查询共用 `subtreeFdIds`**：于是「列表里看得到的就能点」恰好成立，
     而不是两处各写一份、日后慢慢分叉。
-  * **`subtreeServiceIds` 选了下沉而不是复制**：两处口径必须一致，复制之后分叉不会报错，
+  * **`subtreeFdIds` 选了下沉而不是复制**：两处口径必须一致，复制之后分叉不会报错，
     只会让两个页面的可见范围悄悄不同。
   * 单测：`ModbusAlarmQueryServiceTest`（7）+ `ModbusAlarmServiceTest` 补 6 例（`handle`）。
     全量 511 例中 510 绿；唯一红色的仍是 `SpaceResourceTest`（`@QuarkusTest`、要连 Mongo，本机读超时）。

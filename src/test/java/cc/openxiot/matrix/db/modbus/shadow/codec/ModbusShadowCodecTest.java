@@ -40,7 +40,7 @@ class ModbusShadowCodecTest {
 
     private static ModbusShadow shadow(Object value) {
         ModbusShadow s = new ModbusShadow();
-        s.serviceId = "svc-1";
+        s.fdid = "svc-1";
         s.registerIndex = 1;
         s.value = value == null ? 23.5 : value;
         s.recordedAt = AT;

@@ -4,12 +4,12 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -37,12 +37,12 @@ class ModbusShadowServiceTest {
     private static final String SERVICE_ID = "65f0c0ffee0123456789abcd";
 
     private ModbusShadowService shadowService;
-    private ModbusDeviceRepository repo;
+    private FieldDeviceRepository repo;
     private ModbusShadowRepository registryShadowRepo;
 
     @BeforeEach
     void setUp() {
-        repo = mock(ModbusDeviceRepository.class);
+        repo = mock(FieldDeviceRepository.class);
         registryShadowRepo = mock(ModbusShadowRepository.class);
         shadowService = new ModbusShadowService();
         shadowService.repo = repo;
@@ -53,7 +53,7 @@ class ModbusShadowServiceTest {
     void registerCacheMergesRegistersIntoGrid() {
         long t0 = 1_700_000_000_000L;
         givenService(List.of(readFunction(1, "进水温度"), readFunction(2, "出水温度")));
-        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
+        when(registryShadowRepo.listByFdid(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
                 shadow(1, 61.5, new Date(t0), null, null),
                 shadow(2, 35.0, new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
 
@@ -84,7 +84,7 @@ class ModbusShadowServiceTest {
 
     @Test
     void registerCacheWithoutSnapshotReturnsEmpty() {
-        ModbusDevice svc = service();
+        FieldDevice svc = fd();
         svc.polls = List.of(readFunction(1, "进水温度"));
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
@@ -109,12 +109,12 @@ class ModbusShadowServiceTest {
         String id2 = "65f0c0ffee0123456789abcf";
         givenService(List.of(readFunction(1, "进水温度")));
         // 第二个服务：同样的点表，但从未被调用（no-data）
-        ModbusDevice svc2 = service();
+        FieldDevice svc2 = fd();
         svc2.id = new ObjectId(id2);
         when(repo.findById(id2)).thenReturn(Uni.createFrom().item(svc2));
-        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
+        when(registryShadowRepo.listByFdid(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
                 shadow(1, 61.5, new Date(1_700_000_000_000L), null, null))));
-        when(registryShadowRepo.listByServiceId(id2)).thenReturn(Uni.createFrom().item(List.of()));
+        when(registryShadowRepo.listByFdid(id2)).thenReturn(Uni.createFrom().item(List.of()));
 
         Map<String, List<JsonObject>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, id2)).await().indefinitely();
@@ -131,7 +131,7 @@ class ModbusShadowServiceTest {
         String bogus = "dea1dbeef000000000000001";
         givenService(List.of(readFunction(1, "进水温度")));
         when(repo.findById(bogus)).thenReturn(Uni.createFrom().nullItem());
-        when(registryShadowRepo.listByServiceId(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
+        when(registryShadowRepo.listByFdid(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
 
         Map<String, List<JsonObject>> grid =
                 shadowService.registerCaches(List.of(SERVICE_ID, bogus)).await().indefinitely();
@@ -144,16 +144,16 @@ class ModbusShadowServiceTest {
     // ---- 夹具 ----
 
     private void givenService(List<ModbusPoll> polls) {
-        ModbusDevice svc = service();
+        FieldDevice svc = fd();
         svc.polls = polls;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
     }
 
-    private static ModbusDevice service() {
-        ModbusDevice svc = new ModbusDevice();
-        svc.id = new ObjectId(SERVICE_ID);
-        svc.configSnapshot = registerConfig();
-        return svc;
+    private static FieldDevice fd() {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(SERVICE_ID);
+        fd.configSnapshot = registerConfig();
+        return fd;
     }
 
     // 寄存器点表序 index 是「影子身份」，与读方法序无关：在这里每个寄存器一个 index，方法与
@@ -196,7 +196,7 @@ class ModbusShadowServiceTest {
     private static ModbusShadow shadow(int registerIndex, Object value,
                                               Date recordedAt, String lastError, Date errorAt) {
         ModbusShadow sh = new ModbusShadow();
-        sh.serviceId = SERVICE_ID;
+        sh.fdid = SERVICE_ID;
         sh.registerIndex = registerIndex;
         sh.value = value;
         sh.recordedAt = recordedAt;

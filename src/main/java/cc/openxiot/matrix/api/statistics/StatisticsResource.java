@@ -57,9 +57,9 @@ public class StatisticsResource extends AbstractResource {
 
     /**
      * 某个空间（含子空间）的看板数字：
-     * {@code {from, to, devices, services, alarms, failures}}。
+     * {@code {from, to, devices, fds, alarms, failures}}。
      *
-     * <p>{@code devices} 的 {@code byType} 按 URN 第 4 段分组、{@code services} 的 {@code byConfig}
+     * <p>{@code devices} 的 {@code byType} 按 URN 第 4 段分组、{@code fds} 的 {@code byConfig}
      * 按所配点表分组、{@code alarms} 的 {@code byText} 按告警文本分组，三份都按**条数降序、同数按名称升序**
      * 排好（同 {@code ModbusAlarmCodec.encodeSummary}），前端拿到就画。</p>
      *

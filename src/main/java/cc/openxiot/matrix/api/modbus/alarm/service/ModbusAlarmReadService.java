@@ -21,7 +21,7 @@ import java.util.List;
  * 是它的核心约束，混进查询代码会被淹掉；这边只管读，调用方只有 Resource。</p>
  *
  * <p><b>空间级查询是「逐服务各查一次再内存归并」</b>，与故障清单同口径：告警集合的索引是
- * {@code (serviceId, pollIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
+ * {@code (fdid, pollIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
  * 只有十几条。多取一条（{@code limit + 1}）就足以判出「还有更早的没取回来」，论证见
  * {@link #alarmsOfServices}。</p>
  *
@@ -79,7 +79,7 @@ public class ModbusAlarmReadService {
      * @param handled 同上，针对「是否已处理」
      */
     public Uni<AlarmResult> alarms(
-            String serviceId,
+            String fdid,
             Integer pollIndex,
             String field,
             String level,
@@ -89,27 +89,27 @@ public class ModbusAlarmReadService {
             Date to,
             Integer limit
     ) {
-        if (isBlank(serviceId)) {
-            return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
+        if (isBlank(fdid)) {
+            return Uni.createFrom().failure(new IllegalArgumentException("fdid is required"));
         }
         // 单服务只是批量那条路的一个元素：排序 / 截断的口径只有一份，免得两条路各写一遍、日后改漏一边
-        return alarmsOfServices(List.of(serviceId), pollIndex, field, level, open, handled,
+        return alarmsOfServices(List.of(fdid), pollIndex, field, level, open, handled,
                 from, to, limit);
     }
 
     /**
      * **一批服务**在同一区间上的告警，合并成一条时间倒序的清单
-     * （{@code ModbusAlarmResource.many} 不传 {@code serviceId} 时走这里）。
+     * （{@code ModbusAlarmResource.many} 不传 {@code fdid} 时走这里）。
      *
      * <p><b>逐服务多取一条（{@code limit + 1}）不影响全局结果</b>：全局前 {@code limit} 条必然落在
      * 「该服务的前 {@code limit + 1} 条」里，所以按服务先截一刀再合并，得到的仍是真正的全局前
      * {@code limit} 条；{@code truncated} 也据此判 —— 合并后仍多于 {@code limit}，
      * 就说明还有更早的没取回来（与 {@code ModbusPollingHistoryService.failuresOfServices} 同一论证）。</p>
      *
-     * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
+     * @param fdids 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */
     public Uni<AlarmResult> alarmsOfServices(
-            List<String> serviceIds,
+            List<String> fdids,
             Integer pollIndex,
             String field,
             String level,
@@ -128,12 +128,12 @@ public class ModbusAlarmReadService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         int size = normalizeLimit(limit);
-        if (serviceIds == null || serviceIds.isEmpty()) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(new AlarmResult(from, end, size, List.of(), false));
         }
         RangeFilter filter = new RangeFilter(pollIndex, blankToNull(field), blankToNull(level),
                 open, handled, from, end);
-        List<Uni<List<ModbusAlarm>>> queries = serviceIds.stream()
+        List<Uni<List<ModbusAlarm>>> queries = fdids.stream()
                 .map(id -> alarmRepo.findRange(id, filter, size + 1))
                 .toList();
 

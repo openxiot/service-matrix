@@ -9,7 +9,7 @@ import java.util.Objects;
 /**
  * 一次采集「要不要落库、落哪些字段」的判定（规则见 Modbus-History.md 第二节）。
  *
- * <p>纯函数、无状态、不碰数据库：与 {@code ModbusDeviceValidator} 同风格 ——
+ * <p>纯函数、无状态、不碰数据库：与 {@code FieldDeviceValidator} 同风格 ——
  * 这是这套规则唯一能跑单测的地方（{@code @QuarkusTest} 要连 Mongo）。</p>
  *
  * <p>三条规则，**逐字段**判定：</p>

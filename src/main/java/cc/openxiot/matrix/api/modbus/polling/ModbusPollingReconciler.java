@@ -3,8 +3,8 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.space.SpaceRepository;
@@ -33,15 +33,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * （见 Modbus-Service-Poller.md 第三节）。
  *
  * <p>任务表是派生数据：口径完全由定义决定（{@code ModbusPollingPlan.shouldPoll}），随时可以从
- * {@code modbus.services} 全量重建。所以对账做成**幂等的重算**，不做增量事件 ——
+ * {@code modbus.devices} 全量重建。所以对账做成**幂等的重算**，不做增量事件 ——
  * 丢了事件、改错了库、poller 停机几天，都能靠下一次对账修回来。</p>
  *
  * <h2>三种时机，同一个实现</h2>
  *
  * <table border="1">
  *   <tr><th>时机</th><th>挂在哪</th><th>做到哪一步</th></tr>
- *   <tr><td>写入路径</td><td>{@code ModbusDeviceService} 的 create / update / delete</td>
- *       <td>{@link #applyService} / {@link #applyRemoval}：**只写库**，再把内存表置脏</td></tr>
+ *   <tr><td>写入路径</td><td>{@code FieldDeviceService} 的 create / update / delete</td>
+ *       <td>{@link #applyFd} / {@link #applyRemoval}：**只写库**，再把内存表置脏</td></tr>
  *   <tr><td>启动</td><td>调度器的 {@code StartupEvent}（仅 {@code modbus.poll.enabled=true}）</td>
  *       <td>{@link #reconcileAll}：库 + 内存表</td></tr>
  *   <tr><td>周期</td><td>调度循环的唤醒里按 {@code reconcile-seconds} 计时，或内存表被置脏</td>
@@ -70,7 +70,7 @@ public class ModbusPollingReconciler {
     private static final int MAX_CACHED_SPACES = 1000;
 
     @Inject
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository fdRepo;
 
     @Inject
     ModbusPollingRepository pollRepo;
@@ -102,7 +102,7 @@ public class ModbusPollingReconciler {
     /** 上一次全量对账的时刻（周期兜底用它计时）。 */
     private final AtomicLong lastReconciledAt = new AtomicLong();
 
-    /** 建索引开关，与点表 / 服务 / 历史共用同一个（见 ModbusDeviceService）。 */
+    /** 建索引开关，与点表 / 服务 / 历史共用同一个（见 FieldDeviceService）。 */
     @ConfigProperty(name = "modbus.index.enabled", defaultValue = "true")
     boolean indexEnabled;
 
@@ -136,35 +136,35 @@ public class ModbusPollingReconciler {
     /**
      * 写入路径：某个服务的定义刚被创建 / 修改，把任务表对齐到它（**只写库**，内存表置脏）。
      *
-     * <p>调用方的约定（{@code ModbusDeviceService}）：失败只记日志，不让定义维护的操作跟着失败。</p>
+     * <p>调用方的约定（{@code FieldDeviceService}）：失败只记日志，不让定义维护的操作跟着失败。</p>
      */
-    public Uni<Void> applyService(ModbusDevice service) {
-        if (service == null || service.id == null) {
+    public Uni<Void> applyFd(FieldDevice fd) {
+        if (fd == null || fd.id == null) {
             return Uni.createFrom().voidItem();
         }
-        String serviceId = service.id.toHexString();
+        String fdid = fd.id.toHexString();
         long now = System.currentTimeMillis();
-        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(service, didOf(service), now,
+        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(fd, didOf(fd), now,
                 jitterPercent, ThreadLocalRandom.current());
-        return pollRepo.findByServiceId(serviceId)
-                .chain(existing -> sequence(taskWrites(serviceId, planned, existing)))
+        return pollRepo.findByFdid(fdid)
+                .chain(existing -> sequence(taskWrites(fdid, planned, existing)))
                 .invoke(() -> dirty.set(true))
                 .replaceWithVoid();
     }
 
     /**
-     * 删除路径：服务（或依赖设备）被删掉，任务跟着删（**只写库**，内存表置脏）。
+     * 删除路径：现场设备（或依赖设备）被删掉，任务跟着删（**只写库**，内存表置脏）。
      *
      * <p>内存里那几个任务由下一次全量对账摘掉 —— 磁盘上的表已经不含它们了。</p>
      */
-    public Uni<Void> applyRemoval(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    public Uni<Void> applyRemoval(List<String> deviceIds) {
+        if (deviceIds == null || deviceIds.isEmpty()) {
             return Uni.createFrom().voidItem();
         }
-        return pollRepo.deleteByServiceIds(serviceIds)
+        return pollRepo.deleteByDeviceIds(deviceIds)
                 .invoke(count -> {
                     if (count != null && count > 0) {
-                        logger.infov("modbus poll tasks removed, services: {0}, tasks: {1}", serviceIds, count);
+                        logger.infov("modbus poll tasks removed, field devices: {0}, tasks: {1}", deviceIds, count);
                     }
                 })
                 .invoke(() -> dirty.set(true))
@@ -190,21 +190,21 @@ public class ModbusPollingReconciler {
      */
     public Uni<Void> reconcileAll() {
         long now = System.currentTimeMillis();
-        return serviceRepo.listAll()
-                .chain(services -> pollRepo.listAll()
-                        .chain(polls -> reconcileAll(services, polls, now)))
+        return fdRepo.listAll()
+                .chain(fds -> pollRepo.listAll()
+                        .chain(polls -> reconcileAll(fds, polls, now)))
                 .invoke(() -> lastReconciledAt.set(System.currentTimeMillis()));
     }
 
     /** 影子全量扫一遍（启动用）：逐个服务按当前定义对账。 */
     private Uni<Void> sweepShadows() {
-        return serviceRepo.listAll().chain(services -> {
-            List<Uni<Void>> steps = new ArrayList<>(services.size());
-            for (ModbusDevice service : services) {
-                steps.add(reconcileShadows(service)
+        return fdRepo.listAll().chain(fds -> {
+            List<Uni<Void>> steps = new ArrayList<>(fds.size());
+            for (FieldDevice fd : fds) {
+                steps.add(reconcileShadows(fd)
                         .onFailure().invoke(e -> logger.warnv(
-                                "sweep modbus shadows failed, service: {0}, error: {1}",
-                                service == null ? null : service.id, e.getMessage()))
+                                "sweep modbus shadows failed, fd: {0}, error: {1}",
+                                fd == null ? null : fd.id, e.getMessage()))
                         .onFailure().recoverWithNull());
             }
             return sequence(steps);
@@ -218,13 +218,13 @@ public class ModbusPollingReconciler {
      * <p>只在**定义变更的写入路径 + 启动**做，不进周期对账：那要扫「服务 × 影子」，
      * 而影子的陈旧只可能来自定义变更。</p>
      */
-    public Uni<Void> reconcileShadows(ModbusDevice service) {
-        if (service == null || service.id == null) {
+    public Uni<Void> reconcileShadows(FieldDevice fd) {
+        if (fd == null || fd.id == null) {
             return Uni.createFrom().voidItem();
         }
-        String serviceId = service.id.toHexString();
-        return registryShadowRepo.listByServiceId(serviceId).chain(shadows -> {
-            List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
+        String fdid = fd.id.toHexString();
+        return registryShadowRepo.listByFdid(fdid).chain(shadows -> {
+            List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(fd, shadows);
             if (fixes.isEmpty()) {
                 return Uni.createFrom().voidItem();
             }
@@ -240,46 +240,46 @@ public class ModbusPollingReconciler {
             return registryShadowRepo.deleteByIds(orphans)
                     .invoke(count -> logger.infov(
                             "modbus shadows reconciled, service: {0}, orphan registers: {1}",
-                            serviceId, count))
+                            fdid, count))
                     .replaceWithVoid();
         });
     }
 
     // ===== 全量对账 =====
 
-    private Uni<Void> reconcileAll(List<ModbusDevice> services, List<ModbusPolling> polls, long now) {
-        Set<String> liveServiceIds = new HashSet<>();
-        for (ModbusDevice service : services) {
-            if (service != null && service.id != null) {
-                liveServiceIds.add(service.id.toHexString());
+    private Uni<Void> reconcileAll(List<FieldDevice> fds, List<ModbusPolling> polls, long now) {
+        Set<String> liveFdids = new HashSet<>();
+        for (FieldDevice fd : fds) {
+            if (fd != null && fd.id != null) {
+                liveFdids.add(fd.id.toHexString());
             }
         }
 
         Set<ModbusPollingKey> plannedKeys = new HashSet<>();
         List<Uni<Void>> steps = new ArrayList<>();
-        for (ModbusDevice service : services) {
-            if (service == null || service.id == null) {
+        for (FieldDevice fd : fds) {
+            if (fd == null || fd.id == null) {
                 continue;
             }
             // 单个服务对账失败（定义坏了、空间查不到）不该让别的服务跟着不跑 —— 各自兜住
-            steps.add(reconcileService(service, polls, plannedKeys, now)
+            steps.add(reconcileFd(fd, polls, plannedKeys, now)
                     .onFailure().invoke(e -> logger.warnv(
-                            "reconcile modbus polls failed, service: {0}, error: {1}",
-                            service.id, e.getMessage()))
+                            "reconcile modbus polls failed, field device: {0}, error: {1}",
+                            fd.id, e.getMessage()))
                     .onFailure().recoverWithNull());
         }
 
-        // 服务已经不在了的任务（poller 停机期间被删的、上次对账崩在中途的）：一起收掉
-        List<String> deadServiceIds = polls.stream()
-                .map(poll -> poll.serviceId)
-                .filter(id -> id == null || !liveServiceIds.contains(id))
+        // 现场服务已经不在了的任务（poller 停机期间被删的、上次对账崩在中途的）：一起收掉
+        List<String> deadFdids = polls.stream()
+                .map(poll -> poll.fdid)
+                .filter(id -> id == null || !liveFdids.contains(id))
                 .distinct()
                 .toList();
-        if (!deadServiceIds.isEmpty()) {
-            steps.add(pollRepo.deleteByServiceIds(deadServiceIds)
+        if (!deadFdids.isEmpty()) {
+            steps.add(pollRepo.deleteByDeviceIds(deadFdids)
                     .invoke(count -> logger.infov(
-                            "modbus poll tasks removed with their services: {0}, tasks: {1}",
-                            deadServiceIds, count))
+                            "modbus poll tasks removed with their field devices: {0}, tasks: {1}",
+                            deadFdids, count))
                     .replaceWithVoid());
         }
 
@@ -288,27 +288,27 @@ public class ModbusPollingReconciler {
         return sequence(steps);
     }
 
-    private Uni<Void> reconcileService(ModbusDevice service, List<ModbusPolling> polls,
-                                       Set<ModbusPollingKey> plannedKeys, long now) {
-        String serviceId = service.id.toHexString();
-        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(service, didOf(service), now,
+    private Uni<Void> reconcileFd(FieldDevice fd, List<ModbusPolling> polls,
+                                  Set<ModbusPollingKey> plannedKeys, long now) {
+        String fdid = fd.id.toHexString();
+        List<ModbusPolling> planned = ModbusPollingPlan.tasksOf(fd, didOf(fd), now,
                 jitterPercent, ThreadLocalRandom.current());
         List<ModbusPolling> existing = polls.stream()
-                .filter(poll -> serviceId.equals(poll.serviceId))
+                .filter(poll -> fdid.equals(poll.fdid))
                 .toList();
 
-        return resolveOwnerId(service).chain(owner -> {
+        return resolveOwnerId(fd).chain(owner -> {
             String ownerId = owner.isEmpty() ? null : owner;
             if (ownerId == null && !planned.isEmpty()) {
                 // 不抛异常：把循环带停的代价比这条任务跑不了大得多。任务照样入表，
                 // 调度器派发时会因为归属为空而记一次失败（lastError 里能看到原因）
                 logger.warnv("modbus poll task has no owner space, service: {0}, did: {1}",
-                        serviceId, didOf(service));
+                        fdid, didOf(fd));
             }
-            return sequence(taskWrites(serviceId, planned, existing)).chain(() -> {
+            return sequence(taskWrites(fdid, planned, existing)).chain(() -> {
                 List<Uni<Void>> offers = new ArrayList<>(planned.size());
                 for (ModbusPolling task : planned) {
-                    ModbusPollingKey key = new ModbusPollingKey(serviceId, task.pollIndex);
+                    ModbusPollingKey key = new ModbusPollingKey(fdid, task.pollIndex);
                     plannedKeys.add(key);
                     ModbusPolling row = rowOf(existing, task.pollIndex);
                     // id 以库里的那一行为准：计划对象上的 id 只在「这一轮要插入」时才等于落库后的 _id。
@@ -338,7 +338,7 @@ public class ModbusPollingReconciler {
      * 3600 秒时，任务按旧时刻再跑一次、然后按新周期排 —— 比「改完周期立刻重排」更不容易出意外
      * （重排可能把一次采集顶到前面去，RS485 上就是多一帧）。</p>
      */
-    private List<Uni<Void>> taskWrites(String serviceId, List<ModbusPolling> planned, List<ModbusPolling> existing) {
+    private List<Uni<Void>> taskWrites(String fdid, List<ModbusPolling> planned, List<ModbusPolling> existing) {
         List<Uni<Void>> writes = new ArrayList<>();
         Set<Integer> plannedIndexes = new HashSet<>();
         for (ModbusPolling task : planned) {
@@ -355,10 +355,10 @@ public class ModbusPollingReconciler {
                 .filter(index -> index != null && !plannedIndexes.contains(index))
                 .toList();
         if (!removed.isEmpty()) {
-            writes.add(pollRepo.deleteByPollIndexes(serviceId, removed)
+            writes.add(pollRepo.deleteByPollIndexes(fdid, removed)
                     .invoke(count -> logger.infov(
                             "modbus poll tasks removed, service: {0}, functions: {1}, tasks: {2}",
-                            serviceId, removed, count))
+                            fdid, removed, count))
                     .replaceWithVoid());
         }
         return writes;
@@ -386,8 +386,8 @@ public class ModbusPollingReconciler {
      * <p>解析结果按空间 id 缓存（{@code rootBySpace}）：空间几乎不动，一次对账解析一次就够，
      * 不必每次采集都查一遍空间表。</p>
      */
-    private Uni<String> resolveOwnerId(ModbusDevice service) {
-        SpaceOn space = service.device == null ? null : service.device.space;
+    private Uni<String> resolveOwnerId(FieldDevice fd) {
+        SpaceOn space = fd.device == null ? null : fd.device.space;
         String spaceId = space == null ? null : space.spaceId;
         String fallback = space == null || space.rootId == null ? "" : space.rootId;
         if (spaceId == null || spaceId.isBlank()) {
@@ -420,8 +420,8 @@ public class ModbusPollingReconciler {
 
     // ===== 内部 =====
 
-    private static String didOf(ModbusDevice service) {
-        return service.device == null ? null : service.device.did;
+    private static String didOf(FieldDevice fd) {
+        return fd.device == null ? null : fd.device.did;
     }
 
     private static ModbusPolling rowOf(List<ModbusPolling> polls, Integer pollIndex) {

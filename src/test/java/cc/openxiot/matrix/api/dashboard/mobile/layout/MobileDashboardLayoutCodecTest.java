@@ -48,7 +48,7 @@ class MobileDashboardLayoutCodecTest {
         MobileDashboardLayoutEntity layout = new MobileDashboardLayoutEntity();
         layout.spaceId = "s1";
         layout.version = 0L;
-        MobileDashboardWidget w = card("w1", "service", "FULL", config("serviceId", "s1"));
+        MobileDashboardWidget w = card("w1", "service", "FULL", config("fdid", "s1"));
         w.title = "我的服务";
         w.titleKey = "dashboard.service.title";
         layout.widgets = List.of(w);

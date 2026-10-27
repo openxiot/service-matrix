@@ -23,7 +23,7 @@ import java.util.function.Function;
  * 告警行有**逐行动作**（点「处理」），前端得知道点的是哪一条。</p>
  *
  * <p>{@code openKey} 是并发护栏用的内部字段，**绝不下发**（与密码一类的道理不同：
- * 它本身不敏感，但它把 {@code serviceId#pollIndex#field} 拼成主键的形态泄漏成接口契约，
+ * 它本身不敏感，但它把 {@code fdid#pollIndex#field} 拼成主键的形态泄漏成接口契约，
  * 以后就改不动了）。「是否已恢复」由 {@code recoveredAt} 表达，那才是对外的语义。</p>
  *
  * <p>{@code text} / {@code state} / {@code unit} / {@code field} 都是**数据**
@@ -42,10 +42,10 @@ public final class ModbusAlarmCodec {
         if (alarm.id != null) {
             o.put("id", alarm.id.toHexString());
         }
-        // 每条都带 serviceId：空间级查询（不传 serviceId）回来的清单里混着多个服务的告警，
+        // 每条都带 fdid：空间级查询（不传 fdid）回来的清单里混着多个服务的告警，
         // 前端得靠它认领归属。单服务查询时它与顶层那个重复，但不值得为此分两套编码。
-        if (alarm.serviceId != null) {
-            o.put("serviceId", alarm.serviceId);
+        if (alarm.fdid != null) {
+            o.put("fdid", alarm.fdid);
         }
         if (alarm.pollIndex != null) {
             o.put("pollIndex", alarm.pollIndex);

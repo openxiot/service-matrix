@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import io.quarkus.runtime.ShutdownEvent;
@@ -39,7 +39,7 @@ import java.util.random.RandomGenerator;
  * <ul>
  *   <li><b>调度线程</b>：{@link ScheduledExecutorService} 单线程，{@code scheduleAtFixedRate} 唤醒。
  *       它独占**内存时间轮**（{@link ModbusPollingWheel} 不加锁）与**任务对象的全部字段**——
- *       工作线程只读 {@code ownerId} / {@code serviceId} / {@code pollIndex}，
+ *       工作线程只读 {@code ownerId} / {@code fdid} / {@code pollIndex}，
  *       算好的下一次时刻**回填到调度线程**，不直接改时间轮。</li>
  *   <li><b>工作线程池</b>：{@code modbus.poll.concurrency} 个，池大小即并发上限。
  *       时间轮的 {@code pump} 也按同一个数限流，所以池里不会排队。</li>
@@ -73,7 +73,7 @@ public class ModbusPollingScheduler {
     ModbusPollingBaselines baselines;
 
     @Inject
-    ModbusDeviceService serviceService;
+    FieldDeviceService fdService;
 
     @Inject
     ModbusPollingRepository pollRepo;
@@ -299,8 +299,8 @@ public class ModbusPollingScheduler {
             throw ModbusInvokeException.of(ModbusFailureType.CONFIG_ERROR,
                     "owner space is unknown for poll task, did=" + task.did);
         }
-        JsonObject values = serviceService
-                .invokePolled(task.ownerId, task.serviceId, task.pollIndex, baselines)
+        JsonObject values = fdService
+                .invokePolled(task.ownerId, task.fdid, task.pollIndex, baselines)
                 .ifNoItem().after(Duration.ofSeconds(invokeTimeoutSeconds))
                 .failWith(() -> ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE,
                         "poll invoke timeout after " + invokeTimeoutSeconds + "s, did=" + task.did))

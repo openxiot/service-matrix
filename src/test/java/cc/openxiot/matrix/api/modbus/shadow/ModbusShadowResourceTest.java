@@ -12,9 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Modbus 影子（寄存器缓存网格）接口的空间口径：路径上的 {@code spaceId} 是鉴权锚点，
- * 查询要该空间的**成员**（与 {@code ModbusDeviceResource} / {@code DeviceResource} 同口径）。
+ * 查询要该空间的**成员**（与 {@code FieldDeviceResource} / {@code DeviceResource} 同口径）。
  *
  * <p>全部走 {@code @InjectMock}，不连 Mongo。</p>
  */
@@ -45,7 +45,7 @@ class ModbusShadowResourceTest {
     ModbusShadowService shadowService;
 
     @InjectMock
-    ModbusDeviceService service;
+    FieldDeviceService fdService;
 
     @InjectMock
     OrgAccessService orgAccessService;
@@ -92,16 +92,16 @@ class ModbusShadowResourceTest {
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void getShadows_withServiceIds_returnsGrid() {
+    void getShadows_withFdids_returnsGrid() {
         allowSpaceMember();
         when(shadowService.registerCaches(List.of(SVC1, SVC2))).thenReturn(Uni.createFrom().item(grid()));
 
         given()
-                .queryParam("serviceIds", SVC1 + "," + SVC2)
+                .queryParam("fdids", SVC1 + "," + SVC2)
                 .when().get("/matrix/v1/modbus/shadows/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.shadows['" + SVC1 + "'].serviceId", equalTo(SVC1))
+                .body("data.shadows['" + SVC1 + "'].fdid", equalTo(SVC1))
                 .body("data.shadows['" + SVC1 + "'].registers.size()", equalTo(2))
                 .body("data.shadows['" + SVC1 + "'].registers[0].name", equalTo("进水温度"))
                 .body("data.shadows['" + SVC1 + "'].registers[0].value", equalTo(61.5f))
@@ -109,25 +109,25 @@ class ModbusShadowResourceTest {
                 .body("data.shadows['" + SVC1 + "'].registers[1].status", equalTo("no-data"));
 
         verify(shadowService).registerCaches(List.of(SVC1, SVC2));
-        verify(service, never()).listBySpaceId(any());
+        verify(fdService, never()).listBySpaceId(any());
     }
 
     @Test
     @TestSecurity(user = "tester", roles = {OxRole.USER})
-    void getShadows_noServiceIds_resolvesAllBySpace() {
+    void getShadows_noFdids_resolvesAllBySpace() {
         allowSpaceMember();
-        ModbusDevice s = new ModbusDevice();
-        s.id = new ObjectId(SVC1);
-        when(service.listBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(s)));
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(SVC1);
+        when(fdService.listBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(fd)));
         when(shadowService.registerCaches(List.of(SVC1))).thenReturn(Uni.createFrom().item(grid()));
 
         given()
                 .when().get("/matrix/v1/modbus/shadows/{spaceId}", SPACE_ID)
                 .then().statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.shadows['" + SVC1 + "'].serviceId", equalTo(SVC1));
+                .body("data.shadows['" + SVC1 + "'].fdid", equalTo(SVC1));
 
-        verify(service).listBySpaceId(SPACE_ID);
+        verify(fdService).listBySpaceId(SPACE_ID);
         verify(shadowService).registerCaches(List.of(SVC1));
     }
 

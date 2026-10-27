@@ -34,16 +34,16 @@ public class ModbusRegistryHistoryRepository {
 
     private ReactiveMongoCollection<ModbusRegistryHistory> collection() {
         return mongoClient.getDatabase("modbus")
-                .getCollection("service-registry-histories", ModbusRegistryHistory.class);
+                .getCollection("fd-registry-histories", ModbusRegistryHistory.class);
     }
 
     /**
-     * 启动时确保索引存在：{@code (serviceId, registerIndex, at)} 复合索引（前三段等值 + {@code at} 范围），
+     * 启动时确保索引存在：{@code (fdid, registerIndex, at)} 复合索引（前三段等值 + {@code at} 范围），
      * 外加（{@code retentionSeconds > 0} 时）{@code at} 上的 TTL 索引。
      */
     public Uni<Void> ensureIndexes(long retentionSeconds) {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "registerIndex", "at"))
+                .createIndex(Indexes.ascending("fdid", "registerIndex", "at"))
                 .onFailure().recoverWithNull()
                 .chain(ignored -> ensureRetention(retentionSeconds));
     }
@@ -68,18 +68,18 @@ public class ModbusRegistryHistoryRepository {
     }
 
     /** 区间起点之前最近的一条事件（carry-in）：曲线从 {@code from} 起的值要它续上。 */
-    public Uni<ModbusRegistryHistory> findCarryIn(String serviceId, Integer registerIndex, Date from) {
+    public Uni<ModbusRegistryHistory> findCarryIn(String fdid, Integer registerIndex, Date from) {
         return collection()
-                .find(pointFilter(serviceId, registerIndex, Filters.lt("at", from)),
+                .find(pointFilter(fdid, registerIndex, Filters.lt("at", from)),
                         new FindOptions().sort(Sorts.descending("at")).limit(1))
                 .collect().first();
     }
 
     /** 区间 {@code [from, to]} 内的事件，按 {@code at} 升序。投影只取画图要用的几键。 */
-    public Uni<List<ModbusRegistryHistory>> findRange(String serviceId, Integer registerIndex,
+    public Uni<List<ModbusRegistryHistory>> findRange(String fdid, Integer registerIndex,
                                                              Date from, Date to, int limit) {
         return collection()
-                .find(pointFilter(serviceId, registerIndex,
+                .find(pointFilter(fdid, registerIndex,
                                 Filters.and(Filters.gte("at", from), Filters.lte("at", to))),
                         new FindOptions()
                                 .sort(Sorts.ascending("at"))
@@ -88,18 +88,18 @@ public class ModbusRegistryHistoryRepository {
                 .collect().asList();
     }
 
-    private static Bson pointFilter(String serviceId, Integer registerIndex, Bson at) {
-        return Filters.and(Filters.eq("serviceId", serviceId),
+    private static Bson pointFilter(String fdid, Integer registerIndex, Bson at) {
+        return Filters.and(Filters.eq("fdid", fdid),
                 Filters.eq("registerIndex", registerIndex), at);
     }
 
     /** 级联删除一批服务的寄存器历史（服务没了就没有读它的入口，留着是存储垃圾）。 */
-    public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    public Uni<Long> deleteByFdids(List<String> fdids) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
         return collection()
-                .deleteMany(Filters.in("serviceId", serviceIds))
+                .deleteMany(Filters.in("fdid", fdids))
                 .map(DeleteResult::getDeletedCount);
     }
 }

@@ -6,7 +6,7 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Count;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.DeviceStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.FailureStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Overview;
-import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
+import cc.openxiot.matrix.api.statistics.StatisticsQueryService.FdStats;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -27,13 +27,13 @@ public final class StatisticsCodec {
     private StatisticsCodec() {
     }
 
-    /** 整个看板的响应体：{@code {from, to, devices, services, alarms, failures}}。 */
+    /** 整个看板的响应体：{@code {from, to, devices, fds, alarms, failures}}。 */
     public static JsonObject encode(Overview overview) {
         JsonObject body = new JsonObject()
                 .put("from", overview.from().getTime())
                 .put("to", overview.to().getTime())
                 .put("devices", encodeDevices(overview.devices()))
-                .put("services", encodeServices(overview.services()))
+                .put("fds", encodeFds(overview.fds()))
                 .put("alarms", encodeAlarms(overview.alarms()))
                 .put("failures", encodeFailures(overview.failures()));
         return body;
@@ -47,11 +47,11 @@ public final class StatisticsCodec {
                 .put("byType", counts(devices.byType(), "type"));
     }
 
-    /** 服务：{@code {total, byConfig: [{configId, count}]}}。 */
-    private static JsonObject encodeServices(ServiceStats services) {
+    /** 现场设备：{@code {total, byConfig: [{configId, count}]}}。 */
+    private static JsonObject encodeFds(FdStats fds) {
         return new JsonObject()
-                .put("total", services.total())
-                .put("byConfig", counts(services.byConfig(), "configId"));
+                .put("total", fds.total())
+                .put("byConfig", counts(fds.byConfig(), "configId"));
     }
 
     /** 告警：{@code {total, byText: [{text, count}], hourly: [{at, count}]}}。 */

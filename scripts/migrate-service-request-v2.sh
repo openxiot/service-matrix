@@ -27,7 +27,7 @@
 #
 # 用法：
 #   BASE_URL=https://matrix.openxiot.cn TOKEN='<jwt>' \
-#     ./scripts/migrate-service-request-v2.sh <spaceId>:<serviceId> [<spaceId>:<serviceId> ...]
+#     ./scripts/migrate-service-request-v2.sh <spaceId>:<fdId> [<spaceId>:<fdId> ...]
 #
 # 干跑（只打印会 PUT 上去的 body，不发请求）：
 #   DRY_RUN=1 BASE_URL=... TOKEN=... ./scripts/migrate-service-request-v2.sh ...

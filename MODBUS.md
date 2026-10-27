@@ -9,10 +9,10 @@ Modbus 点表配置（`ModbusConfig`）描述挂在一条 Modbus 总线上的一
   读属性 / 写属性 / 执行方法都复用通用的设备接口（`DeviceResource`）。
   优点是不用另设接口；缺点是每个请求都要经过设备拦截器翻译指令（虚拟 action ↔ 父设备“发送”），
   步骤繁多，且要读好几次数据库。
-* **生成 Modbus设备**（**现行方案，本文档**；原名「Modbus 服务」，2026-10-25 改名，见变更记录）：
-  把「怎么调依赖的设备、发什么帧、怎么解应答」在**创建时**
-  一次性展开成一份 `ModbusDevice` 文档；调用时只读这一条记录即可组装出父设备调用。
-  优点是简单、一次数据库访问；缺点是需要单独设计一套 API（`ModbusDeviceResource`）。
+* **生成 Modbus设备**（ **现行方案，本文档**；原名「Modbus 服务」，2026-10-25 改名，见变更记录）：
+  把「怎么调依赖的设备、发什么帧、怎么解应答」在 **创建时**
+  一次性展开成一份 `FieldDevice` 文档；调用时只读这一条记录即可组装出父设备调用。
+  优点是简单、一次数据库访问；缺点是需要单独设计一套 API（`FieldDeviceResource`）。
 
 前者的代码（虚拟设备资源 / 实体 / 仓储、`DeviceInterceptor`、`DeviceManipulator`、以及 `DeviceService` 里
 为虚拟子设备做的 online 归一）已整体删除，见变更记录。**现在只剩这一条路径**：
@@ -173,7 +173,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 
 ## 五、invoke 的调用链与返回
 
-`ModbusDeviceService.invoke`：按 id **读一次** `ModbusDevice` 文档 → 取该 `pollIndex` 的 poll →
+`FieldDeviceService.invoke`：按 id **读一次** `FieldDevice` 文档 → 取该 `pollIndex` 的 poll →
 **按 `request` 现组帧**（`ModbusFrameCodec.encodeRequest(poll.request, values)`）→
 组装依赖设备的 `ActionOperation`（did/siid/aiid 取 `device`，in 填 `{argument: 帧}`）→
 交 `ManipulationService.invokeActions`（DTU 的“发送”把帧透传到 RS485）→ 把应答帧按
@@ -258,8 +258,8 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 
 ## 七、校验
 
-规则实现在 `ModbusDeviceValidator`（纯静态函数，返回 `null` = 通过，否则是给前端的错误文案），
-`ModbusDeviceService` 只负责把文案转成 `IllegalArgumentException`。
+规则实现在 `FieldDeviceValidator`（纯静态函数，返回 `null` = 通过，否则是给前端的错误文案），
+`FieldDeviceService` 只负责把文案转成 `IllegalArgumentException`。
 
 * `name`：服务名称（展示用）必填。
 * `version`：必填，且**必须等于 `2`**（定义格式口径）。旧口径的定义硬拒，不静默降级读成 null。
@@ -331,13 +331,13 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 
 ### 2026-10-25
 
-* **`ModbusService` 一族整体改名为 `ModbusDevice`，接口路径同步**。实体是「把一条点表展开成可调用方法」
+* **`ModbusService` 一族整体改名为 `FieldDevice`，接口路径同步**。实体是「把一条点表展开成可调用方法」
   的那份定义，与通用设备线上的 `Device` 不是一回事，但旧名里的「服务」在代码、接口、界面上都指向同一物；
   本次统一为「Modbus设备」：
   * 类与包：`ModbusService` / `ModbusServiceRepository` / `ModbusServiceService` /
     `ModbusServiceResource` / `ModbusServiceValidator` / `ModbusServiceCodec` →
-    `ModbusDevice` / `ModbusDeviceRepository` / `ModbusDeviceService` / `ModbusDeviceResource` /
-    `ModbusDeviceValidator` / `ModbusDeviceCodec`；包 `api/modbus/service`、`db/modbus/service` →
+    `FieldDevice` / `FieldDeviceRepository` / `FieldDeviceService` / `FieldDeviceResource` /
+    `FieldDeviceValidator` / `FieldDeviceCodec`；包 `api/modbus/service`、`db/modbus/service` →
     `…/device`。
   * 接口：`/matrix/v1/modbus/service/{many,parent,one,invoke}/{…}` → `/matrix/v1/modbus/device/{…}`；
     OpenAPI tag 改为 `Modbus Device`。**请求 / 响应体的字段一个没动**（`service` / `serviceId` /
@@ -522,7 +522,7 @@ ModbusResponseFieldAlarm      id / enabled / compare / threshold / state / level
 
 * **Modbus 阈值告警（第五步：查询服务与接口）**。`api/modbus/alarm/ModbusAlarmQueryService`（新）+
   `ModbusAlarmResource`（新，`/matrix/v1/modbus/alarm`：`GET /many/{spaceId}`、
-  `POST /handle/{spaceId}/{id}`）+ `ModbusAlarmService.handle`（写回执）+ `subtreeServiceIds` 从
+  `POST /handle/{spaceId}/{id}`）+ `ModbusAlarmService.handle`（写回执）+ `subtreeFdIds` 从
   `ModbusHistoryResource` 下沉到 `ModbusServiceService`（与故障清单共用）。几处值得记下的口径：
   * **路径另起一段**（不挂在 `/modbus/history` 或 `/modbus/service` 之下）：告警是第三件事 ——
     既不是配置也不是时间序列，而是**判定出来的事件**，权限粒度（成员可处理、不要管理员）与保留口径

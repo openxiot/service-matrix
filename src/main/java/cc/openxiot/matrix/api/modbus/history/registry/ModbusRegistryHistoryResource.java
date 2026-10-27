@@ -31,7 +31,7 @@ import java.util.Date;
  * 前者是用户维护的配置，后者是设备跑出来的时间序列，生命周期与权限粒度将来都可能分开
  * （比如给只读的历史看板单独授权）。</p>
  *
- * <p><b>按空间鉴权</b>，与 {@code ModbusDeviceResource.invoke} 同口径：路径上的 {@code spaceId}
+ * <p><b>按空间鉴权</b>，与 {@code FieldDeviceResource.invoke} 同口径：路径上的 {@code spaceId}
  * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「服务是否属于该空间」。</p>
  *
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recordedAt} 同口径），
@@ -56,7 +56,7 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
     SpaceService spaceService;
 
     /**
-     * 一个点位的区间曲线：{@code {serviceId, pollIndex, field, from, to, maxPoints, downsampled,
+     * 一个点位的区间曲线：{@code {fdid, pollIndex, field, from, to, maxPoints, downsampled,
      * carryIn, points}}。
      *
      * <p>{@code carryIn} 是区间起点之前最近的那一条（可能没有）：不带它，前端不知道 {@code from}
@@ -68,21 +68,21 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> range(
             @PathParam("spaceId") String spaceId,
-            @QueryParam("serviceId") String serviceId,
+            @QueryParam("fdid") String fdid,
             @QueryParam("pollIndex") Integer pollIndex,
             @QueryParam("field") String field,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
             @QueryParam("maxPoints") Integer maxPoints
     ) {
-        logger.infov("query modbus history, space: {0}, service: {1}, polling: {2}, field: {3}",
-                spaceId, serviceId, pollIndex, field);
+        logger.infov("query modbus history, space: {0}, fd: {1}, polling: {2}, field: {3}",
+                spaceId, fdid, pollIndex, field);
         return requireSpaceMember(spaceId)
-                .chain(ignored -> registryService.range(serviceId, pollIndex, field,
+                .chain(ignored -> registryService.range(fdid, pollIndex, field,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(
                         ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
-                                serviceId, pollIndex, field,
+                                fdid, pollIndex, field,
                                 result.from(), result.to(), result.maxPoints(), result.window()))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
@@ -90,7 +90,7 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
 
     // -- helper methods --
 
-    /** 空间成员（读历史与 invoke 同口径，见 {@code ModbusDeviceResource}）。 */
+    /** 空间成员（读历史与 invoke 同口径，见 {@code FieldDeviceResource}）。 */
     private Uni<SpaceEntity> requireSpaceMember(String spaceId) {
         return spaceService.getById(spaceId)
                 .chain(space -> {

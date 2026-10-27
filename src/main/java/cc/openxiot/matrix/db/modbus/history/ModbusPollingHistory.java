@@ -10,7 +10,7 @@ import java.util.Date;
 import java.util.Map;
 
 /**
- * Modbus设备的**操作日志**：一次采集（一个读块的一次调用）一条（库 {@code modbus}、集合
+ * 现场设备的**操作日志**：一次采集（一个读块的一次调用）一条（库 {@code modbus}、集合
  * {@code service-polling-histories}）。
  *
  * <p><b>以操作（调用）为中心</b>：它回答「这台服务这段时间**调用得怎么样**」—— 每次读了/写了、
@@ -23,15 +23,15 @@ import java.util.Map;
  * 属性，不再单独存一张 {@code service-failures}。</p>
  */
 @RegisterForReflection
-@Schema(description = "Modbus设备一次采集（读/写）的操作记录，含成败")
+@Schema(description = "现场设备一次采集（读/写）的操作记录，含成败")
 public class ModbusPollingHistory {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)
     public ObjectId id;
 
-    @Schema(description = "服务 id（ModbusDevice 主键的十六进制字符串）", required = true)
-    public String serviceId;
+    @Schema(description = "现场设备 id（FieldDevice 主键的十六进制字符串）", required = true)
+    public String fdid;
 
     @Schema(description = "读块序号（ModbusPoll.index，操作日志按读块记）", examples = {"1"}, required = true)
     public Integer pollIndex;

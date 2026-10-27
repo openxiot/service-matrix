@@ -91,7 +91,7 @@ class WidgetStructureValidatorTest {
     @Test
     void validate_duplicatedId() {
         WebDashboardWidget a = widget("stat", config("metric", "devices.total"));
-        WebDashboardWidget b = widget("stat", config("metric", "services.total"));
+        WebDashboardWidget b = widget("stat", config("metric", "fds.total"));
         b.id = a.id;
         // 渲染结果按 id 对应卡片，id 重了就会出现「两张卡显示同一个数」
         assertTrue(WebDashboardWidgetStructureValidator.validate(body(0L, List.of(a, b))).contains("duplicated widget id"));
@@ -292,7 +292,7 @@ class WidgetStructureValidatorTest {
     void stat_windowlessMetricNeedsNoWindow() {
         assertValid(widget("stat", config("metric", "devices.total")));
         assertValid(widget("stat", config("metric", "devices.online")));
-        assertValid(widget("stat", config("metric", "services.total")));
+        assertValid(widget("stat", config("metric", "fds.total")));
     }
 
     @Test
@@ -400,20 +400,20 @@ class WidgetStructureValidatorTest {
 
     @Test
     void line_serviceField_keysRequired() {
-        assertInvalid("config.serviceId is required",
+        assertInvalid("config.fdid is required",
                 widget("line", config("source", "serviceField", "window", last(24))));
         assertInvalid("config.field is required",
-                widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1")));
+                widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1")));
         assertValid(widget("line", config("source", "serviceField", "window", last(24),
-                "serviceId", "s1", "field", "temp")));
+                "fdid", "s1", "field", "temp")));
     }
 
     @Test
     void line_maxPointsRange() {
         assertInvalid("config.maxPoints must be between 1 and 2000",
-                widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
+                widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
                         "field", "temp", "maxPoints", 0)));
-        assertValid(widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
+        assertValid(widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
                 "field", "temp", "maxPoints", 100)));
     }
 
@@ -424,9 +424,9 @@ class WidgetStructureValidatorTest {
     @Test
     void line_showFailureShadowMustBeBoolean() {
         assertInvalid("config.showFailureShadow must be a boolean", widget("line",
-                config("source", "serviceField", "window", last(24), "serviceId", "s1",
+                config("source", "serviceField", "window", last(24), "fdid", "s1",
                         "field", "temp", "showFailureShadow", "true")));
-        assertValid(widget("line", config("source", "serviceField", "window", last(24), "serviceId", "s1",
+        assertValid(widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
                 "field", "temp", "showFailureShadow", true)));
     }
 
@@ -528,17 +528,17 @@ class WidgetStructureValidatorTest {
 
     @Test
     void service_keysRequired() {
-        assertInvalid("config.serviceId is required", widget("service", config("fields", List.of("a"))));
+        assertInvalid("config.fdid is required", widget("service", config("fields", List.of("a"))));
         // 不再要求方法序号：选了服务 + 非空寄存器字段即可（方法由取数时解析）
-        assertValid(widget("service", config("serviceId", "s1", "fields", List.of("a"))));
+        assertValid(widget("service", config("fdid", "s1", "fields", List.of("a"))));
         assertInvalid("config.fields must be an array",
-                widget("service", config("serviceId", "s1", "fields", "a")));
+                widget("service", config("fdid", "s1", "fields", "a")));
     }
 
     @Test
     void service_fieldsNotEmpty() {
         assertInvalid("config.fields must not be empty",
-                widget("service", config("serviceId", "s1", "fields", List.of())));
+                widget("service", config("fdid", "s1", "fields", List.of())));
     }
 
     @Test
@@ -548,19 +548,19 @@ class WidgetStructureValidatorTest {
             tooMany.add("f" + i);
         }
         assertInvalid("config.fields has too many entries", widget("service",
-                config("serviceId", "s1", "fields", tooMany)));
+                config("fdid", "s1", "fields", tooMany)));
     }
 
     @Test
     void service_fieldsUnique() {
         assertInvalid("config.fields has a duplicate: temp", widget("service",
-                config("serviceId", "s1", "fields", List.of("temp", "temp"))));
+                config("fdid", "s1", "fields", List.of("temp", "temp"))));
     }
 
     @Test
     void service_fieldEntriesMustBeStrings() {
         assertInvalid("config.fields must contain strings", widget("service",
-                config("serviceId", "s1", "fields", List.of("temp", 3))));
+                config("fdid", "s1", "fields", List.of("temp", 3))));
     }
 
     /**
@@ -569,15 +569,15 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void service_bitNameIsAValidField() {
-        assertValid(widget("service", config("serviceId", "s1",
+        assertValid(widget("service", config("fdid", "s1",
                 "fields", List.of("status", "status.bit0", "status.bit1"))));
     }
 
     @Test
     void service_showUnitMustBeBoolean() {
         assertInvalid("config.showUnit must be a boolean", widget("service",
-                config("serviceId", "s1", "fields", List.of("temp"), "showUnit", 1)));
-        assertValid(widget("service", config("serviceId", "s1",
+                config("fdid", "s1", "fields", List.of("temp"), "showUnit", 1)));
+        assertValid(widget("service", config("fdid", "s1",
                 "fields", List.of("temp"), "showUnit", true)));
     }
 
@@ -588,7 +588,7 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void service_leftoverShowStaleIsIgnored() {
-        assertValid(widget("service", config("serviceId", "s1",
+        assertValid(widget("service", config("fdid", "s1",
                 "fields", List.of("temp"), "showStale", 1)));
     }
 

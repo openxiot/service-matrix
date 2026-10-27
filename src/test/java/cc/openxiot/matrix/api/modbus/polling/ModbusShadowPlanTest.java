@@ -3,9 +3,9 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -30,11 +30,11 @@ class ModbusShadowPlanTest {
     /** 定义里已经没有这只寄存器了：整条影子要删（否则前端一直显示一个不存在的点位）。 */
     @Test
     void shadowOfADeletedRegisterIsAnOrphan() {
-        ModbusDevice service = service(1);
+        FieldDevice fd = fd(1);
         ModbusShadow alive = shadow(SERVICE_ID, 1);
         ModbusShadow orphan = shadow(SERVICE_ID, 2);
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(alive, orphan));
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(fd, List.of(alive, orphan));
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
@@ -45,11 +45,11 @@ class ModbusShadowPlanTest {
     /** 点表条目缺了 {@code index} 就成不了活着寄存器：有影子的它也是孤儿，一样要删。 */
     @Test
     void registryEntryWithoutAnIndexMakesItsShadowOrphan() {
-        ModbusDevice service = service(1);
-        service.configSnapshot.registries.add(new ModbusRegistry()); // index == null → 不算活寄存器
+        FieldDevice fd = fd(1);
+        fd.configSnapshot.registries.add(new ModbusRegistry()); // index == null → 不算活寄存器
         ModbusShadow orphan = shadow(SERVICE_ID, 5);
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, List.of(orphan));
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(fd, List.of(orphan));
 
         assertEquals(1, fixes.size());
         assertTrue(fixes.get(0).orphan());
@@ -59,21 +59,21 @@ class ModbusShadowPlanTest {
     /** 影子与定义一致时**不出现在结果里**：调用方据此零写操作（非孤儿一律不改）。 */
     @Test
     void consistentShadowsProduceNoFix() {
-        ModbusDevice service = service(1);
+        FieldDevice fd = fd(1);
 
-        assertTrue(ModbusShadowPlan.plan(service, List.of(shadow(SERVICE_ID, 1))).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, List.of()).isEmpty());
-        assertTrue(ModbusShadowPlan.plan(service, null).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(fd, List.of(shadow(SERVICE_ID, 1))).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(fd, List.of()).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(fd, null).isEmpty());
     }
 
     /** 拿不到定义就不动任何影子：宁可留一张陈旧影子，也不要把用户的当前值删掉。 */
     @Test
     void withoutDefinitionNothingIsTouched() {
-        ModbusDevice noRegistries = service(1);
+        FieldDevice noRegistries = fd(1);
         noRegistries.configSnapshot.registries = null;
-        ModbusDevice noSnapshot = service(1);
+        FieldDevice noSnapshot = fd(1);
         noSnapshot.configSnapshot = null;
-        ModbusDevice noId = service(1);
+        FieldDevice noId = fd(1);
         noId.id = null;
 
         List<ModbusShadow> shadows = List.of(shadow(SERVICE_ID, 9));
@@ -87,22 +87,22 @@ class ModbusShadowPlanTest {
     /** 影子是别的服务的：对账按服务做，串了就是 bug —— 不动它，也不要把它当孤儿删掉。 */
     @Test
     void shadowsOfAnotherServiceAreSkipped() {
-        ModbusDevice service = service(1);
+        FieldDevice fd = fd(1);
         ModbusShadow other = shadow(new ObjectId().toHexString(), 9);
 
-        assertTrue(ModbusShadowPlan.plan(service, List.of(other)).isEmpty());
+        assertTrue(ModbusShadowPlan.plan(fd, List.of(other)).isEmpty());
     }
 
     /** 多个修复按 registerIndex 升序（调用方按顺序写库，日志里也好读）；活着的不出现在结果里。 */
     @Test
     void fixesAreSortedByRegisterIndex() {
-        ModbusDevice service = service(1); // 只有 index 1 还活着
+        FieldDevice fd = fd(1); // 只有 index 1 还活着
         List<ModbusShadow> shadows = new ArrayList<>(List.of(
                 shadow(SERVICE_ID, 3),
                 shadow(SERVICE_ID, 1),
                 shadow(SERVICE_ID, 2)));
 
-        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(service, shadows);
+        List<ModbusShadowPlan.Fix> fixes = ModbusShadowPlan.plan(fd, shadows);
 
         assertEquals(2, fixes.size());
         assertEquals(2, fixes.get(0).shadow().registerIndex);
@@ -125,10 +125,10 @@ class ModbusShadowPlanTest {
     // -- helpers --
 
     /** 定义与影子必须指同一个服务（对账按服务做），所以 id 从 {@link #SERVICE_ID} 还原。 */
-    private static ModbusDevice service(Integer... indices) {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId(SERVICE_ID);
-        service.name = "svc";
+    private static FieldDevice fd(Integer... indices) {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(SERVICE_ID);
+        fd.name = "svc";
         List<ModbusRegistry> registers = new ArrayList<>();
         for (Integer index : indices) {
             ModbusRegistry reg = new ModbusRegistry();
@@ -138,14 +138,14 @@ class ModbusShadowPlanTest {
         }
         ModbusConfig config = new ModbusConfig();
         config.registries = registers;
-        service.configSnapshot = config;
-        return service;
+        fd.configSnapshot = config;
+        return fd;
     }
 
-    private static ModbusShadow shadow(String serviceId, Integer registerIndex) {
+    private static ModbusShadow shadow(String fdid, Integer registerIndex) {
         ModbusShadow shadow = new ModbusShadow();
         shadow.id = new ObjectId();
-        shadow.serviceId = serviceId;
+        shadow.fdid = fdid;
         shadow.registerIndex = registerIndex;
         return shadow;
     }

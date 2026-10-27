@@ -120,8 +120,8 @@ class ModbusAlarmRepositoryTest {
         BsonDocument filter = ModbusAlarmRepository
                 .closeFilter("svc-1", 2, List.of("进水温度", "回水温度")).toBsonDocument();
 
-        // 按 serviceId + pollIndex + 一批 field 关（$in 而不是某一个），不是定位到某条 _id
-        assertEquals("svc-1", clause(filter, "serviceId").asString().getValue());
+        // 按 fdid + pollIndex + 一批 field 关（$in 而不是某一个），不是定位到某条 _id
+        assertEquals("svc-1", clause(filter, "fdid").asString().getValue());
         assertEquals(2, clause(filter, "pollIndex").asInt32().getValue());
         assertEquals(2, clause(filter, "field").asDocument().getArray("$in").size());
         // 已恢复的行 openKey 已被 $unset，不该被再关一次而覆盖掉它第一次的 recoveredAt
@@ -143,7 +143,7 @@ class ModbusAlarmRepositoryTest {
         assertEquals("张三", handledBy.getString("name").getValue());
         assertEquals(AT.getTime(), handledBy.getDateTime("timestamp").getValue());
         // 替换文档的形状是把实体字段摊在顶层：这里一个都不该有
-        assertFalse(update.containsKey("serviceId"));
+        assertFalse(update.containsKey("fdid"));
         assertFalse(update.containsKey("at"));
 
         BsonDocument filter = ModbusAlarmRepository.handleFilter(OID).toBsonDocument();

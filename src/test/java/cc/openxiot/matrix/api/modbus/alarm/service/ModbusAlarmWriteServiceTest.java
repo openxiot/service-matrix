@@ -8,8 +8,8 @@ import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -56,7 +56,7 @@ import static org.mockito.Mockito.when;
  *       UI 靠它解释一条没有恢复样本的关闭。</li>
  *   <li>判不了的出值要说一声（**每条规则只说一次**），否则「配了却不工作」还是没人知道。</li>
  *   <li>同一个出值被另一条规则接手时**先关后插** —— 顺序错了不报错，只是那个出值一条开着的都没有。</li>
- *   <li>失败照常外传 —— 记日志、咽下去是调用方（{@code ModbusDeviceService}）的决定，这里不替它做主。</li>
+ *   <li>失败照常外传 —— 记日志、咽下去是调用方（{@code FieldDeviceService}）的决定，这里不替它做主。</li>
  *   <li>用户点「处理」写的是回执（{@code handled} / {@code handledBy}），返回**读回来的那一条**；
  *       CAS 改动为 0 时**再读一次**以分辨「别人先处理了」（算成功）与「行不在了」（not found）。</li>
  * </ul>
@@ -120,7 +120,7 @@ class ModbusAlarmWriteServiceTest {
         service.evaluate(modbusService(field), poll(), sample("进水温度", 85.5)).await().indefinitely();
 
         ModbusAlarm row = insertedRow();
-        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(SERVICE_ID, row.fdid);
         assertEquals(FUNCTION_INDEX, row.pollIndex.intValue());
         assertEquals("进水温度", row.field);
         // 这条行是哪条规则开的（内部标识，不下发）：下一轮据此判「胜者还是不是它」
@@ -257,7 +257,7 @@ class ModbusAlarmWriteServiceTest {
         // 11000）—— 于是这个出值一条开着的都没有。下一轮采样会自愈（没有开行 ⇒ 重新开那个胜者），
         // 但那个窗口里告警是消失的，而轮询一停就永久丢。而 Uni.combine().all() 是**并发**的，
         // 所以顺序只能由两段 chain 保证，不能靠 ops 列表的先后。
-        // 与 ModbusDeviceServiceTest 里那条 InOrder 同一性质：顺序写错了不报错，只是悄悄丢告警。
+        // 与 FieldDeviceServiceTest 里那条 InOrder 同一性质：顺序写错了不报错，只是悄悄丢告警。
         ModbusRegistryAlarm warn = level(alarm(">", 26.0), "WARN");
         ModbusRegistryAlarm critical = level(alarm(">", 30.0), "CRITICAL");
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX))
@@ -309,7 +309,7 @@ class ModbusAlarmWriteServiceTest {
         // 但它往往是持续状态（老数据 / 固件与点表不符）：5 秒一条会刷成一万七千行/天，
         // 所以同一条规则只报一次
         when(alarmRepo.mapOpenRuleByField(SERVICE_ID, FUNCTION_INDEX)).thenReturn(Uni.createFrom().item(open()));
-        ModbusDevice svc = modbusService(field("进水温度", alarm(">", 80.0)));
+        FieldDevice svc = modbusService(field("进水温度", alarm(">", 80.0)));
         ModbusPoll poll = poll();
 
         // 定义比数、运行期给的是字符串（这一帧拿不出可比的值）
@@ -514,7 +514,7 @@ class ModbusAlarmWriteServiceTest {
     private static ModbusAlarm alarmRow(ObjectId id) {
         ModbusAlarm row = new ModbusAlarm();
         row.id = id;
-        row.serviceId = SERVICE_ID;
+        row.fdid = SERVICE_ID;
         row.pollIndex = FUNCTION_INDEX;
         row.field = "进水温度";
         row.level = "WARN";
@@ -536,14 +536,14 @@ class ModbusAlarmWriteServiceTest {
  * 服务夹具 — 告警现在属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段。
  * 故 {@code modbusService(...)} 不开 params 时也带空点表快照，闸门「注册表里没有启用告警」据此跳过。
  */
-private static ModbusDevice modbusService(ModbusRegistry... registries) {
-    ModbusDevice service = new ModbusDevice();
-    service.id = new ObjectId(SERVICE_ID);
-    service.name = "1 号冷水机组";
+private static FieldDevice modbusService(ModbusRegistry... registries) {
+    FieldDevice fd = new FieldDevice();
+    fd.id = new ObjectId(SERVICE_ID);
+    fd.name = "1 号冷水机组";
     ModbusConfig snapshot = new ModbusConfig();
     snapshot.registries = new ArrayList<>(List.of(registries));
-    service.configSnapshot = snapshot;
-    return service;
+    fd.configSnapshot = snapshot;
+    return fd;
 }
 
 /** 方法只承担方法序号（告警行按读块维度）：出值规则已迁到服务点表快照。 */

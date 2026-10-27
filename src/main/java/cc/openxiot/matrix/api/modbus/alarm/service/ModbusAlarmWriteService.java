@@ -5,8 +5,8 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link ModbusAlarmRepository#insertOpen}（唯一部分索引 + 重复键吞掉），
  * 关闭走按整个开行标识的 {@code updateMany}。这些口径都在仓储里，本类只负责「判什么、什么时候判」。</p>
  *
- * <p>失败由调用方处置：{@code ModbusDeviceService} 只记日志，既不改写 invoke 的成功响应、
+ * <p>失败由调用方处置：{@code FieldDeviceService} 只记日志，既不改写 invoke 的成功响应、
  * 也不改写它的失败响应 —— 值已经拿到了，告警是副作用。</p>
  */
 @ApplicationScoped
@@ -67,7 +67,7 @@ public class ModbusAlarmWriteService {
     boolean indexEnabled;
 
     /**
-     * 已经报过的「判不了」键（{@code serviceId#pollIndex#field#ruleId}），进程内去重。
+     * 已经报过的「判不了」键（{@code fdid#pollIndex#field#ruleId}），进程内去重。
      */
     private final Set<String> reportedSkips = ConcurrentHashMap.newKeySet();
 
@@ -84,14 +84,14 @@ public class ModbusAlarmWriteService {
      * @param values 本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）；写方法为空对象
      * @return 完成信号；**失败照常往上抛**，由调用方决定记日志还是咽下去
      */
-    public Uni<Void> evaluate(ModbusDevice service, ModbusPoll poll, JsonObject values) {
+    public Uni<Void> evaluate(FieldDevice fd, ModbusPoll poll, JsonObject values) {
         // 第一层闸门：没配告警的服务（也就是绝大多数）在这里返回，**一次数据库操作都不做**
-        List<ModbusAlarmPolicy.ModbusFieldRule> rules = ModbusAlarmPolicy.registerRules(service);
-        if (service == null || service.id == null || poll == null || poll.index == null
+        List<ModbusAlarmPolicy.ModbusFieldRule> rules = ModbusAlarmPolicy.registerRules(fd);
+        if (fd == null || fd.id == null || poll == null || poll.index == null
                 || !ModbusAlarmPolicy.hasEnabledAlarm(rules)) {
             return Uni.createFrom().voidItem();
         }
-        String serviceId = service.id.toHexString();
+        String fdid = fd.id.toHexString();
         // 拷一份：JsonObject 内部的 map 是活的（与 ModbusHistoryWriteService 同一条理由）
         Map<String, Object> sample = values == null
                 ? Map.of()
@@ -100,8 +100,8 @@ public class ModbusAlarmWriteService {
 
         // 一个方法配了 3 个出值也只查这一次：拿到的是「这个方法当前哪些出值开着、各是哪条规则开的、
         // 处理过没有」这张表，它**就是**状态本身（见 Modbus-Alarm.md 第三节）
-        return alarmRepo.mapOpenRuleByField(serviceId, poll.index)
-                .chain(open -> apply(serviceId, poll, rules, sample, open, now));
+        return alarmRepo.mapOpenRuleByField(fdid, poll.index)
+                .chain(open -> apply(fdid, poll, rules, sample, open, now));
     }
 
     /**
@@ -156,7 +156,7 @@ public class ModbusAlarmWriteService {
      * <p>其它动作之间确实互不依赖（开落在不同出值上，四类关闭按出值互斥），并发是对的。</p>
      */
     private Uni<Void> apply(
-            String serviceId,
+            String fdid,
             ModbusPoll poll,
             List<ModbusAlarmPolicy.ModbusFieldRule> rules,
             Map<String, Object> sample,
@@ -164,7 +164,7 @@ public class ModbusAlarmWriteService {
             Date now
     ) {
         ModbusAlarmPolicy.Decision decision = ModbusAlarmPolicy.decide(rules, sample, open);
-        reportSkips(serviceId, poll, decision.skips());
+        reportSkips(fdid, poll, decision.skips());
         if (decision.isEmpty()) {
             // 稳态（值没越限、开着的那条还开着）走这条：一次写操作都没有
             return Uni.createFrom().voidItem();
@@ -172,28 +172,28 @@ public class ModbusAlarmWriteService {
 
         List<Uni<Void>> closes = new ArrayList<>();
         if (!decision.valueCloses().isEmpty()) {
-            closes.add(alarmRepo.closeByKeys(serviceId, poll.index, decision.valueCloses(),
+            closes.add(alarmRepo.closeByKeys(fdid, poll.index, decision.valueCloses(),
                     ModbusAlarm.CLOSE_VALUE, now).replaceWithVoid());
         }
         if (!decision.supersededCloses().isEmpty()) {
-            closes.add(alarmRepo.closeByKeys(serviceId, poll.index, decision.supersededCloses(),
+            closes.add(alarmRepo.closeByKeys(fdid, poll.index, decision.supersededCloses(),
                     ModbusAlarm.CLOSE_SUPERSEDED, now).replaceWithVoid());
         }
         if (!decision.definitionCloses().isEmpty()) {
-            closes.add(alarmRepo.closeByKeys(serviceId, poll.index, decision.definitionCloses(),
+            closes.add(alarmRepo.closeByKeys(fdid, poll.index, decision.definitionCloses(),
                     ModbusAlarm.CLOSE_DEFINITION, now).replaceWithVoid());
         }
         // 「已处理但还在越限」：关掉这一条，紧接着在 opens 里开一条同出值的新行（后者的 handled 为 false）。
         // 必须留在 closes 这一段里，理由见上面「先关、后插」—— 抢在关闭之前插会撞唯一索引被静默吞掉，
         // 而这里的代价比别处更大：用户刚处理完就什么都看不到了
         if (!decision.handledCloses().isEmpty()) {
-            closes.add(alarmRepo.closeByKeys(serviceId, poll.index, decision.handledCloses(),
+            closes.add(alarmRepo.closeByKeys(fdid, poll.index, decision.handledCloses(),
                     ModbusAlarm.CLOSE_HANDLED, now).replaceWithVoid());
         }
 
         List<Uni<Void>> opens = new ArrayList<>();
         for (ModbusAlarmPolicy.Open hit : decision.opens()) {
-            opens.add(alarmRepo.insertOpen(rowOf(serviceId, poll.index, hit, now)).replaceWithVoid());
+            opens.add(alarmRepo.insertOpen(rowOf(fdid, poll.index, hit, now)).replaceWithVoid());
         }
 
         // 一次评估里的所有动作共用同一个时刻：行的 at 与 recoveredAt 对得上，不至于出现
@@ -220,17 +220,17 @@ public class ModbusAlarmWriteService {
      * <p>不静默的理由：判不了意味着**这条告警配置当前不工作** —— 而「配了却不工作、还没有任何声音」
      * 正是这个特性要消灭的失效模式。日志带上定义与当时的值，够定位是定义漂移还是设备应答不符。</p>
      */
-    private void reportSkips(String serviceId, ModbusPoll poll, List<ModbusAlarmPolicy.Skip> skips) {
+    private void reportSkips(String fdid, ModbusPoll poll, List<ModbusAlarmPolicy.Skip> skips) {
         for (ModbusAlarmPolicy.Skip skip : skips) {
             // 去重键细到**规则**：一个出值可以配一组规则，只报「这个出值判不了」的话，
             // 同一个出值里的第二条坏规则永远不会被报出来（字段改了名算新的，理由同前）
-            String key = ModbusAlarm.openKeyOf(serviceId, poll.index, skip.field()) + "#" + skip.alarm().id;
+            String key = ModbusAlarm.openKeyOf(fdid, poll.index, skip.field()) + "#" + skip.alarm().id;
             if (!firstTime(reportedSkips, key, MAX_REPORTED_SKIPS)) {
                 continue;
             }
             logger.warnv("modbus alarm is not comparable, service: {0}, function: {1}, field: {2}, "
                             + "value: {3}, compare: {4}, threshold: {5}, state: {6}",
-                    serviceId, poll.index, skip.field(), skip.sample(),
+                    fdid, poll.index, skip.field(), skip.sample(),
                     skip.alarm().compare, skip.alarm().threshold, skip.alarm().state);
         }
     }
@@ -252,13 +252,13 @@ public class ModbusAlarmWriteService {
      * 触发那一刻的定义快照进告警行：定义是活的、行是不可变的历史（见 Modbus-Alarm.md 第八节）。
      */
     private static ModbusAlarm rowOf(
-            String serviceId,
+            String fdid,
             Integer pollIndex,
             ModbusAlarmPolicy.Open hit,
             Date at
     ) {
         ModbusAlarm row = new ModbusAlarm();
-        row.serviceId = serviceId;
+        row.fdid = fdid;
         row.pollIndex = pollIndex;
         row.field = hit.field();
         row.compare = hit.alarm().compare;
@@ -271,7 +271,7 @@ public class ModbusAlarmWriteService {
         // 显式写 false（而不是留 null）：null 与 false 都算未处理，但页面上要显示一个确定的状态
         row.handled = false;
         row.sample = hit.sample();
-        row.openKey = ModbusAlarm.openKeyOf(serviceId, pollIndex, hit.field());
+        row.openKey = ModbusAlarm.openKeyOf(fdid, pollIndex, hit.field());
         // 哪条规则开的（不下发）：下一轮据此判断「胜者还是不是它」，也供定义变更对账判这条还该不该开着
         row.ruleId = hit.alarm().id;
         return row;

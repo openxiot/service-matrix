@@ -44,13 +44,13 @@ public class ModbusPollingRepository  {
     /**
      * 启动时确保索引存在（幂等；失败仅告警，不阻断启动，与其它仓储同口径）。
      *
-     * <p>{@code (serviceId, pollIndex)} 唯一：一条 = 一个方法的任务，重复会让同一个方法被采两次。
+     * <p>{@code (fdid, pollIndex)} 唯一：一条 = 一个方法的任务，重复会让同一个方法被采两次。
      * {@code (nextRunAt, leaseUntil)}：本轮的内存时间轮并不扫库，建它是为了运维查询
      * 与「以后真要多副本分片」时不必再等索引建好。</p>
      */
     public Uni<Void> ensureIndexes() {
         return collection()
-                .createIndex(Indexes.ascending("serviceId", "pollIndex"), new IndexOptions().unique(true))
+                .createIndex(Indexes.ascending("fdid", "pollIndex"), new IndexOptions().unique(true))
                 .chain(ignored -> dropLegacyFunctionIndex())
                 .chain(ignored -> collection().createIndex(Indexes.ascending("nextRunAt", "leaseUntil")))
                 .onFailure().recoverWithNull()
@@ -58,14 +58,14 @@ public class ModbusPollingRepository  {
     }
 
     /**
-     * 兼容旧索引：早期版本建过非 sparse 的 {@code (serviceId, pollIndex)} 唯一索引
-     * （名字 {@code serviceId_1_pollIndex_1}）。改名成 {@code pollIndex} 之后，
+     * 兼容旧索引：早期版本建过非 sparse 的 {@code (fdid, pollIndex)} 唯一索引
+     * （名字 {@code fdid_1_pollIndex_1}）。改名成 {@code pollIndex} 之后，
      * 新行会带着 {@code "pollIndex"} 而 {@code "pollIndex"} 留空 —— 若旧索引还在，
      * 第二行 null 就会违反旧索引的唯一性，导致插入失败。所以这里幂等地把它删掉
      * （不存在时容错，不阻断启动）。
      */
     private Uni<Void> dropLegacyFunctionIndex() {
-        return collection().dropIndex("serviceId_1_pollIndex_1")
+        return collection().dropIndex("fdid_1_pollIndex_1")
                 .onFailure().recoverWithNull()
                 .replaceWithVoid();
     }
@@ -76,19 +76,19 @@ public class ModbusPollingRepository  {
     }
 
     /** 某个服务下的任务，按方法序号升序。 */
-    public Uni<List<ModbusPolling>> findByServiceId(String serviceId) {
-        if (serviceId == null || serviceId.isBlank()) {
+    public Uni<List<ModbusPolling>> findByFdid(String fdid) {
+        if (fdid == null || fdid.isBlank()) {
             return Uni.createFrom().item(List.of());
         }
-        return collection().find(Filters.eq("serviceId", serviceId)).collect().asList();
+        return collection().find(Filters.eq("fdid", fdid)).collect().asList();
     }
 
-    /** 一批服务的任务（查询接口按空间取：空间 → serviceId 列表 → 任务）。 */
-    public Uni<List<ModbusPolling>> listByServiceIds(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    /** 一批服务的任务（查询接口按空间取：空间 → fdid 列表 → 任务）。 */
+    public Uni<List<ModbusPolling>> listByFdids(List<String> fdids) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(List.of());
         }
-        return collection().find(Filters.in("serviceId", serviceIds)).collect().asList();
+        return collection().find(Filters.in("fdid", fdids)).collect().asList();
     }
 
     /** 新增一条（{@code _id} 由 Panache 生成并回写到 {@code poll.id}）。 */
@@ -178,24 +178,24 @@ public class ModbusPollingRepository  {
         return collection().findOneAndUpdate(filter, update);
     }
 
-    /** 级联删除一批服务的任务（服务或依赖设备被删时调用），删除条数为 0 不算失败。 */
-    public Uni<Long> deleteByServiceIds(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    /** 级联删除一批现场设备的任务（服务或依赖设备被删时调用），删除条数为 0 不算失败。 */
+    public Uni<Long> deleteByDeviceIds(List<String> deviceIds) {
+        if (deviceIds == null || deviceIds.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
         return collection()
-                .deleteMany(Filters.in("serviceId", serviceIds))
+                .deleteMany(Filters.in("deviceId", deviceIds))
                 .map(DeleteResult::getDeletedCount);
     }
 
     /** 对账：删掉某个服务里已不再需要轮询的方法（方法被删了、或周期被去掉了）。 */
-    public Uni<Long> deleteByPollIndexes(String serviceId, List<Integer> pollIndexes) {
-        if (serviceId == null || pollIndexes == null || pollIndexes.isEmpty()) {
+    public Uni<Long> deleteByPollIndexes(String deviceId, List<Integer> pollIndexes) {
+        if (deviceId == null || pollIndexes == null || pollIndexes.isEmpty()) {
             return Uni.createFrom().item(0L);
         }
         return collection()
                 .deleteMany(Filters.and(
-                        Filters.eq("serviceId", serviceId),
+                        Filters.eq("deviceId", deviceId),
                         Filters.in("pollIndex", pollIndexes)))
                 .map(DeleteResult::getDeletedCount);
     }

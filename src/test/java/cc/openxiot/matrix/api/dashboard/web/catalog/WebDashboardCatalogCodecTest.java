@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 
 import cc.openxiot.matrix.db.device.DeviceEntity;
-import cc.openxiot.matrix.db.modbus.device.DeviceOn;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class DashboardCatalogCodecTest {
 
         // 两个键恒在：编辑器据此显示「没有可选项」，而不是把级联画成坏掉的样子
         assertTrue(o.getJsonArray("devices").isEmpty());
-        assertTrue(o.getJsonArray("services").isEmpty());
+        assertTrue(o.getJsonArray("fds").isEmpty());
     }
 
     @Test
@@ -42,7 +42,7 @@ class DashboardCatalogCodecTest {
         JsonObject o = WebDashboardCatalogCodec.encode(null, null);
 
         assertTrue(o.getJsonArray("devices").isEmpty());
-        assertTrue(o.getJsonArray("services").isEmpty());
+        assertTrue(o.getJsonArray("fds").isEmpty());
     }
 
     @Test
@@ -75,8 +75,8 @@ class DashboardCatalogCodecTest {
      */
     @Test
     void encodeService_reusesTheFullServiceShape() {
-        JsonObject service = WebDashboardCatalogCodec.encode(List.of(), List.of(service()))
-                .getJsonArray("services").getJsonObject(0);
+        JsonObject service = WebDashboardCatalogCodec.encode(List.of(), List.of(fd()))
+                .getJsonArray("fds").getJsonObject(0);
 
         assertEquals("6512f3a4b5c6d7e8f9a0b1c5", service.getString("id"));
         assertEquals("1 号冷水机组", service.getString("name"));
@@ -88,7 +88,7 @@ class DashboardCatalogCodecTest {
         assertEquals("int16", field.getString("format"));
         assertEquals("℃", field.getString("unit"));
         // 位名是独立的可选字段（用户在下拉里选它配一张卡），所以位清单也要在。
-        // 线上的键是**连字符**的 `bit-list`（实体里叫 bitList）—— 前端 ModbusDeviceCodec
+        // 线上的键是**连字符**的 `bit-list`（实体里叫 bitList）—— 前端 FieldDeviceCodec
         // 就是按这个键解的，所以这里必须钉住线上拼写，不能跟着实体字段名走
         assertEquals("进水阀", field.getJsonArray("bit-list").getJsonObject(0).getString("field"));
     }
@@ -103,7 +103,7 @@ class DashboardCatalogCodecTest {
         return d;
     }
 
-    private static ModbusDevice service() {
+    private static FieldDevice fd() {
         ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
         bit.offset = 0;
         bit.field = "进水阀";
@@ -123,11 +123,11 @@ class DashboardCatalogCodecTest {
         poll.name = "读温度";
         poll.response = ModbusResponses.of(field);
 
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
-        service.name = "1 号冷水机组";
-        service.device = new DeviceOn();
-        service.polls = List.of(poll);
-        return service;
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
+        fd.name = "1 号冷水机组";
+        fd.device = new DeviceOn();
+        fd.polls = List.of(poll);
+        return fd;
     }
 }

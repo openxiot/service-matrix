@@ -3,12 +3,12 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
 import cc.openxiot.matrix.db.modbus.polling.codec.ModbusPollingCodec;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.smallrye.mutiny.Uni;
@@ -54,7 +54,7 @@ public class ModbusPollingResource extends AbstractResource {
     Logger logger;
 
     @Inject
-    ModbusDeviceService serviceService;
+    FieldDeviceService fdService;
 
     @Inject
     ModbusPollingRepository pollRepo;
@@ -71,7 +71,7 @@ public class ModbusPollingResource extends AbstractResource {
     /**
      * 该空间下所有服务的轮询任务：{@code {spaceId, enabled, ..., items: [...]}}。
      *
-     * <p>先取该空间的服务清单（只读 id / name，整份定义不上网络），再按 serviceId 批量取任务；
+     * <p>先取该空间的服务清单（只读 id / name，整份定义不上网络），再按 fdid 批量取任务；
      * 服务名一起带在每条任务上，前端不必再查一遍定义才知道这条任务是谁的。</p>
      *
      * <p>任务表里没有的方法**不出现**在结果里 —— 没配周期或被 {@code polling=false} 关掉的方法
@@ -85,15 +85,15 @@ public class ModbusPollingResource extends AbstractResource {
     ) {
         logger.infov("list modbus poll tasks, space: {0}", spaceId);
         return requireSpaceMember(spaceId)
-                .chain(ignored -> serviceService.getBriefBySpaceId(spaceId))
+                .chain(ignored -> fdService.getBriefBySpaceId(spaceId))
                 .chain(briefs -> {
                     Map<String, String> nameById = new HashMap<>();
-                    List<String> serviceIds = new java.util.ArrayList<>(briefs.size());
-                    for (ModbusDevice brief : briefs) {
-                        serviceIds.add(brief.id.toHexString());
+                    List<String> fdids = new java.util.ArrayList<>(briefs.size());
+                    for (FieldDevice brief : briefs) {
+                        fdids.add(brief.id.toHexString());
                         nameById.put(brief.id.toHexString(), brief.name);
                     }
-                    return pollRepo.listByServiceIds(serviceIds)
+                    return pollRepo.listByFdids(fdids)
                             .map(polls -> body(spaceId, nameById, polls));
                 })
                 .map(OxResponse::ok)
@@ -107,7 +107,7 @@ public class ModbusPollingResource extends AbstractResource {
         JsonArray items = new JsonArray();
         for (ModbusPolling poll : polls) {
             JsonObject item = ModbusPollingCodec.encode(poll);
-            String name = poll.serviceId == null ? null : nameById.get(poll.serviceId);
+            String name = poll.fdid == null ? null : nameById.get(poll.fdid);
             if (name != null) {
                 item.put("serviceName", name);
             }

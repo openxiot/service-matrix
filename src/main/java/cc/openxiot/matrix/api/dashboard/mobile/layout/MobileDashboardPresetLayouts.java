@@ -18,7 +18,7 @@ import java.util.Map;
  * <p><b>顺序就是视觉顺序</b>：竖屏一列从上往下排。手机没有 Web 那套网格，位置真值就是数组顺序，
  * 所以这里<b>给坐标没有意义</b>，各张卡只给一个宽幅档位：
  * <ul>
- *   <li>两张 {@code HALF} 统计卡并列（一整行的两半）：{@code devices.total} / {@code services.total}
+ *   <li>两张 {@code HALF} 统计卡并列（一整行的两半）：{@code devices.total} / {@code fds.total}
  *       —— 两块小数字并列很常见，省屏幕；</li>
  *   <li>再两张 {@code HALF} 统计卡：{@code alarms.today}（带窗口）/ {@code failures.total}（带窗口）；</li>
  *   <li>整宽一张设备类型分布 {@code deviceType}（FULL）；</li>
@@ -48,7 +48,7 @@ public final class MobileDashboardPresetLayouts {
         layout.version = PRESET_VERSION;
         layout.widgets = List.of(
                 stat("m_preset_devices", "设备总量", "devices.total", null),
-                stat("m_preset_services", "服务总量", "services.total", null),
+                stat("m_preset_fds", "现场设备总量", "fds.total", null),
                 stat("m_preset_alarms", "今日告警", "alarms.today", window(24)),
                 // failures.total 必须带窗口，且「故障种类数」的正确译法是「故障种类」
                 stat("m_preset_failures", "故障种类", "failures.total", window(24)),

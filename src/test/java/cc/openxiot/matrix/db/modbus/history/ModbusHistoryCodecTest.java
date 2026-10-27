@@ -82,7 +82,7 @@ class ModbusHistoryCodecTest {
 
     @Test
     void failureOmitsKeysThatHaveNoValue() {
-        // 没有远端码、没有分类时不出现空键（与 ModbusDeviceCodec 同口径）：
+        // 没有远端码、没有分类时不出现空键（与 FieldDeviceCodec 同口径）：
         // 前端判「有没有码」看键在不在
         JsonObject json = ModbusPollingHistoryCodec.encode(failure(null, null, T0));
 

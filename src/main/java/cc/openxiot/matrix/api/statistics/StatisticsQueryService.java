@@ -8,8 +8,8 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -37,19 +37,19 @@ import java.util.function.Function;
  *
  * <p><b>服务</b>这一次同时给出三样东西：总数、按点表分组的条数、以及告警与故障要逐服务查的 id 清单。
  * 三者出自**同一次读取**，故「按点表分组的条数之和 == 服务总数」是构造出来的，不靠约定 ——
- * 这也是这里不复用 {@code ModbusDeviceService.subtreeServiceIds} 的原因（它只带 id 与名字，
+ * 这也是这里不复用 {@code FieldDeviceService.subtreeFdids} 的原因（它只带 id 与名字，
  * 点表得再查一次，两次读之间没有共同的真值）。过滤条件与它逐字相同
  * （{@code device.space.spaceId} 逐空间取再拍平去重），所以「服务总量」与告警页看到的范围一致。</p>
  *
- * <p><b>告警 / 故障</b>：逐个 serviceId 各查一次再在内存里归并，**不用
- * {@code Filters.in("serviceId", …)}** —— 两个集合的索引都是 {@code (serviceId, pollIndex, at)}，
+ * <p><b>告警 / 故障</b>：逐个 fdid 各查一次再在内存里归并，**不用
+ * {@code Filters.in("fdid", …)}** —— 两个集合的索引都是 {@code (fdid, pollIndex, at)}，
  * 跨服务查会丢掉索引前缀（与 {@code ModbusPollingHistoryService} 的说明同一条）。</p>
  *
  * <p><b>不做聚合管道</b>：全后端的 {@code Aggregates} / {@code $group} 零命中，分桶与归并一律在内存里做
  * （与 {@code ModbusRegistryHistoryWindow} 的降采样、{@code ModbusAlarmCodec.encodeSummary} 的计数同一路线），
  * 免得把「DocumentDB 支持哪些算子」这件事引进依赖。</p>
  *
- * <p>校验（{@link #checkRange}）与三份归并（{@link #devicesOf} / {@link #servicesOf} /
+ * <p>校验（{@link #checkRange}）与三份归并（{@link #devicesOf} / {@link #fdsOf} /
  * {@link #hourly} / {@link #tally}）都是**静态纯函数**：这个模块跑不了要连库的测试，
  * 能被单测覆盖的恰好就是「算得对不对」这一部分。</p>
  */
@@ -71,7 +71,7 @@ public class StatisticsQueryService {
     public static final String UNKNOWN = "UNKNOWN";
 
     @Inject
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository fdRepo;
 
     @Inject
     ModbusAlarmRepository alarmRepo;
@@ -95,7 +95,7 @@ public class StatisticsQueryService {
      * @param from 区间起点（必填，原样回给前端）
      * @param to   区间终点（缺省时补的是「现在」，必须回给前端 —— 不回的话前端不知道曲线的右端是几点）
      */
-    public record Overview(Date from, Date to, DeviceStats devices, ServiceStats services,
+    public record Overview(Date from, Date to, DeviceStats devices, FdStats fds,
                            AlarmStats alarms, FailureStats failures) {
     }
 
@@ -108,13 +108,13 @@ public class StatisticsQueryService {
     }
 
     /**
-     * 服务：总数、按所配点表的条数。
+     * 现场设备：总数、按所配点表的条数。
      *
-     * <p>分组键是服务内嵌快照的源点表 id（{@code configSnapshot.id}，**不是**显示名）：
-     * 拼「厂家 型号」是前端的事，首页那一列与服务清单页那一列因此是同一个函数。
-     * 没有快照的服务落在 {@code ""} 键上。</p>
+     * <p>分组键是现场设备内嵌快照的源点表 id（{@code configSnapshot.id}，**不是**显示名）：
+     * 拼「厂家 型号」是前端的事，首页那一列与现场设备清单页那一列因此是同一个函数。
+     * 没有快照的现场设备落在 {@code ""} 键上。</p>
      */
-    public record ServiceStats(int total, List<Count> byConfig) {
+    public record FdStats(int total, List<Count> byConfig) {
     }
 
     /**
@@ -166,11 +166,11 @@ public class StatisticsQueryService {
                 .chain(spaces -> {
                     List<String> spaceIds = spaces.stream().map(space -> space.id.toString()).toList();
                     Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
-                    Uni<List<ModbusDevice>> services = bySpace(spaceIds, serviceRepo::findConfigKeysBySpaceId);
+                    Uni<List<FieldDevice>> fds = bySpace(spaceIds, fdRepo::findConfigKeysBySpaceId);
                     // 两轮：服务的 id 清单是后两件事的查询范围，只能等它回来
-                    return Uni.combine().all().unis(devices, services).asTuple()
+                    return Uni.combine().all().unis(devices, fds).asTuple()
                             .chain(tuple -> {
-                                List<String> ids = serviceIds(tuple.getItem2());
+                                List<String> ids = fdids(tuple.getItem2());
                                 Uni<List<ModbusAlarm>> alarms = mergeTimelines(ids.stream()
                                         .map(id -> alarmRepo.findTimeline(id, from, end)).toList());
                                 Uni<List<ModbusPollingHistory>> failures = mergeTimelines(ids.stream()
@@ -178,7 +178,7 @@ public class StatisticsQueryService {
                                 return Uni.combine().all().unis(alarms, failures).asTuple()
                                         .map(rows -> new Overview(from, end,
                                                 devicesOf(tuple.getItem1()),
-                                                servicesOf(tuple.getItem2()),
+                                                fdsOf(tuple.getItem2()),
                                                 new AlarmStats(rows.getItem1().size(),
                                                         tally(texts(rows.getItem1())),
                                                         hourly(alarmTimes(rows.getItem1()), from, end)),
@@ -189,14 +189,14 @@ public class StatisticsQueryService {
     }
 
     /**
-     * 服务的 id 清单：一次读取顺便去重（{@code ModbusDeviceService.subtreeServiceIds} 的 id 部分）。
+     * 现场设备的 id 清单：一次读取顺便去重（{@code FieldDeviceService.subtreeFdids} 的 id 部分）。
      *
      * <p>服务文档的 {@code _id} 即使只投影 {@code configSnapshot._id} 也由 Mongo 默认带出（与
-     * {@code ModbusDeviceRepository.findBriefBySpaceId} 同一条）。逐空间取不会取到重复的，
+     * {@code FieldDeviceRepository.findBriefBySpaceId} 同一条）。逐空间取不会取到重复的，
      * 去重是保险：重复的 id 会让告警多查一次、行被数两遍。</p>
      */
-    private static List<String> serviceIds(List<ModbusDevice> services) {
-        return services.stream()
+    private static List<String> fdids(List<FieldDevice> fds) {
+        return fds.stream()
                 .filter(service -> service != null && service.id != null)
                 .map(service -> service.id.toHexString())
                 .distinct()
@@ -250,16 +250,16 @@ public class StatisticsQueryService {
     }
 
     /** 服务：总数、按源点表 id（{@code configSnapshot.id}）的条数。两者同源，故分组的条数之和恒等于总数。 */
-    static ServiceStats servicesOf(List<ModbusDevice> rows) {
+    static FdStats fdsOf(List<FieldDevice> rows) {
         List<String> configIds = new ArrayList<>();
         if (rows != null) {
-            for (ModbusDevice service : rows) {
-                if (service != null) {
-                    configIds.add(configKey(service.configSnapshot));
+            for (FieldDevice fd : rows) {
+                if (fd != null) {
+                    configIds.add(configKey(fd.configSnapshot));
                 }
             }
         }
-        return new ServiceStats(configIds.size(), tally(configIds));
+        return new FdStats(configIds.size(), tally(configIds));
     }
 
     /**

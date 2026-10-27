@@ -4,9 +4,9 @@ import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,20 +20,20 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Modbus设备的「当前值」读投影：寄存器缓存网格。
+ * 现场设备的「当前值」读投影：寄存器缓存网格。
  *
  * <p>把点表里所有可读寄存器与各方法最后一次轮询快照（{@code ModbusServiceLastPolling}）归并成
  * 「按寄存器」的缓存视图 —— 一次读取看到整张点表的缓存实况。纯读侧投影，不落库、不写盘。</p>
  *
- * <p>与 {@code ModbusDeviceService} 是两回事：那边是服务的**定义维护 + 方法调用**（写路径，
- * 落历史 / 影子 / 告警），这里只做**读**。需要解析「服务 → 点表」时用 {@code ModbusDeviceRepository}，
+ * <p>与 {@code FieldDeviceService} 是两回事：那边是服务的**定义维护 + 方法调用**（写路径，
+ * 落历史 / 影子 / 告警），这里只做**读**。需要解析「服务 → 点表」时用 {@code FieldDeviceRepository}，
  * 不依赖调用逻辑。</p>
  */
 @ApplicationScoped
 public class ModbusShadowService {
 
     @Inject
-    ModbusDeviceRepository repo;
+    FieldDeviceRepository repo;
 
     @Inject
     ModbusShadowRepository registryShadowRepo;
@@ -48,27 +48,27 @@ public class ModbusShadowService {
      * <p>服务不存在 / 没有点表快照时返回空网格——读取是**投影**，「能给多少给多少」，
      * 不因单个 id 失败而报错（与设备影子的「按 did 取、能取到多少返回多少」同口径）。</p>
      */
-    public Uni<List<JsonObject>> registerCache(String serviceId) {
-        return repo.findById(serviceId)
+    public Uni<List<JsonObject>> registerCache(String fdid) {
+        return repo.findById(fdid)
                 .onItem().transformToUni(service -> service == null
                         ? Uni.createFrom().item(List.of())
-                        : registryShadowRepo.listByServiceId(serviceId)
+                        : registryShadowRepo.listByFdid(fdid)
                                 .map(shadows -> mergeRegisterCache(
                                         service.configSnapshot, service.polls, shadows)));
     }
 
     /**
-     * 批量取多个服务的网格，按 {@code serviceId} 归组（{@code ModbusShadowResource} 用）。
+     * 批量取多个服务的网格，按 {@code fdid} 归组（{@code ModbusShadowResource} 用）。
      *
-     * <p>每个服务一张网格并行取；单个 {@code serviceId} 无效时那家为空网格、不拖垮整批。
+     * <p>每个服务一张网格并行取；单个 {@code fdid} 无效时那家为空网格、不拖垮整批。
      * 结果保持入参顺序。</p>
      */
-    public Uni<Map<String, List<JsonObject>>> registerCaches(List<String> serviceIds) {
-        if (serviceIds == null || serviceIds.isEmpty()) {
+    public Uni<Map<String, List<JsonObject>>> registerCaches(List<String> fdids) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(Map.of());
         }
-        return Uni.join().all(serviceIds.stream()
-                        .map(serviceId -> registerCache(serviceId).map(list -> Map.entry(serviceId, list)))
+        return Uni.join().all(fdids.stream()
+                        .map(fdid -> registerCache(fdid).map(list -> Map.entry(fdid, list)))
                         .toList())
                 .andFailFast()
                 .map(entries -> entries.stream()

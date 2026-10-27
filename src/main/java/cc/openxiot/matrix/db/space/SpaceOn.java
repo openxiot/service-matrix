@@ -5,7 +5,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  * 设备所在的空间，供「依赖某台设备」的实体记录其落点：设备实体（{@code DeviceEntity.space}）与
- * Modbus设备（{@code DeviceOn.space}）共用，后者据此按空间反查服务。
+ * 现场设备（{@code DeviceOn.space}）共用，后者据此按空间反查服务。
  *
  * <p>只记 id 不记整个 {@link SpaceEntity}：空间会改名、移动，依赖方不该跟着烂掉；
  * 由写方（设备侧是同步空间时）从 {@link SpaceEntity} 现取现填。</p>

@@ -4,9 +4,9 @@ import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.codec.ModbusDeviceCodec;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.codec.FieldDeviceCodec;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -46,7 +46,7 @@ public class SpaceResource extends AbstractResource {
     DeviceService deviceService;
 
     @Inject
-    ModbusDeviceService modbusServiceService;
+    FieldDeviceService fdService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -219,13 +219,13 @@ public class SpaceResource extends AbstractResource {
                     // 服务只出精简视图（id/name/type）：投影在 Mongo 侧就把 functions/response 挡掉了，只回来 id/name。
                     List<String> spaceIds = spaces.stream().map(s -> s.id.toString()).toList();
                     Uni<List<DeviceEntity>> devices = bySpace(spaceIds, deviceService::getBySpaceId);
-                    Uni<List<ModbusDevice>> services = bySpace(spaceIds, modbusServiceService::getBriefBySpaceId);
-                    return Uni.combine().all().unis(devices, services).asTuple()
+                    Uni<List<FieldDevice>> fds = bySpace(spaceIds, fdService::getBriefBySpaceId);
+                    return Uni.combine().all().unis(devices, fds).asTuple()
                             .map(tuple -> {
                                 Map<String, Object> graph = new HashMap<>();
                                 graph.put("spaces", spaces);
                                 graph.put("devices", tuple.getItem1());
-                                graph.put("services", ModbusDeviceCodec.encodeBrief(tuple.getItem2()));
+                                graph.put("fds", FieldDeviceCodec.encodeBrief(tuple.getItem2()));
                                 return OxResponse.ok(graph);
                             });
                 })
@@ -235,7 +235,7 @@ public class SpaceResource extends AbstractResource {
 
     // -- helper methods --
 
-    /** 按空间逐个并行取，再拍平成一张表（spaces / devices / services 走同一条路径）。 */
+    /** 按空间逐个并行取，再拍平成一张表（spaces / devices / fds 走同一条路径）。 */
     private static <T> Uni<List<T>> bySpace(List<String> spaceIds, Function<String, Uni<List<T>>> loader) {
         return Uni.join()
                 .all(spaceIds.stream().map(loader).toList())

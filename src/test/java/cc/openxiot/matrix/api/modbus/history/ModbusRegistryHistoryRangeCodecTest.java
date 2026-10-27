@@ -47,7 +47,7 @@ class ModbusRegistryHistoryRangeCodecTest {
         JsonObject body = ModbusRegistryHistoryRangeCodec.encode(range(window));
 
         // 请求带下来的身份/坐标原样回显
-        assertEquals("svc-1", body.getString("serviceId"));
+        assertEquals("svc-1", body.getString("fdid"));
         assertEquals(2, body.getInteger("pollIndex"));      // identity 落在这里
         assertEquals("进水温度", body.getString("field"));
         assertEquals(T0, body.getLong("from"));

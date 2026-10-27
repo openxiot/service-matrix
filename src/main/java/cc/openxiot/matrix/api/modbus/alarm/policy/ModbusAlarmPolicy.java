@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.modbus.alarm.policy;
 import cc.openxiot.matrix.db.modbus.alarm.OpenAlarmRule;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -32,9 +32,9 @@ import java.util.TreeSet;
  * 超过 28 警告 / 超过 30 严重」这种分级配置里，越限到 31℃ 时四条规则里两条同时命中 ——
  * 却只产生一条告警（{@link #rank} 最高的那条），其余开着的行按 {@code SUPERSEDED} 关掉。
  * 于是不变式是「一个寄存器同时最多一条开着」，它恰好就是告警表那条唯一部分索引强制的东西
- * （{@code openKey} 因此仍然只是 {@code serviceId#pollIndex#field}，不带规则标识）。</p>
+ * （{@code openKey} 因此仍然只是 {@code fdid#pollIndex#field}，不带规则标识）。</p>
  *
- * <p>「开着的行就是状态」：不另存一份告警态，{@code (serviceId, pollIndex, field)} 上有未恢复的告警
+ * <p>「开着的行就是状态」：不另存一份告警态，{@code (fdid, pollIndex, field)} 上有未恢复的告警
  * 就是「开着」。判定只需要这一张集合，它由告警表自己查出来
  * （见 Modbus-Alarm.md 第三节：为什么不放进 ModbusServiceLastPolling、也不用 poller 的内存基准）。</p>
  */
@@ -86,7 +86,7 @@ public final class ModbusAlarmPolicy {
 
     /**
      * 判定的最小单元：一个可告警「出值」及其规则。由调用方从寄存器中心搭出来 ——
-     * {@link #registerRules(ModbusDevice)} 把 {@code configSnapshot.registries[]} 里带启用告警的
+     * {@link #registerRules(FieldDevice)} 把 {@code configSnapshot.registries[]} 里带启用告警的
      * 寄存器展开成这张表（{@code field} 即寄存器名、{@code unit} 即寄存器单位）。
      *
      * @param field  出值名（写进告警行 / 比 {@code values} 的键）
@@ -299,12 +299,12 @@ public final class ModbusAlarmPolicy {
      * openKey 的 pollIndex）仍由调用方从判定的继承关系带过去，本表只管「哪个出值有哪些规则、
      * 单位是什么」。</p>
      */
-    public static List<ModbusFieldRule> registerRules(ModbusDevice service) {
-        if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
+    public static List<ModbusFieldRule> registerRules(FieldDevice fd) {
+        if (fd == null || fd.configSnapshot == null || fd.configSnapshot.registries == null) {
             return List.of();
         }
         List<ModbusFieldRule> rules = new ArrayList<>();
-        for (ModbusRegistry reg : service.configSnapshot.registries) {
+        for (ModbusRegistry reg : fd.configSnapshot.registries) {
             if (reg == null || reg.name == null || !hasEnabled(reg.alarms)) {
                 continue;
             }
@@ -316,7 +316,7 @@ public final class ModbusAlarmPolicy {
     /**
      * 判定一次采集。
      *
-     * @param rules           这组出值规则（由 {@link #registerRules(ModbusDevice)} 从寄存器中心搭出来）
+     * @param rules           这组出值规则（由 {@link #registerRules(FieldDevice)} 从寄存器中心搭出来）
      * @param values          本次采集的「出值名 → 值」（{@code ModbusResponseParser} 的产物）
      * @param openRuleByField 这个方法当前**有未恢复告警**的出值 → 那条开着的行上的
      *                        {@link OpenAlarmRule}（哪条规则开的、有没有被处理过）。

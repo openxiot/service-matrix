@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,11 +35,11 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -90,7 +90,7 @@ class WidgetDataServiceTest {
     ModbusRegistryHistoryRepository registryHistoryRepo;
 
     @InjectMock
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository fdRepo;
 
     @InjectMock
     ModbusShadowRepository registryShadowRepo;
@@ -119,8 +119,8 @@ class WidgetDataServiceTest {
     @BeforeEach
     void stubDefaults() {
         when(ownershipValidator.errorsByWidget(any(), anyList())).thenReturn(Uni.createFrom().item(Map.of()));
-        when(serviceRepo.findById(anyString())).thenReturn(Uni.createFrom().nullItem());
-        when(registryShadowRepo.listByServiceId(anyString())).thenReturn(Uni.createFrom().item(List.of()));
+        when(fdRepo.findById(anyString())).thenReturn(Uni.createFrom().nullItem());
+        when(registryShadowRepo.listByFdid(anyString())).thenReturn(Uni.createFrom().item(List.of()));
         when(manipulationService.getShadows(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new JsonArray()));
         when(deviceRepo.findByDeviceIds(anyList())).thenReturn(Uni.createFrom().item(List.of()));
@@ -170,7 +170,7 @@ class WidgetDataServiceTest {
     @Test
     void render_statCard_servicesAndFailures() {
         stubOverview();
-        assertEquals(2, data(render(stat("w1", "services.total", null)), 0).getInteger("value"));
+        assertEquals(2, data(render(stat("w1", "fds.total", null)), 0).getInteger("value"));
         JsonObject failures = data(render(stat("w1", "failures.total", last(24))), 0);
         assertEquals(1, failures.getInteger("value"));
     }
@@ -232,7 +232,7 @@ class WidgetDataServiceTest {
     @Test
     void render_windowlessCardsShareTheFallbackWindow() {
         stubOverview();
-        render(stat("w1", "devices.total", null), stat("w2", "services.total", null));
+        render(stat("w1", "devices.total", null), stat("w2", "fds.total", null));
 
         verify(statisticsQueryService, times(1)).overview(eq(SPACE_ID), any(), any());
     }
@@ -320,7 +320,7 @@ class WidgetDataServiceTest {
         stubOverview();
         DashboardWidgetDataService.WidgetData data = render(
                 stat("a", "devices.total", null),
-                stat("b", "services.total", null),
+                stat("b", "fds.total", null),
                 stat("c", "failures.total", last(24)));
 
         assertEquals(List.of("a", "b", "c"), data.widgets().stream().map(DashboardWidgetDataService.Item::id).toList());
@@ -346,7 +346,7 @@ class WidgetDataServiceTest {
 
     /**
      * 归属校验在**每一次取数**时都做，不只是保存时：卡片引用的服务可能在那之后被删掉，
-     * 而 {@code serviceId} 是用户填的 —— 只按 id 查就意味着拿到别人的 id 就能读别人的数据。
+     * 而 {@code fdid} 是用户填的 —— 只按 id 查就意味着拿到别人的 id 就能读别人的数据。
      */
     @Test
     void render_ownershipIsCheckedOnEveryRender() {
@@ -699,7 +699,7 @@ class WidgetDataServiceTest {
 
         render(serviceCard("w1", 1, List.of("温度")), serviceCard("w2", 1, List.of("温度")));
 
-        verify(registryShadowRepo, times(1)).listByServiceId("svc-1");
+        verify(registryShadowRepo, times(1)).listByFdid("svc-1");
     }
 
     /**
@@ -709,9 +709,9 @@ class WidgetDataServiceTest {
     @Test
     void render_serviceFetchFailureBlacksOnlyThatCard() {
         stubOverview();
-        when(registryShadowRepo.listByServiceId("svc-1"))
+        when(registryShadowRepo.listByFdid("svc-1"))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo timeout")));
-        when(serviceRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
+        when(fdRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
         DashboardWidgetDataService.WidgetData data = render(serviceCard("w1", 1, List.of("温度")),
                 stat("w2", "devices.total", null));
@@ -726,9 +726,9 @@ class WidgetDataServiceTest {
      */
     @Test
     void render_serviceFetchFailureWithoutMessageFallsBackToTheClassName() {
-        when(registryShadowRepo.listByServiceId("svc-1"))
+        when(registryShadowRepo.listByFdid("svc-1"))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException()));
-        when(serviceRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
+        when(fdRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
         assertEquals("IllegalStateException", render(serviceCard("w1", 1, List.of("温度")))
                 .widgets().get(0).message());
@@ -870,7 +870,7 @@ class WidgetDataServiceTest {
         JsonObject data = data(render(curve("w1", last(24))), 0);
 
         // 曲线这一段就是 /history/range 的响应体：前端两条路共用同一个 decodeRange
-        assertEquals(SERVICE_ID, data.getString("serviceId"));
+        assertEquals(SERVICE_ID, data.getString("fdid"));
         assertEquals(1, data.getInteger("pollIndex").intValue());
         assertEquals("温度", data.getString("field"));
         assertEquals(24 * HOUR, data.getLong("to") - data.getLong("from"));
@@ -980,7 +980,7 @@ class WidgetDataServiceTest {
      * 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。
      */
     private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
-        Map<String, Object> config = config("source", "serviceField", "serviceId", SERVICE_ID,
+        Map<String, Object> config = config("source", "serviceField", "fdid", SERVICE_ID,
                 "pollIndex", 1, "field", "温度", "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
@@ -995,7 +995,7 @@ class WidgetDataServiceTest {
      */
     private static ModbusRegistryHistory registryEvent(long at, Object value, boolean failure) {
         ModbusRegistryHistory event = new ModbusRegistryHistory();
-        event.serviceId = SERVICE_ID;
+        event.fdid = SERVICE_ID;
         event.registerIndex = 1;
         event.name = "温度";
         event.unit = "℃";
@@ -1025,7 +1025,7 @@ class WidgetDataServiceTest {
                 new StatisticsQueryService.DeviceStats(10, 7, List.of(
                         new StatisticsQueryService.Count("冷机", 3),
                         new StatisticsQueryService.Count("水泵", 2))),
-                new StatisticsQueryService.ServiceStats(2, List.of(
+                new StatisticsQueryService.FdStats(2, List.of(
                         new StatisticsQueryService.Count("cfg1", 2))),
                 new StatisticsQueryService.AlarmStats(5, List.of(
                         new StatisticsQueryService.Count("超温", 4)),
@@ -1104,7 +1104,7 @@ class WidgetDataServiceTest {
     }
 
     private static WebDashboardWidget serviceCard(String id, int pollIndex, List<String> fields) {
-        return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID,
+        return widget(id, "service", "W12H200", config("fdid", SERVICE_ID,
                 "pollIndex", pollIndex, "fields", fields));
     }
 
@@ -1112,7 +1112,7 @@ class WidgetDataServiceTest {
      * 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。
      */
     private static WebDashboardWidget serviceCardRegisters(String id, String... fields) {
-        return widget(id, "service", "W12H200", config("serviceId", SERVICE_ID, "fields", List.of(fields)));
+        return widget(id, "service", "W12H200", config("fdid", SERVICE_ID, "fields", List.of(fields)));
     }
 
     /**
@@ -1120,22 +1120,22 @@ class WidgetDataServiceTest {
      * 不再是已删的 {@code ModbusServiceLastPolling}），convert 成服务定义里每只寄存器的影子：
      * 字段名 == 寄存器名，没有该字段 = 那只寄存器还没采到（value 空，卡片据此显示 {@code -}）。
      */
-    private void stubService(ShadowInput input, ModbusDevice definition) {
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+    private void stubService(ShadowInput input, FieldDevice definition) {
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(input == null ? List.of() : convertShadows(input, definition)));
-        when(serviceRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
+        when(fdRepo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(definition));
     }
 
     /**
      * 把输入的「字段 → 值 + 失败态」按服务定义里的每只寄存器展平成逐寄存器影子。
      */
-    private static List<ModbusShadow> convertShadows(ShadowInput input, ModbusDevice definition) {
+    private static List<ModbusShadow> convertShadows(ShadowInput input, FieldDevice definition) {
         List<ModbusShadow> shadows = new ArrayList<>();
         if (input != null && definition != null && definition.configSnapshot != null
                 && definition.configSnapshot.registries != null) {
             for (ModbusRegistry reg : definition.configSnapshot.registries) {
                 ModbusShadow s = new ModbusShadow();
-                s.serviceId = SERVICE_ID;
+                s.fdid = SERVICE_ID;
                 s.registerIndex = reg.index;
                 s.value = input.values == null ? null : input.values.get(reg.name);
                 s.recordedAt = input.recordedAt;
@@ -1151,7 +1151,7 @@ class WidgetDataServiceTest {
      * 服务定义：方法与「温度」（带单位），位区里有一个「进水阀」。曲线卡要的 unit / step 从这来。
      */
     private void stubDefinition() {
-        when(serviceRepo.findById(SERVICE_ID))
+        when(fdRepo.findById(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(serviceDef(1, "温度", "℃", null, "进水阀")));
     }
 
@@ -1173,8 +1173,8 @@ class WidgetDataServiceTest {
      * 一个方法：{@code primary} 是主字段（带单位），{@code bit} 是它位区里的一个位名
      * （没有单位）。两者可以都给 —— 那正是「位名与父字段并存」的实际情况。
      */
-    private static ModbusDevice serviceDef(int pollIndex, String primary, String unit, String second,
-                                            String... bits) {
+    private static FieldDevice serviceDef(int pollIndex, String primary, String unit, String second,
+                                          String... bits) {
         List<ModbusResponseField> fields = new ArrayList<>();
         fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
         if (second != null) {
@@ -1188,7 +1188,7 @@ class WidgetDataServiceTest {
         poll.name = primary;
         poll.response = ModbusResponses.of(fields);
 
-        ModbusDevice definition = new ModbusDevice();
+        FieldDevice definition = new FieldDevice();
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
         definition.polls = List.of(poll);

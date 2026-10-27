@@ -9,7 +9,7 @@ import org.bson.types.ObjectId;
 import java.util.List;
 
 /**
- * {@link ModbusConfig} 与 JSON 的互转（原 {@code ModbusJson}，与 {@code ModbusDeviceCodec} 同形
+ * {@link ModbusConfig} 与 JSON 的互转（原 {@code ModbusJson}，与 {@code FieldDeviceCodec} 同形
  * 拆到实体的 codec 子包，子结构逐个委派给各自的 Codec）。
  *
  * <p>{@link #encode} 用于下发；{@link #decode} 只用于解服务里的 {@code configSnapshot}

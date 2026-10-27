@@ -70,8 +70,8 @@ public final class WebDashboardPresetLayouts {
                 // ── 第一行：4 张统计卡，各 6 列，正好 24 列 ──
                 stat("w_preset_devices", "设备总量",
                         "devices.total", null),
-                stat("w_preset_services", "服务总量",
-                        "services.total", null),
+                stat("w_preset_fds", "现场设备总量",
+                        "fds.total", null),
                 stat("w_preset_alarms", "今日告警",
                         "alarms.today", window(24)),
                 // failures.total 必须带窗口（§5.3），且「故障种类数」的正确译法是「故障种类」
@@ -80,7 +80,7 @@ public final class WebDashboardPresetLayouts {
 
                 // ── 第二、三行：4 张 M（各 12 列），两两一行 ──
                 distribution("w_preset_device_type", "设备类型分布", "deviceType", null),
-                distribution("w_preset_service_type", "服务类型分布", "serviceType", null),
+                distribution("w_preset_fd_type", "现场设备类型分布", "serviceType", null),
                 distribution("w_preset_alarm_type", "告警类型分布", "alarmType", window(24)),
                 alarmLine("w_preset_alarm_curve", "告警曲线")
         );

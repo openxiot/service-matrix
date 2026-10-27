@@ -11,13 +11,13 @@ import java.util.stream.Collectors;
 
 /**
  * Web 看板卡片配置的**结构性**校验外壳：纯函数、无状态、不碰数据库 —— 返回 {@code null} 表示通过，
- * 否则返回给前端看的错误文案。照 {@code ModbusDeviceValidator} 的风格，由调用方转成
+ * 否则返回给前端看的错误文案。照 {@code FieldDeviceValidator} 的风格，由调用方转成
  * {@link IllegalArgumentException}。
  *
  * <p><b>本类只管「配置本身合不合法」，不管「你能不能写」和「这个设备是不是你的」</b>：</p>
  * <ul>
  *   <li>「能不能写」是资源层 {@code requireSpaceAdmin} 的事；</li>
- *   <li>「设备/服务是否属于该空间」「{@code (serviceId, pollIndex, field)} 三元组是否存在」
+ *   <li>「设备/服务是否属于该空间」「{@code (fdid, pollIndex, field)} 三元组是否存在」
  *       需要查库，是 {@link DashboardWidgetOwnershipValidator} 的事。</li>
  * </ul>
  * <p>这样切分的实际好处：本类能被不碰库的纯 JUnit 覆盖（{@code @QuarkusTest} 会要求连 Mongo），

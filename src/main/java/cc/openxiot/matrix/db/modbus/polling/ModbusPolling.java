@@ -10,13 +10,13 @@ import org.bson.types.ObjectId;
 /**
  * 一个轮询任务：某个服务的某个方法**该多久跑一次、上次跑成什么样**（库 {@code modbus}、集合 {@code polls}）。
  *
- * <p>运行时状态（{@code nextRunAt} / 租约 / 上次结果）**不写进 {@code ModbusDevice} 定义文档**：
+ * <p>运行时状态（{@code nextRunAt} / 租约 / 上次结果）**不写进 {@code FieldDevice} 定义文档**：
  * 那是接口直接返回的、空间图投影查询也在用的文档，混进实时状态会让「读定义」变成「读实时状态」。
- * 所以另起一个派生集合，一条 = 一个 {@code (serviceId, pollIndex)}。</p>
+ * 所以另起一个派生集合，一条 = 一个 {@code (fdid, pollIndex)}。</p>
  *
  * <p>只有**读方法、有 {@code interval}、{@code polling != false}** 才入表（口径见 {@code ModbusPollingPlan}）；
  * 定义改了由对账（{@code ModbusPollingReconciler}）跟着改，服务删了跟着删。
- * 也就是说**这张表随时可以从 {@code ModbusDevice} 全量重建** —— 它不是数据源，是索引。</p>
+ * 也就是说**这张表随时可以从 {@code FieldDevice} 全量重建** —— 它不是数据源，是索引。</p>
  *
  * <p>{@link #leaseOwner} / {@link #leaseUntil} 是「扩容是安全操作」的前提（见 Modbus-Service-Poller.md 第六节）：
  * 单副本阶段永远抢得到、等于空跑；多副本时靠 {@code findOneAndUpdate} 单文档原子抢来决定谁跑。
@@ -34,8 +34,8 @@ public class ModbusPolling {
     public ObjectId id;
 
 
-    @Schema(description = "服务 id（ModbusDevice 主键的十六进制字符串）", required = true)
-    public String serviceId;
+    @Schema(description = "现场设备 id（FieldDevice 主键的十六进制字符串）", required = true)
+    public String fdid;
 
     @Schema(description = "方法序号（ModbusPoll.index）", examples = {"1"}, required = true)
     public Integer pollIndex;

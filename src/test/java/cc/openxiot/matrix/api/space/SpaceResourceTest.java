@@ -2,7 +2,7 @@ package cc.openxiot.matrix.api.space;
 
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.DeviceService;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.typedef.model.ModelAnchor;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -39,12 +39,12 @@ class SpaceResourceTest {
     DeviceService deviceService;
 
     /**
-     * {@code /space/graph} 会对每个空间再取一遍服务（{@code ModbusDeviceService.getBriefBySpaceId}）。
+     * {@code /space/graph} 会对每个空间再取一遍服务（{@code FieldDeviceService.getBriefBySpaceId}）。
      * 不顶掉它，真正跑起来的 bean 会去连一个不存在的 Mongo，那条链**永不完成** —— 于是这个用例不是
      * 断言失败，而是干等 30 秒到 RestAssured 读超时。别的用例不走这条链，所以只有 graph 这一个会卡。
      */
     @InjectMock
-    ModbusDeviceService modbusServiceService;
+    FieldDeviceService fdService;
 
     @InjectMock
     OrgAccessService orgAccessService;
@@ -350,7 +350,7 @@ class SpaceResourceTest {
                 .thenReturn(Uni.createFrom().item(List.of(root)));
         when(deviceService.getBySpaceId(any()))
                 .thenReturn(Uni.createFrom().item(List.of()));
-        when(modbusServiceService.getBriefBySpaceId(any()))
+        when(fdService.getBriefBySpaceId(any()))
                 .thenReturn(Uni.createFrom().item(List.of()));
 
         given()
@@ -360,7 +360,7 @@ class SpaceResourceTest {
                 .body("success", is(true))
                 .body("data.spaces.size()", is(1))
                 .body("data.devices.size()", is(0))
-                .body("data.services.size()", is(0));
+                .body("data.fds.size()", is(0));
     }
 
     @Test

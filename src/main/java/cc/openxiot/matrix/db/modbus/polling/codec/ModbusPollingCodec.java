@@ -28,8 +28,8 @@ public final class ModbusPollingCodec {
         if (poll == null) {
             return o;
         }
-        if (poll.serviceId != null) {
-            o.put("serviceId", poll.serviceId);
+        if (poll.fdid != null) {
+            o.put("fdid", poll.fdid);
         }
         if (poll.pollIndex != null) {
             o.put("pollIndex", poll.pollIndex);

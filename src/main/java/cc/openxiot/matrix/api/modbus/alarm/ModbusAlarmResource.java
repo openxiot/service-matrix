@@ -4,7 +4,7 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.common.resource.AbstractResource;
 import cc.openxiot.common.response.OxResponse;
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmReadService;
 import cc.openxiot.matrix.api.modbus.alarm.service.ModbusAlarmWriteService;
 import cc.openxiot.matrix.api.space.SpaceService;
@@ -41,7 +41,7 @@ import java.util.Date;
  *
  * <p><b>按空间鉴权</b>，与 {@code ModbusPollingHistoryResource} 同口径：路径上的 {@code spaceId}
  * 只作鉴权锚点，要该空间的**成员**；判定通过后一律按 id 查，不再校验「告警是否属于该空间」。
- * 唯一例外是不传 {@code serviceId} 时（见 {@link #many}）：那种查法没有 id 可依，
+ * 唯一例外是不传 {@code fdid} 时（见 {@link #many}）：那种查法没有 id 可依，
  * spaceId 同时决定了「查哪些服务」—— 取该空间及其**子空间**下的全部服务，与空间图同口径。</p>
  *
  * <p>时间参数一律是 **epoch 毫秒**（与响应里的 {@code at} / {@code recoveredAt} 同口径），
@@ -65,9 +65,9 @@ public class ModbusAlarmResource extends AbstractResource {
     @Inject
     ModbusAlarmWriteService writeService;
 
-    /** 空间级查询要先把空间下的服务 id 收齐，处理时要判归属（见 ModbusDeviceService.subtreeServiceIds）。 */
+    /** 空间级查询要先把空间下的服务 id 收齐，处理时要判归属（见 FieldDeviceService.subtreeFdids）。 */
     @Inject
-    ModbusDeviceService serviceService;
+    FieldDeviceService fdService;
 
     @Inject
     OrgAccessService orgAccessService;
@@ -76,17 +76,17 @@ public class ModbusAlarmResource extends AbstractResource {
     SpaceService spaceService;
 
     /**
-     * 某段区间内的告警：{@code {serviceId?, from, to, limit, truncated, items, summary}}。
+     * 某段区间内的告警：{@code {fdid?, from, to, limit, truncated, items, summary}}。
      *
      * <p>{@code items} 按 {@code at} 倒序；{@code summary} 是**这批 items** 的
      * {@code {total, open, unhandled, byLevel, byText}} —— {@code truncated} 为 true 时说明还有
      * 更早的没取回来，前端应提示缩小时间范围。</p>
      *
-     * <p>{@code serviceId} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的告警合成
-     * 一条时间倒序的清单，每条 item 自带 {@code serviceId}（见 {@code ModbusAlarmCodec}），
+     * <p>{@code fdid} 不传 = **整个空间（含子空间）**：把该空间及其子树下所有服务的告警合成
+     * 一条时间倒序的清单，每条 item 自带 {@code fdid}（见 {@code ModbusAlarmCodec}），
      * 前端据此认领归属。这一条顶掉前端「拿服务清单、再逐服务各发一次」的扇出 ——
      * 告警页要的正是「这个项目现在哪儿在告警」，N 条请求换 1 条，且合并与截断的口径在后端只有一份。
-     * 此时响应里**不出 {@code serviceId} 键**：它不是某个服务的结果。</p>
+     * 此时响应里**不出 {@code fdid} 键**：它不是某个服务的结果。</p>
      *
      * <p>**为什么含子空间**：前端两页的服务清单来自 {@code /space/graph/{rootId}}，那张图取的就是
      * 整棵子树（项目 = 根空间 + 子空间，设备可以挂在任一子空间上）。告警清单若只查根空间自己的服务，
@@ -102,7 +102,7 @@ public class ModbusAlarmResource extends AbstractResource {
     @RolesAllowed({OxRole.USER})
     public Uni<Response> many(
             @PathParam("spaceId") String spaceId,
-            @QueryParam("serviceId") String serviceId,
+            @QueryParam("fdid") String fdid,
             @QueryParam("pollIndex") Integer pollIndex,
             @QueryParam("field") String field,
             @QueryParam("level") String level,
@@ -112,15 +112,15 @@ public class ModbusAlarmResource extends AbstractResource {
             @QueryParam("to") Long to,
             @QueryParam("limit") Integer limit
     ) {
-        logger.infov("query modbus alarms, space: {0}, service: {1}, level: {2}",
-                spaceId, serviceId, level);
-        boolean wholeSpace = serviceId == null || serviceId.isBlank();
+        logger.infov("query modbus alarms, space: {0}, fd: {1}, level: {2}",
+                spaceId, fdid, level);
+        boolean wholeSpace = fdid == null || fdid.isBlank();
         return requireSpaceMember(spaceId)
                 .chain(ignored -> wholeSpace
-                        ? serviceService.subtreeServiceIds(spaceId)
+                        ? fdService.subtreeFdids(spaceId)
                         .chain(ids -> readService.alarmsOfServices(ids, pollIndex, field, level,
                                 open, handled, millis(from), millis(to), limit))
-                        : readService.alarms(serviceId, pollIndex, field, level,
+                        : readService.alarms(fdid, pollIndex, field, level,
                         open, handled, millis(from), millis(to), limit))
                 .map(result -> {
                     JsonObject body = new JsonObject()
@@ -131,7 +131,7 @@ public class ModbusAlarmResource extends AbstractResource {
                             .put("items", ModbusAlarmCodec.encode(result.items()))
                             .put("summary", ModbusAlarmCodec.encodeSummary(result.items()));
                     if (!wholeSpace) {
-                        body.put("serviceId", serviceId);
+                        body.put("fdid", fdid);
                     }
                     return OxResponse.ok(body);
                 })
@@ -144,8 +144,8 @@ public class ModbusAlarmResource extends AbstractResource {
      *
      * <p><b>为什么要在写之前判一次归属</b>：路径上的 {@code spaceId} 只证明「你是这个空间的成员」，
      * 不证明「这条告警属于这个空间」。不判的话，拿任何一个空间的成员身份 + 一条从别处看来的告警 id
-     * 就能改别人的数据。判法是「这条告警的 {@code serviceId} 在传入空间的子树里吗」——
-     * 与列表查询用的是同一个 {@code subtreeServiceIds}，所以「列表里看得到的就能点」恰好成立。</p>
+     * 就能改别人的数据。判法是「这条告警的 {@code fdid} 在传入空间的子树里吗」——
+     * 与列表查询用的是同一个 {@code subtreeFdids}，所以「列表里看得到的就能点」恰好成立。</p>
      *
      * <p>重复点击 / 并发点击算成功（理由见 {@link ModbusAlarmWriteService#handle}）；
      * 行不在了才是 not found。</p>
@@ -173,9 +173,9 @@ public class ModbusAlarmResource extends AbstractResource {
                         return Uni.createFrom().failure(
                                 new IllegalArgumentException("modbus alarm not found: " + id));
                     }
-                    return serviceService.subtreeServiceIds(spaceId)
+                    return fdService.subtreeFdids(spaceId)
                             .map(Unchecked.function(ids -> {
-                                if (row.serviceId == null || !ids.contains(row.serviceId)) {
+                                if (row.fdid == null || !ids.contains(row.fdid)) {
                                     throw new IllegalArgumentException("No access to this alarm");
                                 }
                                 return row;

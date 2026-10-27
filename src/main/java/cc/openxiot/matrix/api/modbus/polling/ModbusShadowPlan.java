@@ -3,9 +3,9 @@ package cc.openxiot.matrix.api.modbus.polling;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -16,7 +16,7 @@ import java.util.Set;
  * 影子（{@code service-shadows}）跟着定义对账的**纯函数**：定义变了，影子会留下收不到更新的东西。
  *
  * <p>寄存器是**原子单位**：对账以逐寄存器影子（{@link ModbusShadow}）为单位，
- * 现有的「寄存器」由 {@code ModbusDevice.configSnapshot.registries} 给出。</p>
+ * 现有的「寄存器」由 {@code FieldDevice.configSnapshot.registries} 给出。</p>
  *
  * <p>唯一需要处置的是**孤儿寄存器**（定义里删掉的 {@code registerIndex}）：那只寄存器的影子再也不会被更新，
  * 却一直出现在「当前值接口」里 —— 前端会显示一个永远不变的值，而它对应的点位已经不存在了。
@@ -77,10 +77,10 @@ public final class ModbusShadowPlan {
      * <p>寄存器是原子单位，没有「废弃字段键」：对非孤儿（registerIndex 还在点表里）一律不改，
      * 因此只产出 {@code orphan == true} 的修复，且 {@code staleFields} 恒为空。</p>
      */
-    public static List<Fix> plan(ModbusDevice service, List<ModbusShadow> shadows) {
+    public static List<Fix> plan(FieldDevice fd, List<ModbusShadow> shadows) {
         List<Fix> fixes = new ArrayList<>();
-        ModbusConfig config = service == null ? null : service.configSnapshot;
-        if (service == null || service.id == null || config == null || config.registries == null || shadows == null) {
+        ModbusConfig config = fd == null ? null : fd.configSnapshot;
+        if (fd == null || fd.id == null || config == null || config.registries == null || shadows == null) {
             return fixes;
         }
 
@@ -91,13 +91,13 @@ public final class ModbusShadowPlan {
             }
         }
 
-        String serviceId = service.id.toHexString();
+        String fdid = fd.id.toHexString();
         for (ModbusShadow shadow : shadows) {
             if (shadow == null || shadow.id == null || shadow.registerIndex == null) {
                 continue;
             }
             // 影子是别的服务的：对账按服务做，串了就是 bug，不动它（正常不会发生）
-            if (!serviceId.equals(shadow.serviceId)) {
+            if (!fdid.equals(shadow.fdid)) {
                 continue;
             }
             // 寄存器不在点表里（或点表条目没有 index）：即定义为没有这只寄存器 —— 孤儿，整条删

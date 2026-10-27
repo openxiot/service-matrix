@@ -24,7 +24,7 @@ import java.util.function.Function;
  * 两边的壳都只负责在「身份 → 尺寸 → 位置 → config」这个顺序里插入各自的尺寸/位置检查，
  * 其余都走这里，因此任一端的规格改动不会让另一端的校验跟着漂移。</p>
  *
- * <p>与 {@code ModbusDeviceValidator} 同风格：纯函数、无状态、不碰数据库，返回 {@code null} 表示通过，
+ * <p>与 {@code FieldDeviceValidator} 同风格：纯函数、无状态、不碰数据库，返回 {@code null} 表示通过，
  * 否则返回给前端看的错误文案。错误文案一律带 {@code widgets[i]} 前缀（i 是卡片在数组里的下标），
  * 这是循环层（每个看板各壳的 {@code validateWidgets}）加上的 —— 本类的方法返回的都是不带前缀的
  * 单张卡错误。</p>
@@ -48,7 +48,7 @@ public final class DashboardWidgetStructureValidator {
     private static final Set<String> TYPES = Set.of("stat", "line", "distribution", "device", "service");
 
     private static final Set<String> STAT_METRICS = Set.of(
-            "devices.total", "devices.online", "services.total",
+            "devices.total", "devices.online", "fds.total",
             "alarms.today", "alarms.window", "failures.total");
 
     private static final Set<String> DIMENSIONS = Set.of(
@@ -191,8 +191,8 @@ public final class DashboardWidgetStructureValidator {
         }
         // serviceField：服务 + 寄存器字段（不再存方法序号 pollIndex，由取数时解析）。
         // 字段是否真实存在由 DashboardWidgetOwnershipValidator 查库确认。
-        if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
-            return "config.serviceId is required";
+        if (DashboardWidgetConfigs.str(config.get("fdid")) == null) {
+            return "config.fdid is required";
         }
         if (DashboardWidgetConfigs.str(config.get("field")) == null) {
             return "config.field is required";
@@ -282,8 +282,8 @@ public final class DashboardWidgetStructureValidator {
     }
 
     private static String validateService(Map<String, Object> config) {
-        if (DashboardWidgetConfigs.str(config.get("serviceId")) == null) {
-            return "config.serviceId is required";
+        if (DashboardWidgetConfigs.str(config.get("fdid")) == null) {
+            return "config.fdid is required";
         }
         Object raw = config.get("fields");
         if (!(raw instanceof List<?> fields)) {

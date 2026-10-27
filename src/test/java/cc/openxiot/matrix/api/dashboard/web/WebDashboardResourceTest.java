@@ -185,7 +185,7 @@ class WebDashboardResourceTest {
                 .body("success", equalTo(true))
                 // 两个键恒在：编辑器据此显示「没有可选项」，而不是把级联画成坏掉的样子
                 .body("data.devices.size()", equalTo(0))
-                .body("data.services.size()", equalTo(0));
+                .body("data.fds.size()", equalTo(0));
     }
 
     @Test

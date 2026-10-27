@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * {@link ModbusPollingHistory} → JSON（故障列表接口用）：失败调用 + 按分类的聚合。
  *
- * <p>编出的**字段与 {@code ModbusServiceFailureCodec} 逐字一致**（{@code serviceId/pollIndex/
+ * <p>编出的**字段与 {@code ModbusServiceFailureCodec} 逐字一致**（{@code fdid/pollIndex/
  * type/remoteCode/message/at}、{@code summary: {total, byType[], byRemoteCode[]}}）—— 故障读数改从
  * 操作日志过滤后，前端那条路解码照旧，没有任何契约变化。</p>
  *
@@ -32,10 +32,10 @@ public final class ModbusPollingHistoryCodec {
         if (row == null) {
             return o;
         }
-        // 每条都带 serviceId：空间级查询（不传 serviceId）回来的清单里混着多个服务的失败，
+        // 每条都带 fdid：空间级查询（不传 fdid）回来的清单里混着多个服务的失败，
         // 前端靠它认领归属。单服务查询时它与顶层那个重复，但不值得为此分两套编码。
-        if (row.serviceId != null) {
-            o.put("serviceId", row.serviceId);
+        if (row.fdid != null) {
+            o.put("fdid", row.fdid);
         }
         if (row.pollIndex != null) {
             o.put("pollIndex", row.pollIndex);

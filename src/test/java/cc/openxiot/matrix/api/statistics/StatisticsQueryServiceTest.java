@@ -3,11 +3,11 @@ package cc.openxiot.matrix.api.statistics;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Bucket;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Count;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.DeviceStats;
-import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
+import cc.openxiot.matrix.api.statistics.StatisticsQueryService.FdStats;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -172,8 +172,8 @@ class StatisticsQueryServiceTest {
         // 没配点表的服务落在空串键上（点表 id 是标识符不是显示名，前端据此显示「未定义」）
         String cfg1 = "650000000000000000000001";
         String cfg2 = "650000000000000000000002";
-        ServiceStats stats = StatisticsQueryService.servicesOf(List.of(
-                service(cfg1), service(cfg1), service(cfg2), service(null)));
+        FdStats stats = StatisticsQueryService.fdsOf(List.of(
+                fd(cfg1), fd(cfg1), fd(cfg2), fd(null)));
 
         assertEquals(4, stats.total());
         assertEquals(List.of(new Count(cfg1, 2), new Count("", 1), new Count(cfg2, 1)),
@@ -190,7 +190,7 @@ class StatisticsQueryServiceTest {
         assertEquals(0, devices.online());
         assertEquals(List.of(), devices.byType());
 
-        assertEquals(0, StatisticsQueryService.servicesOf(null).total());
+        assertEquals(0, StatisticsQueryService.fdsOf(null).total());
         assertEquals(List.of(), StatisticsQueryService.tally(null));
         // 整点分桶即便一条记录都没有也要把窗口铺满（曲线不能因为「没数据」就变成空图）
         assertEquals(2, StatisticsQueryService.hourly(null,
@@ -206,14 +206,14 @@ class StatisticsQueryServiceTest {
         return device;
     }
 
-    private static ModbusDevice service(String configId) {
-        ModbusDevice service = new ModbusDevice();
+    private static FieldDevice fd(String configId) {
+        FieldDevice fd = new FieldDevice();
         if (configId != null) {
             ModbusConfig snapshot = new ModbusConfig();
             snapshot.id = new ObjectId(configId);
-            service.configSnapshot = snapshot;
+            fd.configSnapshot = snapshot;
         }
-        return service;
+        return fd;
     }
 
     private static ModbusAlarm alarm(String text) {

@@ -2,9 +2,9 @@ package cc.openxiot.matrix.api.modbus.polling;
 
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
 import org.bson.types.ObjectId;
 
 import java.util.ArrayList;
@@ -23,7 +23,7 @@ import java.util.random.RandomGenerator;
  *   <li>请求帧是**读**功能码（fc 01/02/03/04）。</li>
  * </ol>
  *
- * <p>第三条与 {@code ModbusDeviceValidator} 重复，是**故意**的：校验器管的是「写进来的定义合不合法」，
+ * <p>第三条与 {@code FieldDeviceValidator} 重复，是**故意**的：校验器管的是「写进来的定义合不合法」，
  * 这里管的是「库里已经存在的定义能不能被定时器跑」。历史数据、直接改库、将来放宽校验，
  * 都能让一份写方法带着 {@code interval} 出现在库里 —— 而让服务端定时往寄存器里写值是危险动作，
  * 判定的最后一道闸必须在执行侧，不能只在写入侧。</p>
@@ -70,21 +70,21 @@ public final class ModbusPollingPlan {
      *
      * @param did 父设备 id（{@code service.device.did}）；为空的定义不可调度，不入表
      */
-    public static List<ModbusPolling> tasksOf(ModbusDevice service, String did, long now,
-                                           int jitterPercent, RandomGenerator random) {
+    public static List<ModbusPolling> tasksOf(FieldDevice fd, String did, long now,
+                                              int jitterPercent, RandomGenerator random) {
         List<ModbusPolling> tasks = new ArrayList<>();
-        if (service == null || service.id == null || did == null || did.isBlank()
-                || service.polls == null) {
+        if (fd == null || fd.id == null || did == null || did.isBlank()
+                || fd.polls == null) {
             return tasks;
         }
-        String serviceId = service.id.toHexString();
-        for (ModbusPoll poll : service.polls) {
+        String fdid = fd.id.toHexString();
+        for (ModbusPoll poll : fd.polls) {
             if (!shouldPoll(poll)) {
                 continue;
             }
             ModbusPolling task = new ModbusPolling();
             task.id = new ObjectId();
-            task.serviceId = serviceId;
+            task.fdid = fdid;
             task.pollIndex = poll.index;
             task.did = did;
             task.interval = poll.interval;

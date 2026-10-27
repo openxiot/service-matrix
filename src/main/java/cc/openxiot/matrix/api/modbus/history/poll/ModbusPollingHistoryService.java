@@ -54,26 +54,26 @@ public class ModbusPollingHistoryService {
      * @param type          传 null = 不限分类；给了就必须是 {@link ModbusFailureType} 里的名字
      */
     public Uni<FailureResult> failures(
-            String serviceId,
+            String fdid,
             Integer pollIndex,
             String type,
             Date from,
             Date to,
             Integer limit
     ) {
-        if (isBlank(serviceId)) {
-            return Uni.createFrom().failure(new IllegalArgumentException("serviceId is required"));
+        if (isBlank(fdid)) {
+            return Uni.createFrom().failure(new IllegalArgumentException("fdid is required"));
         }
         // 单服务只是批量那条路的一个元素：排序 / 截断的口径只有一份，免得两条路各写一遍、日后改漏一边
-        return failuresOfServices(List.of(serviceId), pollIndex, type, from, to, limit);
+        return failuresOfServices(List.of(fdid), pollIndex, type, from, to, limit);
     }
 
     /**
-     * **一批服务**在同一区间上的故障记录，合并成一条时间倒序的清单（空间级查询：
-     * {@code ModbusPollingHistoryResource.failures} 不传 {@code serviceId} 时走这里）。
+     * **一批现场设备**在同一区间上的故障记录，合并成一条时间倒序的清单（空间级查询：
+     * {@code ModbusPollingHistoryResource.failures} 不传 {@code fdid} 时走这里）。
      *
      * <p>为什么是「逐服务各查一次再合并」而不是一条跨服务的查询：故障集合的索引是
-     * {@code (serviceId, pollIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
+     * {@code (fdid, pollIndex, at)}，跨服务查等于丢掉索引前缀做全表扫；而一个空间下的服务
      * 只有十几条，各查一次的量级完全可控。操作日志按 limit 截到「该服务最近的 limit+1 条」，
      * 合并出来的行数本就不大 —— 所以合并与排序放在内存里做，
      * 与「不传 pollIndex 时排序靠内存」是同一个判断。</p>
@@ -82,10 +82,10 @@ public class ModbusPollingHistoryService {
      * limit + 1 条」里，所以按服务先截一刀再合并，得到的仍是真正的全局前 limit 条；
      * {@code truncated} 也据此判 —— 合并后仍多于 limit，就说明还有更早的没取回来。</p>
      *
-     * @param serviceIds 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
+     * @param fdids 服务 id 清单；空清单 = 这个空间下一个服务都没有，给空结果而不是报错
      */
     public Uni<FailureResult> failuresOfServices(
-            List<String> serviceIds,
+            List<String> fdids,
             Integer pollIndex,
             String type,
             Date from,
@@ -101,11 +101,11 @@ public class ModbusPollingHistoryService {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
         }
         int size = normalizeLimit(limit);
-        if (serviceIds == null || serviceIds.isEmpty()) {
+        if (fdids == null || fdids.isEmpty()) {
             return Uni.createFrom().item(new FailureResult(from, end, size, List.of(), false));
         }
         String failureType = isBlank(type) ? null : type;
-        List<Uni<List<ModbusPollingHistory>>> queries = serviceIds.stream()
+        List<Uni<List<ModbusPollingHistory>>> queries = fdids.stream()
                 .map(id -> pollingHistoryRepo.findFailureRange(id, pollIndex, failureType, from, end, size + 1))
                 .toList();
 

@@ -6,8 +6,8 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import io.smallrye.mutiny.Uni;
 import org.bson.types.ObjectId;
 import org.jboss.logging.Logger;
@@ -51,7 +51,7 @@ class ModbusAlarmReconcilerTest {
     private static final String RULE_ID = "r1";
 
     @Mock
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository serviceRepo;
 
     @Mock
     ModbusAlarmRepository alarmRepo;
@@ -68,7 +68,7 @@ class ModbusAlarmReconcilerTest {
     void stillCoveredRowsWriteNothing() {
         // 稳态：字段还配着告警，一条都不该被关 —— 「改了定义」绝大多数时候什么也没改到告警上
         givenOpen(openRow(SID, 1, "进水温度"));
-        reconcile(service(SID, poll(field("进水温度", true))));
+        reconcile(fd(SID, poll(field("进水温度", true))));
 
         verify(alarmRepo, never()).closeByKeys(anyString(), any(), any(), anyString(), any());
     }
@@ -79,7 +79,7 @@ class ModbusAlarmReconcilerTest {
         // 定义不再覆盖它 ⇒ 按 DEFINITION 关。这一条是「改了定义后这个方法再也不采」的兜底：
         // 采集链路只看得见**新定义里还配着告警的键**，这个键连候选都进不去，只能靠对账
         givenOpen(openRow(SID, 1, "进水温度"));
-        reconcile(service(SID, poll(field("回水温度", true))));
+        reconcile(fd(SID, poll(field("回水温度", true))));
 
         ArgumentCaptor<Collection<String>> fields = ArgumentCaptor.forClass(Collection.class);
         ArgumentCaptor<String> closeType = ArgumentCaptor.forClass(String.class);
@@ -92,15 +92,15 @@ class ModbusAlarmReconcilerTest {
     @Test
     void closeCarriesTheServiceAndFunctionOfTheRow() {
         givenOpen(openRow(SID, 2, "进水温度"));
-        reconcile(service(SID, poll(2, field("回水温度", true))));
+        reconcile(fd(SID, poll(2, field("回水温度", true))));
 
-        ArgumentCaptor<String> serviceId = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> fdid = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Integer> pollIndex = ArgumentCaptor.forClass(Integer.class);
         ArgumentCaptor<Date> at = ArgumentCaptor.forClass(Date.class);
-        verify(alarmRepo).closeByKeys(serviceId.capture(), pollIndex.capture(), any(),
+        verify(alarmRepo).closeByKeys(fdid.capture(), pollIndex.capture(), any(),
                 anyString(), at.capture());
 
-        assertEquals(SID, serviceId.getValue());
+        assertEquals(SID, fdid.getValue());
         assertEquals(2, pollIndex.getValue().intValue());
         assertNotNull(at.getValue(), "关闭时刻必须写上：一条没有 recoveredAt 的关闭等于没关");
     }
@@ -111,7 +111,7 @@ class ModbusAlarmReconcilerTest {
         // 关闭是按整个开行标识 updateMany 的：同一个方法上的多个出值合成一条语句，
         // 不是一条语句一个出值（后者会让一轮对账的写放大成出值数倍）
         givenOpen(openRow(SID, 1, "进水温度"), openRow(SID, 1, "回水温度"));
-        reconcile(service(SID, poll(field("出水温度", true))));
+        reconcile(fd(SID, poll(field("出水温度", true))));
 
         ArgumentCaptor<Collection<String>> fields = ArgumentCaptor.forClass(Collection.class);
         verify(alarmRepo).closeByKeys(anyString(), any(), fields.capture(), anyString(), any());
@@ -122,9 +122,9 @@ class ModbusAlarmReconcilerTest {
     void onlyThisServicesOpenRowsAreRead() {
         // 写入路径只该问这一个服务：全表扫是启动那一次的事
         givenOpen();
-        reconcile(service(SID, poll(field("进水温度", true))));
+        reconcile(fd(SID, poll(field("进水温度", true))));
 
-        verify(alarmRepo).listOpenByServiceId(SID);
+        verify(alarmRepo).listOpenByFdid(SID);
         verify(alarmRepo, never()).listAllOpen();
     }
 
@@ -133,7 +133,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void serviceWithoutIdTouchesTheDatabaseNotAtAll() {
         // 定义还没落库（没有 _id）时没有「它上面的开行」可言 —— 连查都不查
-        reconciler.reconcile(serviceWithoutId()).await().indefinitely();
+        reconciler.reconcile(fdWithoutId()).await().indefinitely();
         reconciler.reconcile(null).await().indefinitely();
 
         verifyNoInteractions(alarmRepo);
@@ -143,13 +143,13 @@ class ModbusAlarmReconcilerTest {
 
     @Test
     void repositoryFailureIsPropagated() {
-        // 读失败照常外传：调用方（ModbusDeviceService 的 reconcileDerived）只记日志，
+        // 读失败照常外传：调用方（FieldDeviceService 的 reconcileDerived）只记日志，
         // 不让一次定义维护跟着失败 —— 咽在本类里会让那条日志失去「哪个服务」的上下文
-        when(alarmRepo.listOpenByServiceId(anyString()))
+        when(alarmRepo.listOpenByFdid(anyString()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("alarm table is down")));
 
         assertThrows(IllegalStateException.class,
-                () -> reconcile(service(SID, poll(field("进水温度", true)))));
+                () -> reconcile(fd(SID, poll(field("进水温度", true)))));
     }
 
     @Test
@@ -159,7 +159,7 @@ class ModbusAlarmReconcilerTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write failed")));
 
         assertThrows(IllegalStateException.class,
-                () -> reconcile(service(SID, poll(field("回水温度", true)))));
+                () -> reconcile(fd(SID, poll(field("回水温度", true)))));
     }
 
     // ===== 启动扫 =====
@@ -168,7 +168,7 @@ class ModbusAlarmReconcilerTest {
     void startupSweepClosesRowsWhoseDefinitionNoLongerCoversThem() {
         // 服务还在、字段还在，但告警被直接改库改掉了（运维脚本、迁移）—— 采集链路看不见这种残留
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, poll(field("进水温度", false))))));
+                .item(List.of(fd(SID, poll(field("进水温度", false))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().item(1L));
@@ -186,11 +186,11 @@ class ModbusAlarmReconcilerTest {
         // 级联删除又崩在中途」留下的开行，这一趟不会去关。不为此松开那条保守口径 ——
         // 它的正面价值是「写入路径只传一个服务，判宽了会把别的服务的告警误关一片」，
         // 而那比这里兜住的局面严重得多。
-        // 服务级联删除归 ModbusDeviceService → ModbusHistoryWriteService.purge；那边失败留下的行
+        // 服务级联删除归 FieldDeviceService → ModbusHistoryWriteService.purge；那边失败留下的行
         // 与影子 / 历史 / 故障记录是同一个失败模式（只记日志、不重试），且页面按空间子树查、看不见它。
         // 这条测试钉的是「对账在后、级联在前」这个分工。
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, poll(field("进水温度", true))))));
+                .item(List.of(fd(SID, poll(field("进水温度", true))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(OTHER_SID, 1, "回水温度"))));
 
         reconciler.init(null);
@@ -201,7 +201,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void startupSweepWritesNothingInSteadyState() {
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, poll(field("进水温度", true))))));
+                .item(List.of(fd(SID, poll(field("进水温度", true))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
 
         reconciler.init(null);
@@ -230,7 +230,7 @@ class ModbusAlarmReconcilerTest {
     @Test
     void startupSweepSwallowsCloseFailures() {
         when(serviceRepo.listAll()).thenReturn(Uni.createFrom()
-                .item(List.of(service(SID, poll(field("进水温度", false))))));
+                .item(List.of(fd(SID, poll(field("进水温度", false))))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of(openRow(SID, 1, "进水温度"))));
         when(alarmRepo.closeByKeys(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("write failed")));
@@ -242,7 +242,7 @@ class ModbusAlarmReconcilerTest {
 
     @Test
     void startupSweepWithNoOpenRowsReadsButWritesNothing() {
-        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(service(SID))));
+        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(fd(SID))));
         when(alarmRepo.listAllOpen()).thenReturn(Uni.createFrom().item(List.of()));
 
         reconciler.init(null);
@@ -252,41 +252,41 @@ class ModbusAlarmReconcilerTest {
 
     // ===== 夹具 =====
 
-    private void reconcile(ModbusDevice service) {
-        reconciler.reconcile(service).await().indefinitely();
+    private void reconcile(FieldDevice fd) {
+        reconciler.reconcile(fd).await().indefinitely();
     }
 
     private void givenOpen(ModbusAlarm... rows) {
-        when(alarmRepo.listOpenByServiceId(anyString())).thenReturn(Uni.createFrom().item(List.of(rows)));
+        when(alarmRepo.listOpenByFdid(anyString())).thenReturn(Uni.createFrom().item(List.of(rows)));
     }
 
-    private static ModbusAlarm openRow(String serviceId, Integer pollIndex, String field) {
+    private static ModbusAlarm openRow(String fdid, Integer pollIndex, String field) {
         ModbusAlarm row = new ModbusAlarm();
-        row.serviceId = serviceId;
+        row.fdid = fdid;
         row.pollIndex = pollIndex;
         row.field = field;
         // 开它的就是夹具定义里那条规则（id 同 RULE_ID）：判据是规则级，没有它这条行会被判成「不认识」
         row.ruleId = RULE_ID;
-        row.openKey = ModbusAlarm.openKeyOf(serviceId, pollIndex, field);
+        row.openKey = ModbusAlarm.openKeyOf(fdid, pollIndex, field);
         return row;
     }
 
-    private static ModbusDevice serviceWithoutId() {
-        ModbusDevice service = new ModbusDevice();
+    private static FieldDevice fdWithoutId() {
+        FieldDevice fd = new FieldDevice();
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = List.of(poll(field("进水温度", true)));
-        service.configSnapshot = snapshot;
-        return service;
+        fd.configSnapshot = snapshot;
+        return fd;
     }
 
     /** 服务夹具：告警现属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段。 */
-    private static ModbusDevice service(String serviceId, ModbusRegistry... registries) {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId(serviceId);
+    private static FieldDevice fd(String fdid, ModbusRegistry... registries) {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(fdid);
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = new ArrayList<>(List.of(registries));
-        service.configSnapshot = snapshot;
-        return service;
+        fd.configSnapshot = snapshot;
+        return fd;
     }
 
     /** 历史包袱保留的 `function(...)` 调用外形：现在对应点表里的一个寄存器（告警属寄存器）。 */

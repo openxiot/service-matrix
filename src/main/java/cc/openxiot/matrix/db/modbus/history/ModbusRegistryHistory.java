@@ -8,7 +8,7 @@ import org.bson.types.ObjectId;
 import java.util.Date;
 
 /**
- * Modbus设备的**寄存器历史**：一只寄存器在某次读操作下的一个事件（库 {@code modbus}、集合
+ * 现场设备的**寄存器历史**：一只寄存器在某次读操作下的一个事件（库 {@code modbus}、集合
  * {@code service-registry-histories}）。
  *
  * <p><b>以寄存器为中心</b>：一条 = 一只寄存器 × 一次读。成功的读落 {@link #value}（数值 /
@@ -18,19 +18,19 @@ import java.util.Date;
  * 一条源同时供「值」（成功段）与「采集失败竖线」（{@code failure} 事件），不必再交叉查两大张表。</p>
  *
  * <p>身份是 {@link #registerIndex}（点表 {@code configSnapshot.registries[].index}，创建时快照定死，
- * 改名不扰历史），{@link #name} / {@link #unit} 只是展示快照；{@code serviceId} 是 ModbusDevice
+ * 改名不扰历史），{@link #name} / {@link #unit} 只是展示快照；{@code fdid} 是 FieldDevice
  * 主键的十六进制字符串。</p>
  */
 @RegisterForReflection
-@Schema(description = "Modbus设备某只寄存器的历史事件（成功值或失败标记）")
+@Schema(description = "现场设备某只寄存器的历史事件（成功值或失败标记）")
 public class ModbusRegistryHistory {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)
     public ObjectId id;
 
-    @Schema(description = "服务 id（ModbusDevice 主键的十六进制字符串）", required = true)
-    public String serviceId;
+    @Schema(description = "现场设备 id（FieldDevice 主键的十六进制字符串）", required = true)
+    public String fdid;
 
     @Schema(description = "寄存器序号（ModbusRegistry.index，点表内的稳定身份）", examples = {"1"}, required = true)
     public Integer registerIndex;

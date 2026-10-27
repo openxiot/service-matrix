@@ -8,7 +8,7 @@ import org.bson.types.ObjectId;
 import java.util.Date;
 
 /**
- * Modbus设备的**寄存器当前值（影子）**：一只寄存器**最后一次调用**的结果（库 {@code modbus}、
+ * 现场设备的**寄存器当前值（影子）**：一只寄存器**最后一次调用**的结果（库 {@code modbus}、
  * 集合 {@code service-shadows}）。
  *
  * <p><b>以寄存器为中心</b>：一条 = 一只寄存器。承接原 {@code service-last-polling} 的三件职责
@@ -25,15 +25,15 @@ import java.util.Date;
  * 为准。</p>
  */
 @RegisterForReflection
-@Schema(description = "Modbus设备某只寄存器的当前值（最后一次调用的结果，兼作变化比对基准与故障态）")
+@Schema(description = "现场设备某只寄存器的当前值（最后一次调用的结果，兼作变化比对基准与故障态）")
 public class ModbusShadow {
 
     @BsonId
     @Schema(description = "主键（MongoDB ObjectId）", required = false)
     public ObjectId id;
 
-    @Schema(description = "服务 id（ModbusDevice 主键的十六进制字符串）", required = true)
-    public String serviceId;
+    @Schema(description = "现场设备 id（FieldDevice 主键的十六进制字符串）", required = true)
+    public String fdid;
 
     @Schema(description = "寄存器序号（ModbusRegistry.index，点表内的稳定身份）", examples = {"1"}, required = true)
     public Integer registerIndex;

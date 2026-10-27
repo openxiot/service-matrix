@@ -10,14 +10,14 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.util.List;
 
 /**
- * Modbus 设备点表配置：从站设备信息（{@link ModbusSlave}）+ 有序功能码动作列表。
+ * Modbus 点表配置：从站设备信息（{@link ModbusSlave}）+ 有序功能码动作列表。
  *
  * <p>独立库 {@code modbus}/集合 {@code configs}；主键 {@code _id} 由系统生成（ObjectId），
  * 对外（JSON / URL）一律以十六进制字符串呈现；持久化经 {@code ModbusConfigRepository}。</p>
  */
 @RegisterForReflection
 @JsonIgnoreProperties(ignoreUnknown = true)
-@Schema(description = "Modbus 设备点表配置（从站设备信息 + 有序功能码动作列表）")
+@Schema(description = "Modbus 点表配置（从站设备信息 + 有序功能码动作列表）")
 public class ModbusConfig {
 
     @BsonId

@@ -5,11 +5,11 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseFieldBit;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import io.smallrye.mutiny.Uni;
@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (serviceId, field)} 引用是否真实存在（老卡的 {@code pollIndex} 方法序号不再需要，
+ * {@code (fdid, field)} 引用是否真实存在（老卡的 {@code pollIndex} 方法序号不再需要，
  * 字段按 {@code findFunctionByField} 在服务定义里解析）。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
@@ -36,9 +36,9 @@ import java.util.Set;
  * （那个包装在 {@code WebDashboardLayoutValidator}）。</p>
  *
  * <h3>为什么要在这里校验归属（而不是只靠 catalog 下拉）</h3>
- * <p>{@code serviceId} / {@code did} 是用户填的。同一个空间里，成员能看见的数据本来就属于他，
+ * <p>{@code fdid} / {@code did} 是用户填的。同一个空间里，成员能看见的数据本来就属于他，
  * 所以「成员 A 用本空间的服务配卡片」不是越权；但**没有这一层，任何成员都能把别人的
- * serviceId 填进 body 里**：{@code render} 只按 id 查（既有的
+ * fdid 填进 body 里**：{@code render} 只按 id 查（既有的
  * {@code Modbus-History.md} 就是这么写的），于是拿到一个陌生 id 就能读走别人的数据。
  * {@code catalog} 只下发本空间候选，那是 UX 层的方便，拦不住手写的请求 ——
  * 两道一起才安全，这道是真正把关的那道。</p>
@@ -77,7 +77,7 @@ import java.util.Set;
 public class DashboardWidgetOwnershipValidator {
 
     @Inject
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository fdRepo;
 
     @Inject
     DeviceRepository deviceRepo;
@@ -102,12 +102,12 @@ public class DashboardWidgetOwnershipValidator {
             return Uni.createFrom().item(errors);
         }
 
-        List<ServiceRef> serviceRefs = new ArrayList<>();
-        List<String> serviceIds = new ArrayList<>();
+        List<FdRef> fdRefs = new ArrayList<>();
+        List<String> fdids = new ArrayList<>();
         Map<String, DeviceRef> deviceRefs = new LinkedHashMap<>();
         List<String> dids = new ArrayList<>();
-        collect(widgets, serviceRefs, serviceIds, deviceRefs, dids);
-        if (serviceIds.isEmpty() && dids.isEmpty()) {
+        collect(widgets, fdRefs, fdids, deviceRefs, dids);
+        if (fdids.isEmpty() && dids.isEmpty()) {
             return Uni.createFrom().item(errors);
         }
 
@@ -115,13 +115,13 @@ public class DashboardWidgetOwnershipValidator {
                 .chain(spaces -> {
                     Set<String> spaceIds = spaceIdsOf(spaces);
                     return Uni.combine().all()
-                            .unis(loadServices(serviceIds), loadDevices(dids))
+                            .unis(loadFds(fdids), loadDevices(dids))
                             .asTuple()
                             .map(tuple -> {
-                                Map<String, ModbusDevice> services = tuple.getItem1();
+                                Map<String, FieldDevice> fds = tuple.getItem1();
                                 Map<String, DeviceEntity> devices = tuple.getItem2();
-                                for (ServiceRef ref : serviceRefs) {
-                                    String err = checkServiceRef(spaceIds, services, ref);
+                                for (FdRef ref : fdRefs) {
+                                    String err = checkFdRef(spaceIds, fds, ref);
                                     // 一张卡若引用了多个字段，只报第一个错的：编辑器一行只放得下一个提示
                                     if (err != null) {
                                         errors.putIfAbsent(ref.widgetId(), prefix(ref) + err);
@@ -170,12 +170,12 @@ public class DashboardWidgetOwnershipValidator {
     }
 
     /**
-     * 收集需要查库的引用。同一个 serviceId / did 只查一次（去重交给 {@code loadXxx}
+     * 收集需要查库的引用。同一个 fdid / did 只查一次（去重交给 {@code loadXxx}
      * 的入参 List 由调用方保证，这里用 seen 集合保证）。
      */
     private static void collect(List<? extends DashboardWidgetView> widgets,
-                               List<ServiceRef> serviceRefs, List<String> serviceIds,
-                               Map<String, DeviceRef> deviceRefs, List<String> dids) {
+                                List<FdRef> fdRefs, List<String> fdids,
+                                Map<String, DeviceRef> deviceRefs, List<String> dids) {
         for (int i = 0; i < widgets.size(); i++) {
             DashboardWidgetView widget = widgets.get(i);
             if (widget == null || widget.id() == null || widget.config() == null) {
@@ -183,30 +183,30 @@ public class DashboardWidgetOwnershipValidator {
             }
             Map<String, Object> config = widget.config();
             switch (widget.type() == null ? "" : widget.type()) {
-                case "service" -> {
-                    String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
-                    if (serviceId == null) {
+                case "fd" -> {
+                    String fdid = DashboardWidgetConfigs.str(config.get("fdid"));
+                    if (fdid == null) {
                         continue;
                     }
                     // 老卡带 pollIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
                     Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
-                    addServiceId(serviceIds, serviceId);
+                    addFdid(fdids, fdid);
                     for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollIndex, field));
+                        fdRefs.add(new FdRef(i, widget.id(), fdid, pollIndex, field));
                     }
                 }
                 case "line" -> {
-                    if (!"serviceField".equals(DashboardWidgetConfigs.str(config.get("source")))) {
+                    if (!"fdField".equals(DashboardWidgetConfigs.str(config.get("source")))) {
                         continue;
                     }
-                    String serviceId = DashboardWidgetConfigs.str(config.get("serviceId"));
+                    String fdid = DashboardWidgetConfigs.str(config.get("fdid"));
                     Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
                     String field = DashboardWidgetConfigs.str(config.get("field"));
-                    if (serviceId == null || field == null) {
+                    if (fdid == null || field == null) {
                         continue;
                     }
-                    addServiceId(serviceIds, serviceId);
-                    serviceRefs.add(new ServiceRef(i, widget.id(), serviceId, pollIndex, field));
+                    addFdid(fdids, fdid);
+                    fdRefs.add(new FdRef(i, widget.id(), fdid, pollIndex, field));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
@@ -225,30 +225,30 @@ public class DashboardWidgetOwnershipValidator {
         }
     }
 
-    private static void addServiceId(List<String> serviceIds, String serviceId) {
-        if (!serviceIds.contains(serviceId)) {
-            serviceIds.add(serviceId);
+    private static void addFdid(List<String> fdids, String fdid) {
+        if (!fdids.contains(fdid)) {
+            fdids.add(fdid);
         }
     }
 
     /**
-     * 按 id 批量查服务。**key 用的是请求里的原字符串**，不是 {@code service.id.toHexString()}：
+     * 按 id 批量查现场设备。**key 用的是请求里的原字符串**，不是 {@code service.id.toHexString()}：
      * ObjectId 的十六进制大小写不敏感，客户端提交大写 hex 时两种写法不相等，
      * 按实体 id 建索引会让一个完全合法的引用被判成「不存在」。
      */
-    private Uni<Map<String, ModbusDevice>> loadServices(List<String> ids) {
-        Map<String, ModbusDevice> byId = new LinkedHashMap<>();
+    private Uni<Map<String, FieldDevice>> loadFds(List<String> ids) {
+        Map<String, FieldDevice> byId = new LinkedHashMap<>();
         if (ids.isEmpty()) {
             return Uni.createFrom().item(byId);
         }
         return Uni.join()
-                .all(ids.stream().map(serviceRepo::findById).toList())
+                .all(ids.stream().map(fdRepo::findById).toList())
                 .andFailFast()
-                .map(services -> {
+                .map(fds -> {
                     for (int i = 0; i < ids.size(); i++) {
-                        ModbusDevice service = services.get(i);
-                        if (service != null) {
-                            byId.put(ids.get(i), service);
+                        FieldDevice fd = fds.get(i);
+                        if (fd != null) {
+                            byId.put(ids.get(i), fd);
                         }
                     }
                     return byId;
@@ -271,19 +271,18 @@ public class DashboardWidgetOwnershipValidator {
         });
     }
 
-    private static String checkServiceRef(Set<String> spaceIds, Map<String, ModbusDevice> services,
-                                          ServiceRef ref) {
-        ModbusDevice service = services.get(ref.serviceId());
-        if (service == null) {
-            return "service not found: " + ref.serviceId();
+    private static String checkFdRef(Set<String> spaceIds, Map<String, FieldDevice> fds, FdRef ref) {
+        FieldDevice fd = fds.get(ref.fdid());
+        if (fd == null) {
+            return "fd not found: " + ref.fdid();
         }
         // 服务的落点与设备同一个字段路径（创建服务时一并写下的副本），所以两条判据同源
-        if (!inSubtree(spaceIds, service.device == null ? null : service.device.space)) {
-            return "service does not belong to this space: " + ref.serviceId();
+        if (!inSubtree(spaceIds, fd.device == null ? null : fd.device.space)) {
+            return "fd does not belong to this space: " + ref.fdid();
         }
         // 老卡带 pollIndex（方法序号）：按那个方法的应答字段校验，行为不变。
         if (ref.pollIndex() != null) {
-            ModbusPoll poll = findPoll(service, ref.pollIndex());
+            ModbusPoll poll = findPoll(fd, ref.pollIndex());
             if (poll == null) {
                 return "function not found: " + ref.pollIndex();
             }
@@ -293,7 +292,7 @@ public class DashboardWidgetOwnershipValidator {
             return null;
         }
         // 新卡不存方法号：字段（寄存器）必须能在某个读方法的应答里解析到 —— 答不上来就取不到数
-        if (findFunctionByField(service, ref.field()) == null) {
+        if (findFunctionByField(fd, ref.field()) == null) {
             return "field not found: " + ref.field();
         }
         return null;
@@ -306,11 +305,11 @@ public class DashboardWidgetOwnershipValidator {
      * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
      * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
      */
-    private static ModbusPoll findFunctionByField(ModbusDevice service, String field) {
-        if (service == null || service.polls == null) {
+    private static ModbusPoll findFunctionByField(FieldDevice fd, String field) {
+        if (fd == null || fd.polls == null) {
             return null;
         }
-        for (ModbusPoll poll : service.polls) {
+        for (ModbusPoll poll : fd.polls) {
             if (poll != null && hasField(poll, field)) {
                 return poll;
             }
@@ -318,11 +317,11 @@ public class DashboardWidgetOwnershipValidator {
         return null;
     }
 
-    private static ModbusPoll findPoll(ModbusDevice service, Integer index) {
-        if (service.polls == null) {
+    private static ModbusPoll findPoll(FieldDevice fd, Integer index) {
+        if (fd.polls == null) {
             return null;
         }
-        for (ModbusPoll poll : service.polls) {
+        for (ModbusPoll poll : fd.polls) {
             if (poll != null && index.equals(poll.index)) {
                 return poll;
             }
@@ -334,7 +333,7 @@ public class DashboardWidgetOwnershipValidator {
      * 字段名要认两类：功能码 {@code response} 里直接定义的字段，以及**位区里每个位自己的名字**
      * （{@code bit-list[].field}）。
      *
-     * <p>位是独立点位（见方案 §5.7 与 {@code ModbusDevice.ts} 的说明）：一次 01/02 调用返回的是
+     * <p>位是独立点位（见方案 §5.7 与 {@code FieldDevice.ts} 的说明）：一次 01/02 调用返回的是
      * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
      * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
      */
@@ -361,7 +360,7 @@ public class DashboardWidgetOwnershipValidator {
      * 报错前缀。带下标是为了让「保存失败」的提示能定位到卡片，带 id 是因为编辑器的
      * 卡片视图按 id 索引（下标会随拖拽变化，id 不会）。
      */
-    private static String prefix(ServiceRef ref) {
+    private static String prefix(FdRef ref) {
         return prefix(ref.index(), ref.widgetId());
     }
 
@@ -373,8 +372,8 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (serviceId, field) 引用；服务卡片的每个字段各一条。pollIndex 仅老卡带，可为 null。 */
-    private record ServiceRef(int index, String widgetId, String serviceId, Integer pollIndex, String field) {
+    /** 一次 (fdid, field) 引用；现场设备卡片的每个字段各一条。pollIndex 仅老卡带，可为 null。 */
+    private record FdRef(int index, String widgetId, String fdid, Integer pollIndex, String field) {
     }
 
     /** 一张设备卡片的引用。 */

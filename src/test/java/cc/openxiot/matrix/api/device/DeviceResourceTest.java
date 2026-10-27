@@ -3,7 +3,7 @@ package cc.openxiot.matrix.api.device;
 import cc.openxiot.common.role.OxRole;
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
 import cc.openxiot.matrix.api.device.request.DeviceAddRequest;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.device.DeviceEntity;
@@ -50,7 +50,7 @@ class DeviceResourceTest {
     OrgAccessService orgAccessService;
 
     @InjectMock
-    ModbusDeviceService modbusServiceService;
+    FieldDeviceService fdService;
 
     /** id 必须给：归属（manipulation 的 ownerId）由 {@link SpaceEntity#rootSpaceId()} 算，没 id 就算不出来。 */
     private static SpaceEntity spaceWithOrg(String orgId) {
@@ -226,7 +226,7 @@ class DeviceResourceTest {
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevices(anyString(), anyList()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
-        when(modbusServiceService.deleteByDeviceDids(anyList()))
+        when(fdService.deleteByDeviceDids(anyList()))
                 .thenReturn(Uni.createFrom().item(2L));
         when(deviceService.deleteByDeviceIds(anyList()))
                 .thenReturn(Uni.createFrom().item(1L));
@@ -238,19 +238,19 @@ class DeviceResourceTest {
                 .statusCode(200)
                 .body("success", is(true));
 
-        // 二级联：这批设备下的 Modbus设备一并删掉
-        verify(modbusServiceService).deleteByDeviceDids(List.of("d1", "d2"));
+        // 二级联：这批设备下的 现场设备一并删掉
+        verify(fdService).deleteByDeviceDids(List.of("d1", "d2"));
     }
 
     @Test
     @TestSecurity(user = "test-user", roles = {OxRole.USER})
-    void removeOne_cascadesModbusDevices() {
+    void removeOne_cascadesFieldDevices() {
         when(spaceService.getById("sid")).thenReturn(Uni.createFrom().item(spaceWithOrg("org-1")));
         when(orgAccessService.checkSpaceAdmin(any(), eq("test-user")))
                 .thenReturn(Uni.createFrom().voidItem());
         when(manipulationService.removeDevice(anyString(), anyString()))
                 .thenReturn(Uni.createFrom().item(new io.vertx.core.json.JsonObject()));
-        when(modbusServiceService.deleteByDeviceDids(anyList()))
+        when(fdService.deleteByDeviceDids(anyList()))
                 .thenReturn(Uni.createFrom().item(1L));
         when(deviceService.deleteByDeviceIds(anyList()))
                 .thenReturn(Uni.createFrom().item(1L));
@@ -261,7 +261,7 @@ class DeviceResourceTest {
                 .statusCode(200)
                 .body("success", is(true));
 
-        verify(modbusServiceService).deleteByDeviceDids(List.of("d1"));
+        verify(fdService).deleteByDeviceDids(List.of("d1"));
         verify(deviceService).deleteByDeviceIds(List.of("d1"));
     }
 

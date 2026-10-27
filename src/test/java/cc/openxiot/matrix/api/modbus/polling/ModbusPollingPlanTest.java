@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequest;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequests;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -116,19 +116,19 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfKeepsOnlyPollableFunctionsInIndexOrder() {
-        ModbusDevice service = service(3, 1, 2);
-        service.polls.get(0).interval = 30;               // index 3
-        service.polls.get(1).interval = 10;               // index 1
-        service.polls.get(2).interval = 10;
-        service.polls.get(2).polling = Boolean.FALSE;     // index 2 被关掉
+        FieldDevice fd = fd(3, 1, 2);
+        fd.polls.get(0).interval = 30;               // index 3
+        fd.polls.get(1).interval = 10;               // index 1
+        fd.polls.get(2).interval = 10;
+        fd.polls.get(2).polling = Boolean.FALSE;     // index 2 被关掉
 
-        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(fd, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(2, tasks.size());
         assertEquals(1, tasks.get(0).pollIndex);
         assertEquals(3, tasks.get(1).pollIndex);
         for (ModbusPolling task : tasks) {
-            assertEquals(service.id.toHexString(), task.serviceId);
+            assertEquals(fd.id.toHexString(), task.fdid);
             assertEquals("did-1", task.did);
             assertNotNull(task.id);                           // id 在这里就定下来，不等插入回写
             assertNull(task.lastStatus);
@@ -144,11 +144,11 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfSchedulesEachFunctionByItsOwnInterval() {
-        ModbusDevice service = service(1, 2);
-        service.polls.get(0).interval = 10;
-        service.polls.get(1).interval = 60;
+        FieldDevice fd = fd(1, 2);
+        fd.polls.get(0).interval = 10;
+        fd.polls.get(1).interval = 60;
 
-        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L));
+        List<ModbusPolling> tasks = ModbusPollingPlan.tasksOf(fd, "did-1", NOW, 0, new Random(1L));
 
         assertEquals(NOW + 10_000, tasks.get(0).nextRunAt.getTime());
         assertEquals(NOW + 60_000, tasks.get(1).nextRunAt.getTime());
@@ -159,11 +159,11 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfWithoutDeviceIsEmpty() {
-        ModbusDevice service = service(1);
-        service.polls.get(0).interval = 10;
+        FieldDevice fd = fd(1);
+        fd.polls.get(0).interval = 10;
 
-        assertTrue(ModbusPollingPlan.tasksOf(service, null, NOW, 0, new Random(1L)).isEmpty());
-        assertTrue(ModbusPollingPlan.tasksOf(service, "  ", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(fd, null, NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(fd, "  ", NOW, 0, new Random(1L)).isEmpty());
     }
 
     /**
@@ -171,19 +171,19 @@ class ModbusPollingPlanTest {
      */
     @Test
     void tasksOfWithoutIdIsEmpty() {
-        ModbusDevice service = service(1);
-        service.polls.get(0).interval = 10;
-        service.id = null;
+        FieldDevice fd = fd(1);
+        fd.polls.get(0).interval = 10;
+        fd.id = null;
 
-        assertTrue(ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(fd, "did-1", NOW, 0, new Random(1L)).isEmpty());
     }
 
     @Test
     void tasksOfWithoutFunctionsIsEmpty() {
-        ModbusDevice service = service(1);
-        service.polls = null;
+        FieldDevice fd = fd(1);
+        fd.polls = null;
 
-        assertTrue(ModbusPollingPlan.tasksOf(service, "did-1", NOW, 0, new Random(1L)).isEmpty());
+        assertTrue(ModbusPollingPlan.tasksOf(fd, "did-1", NOW, 0, new Random(1L)).isEmpty());
         assertTrue(ModbusPollingPlan.tasksOf(null, "did-1", NOW, 0, new Random(1L)).isEmpty());
     }
 
@@ -205,14 +205,14 @@ class ModbusPollingPlanTest {
     /**
      * 建一个带 n 个读方法（index 1..n）的服务，周期都还没配。
      */
-    private static ModbusDevice service(int... indexes) {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId();
-        service.name = "svc";
-        service.polls = new ArrayList<>();
+    private static FieldDevice fd(int... indexes) {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId();
+        fd.name = "svc";
+        fd.polls = new ArrayList<>();
         for (int index : indexes) {
-            service.polls.add(poll(index, READ_REQUEST, null, null));
+            fd.polls.add(poll(index, READ_REQUEST, null, null));
         }
-        return service;
+        return fd;
     }
 }

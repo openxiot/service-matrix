@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusPollingHistoryService#merge} 的合并规则：空间级故障查询（不传 serviceId）把各服务
+ * {@link ModbusPollingHistoryService#merge} 的合并规则：空间级故障查询（不传 fdid）把各服务
  * 各查一次的结果并成一条清单，这一步全在内存里，是这个仓库少数跑得起来的测试
  * （{@code @QuarkusTest} 要连 Mongo）。
  *
@@ -89,9 +89,9 @@ class ModbusPollingHistoryServiceTest {
 
     // -- helpers --
 
-    private static ModbusPollingHistory failure(String serviceId, Long at) {
+    private static ModbusPollingHistory failure(String fdid, Long at) {
         ModbusPollingHistory failure = new ModbusPollingHistory();
-        failure.serviceId = serviceId;
+        failure.fdid = fdid;
         failure.pollIndex = 1;
         failure.ok = false;
         failure.type = "NO_RESPONSE";
@@ -100,8 +100,8 @@ class ModbusPollingHistoryServiceTest {
         return failure;
     }
 
-    /** 用 serviceId 当断言里的标识：它正是空间级清单里「这条属于谁」的依据 */
+    /** 用 fdid 当断言里的标识：它正是空间级清单里「这条属于谁」的依据 */
     private static List<String> ids(FailureResult result) {
-        return result.items().stream().map(item -> item.serviceId).toList();
+        return result.items().stream().map(item -> item.fdid).toList();
     }
 }

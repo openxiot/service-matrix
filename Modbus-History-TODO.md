@@ -12,9 +12,9 @@
 - [x] `ModbusFailureType`：10 类失败（设备侧 / 报文侧 / 定义侧 / 平台侧）+ `UNKNOWN` 兜底；
       `ModbusInvokeException` 把分类与远端原始码带在异常上（继承 `IllegalArgumentException`，
       保证 Resource 的错误响应契约不变）。
-- [x] 在**每个失败点**打分类：`ModbusResponseParser`（异常码 / CRC / 帧长 / 帧成形 / 字段定义）、
-      `ModbusDeviceService`（坐标不全 / 链路失败 / 父设备报错 / 无帧）。
-      记录端只做透传，拿不准的归 `UNKNOWN`。
+- [x] 在 **每个失败点**打分类：`ModbusResponseParser`（异常码 / CRC / 帧长 / 帧成形 / 字段定义）、
+      `FieldDeviceService`（坐标不全 / 链路失败 / 父设备报错 / 无帧）。
+  记录端只做透传，拿不准的归 `UNKNOWN`。
 - [x] 三个仓储 + 启动建索引（沿用 `modbus.index.enabled` 开关）。
 - [x] `ModbusHistoryService.record`：读影子 → 判定 → **追加历史 → 更新影子**（顺序即正确性）。
 - [x] `ModbusHistoryService.recordFailure`：同一条故障持续存在时零写操作；恢复后的第一次成功
@@ -26,9 +26,9 @@
 - [x] 配置项 `modbus.history.deadband` / `modbus.history.keep-alive-seconds`。
 - [x] 纯单测，不连库：`ModbusHistoryPolicyTest`（判定规则）、`ModbusHistoryServiceTest`
       （写入行为，钉住「不变则零写操作」「先明细后影子」「明细失败影子不动」「同故障不重复落」
-      「恢复落全字段」五条约定）、`ModbusResponseParserTest.classifiesEveryFailureType`
-      （每一类失败的分类与异常码）、`ModbusDeviceServiceTest`（调用路径的分类 +
-      「记录失败不改写原错误」）。共 52 个。
+  「恢复落全字段」五条约定）、`ModbusResponseParserTest.classifiesEveryFailureType`
+      （每一类失败的分类与异常码）、`FieldDeviceServiceTest`（调用路径的分类 +
+  「记录失败不改写原错误」）。共 52 个。
 - [x] **补漏（2026-09-14）：`value` 声明成 `Object`，缺一条按运行时类型分发的 codec，历史一条都写不进去**
       （`db/mongo/ObjectPropertyCodecProvider`，见 `MODBUS.md` 2026-09-14 变更记录）。
       这一条提醒了两件事：**上面第 22 行那条「记录写失败不影响 invoke 的成功响应」是故意的，
@@ -148,12 +148,12 @@
 ## 顺带的小事
 
 - [x] `interval` 下限从 3 秒改 5 秒（2026-09-13 落地）。实际落在 **5 个文件**
-      （原估 4 处，漏了前端类型定义那处 JSDoc）：`ModbusDeviceValidator`（常量 + 类注释）、
-      `ModbusDeviceValidatorTest`（`acceptsIntervalBounds` 的 3 → 5、
+      （原估 4 处，漏了前端类型定义那处 JSDoc）：`FieldDeviceValidator`（常量 + 类注释）、
+      `FieldDeviceValidatorTest`（`acceptsIntervalBounds` 的 3 → 5、
       `rejectsIntervalOutOfRange` 的期望消息，另补「4 秒被拒」一例）、
-      `MODBUS.md` **第七节**的 `5 ≤ interval ≤ 3600`（**第八节变更记录里的历史叙述不动** ——
-      那是当天发生过的事）、前端 `device.service.editor.ts` 的常量与注释、
-      前端 `ModbusDevice.ts` 的 JSDoc `5 ~ 3600`。
-      前端模板与 i18n 是从常量绑定 / 通用词，自动跟随（`npm run build` 与 `ng test` 都过）。
+      `MODBUS.md` **第七节**的 `5 ≤ interval ≤ 3600`（ **第八节变更记录里的历史叙述不动** ——
+  那是当天发生过的事）、前端 `device.service.editor.ts` 的常量与注释、
+  前端 `ModbusDevice.ts` 的 JSDoc `5 ~ 3600`。
+  前端模板与 i18n 是从常量绑定 / 通用词，自动跟随（`npm run build` 与 `ng test` 都过）。
 - [x] `MODBUS.md` 第五节补了：`invoke` 会顺带落历史（成功写明细 + 更新影子、失败写故障记录），
       手动调用一次 = 记一次。

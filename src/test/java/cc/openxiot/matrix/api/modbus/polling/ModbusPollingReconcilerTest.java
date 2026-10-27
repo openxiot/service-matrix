@@ -1,14 +1,14 @@
 package cc.openxiot.matrix.api.modbus.polling;
 
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
-import cc.openxiot.matrix.db.modbus.device.DeviceOn;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
 import cc.openxiot.matrix.db.space.SpaceRepository;
@@ -56,7 +56,7 @@ class ModbusPollingReconcilerTest {
     private static final long NOW = 1_700_000_000_000L;
 
     @Mock
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository serviceRepo;
 
     @Mock
     ModbusPollingRepository pollRepo;
@@ -159,7 +159,7 @@ class ModbusPollingReconcilerTest {
     }
 
     private void givenServices() {
-        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(service())));
+        when(serviceRepo.listAll()).thenReturn(Uni.createFrom().item(List.of(fd())));
     }
 
     private void givenRows(ModbusPolling... rows) {
@@ -173,16 +173,16 @@ class ModbusPollingReconcilerTest {
     /**
      * 一个读保持寄存器（fc 03）的方法，周期 30 秒 —— 与现网那条报了 bug 的任务同形。
      */
-    private static ModbusDevice service() {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId(SID);
+    private static FieldDevice fd() {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(SID);
         DeviceOn device = new DeviceOn();
         device.did = DID;
         SpaceOn space = new SpaceOn();
         space.spaceId = SPACE_ID;
         space.rootId = SPACE_ID;
         device.space = space;
-        service.device = device;
+        fd.device = device;
         ModbusPoll poll = new ModbusPoll();
         poll.from = new ModbusPollFrom();
         poll.from.type = "command";
@@ -191,8 +191,8 @@ class ModbusPollingReconcilerTest {
         poll.interval = 30;
         poll.polling = Boolean.TRUE;
         poll.request = ModbusRequests.holding();
-        service.polls = List.of(poll);
-        return service;
+        fd.polls = List.of(poll);
+        return fd;
     }
 
     private static SpaceEntity space() {
@@ -205,7 +205,7 @@ class ModbusPollingReconcilerTest {
     private static ModbusPolling row(ObjectId id) {
         ModbusPolling row = new ModbusPolling();
         row.id = id;
-        row.serviceId = SID;
+        row.fdid = SID;
         row.pollIndex = 1;
         row.did = DID;
         row.interval = 30;

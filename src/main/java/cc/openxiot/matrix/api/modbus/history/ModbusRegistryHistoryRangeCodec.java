@@ -5,7 +5,7 @@ import io.vertx.core.json.JsonObject;
 
 /**
  * 区间曲线（{@code /history/range}）的响应体编码：
- * {@code {serviceId, pollIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
+ * {@code {fdid, pollIndex, field, from, to, maxPoints, downsampled, total, points, carryIn?}}。
  *
  * <p><b>为什么单独一个类</b>：看板的字段曲线（{@code DashboardWidgetDataService}）下发的是**同一份形状**，
  * 只是另外缀上 {@code unit} / {@code step} / {@code failures}。前端两条路共用同一个
@@ -19,7 +19,7 @@ import io.vertx.core.json.JsonObject;
  * <p>入参是一个 {@link ModbusRegistryHistoryRange}（在哪条曲线 + 窗口长什么样），不是一串位置参数：
  * request 的曲线身份与窗口结果虽然是两个来源（见 {@code ModbusRegistryHistoryRange}），
  * 但合并成一个类型后，调用方不用再盯着七个位置参数、也不会把 {@code from}/{@code to} 或
- * {@code serviceId}/{@code identity} 对调。</p>
+ * {@code fdid}/{@code identity} 对调。</p>
  */
 public final class ModbusRegistryHistoryRangeCodec {
 
@@ -52,7 +52,7 @@ public final class ModbusRegistryHistoryRangeCodec {
         }
 
         JsonObject body = new JsonObject()
-                .put("serviceId", range.serviceId())
+                .put("fdid", range.fdid())
                 .put("pollIndex", range.identity())
                 .put("field", range.field())
                 .put("from", range.from().getTime())

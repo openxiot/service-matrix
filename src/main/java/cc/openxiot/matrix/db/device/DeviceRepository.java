@@ -36,7 +36,7 @@ public class DeviceRepository {
      * 与 {@link #findBySpaceId} 同一个字段，所以口径与归属校验、取数三处一致。</p>
      *
      * <p>空清单**短路**：{@code $in []} 一条也匹配不到，但没必要为此打一次库
-     * （同 {@code ModbusDeviceRepository.deleteByDeviceDids}）。</p>
+     * （同 {@code FieldDeviceRepository.deleteByDeviceDids}）。</p>
      */
     public Uni<List<DeviceEntity>> findBySpaceIds(List<String> spaceIds) {
         if (spaceIds == null || spaceIds.isEmpty()) {

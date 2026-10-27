@@ -6,7 +6,7 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Count;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.DeviceStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.FailureStats;
 import cc.openxiot.matrix.api.statistics.StatisticsQueryService.Overview;
-import cc.openxiot.matrix.api.statistics.StatisticsQueryService.ServiceStats;
+import cc.openxiot.matrix.api.statistics.StatisticsQueryService.FdStats;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +32,7 @@ class StatisticsCodecTest {
         JsonObject body = StatisticsCodec.encode(new Overview(
                 new Date(FROM), new Date(FROM + HOUR),
                 new DeviceStats(3, 2, List.of(new Count("dtu", 2), new Count("meter", 1))),
-                new ServiceStats(2, List.of(new Count("cfg-1", 1), new Count("", 1))),
+                new FdStats(2, List.of(new Count("cfg-1", 1), new Count("", 1))),
                 new AlarmStats(4, List.of(new Count("温度过高", 3), new Count("UNKNOWN", 1)),
                         List.of(new Bucket(FROM, 3), new Bucket(FROM + HOUR, 1))),
                 new FailureStats(1, List.of(new Bucket(FROM, 0), new Bucket(FROM + HOUR, 1)))));
@@ -48,7 +48,7 @@ class StatisticsCodecTest {
 
         // 服务：键是 configId（空串保留，前端据此显示「未定义」）
         assertEquals(new JsonObject().put("configId", "").put("count", 1),
-                body.getJsonObject("services").getJsonArray("byConfig").getJsonObject(1));
+                body.getJsonObject("fds").getJsonArray("byConfig").getJsonObject(1));
 
         // 告警：文本原样下发（用户数据不翻译），时间线是 {at, count}
         JsonObject alarms = body.getJsonObject("alarms");

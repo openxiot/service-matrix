@@ -85,7 +85,7 @@ class ObjectPropertyCodecProviderTest {
         BsonDocument doc = encode(sample);
 
         assertEquals(new BsonInt32(42), doc.get("value"));
-        assertEquals(new BsonString("6aa759bb4e45b0b6122d2ed5"), doc.get("serviceId"));
+        assertEquals(new BsonString("6aa759bb4e45b0b6122d2ed5"), doc.get("fdid"));
         assertEquals(1, doc.getInt32("registerIndex").getValue());
         assertTrue(!doc.containsKey("message"), "null 不落键：成功事件身上不该出现 message");
 
@@ -132,7 +132,7 @@ class ObjectPropertyCodecProviderTest {
     void snapshotFieldsRoundTrip() {
         ModbusPollingHistory log = new ModbusPollingHistory();
         log.id = new ObjectId();
-        log.serviceId = "6aa759bb4e45b0b6122d2ed5";
+        log.fdid = "6aa759bb4e45b0b6122d2ed5";
         log.pollIndex = 1;
         log.operation = "read";
         log.ok = Boolean.TRUE;
@@ -221,7 +221,7 @@ class ObjectPropertyCodecProviderTest {
         widget.type = "service";
         widget.size = "HALF";
         Map<String, Object> config = new LinkedHashMap<>();
-        config.put("serviceId", "6aa759bb4e45b0b6122d2ed5");
+        config.put("fdid", "6aa759bb4e45b0b6122d2ed5");
         config.put("pollIndex", 1);
         config.put("fields", List.of("temp", "status.bit0"));
         config.put("showUnit", Boolean.TRUE);
@@ -350,7 +350,7 @@ class ObjectPropertyCodecProviderTest {
     private static ModbusRegistryHistory sample(Object value) {
         ModbusRegistryHistory sample = new ModbusRegistryHistory();
         sample.id = new ObjectId();
-        sample.serviceId = "6aa759bb4e45b0b6122d2ed5";
+        sample.fdid = "6aa759bb4e45b0b6122d2ed5";
         sample.registerIndex = 1;
         sample.name = "温度";
         sample.value = value;

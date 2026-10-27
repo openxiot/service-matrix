@@ -38,7 +38,7 @@ class ModbusAlarmCodecTest {
 
         // 每条都带 id：告警行有逐行动作（点「处理」），前端得知道点的是哪一条
         assertEquals("65f0c0ffee0123456789abcd", o.getString("id"));
-        assertEquals("svc-1", o.getString("serviceId"));
+        assertEquals("svc-1", o.getString("fdid"));
         assertEquals(2, o.getInteger("pollIndex").intValue());
         assertEquals("进水温度", o.getString("field"));
         // 触发那一刻的定义快照
@@ -81,7 +81,7 @@ class ModbusAlarmCodecTest {
         assertTrue(bare.isEmpty());
 
         ModbusAlarm alarm = new ModbusAlarm();
-        alarm.serviceId = "svc-1";
+        alarm.fdid = "svc-1";
         alarm.field = "进水温度";
         alarm.at = AT;
         JsonObject o = ModbusAlarmCodec.encode(alarm);
@@ -203,7 +203,7 @@ class ModbusAlarmCodecTest {
     /** 一条未恢复、未处理的告警（字段名与样本给定）。 */
     private static ModbusAlarm open(String field, Object sample) {
         ModbusAlarm alarm = new ModbusAlarm();
-        alarm.serviceId = "svc-1";
+        alarm.fdid = "svc-1";
         alarm.pollIndex = 2;
         alarm.field = field;
         alarm.compare = ">";

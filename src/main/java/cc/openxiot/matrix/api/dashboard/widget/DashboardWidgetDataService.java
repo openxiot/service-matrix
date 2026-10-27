@@ -14,8 +14,8 @@ import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusRegistryHistoryRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.ModbusDeviceRepository;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cn.geekcity.xiot.spec.status.Status;
 import io.smallrye.mutiny.Uni;
@@ -36,7 +36,7 @@ import java.util.Map;
  *
  * <p>数据源按卡片类型分几路，各自**按去重键批量取**（§8）：统计卡 / 分布图 / 告警曲线走
  * {@link StatisticsQueryService#overview}（按窗口分组），服务卡走
- * {@link ModbusShadowCodec}（当前值，按 serviceId 去重），设备卡走
+ * {@link ModbusShadowCodec}（当前值，按 fdid 去重），设备卡走
  * {@link ManipulationService#getShadows}（按 did 去重、**一屏一次调用**），
  * 字段曲线走 {@link ModbusRegistryHistoryService#range}（按「点位 × 窗口 × 点数」去重）
  * 与其配套的 {@link ModbusPollingHistoryService#failures}（按「方法 × 窗口」去重）。</p>
@@ -85,12 +85,12 @@ public class DashboardWidgetDataService {
      * 服务端手里已经有一份，前端再解一遍就要多一次异步、多一份备忘、多一个请求。</p>
      */
     @Inject
-    ModbusDeviceRepository serviceRepo;
+    FieldDeviceRepository fdRepo;
 
     /**
      * 设备卡的数据源：设备影子（最后一次上报的值）。
      *
-     * <p>与 {@link #serviceRepo} 同一个理由顺带取回：卡片要设备型号（{@code type}）才能让前端
+     * <p>与 {@link #fdRepo} 同一个理由顺带取回：卡片要设备型号（{@code type}）才能让前端
      * 去产品规格里查出这个属性的名字与单位，而型号在设备实体上。</p>
      */
     @Inject
@@ -162,7 +162,7 @@ public class DashboardWidgetDataService {
         //    它们本来就不会读时间相关的字段，但仍要归并成同一次查询）；顺带收拢
         //    另几路要的 id —— 同一个服务/设备被几张卡引用只取一次
         Map<String, Window> windows = new LinkedHashMap<>();
-        List<String> serviceIds = new ArrayList<>();
+        List<String> fdids = new ArrayList<>();
         List<String> dids = new ArrayList<>();
         for (DashboardWidgetView widget : widgets) {
             Source source = sourceOf(widget);
@@ -170,13 +170,13 @@ public class DashboardWidgetDataService {
                 Window window = windowOf(widget, now, fallbackFrom);
                 windows.computeIfAbsent(window.key(), ignored -> window);
             } else if (source == Source.SERVICE || source == Source.FIELD) {
-                collect(configString(widget.config(), "serviceId"), serviceIds);
+                collect(configString(widget.config(), "fdids"), fdids);
             } else if (source == Source.DEVICE) {
                 collect(configString(widget.config(), "did"), dids);
             }
         }
 
-        // 2) 先判归属，再取数。**这一步是安全边界，不是优化**：`serviceId` / `did` 是用户填的，
+        // 2) 先判归属，再取数。**这一步是安全边界，不是优化**：`fdid` / `did` 是用户填的，
         //    只按 id 查（`Modbus-History.md` 当前的写法）就意味着拿到别人的 id 就能读别人的数据。
         //    已存布局同样要判 —— 保存时校验过，但那张卡片引用的服务可能在那之后被删掉了。
         //
@@ -184,14 +184,14 @@ public class DashboardWidgetDataService {
         //    不存方法序号，字段（寄存器）就靠这个名字在 configSnapshot.registries 里解析到 index
         //    才知道取哪只寄存器的影子/历史。
         return ownershipValidator.errorsByWidget(space, widgets)
-                .chain(errors -> fetchServices(serviceIds)
-                        .chain(services -> {
+                .chain(errors -> fetchFds(fdids)
+                        .chain(fds -> {
                             Map<String, CurveQuery> curves = new LinkedHashMap<>();
                             for (DashboardWidgetView widget : widgets) {
                                 if (sourceOf(widget) != Source.FIELD) {
                                     continue;
                                 }
-                                CurveQuery curve = CurveQuery.of(widget, windowOf(widget, now, fallbackFrom), services);
+                                CurveQuery curve = CurveQuery.of(widget, windowOf(widget, now, fallbackFrom), fds);
                                 if (curve != null) {
                                     curves.computeIfAbsent(curve.key(), ignored -> curve);
                                 }
@@ -202,16 +202,16 @@ public class DashboardWidgetDataService {
                                             fetchCurves(curves))
                                     .asTuple()
                                     .map(tuple -> build(spaceId, widgets,
-                                            buildSources(tuple.getItem1(), services, tuple.getItem2(),
+                                            buildSources(tuple.getItem1(), fds, tuple.getItem2(),
                                                     tuple.getItem3()),
                                             errors, fallbackFrom, now));
                         }));
     }
 
     /** 拼 {@link Sources}：服务的取数在外层已拿到（解析曲线/字段的寄存器与元数据要用），单独传入。 */
-    private static Sources buildSources(Map<String, Fetched> overviews, Map<String, ServiceFetched> services,
+    private static Sources buildSources(Map<String, Fetched> overviews, Map<String, FdFetched> fds,
                                         DeviceFetched devices, Map<String, CurveFetched> curves) {
-        return new Sources(overviews, services, devices, curves);
+        return new Sources(overviews, fds, devices, curves);
     }
 
     /** 收一个非空的 id 进去，已经收过的跳过（保持首次出现的顺序）。 */
@@ -336,7 +336,7 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 逐服务取当前值 + 定义。**一个服务的失败不整份失败**：和窗口取数同一个理由 ——
+     * 逐现场设备取当前值 + 定义。**一个服务的失败不整份失败**：和窗口取数同一个理由 ——
      * 一个服务的查询出错只该黑掉引用它的那几张卡。
      *
      * <p>这里 recover 的是**任何**失败，不只是 {@code IllegalArgumentException}
@@ -345,22 +345,22 @@ public class DashboardWidgetDataService {
      * 影子查询是本地库（可能超时），服务定义查询是另一次读 —— 任何一条腿抖一下都不该让
      * 整个看板空掉。消息原样带上，卡片自己会说是哪个服务出错了。</p>
      */
-    private Uni<Map<String, ServiceFetched>> fetchServices(List<String> serviceIds) {
-        Map<String, Uni<ServiceFetched>> queries = new LinkedHashMap<>();
-        for (String serviceId : serviceIds) {
-            queries.put(serviceId, Uni.combine().all()
-                    .unis(registryShadowRepo.listByServiceId(serviceId), serviceRepo.findById(serviceId))
+    private Uni<Map<String, FdFetched>> fetchFds(List<String> fdids) {
+        Map<String, Uni<FdFetched>> queries = new LinkedHashMap<>();
+        for (String fdid : fdids) {
+            queries.put(fdid, Uni.combine().all()
+                    .unis(registryShadowRepo.listByFdid(fdid), fdRepo.findById(fdid))
                     .asTuple()
-                    .map(tuple -> new ServiceFetched(registryShadowsByIndex(tuple.getItem1()),
+                    .map(tuple -> new FdFetched(registryShadowsByIndex(tuple.getItem1()),
                             tuple.getItem2(), null))
                     .onFailure().recoverWithItem(
-                            failure -> new ServiceFetched(Map.of(), null, messageOf(failure))));
+                            failure -> new FdFetched(Map.of(), null, messageOf(failure))));
         }
         return joinAll(queries);
     }
 
     /**
-     * 逐寄存器取历史事件序列（曲线卡）。**一个寄存器读失败不整份失败**：与 {@link #fetchServices}
+     * 逐寄存器取历史事件序列（曲线卡）。**一个寄存器读失败不整份失败**：与 {@link #fetchFds}
      * 同一条理由 —— {@code andFailFast} 会把一次失败放大成一屏全黑，而这里最常见的失败是
      * 配置问题（窗口非法），它本就只该黑掉引用它的那一张卡。消息原样带上，卡片自己会说清
      * 是哪条曲线、为什么。
@@ -373,9 +373,9 @@ public class DashboardWidgetDataService {
         Map<String, Uni<CurveFetched>> queries = new LinkedHashMap<>();
         curves.forEach((key, curve) -> queries.put(key,
                 Uni.combine().all()
-                        .unis(registryHistoryRepo.findCarryIn(curve.serviceId(), curve.registerIndex(),
+                        .unis(registryHistoryRepo.findCarryIn(curve.fdid(), curve.registerIndex(),
                                         curve.window().from()),
-                                registryHistoryRepo.findRange(curve.serviceId(), curve.registerIndex(),
+                                registryHistoryRepo.findRange(curve.fdid(), curve.registerIndex(),
                                         curve.window().from(), curve.window().to(), MAX_EVENTS))
                         .asTuple()
                         .map(tuple -> {
@@ -404,7 +404,7 @@ public class DashboardWidgetDataService {
                             ModbusRegistryHistoryWindow.Window window = ModbusRegistryHistoryWindow.of(
                                     carryInSample, samples, from, to, curve.maxPoints());
                             JsonObject body = ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
-                                    curve.serviceId(), curve.registerIndex(), curve.field(),
+                                    curve.fdid(), curve.registerIndex(), curve.field(),
                                     curve.window().from(), curve.window().to(), curve.maxPoints(), window));
                             return new CurveFetched(body, failures, null);
                         })
@@ -545,7 +545,7 @@ public class DashboardWidgetDataService {
      */
     private static Item item(DashboardWidgetView widget, String id, Window window, Sources sources) {
         if (sourceOf(widget) == Source.SERVICE) {
-            ServiceFetched service = sources.services().get(configString(widget.config(), "serviceId"));
+            FdFetched service = sources.fds().get(configString(widget.config(), "fdid"));
             if (service == null) {
                 return Item.failed(id, "no data");
             }
@@ -564,7 +564,7 @@ public class DashboardWidgetDataService {
             return payload == null ? Item.failed(id, unsupportedDetail(widget)) : Item.ok(id, payload);
         }
         if (sourceOf(widget) == Source.FIELD) {
-            CurveQuery query = CurveQuery.of(widget, window, sources.services());
+            CurveQuery query = CurveQuery.of(widget, window, sources.fds());
             CurveFetched curve = query == null ? null : sources.curves().get(query.key());
             if (curve == null) {
                 return Item.failed(id, "no data");
@@ -574,7 +574,7 @@ public class DashboardWidgetDataService {
             }
             // 定义与服务卡取自同一批（见 fetchCurves）：那一批失败时这条曲线也画不出来 ——
             // 没有定义的曲线不知道单位、也不知道该不该走阶梯线
-            ServiceFetched service = sources.services().get(query.serviceId());
+            FdFetched service = sources.fds().get(query.fdid());
             if (service == null) {
                 return Item.failed(id, "no data");
             }
@@ -669,7 +669,7 @@ public class DashboardWidgetDataService {
         return switch (metric) {
             case "devices.total" -> (long) overview.devices().total();
             case "devices.online" -> (long) overview.devices().online();
-            case "services.total" -> (long) overview.services().total();
+            case "fds.total" -> (long) overview.fds().total();
             case "alarms.window" -> (long) overview.alarms().total();
             case "failures.total" -> (long) overview.failures().total();
             default -> null;
@@ -690,7 +690,7 @@ public class DashboardWidgetDataService {
             case "deviceType" -> overview.devices().byType();
             // serviceType 的 key 是 configId：解成「厂家 型号」并合并同名是展示层的事（§5.5），
             // 和现有 dashboard 页一样，由前端拿配置清单一并做
-            case "serviceType" -> overview.services().byConfig();
+            case "fdType" -> overview.fds().byConfig();
             case "alarmType" -> overview.alarms().byText();
             default -> null;
         };
@@ -731,7 +731,7 @@ public class DashboardWidgetDataService {
      * 清单照取，画不画由前端定。让服务端按开关跳过这次查询，换来的是「改一次开关要重新取数」，
      * 而这份清单本来就是跟着窗口一起取回来的，省不下什么。</p>
      */
-    private static JsonObject fieldData(CurveQuery query, CurveFetched curve, ServiceFetched service) {
+    private static JsonObject fieldData(CurveQuery query, CurveFetched curve, FdFetched service) {
         ModbusRegistry reg = registerOf(service.service(), query.field());
         // 这份响应体是这次取数现编的（`fetchCurves` 里每个去重键一份），就地缀上三样即可
         JsonObject data = curve.range();
@@ -793,7 +793,7 @@ public class DashboardWidgetDataService {
      * <p>按 {@code config.fields} 的**配置顺序**产出；{@code unit} / {@code bit} 取自寄存器定义。
      * 旧卡的 {@code pollIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
      */
-    private static JsonObject serviceData(Map<String, Object> config, ServiceFetched fetched) {
+    private static JsonObject serviceData(Map<String, Object> config, FdFetched fetched) {
         List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
         JsonObject data = new JsonObject();
         JsonArray rows = new JsonArray();
@@ -848,11 +848,11 @@ public class DashboardWidgetDataService {
     }
 
     /** 字段名 → 服务点表快照里的寄存器；没配快照 / 名字对不上给 null。 */
-    private static ModbusRegistry registerOf(ModbusDevice service, String fieldName) {
-        if (service == null || service.configSnapshot == null || service.configSnapshot.registries == null) {
+    private static ModbusRegistry registerOf(FieldDevice fd, String fieldName) {
+        if (fd == null || fd.configSnapshot == null || fd.configSnapshot.registries == null) {
             return null;
         }
-        for (ModbusRegistry reg : service.configSnapshot.registries) {
+        for (ModbusRegistry reg : fd.configSnapshot.registries) {
             if (reg != null && fieldName.equals(reg.name)) {
                 return reg;
             }
@@ -865,9 +865,9 @@ public class DashboardWidgetDataService {
         return reg != null && ("coil".equals(reg.area) || "discrete".equals(reg.area));
     }
 
-    /** 从取数结果里取服务定义；服务没取到（失败/不存在）给 {@code null}。 */
-    private static ModbusDevice serviceOf(Map<String, ServiceFetched> services, String serviceId) {
-        ServiceFetched fetched = services == null ? null : services.get(serviceId);
+    /** 从取数结果里取服务定义；现场设备没取到（失败/不存在）给 {@code null}。 */
+    private static FieldDevice fdOf(Map<String, FdFetched> fds, String fdid) {
+        FdFetched fetched = fds == null ? null : fds.get(fdid);
         return fetched == null ? null : fetched.service();
     }
 
@@ -977,7 +977,7 @@ public class DashboardWidgetDataService {
      * 每加一路数据源就多一个位置参数，而下标/顺序错了的编译期表现只是「类型对不上」——
      * 两个同为 {@code Map<String, ?>} 的参数调换了位置，编译器一声不吭。</p>
      */
-    private record Sources(Map<String, Fetched> overviews, Map<String, ServiceFetched> services,
+    private record Sources(Map<String, Fetched> overviews, Map<String, FdFetched> fds,
                            DeviceFetched devices, Map<String, CurveFetched> curves) {
     }
 
@@ -988,26 +988,26 @@ public class DashboardWidgetDataService {
      * （降不降采样、桶多粗都不一样）。只按「寄存器 × 窗口」去重，会让其中一张卡拿到另一张的点数
      * —— 而它看起来完全正常，因为它本来就是一组合法的采样。</p>
      */
-    private record CurveQuery(String serviceId, Integer registerIndex, String field, Window window,
+    private record CurveQuery(String fdid, Integer registerIndex, String field, Window window,
                               int maxPoints) {
 
         String key() {
-            return serviceId + "#" + registerIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
+            return fdid + "#" + registerIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
         }
 
         /**
          * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 pollIndex）。
-         * {@code serviceId} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
+         * {@code fdid} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
          * 都给 {@code null} —— 拿不到寄存器序号就无从查这段窗口的历史。
          */
-        static CurveQuery of(DashboardWidgetView widget, Window window, Map<String, ServiceFetched> services) {
+        static CurveQuery of(DashboardWidgetView widget, Window window, Map<String, FdFetched> fds) {
             Map<String, Object> config = widget.config();
-            String serviceId = configString(config, "serviceId");
+            String fdid = configString(config, "fdid");
             String field = configString(config, "field");
-            if (serviceId == null || field == null || services == null) {
+            if (fdid == null || field == null || fds == null) {
                 return null;
             }
-            ModbusRegistry reg = registerOf(serviceOf(services, serviceId), field);
+            ModbusRegistry reg = registerOf(fdOf(fds, fdid), field);
             if (reg == null || reg.index == null) {
                 return null;
             }
@@ -1015,7 +1015,7 @@ public class DashboardWidgetDataService {
             // 夹到 [1, MAX_MAX_POINTS]：点数只是性能提示，不值得为超出让请求失败
             int points = maxPoints == null ? DEFAULT_MAX_POINTS : maxPoints;
             points = Math.min(Math.max(points, 1), MAX_MAX_POINTS);
-            return new CurveQuery(serviceId, reg.index, field, window, points);
+            return new CurveQuery(fdid, reg.index, field, window, points);
         }
     }
 
@@ -1029,13 +1029,13 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 一个服务的取数结果：该服务各寄存器的当前值（按 registerIndex）、服务定义、以及错误文案。
+     * 一个现场设备的取数结果：该设备各寄存器的当前值（按 registerIndex）、服务定义、以及错误文案。
      *
      * <p>定义与影子一起取：定义用来把配置的字段名解析到寄存器、并产出 {@code unit} / {@code bit}，
      * 两者缺一个卡片都画不出来，分两次取只会多一个中间状态。</p>
      */
-    private record ServiceFetched(Map<Integer, ModbusShadow> registryShadows, ModbusDevice service,
-                                  String error) {
+    private record FdFetched(Map<Integer, ModbusShadow> registryShadows, FieldDevice service,
+                             String error) {
     }
 
     /**

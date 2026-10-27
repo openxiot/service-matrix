@@ -39,9 +39,9 @@
 - [x] `ModbusDeviceValidator.validateAlarm`：只在 `enabled == true` 时校验；只许读方法；
       `string` 字段不收；`value-list` 字段只许 `=` 比 `state`；位只许 `=` 比 0/1。
 - [x] `isReadPoll` 抽取：周期与告警共用同一处功能码判断。
-- [x] 单测：`ModbusAlarmPolicyTest`（14）+ `ModbusDeviceValidatorTest` 补 9 +
-      `ModbusDeviceCodecTest` 收进示例体。全量 432 例中 431 绿
-      （`SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，本机读超时，与本次改动无关）。
+- [x] 单测：`ModbusAlarmPolicyTest`（14）+ `FieldDeviceValidatorTest` 补 9 +
+      `FieldDeviceCodecTest` 收进示例体。全量 432 例中 431 绿
+  （`SpaceResourceTest` 是 `@QuarkusTest`、要连 Mongo，本机读超时，与本次改动无关）。
 - [x] `MODBUS.md` 三 / 七 / 八节 + 本文件 + `Modbus-Alarm.md`。
 
 ## 第二步：告警文档与仓储（已完成）
@@ -51,7 +51,7 @@
       另有 `CLOSE_VALUE` / `CLOSE_DEFINITION` 两个关闭方式常量与 `openKeyOf(...)`。
 - [x] `ModbusAlarmRepository`（照 `ModbusServiceFailureRepository`）：索引（ **只建了两个**，
   见下）、`insertOpen`、`listOpenFields`、`closeByKeys`（`updateMany`）、`handle`（CAS，
-  **绝不 `replaceOne`**）、`deleteByServiceIds`、`findRange` + `RangeFilter`。
+  **绝不 `replaceOne`**）、`deleteByDeviceIds`、`findRange` + `RangeFilter`。
 - [x] `db/modbus/alarm/codec/ModbusAlarmCodec`：**只出不进**，`id` = `_id.toHexString()`，
       `openKey` **绝不下发**，时刻一律 epoch 毫秒，`handledBy` 走既有 `PersonCodec`；
       `encodeSummary` 出 `{total, open, unhandled, byLevel, byText}`。
@@ -82,8 +82,8 @@
       稳态**零写**；行为快照（定义快照 / 单位 / 位不带单位）；两种 `closeType`；一次采样里既开又关；
       判不了只警告一次且不写库；警告内容带上原始值与完整定义；去重上限会清空重来；
       读失败与写失败都**照常外传**；关掉最后一个告警时闸门照常跳过（有意为之，见 `Modbus-Alarm.md` 第五节末）。
-- [x] `ModbusDeviceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到**同一份**采样（`InOrder`）；
-      告警评估失败不改写已成功采集的响应、也不变成一条故障记录。
+- [x] `FieldDeviceServiceTest` 补 2 例：`evaluate` 在 `record` **之后**且拿到 **同一份**采样（`InOrder`）；
+  告警评估失败不改写已成功采集的响应、也不变成一条故障记录。
 - [x] 全量 469 例中 468 绿（唯一红色仍是 `SpaceResourceTest` 那个要连 Mongo 的环境性失败）。
 
 **两处口径从 mock 测试挪到了别处，别以为漏了：**
@@ -134,8 +134,8 @@
 - [x] `handle` 校验该告警落在传入空间的子树内 —— 否则拿别人的 id 就能点。
       判法是「先 `findById` 拿行 → 该行的 `serviceId` 在 `subtreeServiceIds(spaceId)` 里吗 → 才写」，
       用的是与列表查询**同一个**函数，于是「列表里看得到的就能点」恰好成立。
-- [x] `subtreeServiceIds` 从 `ModbusHistoryResource` 下沉到 `ModbusDeviceService`（两个资源共用）；
-      选的是**下沉**不是复制（`SpaceService` 只依赖仓储与账号查询，注入进去不成环）。
+- [x] `subtreeFdIds` 从 `ModbusHistoryResource` 下沉到 `FieldDeviceService`（两个资源共用）；
+  选的是 **下沉**不是复制（`SpaceService` 只依赖仓储与账号查询，注入进去不成环）。
 - [x] 单测：`ModbusAlarmQueryServiceTest`（7，对齐 `ModbusHistoryQueryServiceTest`）+
       `ModbusAlarmServiceTest` 补 6 例（`handle`）。
 

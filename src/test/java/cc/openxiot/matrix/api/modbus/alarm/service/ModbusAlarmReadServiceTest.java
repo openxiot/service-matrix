@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link ModbusAlarmReadService#merge} 的合并规则：空间级查询（不传 serviceId）把各服务各查一次的结果
+ * {@link ModbusAlarmReadService#merge} 的合并规则：空间级查询（不传 fdid）把各服务各查一次的结果
  * 并成一条清单，这一步全在内存里（{@code @QuarkusTest} 要连 Mongo，这个仓库跑不了）。
  *
  * <p>断言的重点不是「排了个序」，而是**逐服务先按 {@code limit + 1} 截一刀再合并，得到的确实是
@@ -31,7 +31,7 @@ class ModbusAlarmReadServiceTest {
         AlarmResult result = ModbusAlarmReadService.merge(new Date(T0), new Date(T0 + SECOND * 10), LIMIT,
                 List.of(alarm("a", T0 + SECOND), alarm("b", T0 + SECOND * 5), alarm("c", T0 + SECOND * 3)));
 
-        assertEquals(List.of("b", "c", "a"), serviceIds(result));
+        assertEquals(List.of("b", "c", "a"), fdids(result));
         assertFalse(result.truncated());
         assertEquals(LIMIT, result.limit());
     }
@@ -44,7 +44,7 @@ class ModbusAlarmReadServiceTest {
                         alarm("c", T0 + SECOND * 3), alarm("d", T0 + SECOND * 2),
                         alarm("e", T0 + SECOND)));
 
-        assertEquals(List.of("a", "b", "c"), serviceIds(result));
+        assertEquals(List.of("a", "b", "c"), fdids(result));
         assertTrue(result.truncated());
     }
 
@@ -65,7 +65,7 @@ class ModbusAlarmReadServiceTest {
         AlarmResult result = ModbusAlarmReadService.merge(new Date(T0), new Date(T0 + SECOND * 10), LIMIT,
                 List.of(alarm("a", T0 + SECOND), alarm("b", T0 + SECOND), alarm("c", T0 + SECOND)));
 
-        assertEquals(List.of("a", "b", "c"), serviceIds(result));
+        assertEquals(List.of("a", "b", "c"), fdids(result));
     }
 
     @Test
@@ -83,7 +83,7 @@ class ModbusAlarmReadServiceTest {
         AlarmResult result = ModbusAlarmReadService.merge(new Date(T0), new Date(T0 + SECOND * 10), LIMIT,
                 List.of(alarm("a", T0 + SECOND), alarm("b", null)));
 
-        assertEquals(List.of("a", "b"), serviceIds(result));
+        assertEquals(List.of("a", "b"), fdids(result));
     }
 
     @Test
@@ -94,23 +94,23 @@ class ModbusAlarmReadServiceTest {
         AlarmResult result = ModbusAlarmReadService.merge(new Date(T0), new Date(T0 + SECOND * 10), LIMIT,
                 List.of(closed("a", T0 + SECOND * 5), alarm("b", T0 + SECOND)));
 
-        assertEquals(List.of("a", "b"), serviceIds(result));
+        assertEquals(List.of("a", "b"), fdids(result));
     }
 
     // -- helpers --
 
-    private static ModbusAlarm alarm(String serviceId, Long at) {
-        return row(serviceId, at, null);
+    private static ModbusAlarm alarm(String fdid, Long at) {
+        return row(fdid, at, null);
     }
 
     /** 已恢复的一条：合并仍按 at 排（见 {@link #mergeDoesNotCareAboutOpenOrHandled}）。 */
-    private static ModbusAlarm closed(String serviceId, Long at) {
-        return row(serviceId, at, new Date(at + SECOND));
+    private static ModbusAlarm closed(String fdid, Long at) {
+        return row(fdid, at, new Date(at + SECOND));
     }
 
-    private static ModbusAlarm row(String serviceId, Long at, Date recoveredAt) {
+    private static ModbusAlarm row(String fdid, Long at, Date recoveredAt) {
         ModbusAlarm alarm = new ModbusAlarm();
-        alarm.serviceId = serviceId;
+        alarm.fdid = fdid;
         alarm.pollIndex = 1;
         alarm.field = "进水温度";
         alarm.level = "WARN";
@@ -120,8 +120,8 @@ class ModbusAlarmReadServiceTest {
         return alarm;
     }
 
-    /** 用 serviceId 当断言里的标识：它正是空间级清单里「这条属于谁」的依据。 */
-    private static List<String> serviceIds(AlarmResult result) {
-        return result.items().stream().map(item -> item.serviceId).toList();
+    /** 用 fdid 当断言里的标识：它正是空间级清单里「这条属于谁」的依据。 */
+    private static List<String> fdids(AlarmResult result) {
+        return result.items().stream().map(item -> item.fdid).toList();
     }
 }

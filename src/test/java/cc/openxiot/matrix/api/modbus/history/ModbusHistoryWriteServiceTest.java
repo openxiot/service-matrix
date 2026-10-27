@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.modbus.history;
 
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaseline;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.device.poll.ModbusPoll;
-import cc.openxiot.matrix.db.modbus.device.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.device.poll.response.ModbusResponses;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
+import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
+import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
@@ -15,8 +15,8 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
-import cc.openxiot.matrix.db.modbus.device.poll.request.ModbusRequests;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequests;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -86,7 +86,7 @@ class ModbusHistoryWriteServiceTest {
         when(registryShadowRepo.upsertFailure(any())).thenReturn(Uni.createFrom().voidItem());
         when(pollingHistoryRepo.insert(any())).thenReturn(Uni.createFrom().voidItem());
         // 3 参入口默认读到空影子 → 没有比对基准（真·首次采集）；需要基准的测试另 stub 返回逐寄存器影子
-        when(registryShadowRepo.listByServiceId(anyString()))
+        when(registryShadowRepo.listByFdid(anyString()))
                 .thenReturn(Uni.createFrom().item(List.of()));
         service.deadband = 0;
         service.keepAliveSeconds = 600;
@@ -112,18 +112,18 @@ class ModbusHistoryWriteServiceTest {
         // 寄存器当前值 upsert 一次（清故障态）
         verify(registryShadowRepo).upsertValue(any());
         // 3 参入口从逐寄存器影子重建基准
-        verify(registryShadowRepo).listByServiceId(SERVICE_ID);
+        verify(registryShadowRepo).listByFdid(SERVICE_ID);
     }
 
     @Test
     void registryWrite_oldServiceWithoutRegistries_skipsNewWrites() {
-        service.record(modbusService(), poll(), new JsonObject().put("进水温度", 62.5))
+        service.record(fd(), poll(), new JsonObject().put("进水温度", 62.5))
                 .await().indefinitely();
 
         // 没有点表快照（老服务 / 纯命令）→ 寄存器侧不写
         verifyNoInteractions(registryHistoryRepo);
         // 3 参入口仍读了一次逐寄存器影子（重建基准），但不写当前值
-        verify(registryShadowRepo).listByServiceId(SERVICE_ID);
+        verify(registryShadowRepo).listByFdid(SERVICE_ID);
         verify(registryShadowRepo, never()).upsertValue(any());
     }
 
@@ -136,7 +136,7 @@ class ModbusHistoryWriteServiceTest {
         ArgumentCaptor<ModbusPollingHistory> log = ArgumentCaptor.forClass(ModbusPollingHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
         ModbusPollingHistory row = log.getValue();
-        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(SERVICE_ID, row.fdid);
         assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.TRUE, row.ok);
         assertEquals("read", row.operation);
@@ -152,7 +152,7 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void opLog_noChangeValue_stillLogsTheCall() {
         // 基准 = 逐寄存器影子里的旧值 61.5 → 这次采到 61.5 没变
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(valueShadow(61.5, new Date()))));
 
         service.record(modbusServiceWithRegistries(), poll(), new JsonObject().put("进水温度", 61.5))
@@ -168,12 +168,12 @@ class ModbusHistoryWriteServiceTest {
     /** 操作日志：失败调用记一条（ok=false，带分类与远端码）。分类/远端码由抛出点透传。 */
     @Test
     void opLog_failure_recordsTypeAndRemoteCode() {
-        service.recordFailure(modbusService(), poll(), parentTimeout()).await().indefinitely();
+        service.recordFailure(fd(), poll(), parentTimeout()).await().indefinitely();
 
         ArgumentCaptor<ModbusPollingHistory> log = ArgumentCaptor.forClass(ModbusPollingHistory.class);
         verify(pollingHistoryRepo).insert(log.capture());
         ModbusPollingHistory row = log.getValue();
-        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(SERVICE_ID, row.fdid);
         assertEquals(FUNCTION_INDEX, row.pollIndex);
         assertEquals(Boolean.FALSE, row.ok);
         assertEquals("read", row.operation);
@@ -185,7 +185,7 @@ class ModbusHistoryWriteServiceTest {
 
     @Test
     void changedValueAppendsHistoryThenUpdatesShadow() {
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(valueShadow(61.5, new Date()))));
 
         service.record(modbusServiceWithRegistries(), poll(), new JsonObject().put("进水温度", 62.5))
@@ -193,7 +193,7 @@ class ModbusHistoryWriteServiceTest {
 
         // 寄存器历史事件写了一条（值是 62.5、指向寄存器 1）
         ModbusRegistryHistory row = registryRowsOf().getFirst();
-        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(SERVICE_ID, row.fdid);
         assertEquals(1, row.registerIndex.intValue());
         assertEquals("进水温度", row.name);
         assertEquals(62.5, row.value);
@@ -219,17 +219,17 @@ class ModbusHistoryWriteServiceTest {
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());
         assertNull(next.lastError());
         // 基准从逐寄存器影子重建过一次，并写了一次当前值
-        verify(registryShadowRepo).listByServiceId(SERVICE_ID);
+        verify(registryShadowRepo).listByFdid(SERVICE_ID);
         verify(registryShadowRepo).upsertValue(any());
     }
 
     @Test
     void unchangedValueTouchesNothing() {
         // 实测里绝大多数采集走这条：只读一次影子，之后一个写操作都没有
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(valueShadow(61.5, new Date()))));
 
-        service.record(modbusService(), poll(), new JsonObject().put("进水温度", 61.5))
+        service.record(fd(), poll(), new JsonObject().put("进水温度", 61.5))
                 .await().indefinitely();
 
         verify(registryHistoryRepo, never()).insertAll(anyList());
@@ -252,7 +252,7 @@ class ModbusHistoryWriteServiceTest {
     void emptyValuesWritesNothing() {
         // 写方法（response 为空）解出来就是空对象：没有读值可落。
         // 基准仍读这一次（无故障则没有要清的）；没故障时不落历史也不建影子。
-        service.record(modbusService(), poll(), new JsonObject()).await().indefinitely();
+        service.record(fd(), poll(), new JsonObject()).await().indefinitely();
 
         verify(registryShadowRepo, never()).upsertValue(any());
         verify(pollingHistoryRepo).insert(any());
@@ -263,7 +263,7 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void firstFailureWritesRowAndMarksShadow() {
         Date lastSample = new Date();
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(valueShadow(61.5, lastSample))));
 
         service.recordFailure(modbusServiceWithRegistries(), poll(), parentTimeout()).await().indefinitely();
@@ -275,7 +275,7 @@ class ModbusHistoryWriteServiceTest {
 
         // 分类与远端原始码都落下来：前端按 type 聚合，再按 remoteCode 下钻
         ModbusPollingHistory row = savedPollingLog();
-        assertEquals(SERVICE_ID, row.serviceId);
+        assertEquals(SERVICE_ID, row.fdid);
         assertEquals(FUNCTION_INDEX, row.pollIndex.intValue());
         assertEquals(ModbusFailureType.DEVICE_ERROR, ModbusFailureType.valueOf(row.type));
         assertEquals(408, row.remoteCode);
@@ -295,7 +295,7 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void repeatedFailureTouchesNothing() {
         // DTU 离线三天的形态：同一条错误反复出现，只该有第一条记录
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
         service.recordFailure(modbusServiceWithRegistries(), poll(), parentTimeout()).await().indefinitely();
@@ -308,10 +308,10 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void differentFailureWritesNewRow() {
         // 故障换了（父设备超时 → CRC 不符）：说明设备状态变了，得留一条
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
-        service.recordFailure(modbusService(), poll(), crcMismatch()).await().indefinitely();
+        service.recordFailure(fd(), poll(), crcMismatch()).await().indefinitely();
 
         ModbusPollingHistory row = savedPollingLog();
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(row.type));
@@ -336,10 +336,10 @@ class ModbusHistoryWriteServiceTest {
     void foreignFailureIsClassifiedUnknown() {
         // 非本模块抛的异常（编解码、上游 SDK）：宁可标 UNKNOWN，也不猜一个会把人带偏的分类
         // —— 把编解码异常猜成「设备离线」，排查就从现场跑到代码上去了
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
-        service.recordFailure(modbusService(), poll(), new IllegalStateException("connection reset"))
+        service.recordFailure(fd(), poll(), new IllegalStateException("connection reset"))
                 .await().indefinitely();
 
         ModbusPollingHistory row = savedPollingLog();
@@ -351,10 +351,10 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void failureWithoutMessageFallsBackToClassName() {
         // NPE 之类没有 message：落一串 null 在库里什么也说明不了
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
-        service.recordFailure(modbusService(), poll(), new NullPointerException())
+        service.recordFailure(fd(), poll(), new NullPointerException())
                 .await().indefinitely();
 
         assertEquals("NullPointerException", savedPollingLog().message);
@@ -363,10 +363,10 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void longFailureMessageIsTruncated() {
         // 上游描述可能很长，越长越容易让「同一条故障」被判成不同的两条，重复记录就压不住了
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
-        service.recordFailure(modbusService(), poll(),
+        service.recordFailure(fd(), poll(),
                         ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "x".repeat(5000)))
                 .await().indefinitely();
 
@@ -378,7 +378,7 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void recoveryAfterFailureWritesEveryField() {
         // 值恰好没变也要落全字段：否则曲线上「服务恢复了」和「仍在故障」长得一模一样
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
         ModbusPollingBaseline next = service.record(modbusServiceWithRegistries(), poll(),
@@ -398,7 +398,7 @@ class ModbusHistoryWriteServiceTest {
     void successOnWriteMethodClearsErrorState() {
         // 写方法没有读值可落，但「这次调用成功了」得落下来 ——
         // 否则故障态永远清不掉，前端会一直看到一条早已恢复的故障
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(faultShadow(61.5, new Date(), TIMEOUT))));
 
         // 写方法 + 服务定义带点表快照（shadow 只带 registerIndex，字段名要从 configSnapshot.registries 解析）
@@ -412,10 +412,10 @@ class ModbusHistoryWriteServiceTest {
     @Test
     void writeMethodWithNoErrorStateTouchesNothing() {
         // 写方法 + 没有故障要清：不必为一个「没有读值的方法」凭空建影子文档
-        when(registryShadowRepo.listByServiceId(SERVICE_ID))
+        when(registryShadowRepo.listByFdid(SERVICE_ID))
                 .thenReturn(Uni.createFrom().item(List.of(valueShadow(61.5, new Date()))));
 
-        ModbusPollingBaseline next = service.record(modbusService(), poll(), new JsonObject()).await().indefinitely();
+        ModbusPollingBaseline next = service.record(fd(), poll(), new JsonObject()).await().indefinitely();
 
         assertNull(next);
         verify(registryShadowRepo, never()).upsertValue(any());
@@ -434,7 +434,7 @@ class ModbusHistoryWriteServiceTest {
         ModbusPollingBaseline next = service.record(modbusServiceWithRegistries(), poll(),
                 new JsonObject().put("进水温度", 62.5), baseline).await().indefinitely();
 
-        verify(registryShadowRepo, never()).listByServiceId(anyString());
+        verify(registryShadowRepo, never()).listByFdid(anyString());
         assertEquals(List.of("进水温度"), fieldsOf());
         // 返回值 = 新基准（值映射 + 时刻），调用方据此回填缓存
         assertEquals(Map.of("进水温度", 62.5), next.valueByField());
@@ -451,7 +451,7 @@ class ModbusHistoryWriteServiceTest {
         ModbusPollingBaseline next = service.record(modbusServiceWithRegistries(), poll(),
                 new JsonObject().put("进水温度", 61.5), null).await().indefinitely();
 
-        verify(registryShadowRepo, never()).listByServiceId(anyString());
+        verify(registryShadowRepo, never()).listByFdid(anyString());
         assertEquals(List.of("进水温度"), fieldsOf());
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());
         assertNull(next.lastError());
@@ -462,7 +462,7 @@ class ModbusHistoryWriteServiceTest {
     void pollRecordReturnsNullWhenNothingWasWritten() {
         ModbusPollingBaseline baseline = new ModbusPollingBaseline(Map.of("进水温度", 61.5), new Date(), null);
 
-        ModbusPollingBaseline next = service.record(modbusService(), poll(),
+        ModbusPollingBaseline next = service.record(fd(), poll(),
                 new JsonObject().put("进水温度", 61.5), baseline).await().indefinitely();
 
         assertNull(next);
@@ -477,7 +477,7 @@ class ModbusHistoryWriteServiceTest {
         ModbusPollingBaseline next = service.record(modbusServiceWithRegistries(), poll(),
                 new JsonObject().put("进水温度", 61.5), broken).await().indefinitely();
 
-        verify(registryShadowRepo, never()).listByServiceId(anyString());
+        verify(registryShadowRepo, never()).listByFdid(anyString());
         assertEquals(List.of("进水温度"), fieldsOf());
         assertNull(next.lastError());
     }
@@ -485,10 +485,10 @@ class ModbusHistoryWriteServiceTest {
     /** 手动的 3 参入口**仍然读库**：从逐寄存器影子重建基准（api 副本上的缓存永远是空的）。 */
     @Test
     void manualRecordStillReadsTheRegistryShadows() {
-        service.record(modbusService(), poll(), new JsonObject().put("进水温度", 61.5))
+        service.record(fd(), poll(), new JsonObject().put("进水温度", 61.5))
                 .await().indefinitely();
 
-        verify(registryShadowRepo).listByServiceId(SERVICE_ID);
+        verify(registryShadowRepo).listByFdid(SERVICE_ID);
     }
 
     @Test
@@ -496,10 +496,10 @@ class ModbusHistoryWriteServiceTest {
         Date lastSample = new Date();
         ModbusPollingBaseline baseline = new ModbusPollingBaseline(Map.of("进水温度", 61.5), lastSample, null);
 
-        ModbusPollingBaseline next = service.recordFailure(modbusService(), poll(), parentTimeout(), baseline)
+        ModbusPollingBaseline next = service.recordFailure(fd(), poll(), parentTimeout(), baseline)
                 .await().indefinitely();
 
-        verify(registryShadowRepo, never()).listByServiceId(anyString());
+        verify(registryShadowRepo, never()).listByFdid(anyString());
         assertEquals(TIMEOUT, next.lastError());
         assertEquals(Map.of("进水温度", 61.5), next.valueByField());   // 最后已知值原样留着
         assertEquals(lastSample, next.recordedAt());
@@ -510,7 +510,7 @@ class ModbusHistoryWriteServiceTest {
     void pollRepeatedFailureReturnsNullAndTouchesNothing() {
         ModbusPollingBaseline baseline = new ModbusPollingBaseline(Map.of("进水温度", 61.5), new Date(), TIMEOUT);
 
-        ModbusPollingBaseline next = service.recordFailure(modbusService(), poll(), parentTimeout(), baseline)
+        ModbusPollingBaseline next = service.recordFailure(fd(), poll(), parentTimeout(), baseline)
                 .await().indefinitely();
 
         assertNull(next);
@@ -525,7 +525,7 @@ class ModbusHistoryWriteServiceTest {
     void pollFailureOnABrokenBaselineStillWritesANewRow() {
         ModbusPollingBaseline broken = new ModbusPollingBaseline(Map.of("进水温度", 61.5), new Date(), TIMEOUT);
 
-        ModbusPollingBaseline next = service.recordFailure(modbusService(), poll(), crcMismatch(), broken)
+        ModbusPollingBaseline next = service.recordFailure(fd(), poll(), crcMismatch(), broken)
                 .await().indefinitely();
 
         assertEquals(ModbusFailureType.CRC_MISMATCH, ModbusFailureType.valueOf(savedPollingLog().type));
@@ -534,16 +534,16 @@ class ModbusHistoryWriteServiceTest {
 
     // ===== 夹具 =====
 
-    private static ModbusDevice modbusService() {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId(SERVICE_ID);
-        service.name = "1 号冷水机组";
-        return service;
+    private static FieldDevice fd() {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(SERVICE_ID);
+        fd.name = "1 号冷水机组";
+        return fd;
     }
 
     /** 带点表快照（含一只可读寄存器「进水温度」）的服务：走寄存器中心的新写入路径。 */
-    private static ModbusDevice modbusServiceWithRegistries() {
-        ModbusDevice service = modbusService();
+    private static FieldDevice modbusServiceWithRegistries() {
+        FieldDevice fd = fd();
         ModbusRegistry reg = new ModbusRegistry();
         reg.index = 1;
         reg.name = "进水温度";
@@ -553,8 +553,8 @@ class ModbusHistoryWriteServiceTest {
         reg.unit = "℃";
         ModbusConfig config = new ModbusConfig();
         config.registries = java.util.List.of(reg);
-        service.configSnapshot = config;
-        return service;
+        fd.configSnapshot = config;
+        return fd;
     }
 
     private static ModbusPoll poll() {
@@ -598,7 +598,7 @@ class ModbusHistoryWriteServiceTest {
     private static ModbusShadow registryShadow(Integer registerIndex, Object value,
                                                       Date recordedAt, String lastError, Date errorAt) {
         ModbusShadow shadow = new ModbusShadow();
-        shadow.serviceId = SERVICE_ID;
+        shadow.fdid = SERVICE_ID;
         shadow.registerIndex = registerIndex;
         shadow.value = value;
         shadow.recordedAt = recordedAt;

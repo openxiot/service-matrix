@@ -30,8 +30,8 @@ class ModbusPollingWheelTest {
         List<ModbusPollingTask> due = wheel.pump(NOW, LIMIT);
 
         assertEquals(2, due.size());
-        assertEquals("svc-a", due.get(0).serviceId);     // 最旧的先跑
-        assertEquals("svc-b", due.get(1).serviceId);
+        assertEquals("svc-a", due.get(0).fdid);     // 最旧的先跑
+        assertEquals("svc-b", due.get(1).fdid);
         assertEquals(1, wheel.waitingCount());           // 未到点的留在轮里
         assertEquals(2, wheel.inFlightCount());
     }
@@ -74,7 +74,7 @@ class ModbusPollingWheelTest {
         List<ModbusPollingTask> due = wheel.pump(NOW, LIMIT);
 
         assertEquals(1, due.size());
-        assertEquals("svc-a", due.get(0).serviceId);
+        assertEquals("svc-a", due.get(0).fdid);
         assertEquals(1, wheel.busyDeviceCount());
         assertEquals(1, wheel.waitingCount());     // 不是被丢弃，也不是被重排
 
@@ -82,7 +82,7 @@ class ModbusPollingWheelTest {
         wheel.finish(due.get(0), NOW + 10_000);
         List<ModbusPollingTask> next = wheel.pump(NOW, LIMIT);
         assertEquals(1, next.size());
-        assertEquals("svc-b", next.get(0).serviceId);
+        assertEquals("svc-b", next.get(0).fdid);
     }
 
     /** 在飞 = 不在轮里：同一个任务不可能被派发两次（重入保护是结构性的，不靠标记判断）。 */
@@ -246,8 +246,8 @@ class ModbusPollingWheelTest {
         assertTrue(wheel.keys().isEmpty());
     }
 
-    private static ModbusPollingTask task(String serviceId, int index, String did, long nextRunAt) {
-        ModbusPollingTask task = new ModbusPollingTask(new ObjectId(), serviceId, index, did);
+    private static ModbusPollingTask task(String fdid, int index, String did, long nextRunAt) {
+        ModbusPollingTask task = new ModbusPollingTask(new ObjectId(), fdid, index, did);
         task.intervalSeconds = 10;
         task.ownerId = "space-1";
         task.nextRunAt = nextRunAt;

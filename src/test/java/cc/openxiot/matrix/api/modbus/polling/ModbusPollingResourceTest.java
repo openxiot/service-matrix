@@ -13,11 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cc.openxiot.common.role.OxRole;
-import cc.openxiot.matrix.api.modbus.device.ModbusDeviceService;
+import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPolling;
 import cc.openxiot.matrix.db.modbus.polling.ModbusPollingRepository;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.access.SpaceAccess;
 import cc.openxiot.matrix.db.space.access.SpaceAccessRole;
@@ -52,7 +52,7 @@ class ModbusPollingResourceTest {
     private static final long NOW = 1_700_000_000_000L;
 
     @InjectMock
-    ModbusDeviceService serviceService;
+    FieldDeviceService fdService;
 
     @InjectMock
     ModbusPollingRepository pollRepo;
@@ -74,8 +74,8 @@ class ModbusPollingResourceTest {
         return s;
     }
 
-    private ModbusDevice brief() {
-        ModbusDevice svc = new ModbusDevice();
+    private FieldDevice brief() {
+        FieldDevice svc = new FieldDevice();
         svc.id = new ObjectId(SID);
         svc.name = "1 号冷水机组";
         return svc;
@@ -83,7 +83,7 @@ class ModbusPollingResourceTest {
 
     private ModbusPolling poll() {
         ModbusPolling poll = new ModbusPolling();
-        poll.serviceId = SID;
+        poll.fdid = SID;
         poll.pollIndex = 1;
         poll.did = DID;
         poll.interval = 10;
@@ -110,8 +110,8 @@ class ModbusPollingResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void list_spaceMember_succeeds() {
         allowSpaceMember();
-        when(serviceService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
-        when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
+        when(fdService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
+        when(pollRepo.listByFdids(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
         when(scheduler.isEnabled()).thenReturn(true);
         when(scheduler.instanceId()).thenReturn("instance-1");
         when(scheduler.queueSize()).thenReturn(3);
@@ -146,8 +146,8 @@ class ModbusPollingResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void list_onAnApiReplicaReportsEmptyRuntimeState() {
         allowSpaceMember();
-        when(serviceService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
-        when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
+        when(fdService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
+        when(pollRepo.listByFdids(List.of(SID))).thenReturn(Uni.createFrom().item(List.of(poll())));
 
         given()
                 .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
@@ -164,8 +164,8 @@ class ModbusPollingResourceTest {
     @TestSecurity(user = "tester", roles = {OxRole.USER})
     void list_withoutTasksReturnsEmptyItems() {
         allowSpaceMember();
-        when(serviceService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
-        when(pollRepo.listByServiceIds(List.of(SID))).thenReturn(Uni.createFrom().item(List.of()));
+        when(fdService.getBriefBySpaceId(SPACE_ID)).thenReturn(Uni.createFrom().item(List.of(brief())));
+        when(pollRepo.listByFdids(List.of(SID))).thenReturn(Uni.createFrom().item(List.of()));
 
         given()
                 .when().get("/matrix/v1/modbus/polling/{spaceId}", SPACE_ID)
@@ -184,8 +184,8 @@ class ModbusPollingResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
-        verify(serviceService, never()).getBriefBySpaceId(anyString());
-        verify(pollRepo, never()).listByServiceIds(anyList());
+        verify(fdService, never()).getBriefBySpaceId(anyString());
+        verify(pollRepo, never()).listByFdids(anyList());
     }
 
     @Test
@@ -198,6 +198,6 @@ class ModbusPollingResourceTest {
                 .then().statusCode(200)
                 .body("success", equalTo(false));
 
-        verify(pollRepo, never()).listByServiceIds(anyList());
+        verify(pollRepo, never()).listByFdids(anyList());
     }
 }

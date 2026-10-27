@@ -50,7 +50,7 @@ class MobileDashboardWidgetStructureValidatorTest {
     @Test
     void validate_duplicatedId() {
         MobileDashboardWidget a = stat("devices.total");
-        MobileDashboardWidget b = stat("services.total");
+        MobileDashboardWidget b = stat("fds.total");
         b.id = a.id;
         assertTrue(MobileDashboardWidgetStructureValidator.validate(body(0L, List.of(a, b)))
                 .contains("duplicated widget id"));
@@ -188,7 +188,7 @@ class MobileDashboardWidgetStructureValidatorTest {
         line.type = "line";
         line.size = "FULL";
         line.config = config("source", "serviceField", "window", last(24));
-        assertInvalid("config.serviceId is required", line);
+        assertInvalid("config.fdid is required", line);
     }
 
     @Test
@@ -197,7 +197,7 @@ class MobileDashboardWidgetStructureValidatorTest {
         svc.id = "w1";
         svc.type = "service";
         svc.size = "FULL";
-        svc.config = config("serviceId", "s1", "pollIndex", 0, "fields", List.of());
+        svc.config = config("fdid", "s1", "pollIndex", 0, "fields", List.of());
         assertInvalid("config.fields must not be empty", svc);
     }
 
@@ -223,7 +223,7 @@ class MobileDashboardWidgetStructureValidatorTest {
     /** 一张 config 齐全的服务卡（身份 / 档位 / 半格之外，config 那层也过得去）。 */
     private static MobileDashboardWidget service() {
         MobileDashboardWidget w = typed("service");
-        w.config = config("serviceId", "0x01", "pollIndex", 1, "fields", List.of("temperature"));
+        w.config = config("fdid", "0x01", "pollIndex", 1, "fields", List.of("temperature"));
         return w;
     }
 

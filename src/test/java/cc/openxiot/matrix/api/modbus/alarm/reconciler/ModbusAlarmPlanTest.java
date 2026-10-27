@@ -5,7 +5,7 @@ import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarm;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
-import cc.openxiot.matrix.db.modbus.device.ModbusDevice;
+import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +38,7 @@ class ModbusAlarmPlanTest {
 
     @Test
     void stillConfiguredIsLeftAlone() {
-        assertTrue(plan(service(field("进水温度", alarm(true)), field("回水温度", alarm(true))),
+        assertTrue(plan(fd(field("进水温度", alarm(true)), field("回水温度", alarm(true))),
                 open(1, "进水温度"), open(1, "回水温度")).isEmpty());
     }
 
@@ -46,11 +46,11 @@ class ModbusAlarmPlanTest {
     void bitKeysAreJudgedOnTheBit() {
         // 位是独立的结果键：配在位上，就按位判。父字段有没有告警与它无关
         ModbusRegistry bits = bits("进水阀位", "进水阀", alarm(true));
-        assertTrue(plan(service(bits), open(1, "进水阀")).isEmpty());
+        assertTrue(plan(fd(bits), open(1, "进水阀")).isEmpty());
 
         // 反过来：位上的告警被关掉 ⇒ 位那个键不再被覆盖（哪怕父寄存器还配着）
         ModbusRegistry off = bits("进水阀位", "进水阀", alarm(false));
-        assertEquals(List.of("进水阀"), fields(plan(service(off), open(1, "进水阀"))));
+        assertEquals(List.of("进水阀"), fields(plan(fd(off), open(1, "进水阀"))));
     }
 
     // ===== 再也判定不到的：关掉 =====
@@ -59,13 +59,13 @@ class ModbusAlarmPlanTest {
     void switchedOffAlarmCloses() {
         // 这个字段还在、值也还在采，但告警被关掉了 —— 那条开行再也判定不到
         assertEquals(List.of("进水温度"),
-                fields(plan(service(field("进水温度", alarm(false))), open(1, "进水温度"))));
+                fields(plan(fd(field("进水温度", alarm(false))), open(1, "进水温度"))));
     }
 
     @Test
     void missingAlarmCloses() {
         assertEquals(List.of("进水温度"),
-                fields(plan(service(field("进水温度")), open(1, "进水温度"))));
+                fields(plan(fd(field("进水温度")), open(1, "进水温度"))));
     }
 
     @Test
@@ -74,7 +74,7 @@ class ModbusAlarmPlanTest {
         // 新定义里已经没有能判定它的规则了，关掉。判据停在出值级就会漏掉这一条 ——
         // 而那条行会一直挂着，因为没有任何规则能再改变它的状态
         ModbusRegistry field = field("进水温度", alarm("r2", true));
-        assertEquals(List.of("进水温度"), fields(plan(service(field), open(1, "进水温度"))));
+        assertEquals(List.of("进水温度"), fields(plan(fd(field), open(1, "进水温度"))));
     }
 
     @Test
@@ -84,43 +84,43 @@ class ModbusAlarmPlanTest {
         ModbusAlarm row = row(SID, 1, "进水温度");
         row.ruleId = null;
         assertTrue(ModbusAlarmPlan.plan(
-                List.of(service(field("进水温度", alarm(true)))), List.of(row)).isEmpty());
+                List.of(fd(field("进水温度", alarm(true)))), List.of(row)).isEmpty());
     }
 
     @Test
     void deletedFieldCloses() {
-        ModbusDevice service = service(field("回水温度", alarm(true)));
-        assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
+        FieldDevice fd = fd(field("回水温度", alarm(true)));
+        assertEquals(List.of("进水温度"), fields(plan(fd, open(1, "进水温度"))));
     }
 
     @Test
     void registryAlarmCoversAnyReadBlock() {
         // 告警属寄存器（寄存器中心），不属某个读方法：点表里这条寄存器还配着告警，
         // 无论开行挂在哪一个方法序号上都说明它还被覆盖 —— 一个都不动
-        ModbusDevice service = service(field("进水温度", alarm(true)));
-        assertTrue(plan(service, open(1, "进水温度"), open(2, "进水温度")).isEmpty());
+        FieldDevice fd = fd(field("进水温度", alarm(true)));
+        assertTrue(plan(fd, open(1, "进水温度"), open(2, "进水温度")).isEmpty());
     }
 
     @Test
     void renamedFieldClosesTheOldName() {
         // 寄存器改名：旧名的开行再也判定不到（新名是另一条，由采集链路自己去开/关）
-        ModbusDevice service = service(field("进水温度2", alarm(true)));
-        assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
+        FieldDevice fd = fd(field("进水温度2", alarm(true)));
+        assertEquals(List.of("进水温度"), fields(plan(fd, open(1, "进水温度"))));
     }
 
     @Test
     void pointTableWithNoEnabledAlarmsCloses() {
         // 点表里没有任何启用告警（这里连一条规则都没有）：任何开行都判定不到 —— 全部残留
-        ModbusDevice service = service(field("进水温度"));
-        assertEquals(List.of("进水温度"), fields(plan(service, open(1, "进水温度"))));
+        FieldDevice fd = fd(field("进水温度"));
+        assertEquals(List.of("进水温度"), fields(plan(fd, open(1, "进水温度"))));
     }
 
     @Test
     void rowWithoutAFunctionIndexCloses() {
         // 行里没有方法序号：没有任何定义能覆盖它（这里点表里也没有这条字段），
-        // 留着就是永远判定不到。关闭仍按（serviceId, null）分组。
+        // 留着就是永远判定不到。关闭仍按（fdid, null）分组。
         assertEquals(List.of("进水温度"),
-                fields(plan(service(), open(null, "进水温度"))));
+                fields(plan(fd(), open(null, "进水温度"))));
     }
 
     // ===== 保守的那条：不认识的服务一律不动 =====
@@ -130,7 +130,7 @@ class ModbusAlarmPlanTest {
         // 「这次没拿到它的定义」不是「它的告警陈旧」的证据。这条口径让写入路径（只传一个服务）
         // 与启动路径（传全部）行为一致 —— 否则写入路径会把别的服务的开行误关一片
         ModbusAlarm row = row(OTHER_SID, 1, "进水温度");
-        assertTrue(ModbusAlarmPlan.plan(List.of(service(field("进水温度", alarm(true)))),
+        assertTrue(ModbusAlarmPlan.plan(List.of(fd(field("进水温度", alarm(true)))),
                 List.of(row)).isEmpty());
         // 服务列表为空（拿不到定义）时同理：一个都不动
         assertTrue(ModbusAlarmPlan.plan(List.of(), List.of(row)).isEmpty());
@@ -139,17 +139,17 @@ class ModbusAlarmPlanTest {
     @Test
     void rowWithoutCoordinatesIsSkipped() {
         // 坐标不全的行没有「定义是否还覆盖它」可言：既不是「该关」，也不是「该留」
-        assertTrue(ModbusAlarmPlan.plan(List.of(service(field("进水温度", alarm(true)))),
+        assertTrue(ModbusAlarmPlan.plan(List.of(fd(field("进水温度", alarm(true)))),
                 List.of(row(SID, 1, null))).isEmpty());
-        assertTrue(ModbusAlarmPlan.plan(List.of(service(field("进水温度", alarm(true)))),
+        assertTrue(ModbusAlarmPlan.plan(List.of(fd(field("进水温度", alarm(true)))),
                 List.of(row(null, 1, "进水温度"))).isEmpty());
     }
 
     @Test
     void emptyInputsDecideNothing() {
         assertTrue(ModbusAlarmPlan.plan(null, null).isEmpty());
-        assertTrue(ModbusAlarmPlan.plan(List.of(service()), List.of()).isEmpty());
-        assertTrue(ModbusAlarmPlan.plan(List.of(service()), null).isEmpty());
+        assertTrue(ModbusAlarmPlan.plan(List.of(fd()), List.of()).isEmpty());
+        assertTrue(ModbusAlarmPlan.plan(List.of(fd()), null).isEmpty());
     }
 
     // ===== 分组与顺序 =====
@@ -158,10 +158,10 @@ class ModbusAlarmPlanTest {
     void oneStatementPerFunctionWithAllItsStaleFields() {
         // 关闭是按整个开行标识 updateMany 的 —— 同一个方法上的多个出值合成一条语句，不是一条一个
         // （一条一个会让一轮对账的写语句数量放大成出值数倍）
-        ModbusDevice service = service(
+        FieldDevice fd = fd(
                 field("进水温度", alarm(true)), field("回水温度"), field("压力"),
                 field("出水温度"));
-        List<Close> closes = ModbusAlarmPlan.plan(List.of(service), List.of(
+        List<Close> closes = ModbusAlarmPlan.plan(List.of(fd), List.of(
                 row(SID, 1, "回水温度"), row(SID, 1, "进水温度"), row(SID, 1, "压力"),
                 row(SID, 2, "出水温度")));
 
@@ -171,27 +171,27 @@ class ModbusAlarmPlanTest {
         assertEquals(List.of("出水温度"), closes.get(1).fields());
         assertEquals(1, closes.get(0).pollIndex().intValue());
         assertEquals(2, closes.get(1).pollIndex().intValue());
-        assertEquals(SID, closes.get(0).serviceId());
+        assertEquals(SID, closes.get(0).fdid());
     }
 
     @Test
     void orderIsDeterministic() {
         // 顺序稳定只是为了让日志与测试可读；真正要紧的是「同一批输入得到同一批输出」
-        ModbusDevice one = service(SID, field("b"));
-        ModbusDevice two = service(OTHER_SID, field("a"));
+        FieldDevice one = fd(SID, field("b"));
+        FieldDevice two = fd(OTHER_SID, field("a"));
         List<ModbusAlarm> rows = List.of(
                 row(OTHER_SID, 1, "a"), row(SID, 2, "b"), row(SID, 3, "c"));
 
         List<Close> closes = ModbusAlarmPlan.plan(List.of(one, two), rows);
-        assertEquals(List.of(SID, SID, OTHER_SID), closes.stream().map(Close::serviceId).toList());
+        assertEquals(List.of(SID, SID, OTHER_SID), closes.stream().map(Close::fdid).toList());
         assertEquals(List.of(2, 3, 1), closes.stream().map(Close::pollIndex).toList());
     }
 
     @Test
     void nullFunctionIndexSortsFirst() {
         // 坐标不全的行（没有方法序号）排在最前
-        ModbusDevice service = service(field("a"));
-        List<Close> closes = ModbusAlarmPlan.plan(List.of(service),
+        FieldDevice fd = fd(field("a"));
+        List<Close> closes = ModbusAlarmPlan.plan(List.of(fd),
                 List.of(row(SID, 1, "a"), row(SID, null, "b")));
 
         assertEquals(2, closes.size());
@@ -201,8 +201,8 @@ class ModbusAlarmPlanTest {
 
     // ===== 夹具 =====
 
-    private static List<Close> plan(ModbusDevice service, ModbusAlarm... rows) {
-        return ModbusAlarmPlan.plan(List.of(service), List.of(rows));
+    private static List<Close> plan(FieldDevice fd, ModbusAlarm... rows) {
+        return ModbusAlarmPlan.plan(List.of(fd), List.of(rows));
     }
 
     private static List<String> fields(List<Close> closes) {
@@ -213,13 +213,13 @@ class ModbusAlarmPlanTest {
         return row(SID, pollIndex, field);
     }
 
-    private static ModbusAlarm row(String serviceId, Integer pollIndex, String field) {
+    private static ModbusAlarm row(String fdid, Integer pollIndex, String field) {
         ModbusAlarm row = new ModbusAlarm();
-        row.serviceId = serviceId;
+        row.fdid = fdid;
         row.pollIndex = pollIndex;
         row.field = field;
         row.ruleId = RULE_ID;
-        row.openKey = ModbusAlarm.openKeyOf(serviceId, pollIndex, field);
+        row.openKey = ModbusAlarm.openKeyOf(fdid, pollIndex, field);
         return row;
     }
 
@@ -227,17 +227,17 @@ class ModbusAlarmPlanTest {
      * 服务夹具：告警现在属 configSnapshot.registries[]（寄存器中心），不再属 function 应答字段，
      * 故这里用寄存器列表直接构建服务的点表快照。
      */
-    private static ModbusDevice service(ModbusRegistry... registries) {
-        return service(SID, registries);
+    private static FieldDevice fd(ModbusRegistry... registries) {
+        return fd(SID, registries);
     }
 
-    private static ModbusDevice service(String serviceId, ModbusRegistry... registries) {
-        ModbusDevice service = new ModbusDevice();
-        service.id = new ObjectId(serviceId);
+    private static FieldDevice fd(String fdid, ModbusRegistry... registries) {
+        FieldDevice fd = new FieldDevice();
+        fd.id = new ObjectId(fdid);
         ModbusConfig snapshot = new ModbusConfig();
         snapshot.registries = new ArrayList<>(List.of(registries));
-        service.configSnapshot = snapshot;
-        return service;
+        fd.configSnapshot = snapshot;
+        return fd;
     }
 
     /** 一个带可选告警的寄存器（出值名即寄存器名）。 */
