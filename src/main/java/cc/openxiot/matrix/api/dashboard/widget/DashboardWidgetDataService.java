@@ -170,7 +170,7 @@ public class DashboardWidgetDataService {
                 Window window = windowOf(widget, now, fallbackFrom);
                 windows.computeIfAbsent(window.key(), ignored -> window);
             } else if (source == Source.SERVICE || source == Source.FIELD) {
-                collect(configString(widget.config(), "fdids"), fdids);
+                collect(configString(widget.config(), "fdid"), fdids);
             } else if (source == Source.DEVICE) {
                 collect(configString(widget.config(), "did"), dids);
             }

@@ -384,7 +384,7 @@ public class ModbusAlarmRepository {
             return Uni.createFrom().item(0L);
         }
         return collection()
-                .deleteMany(Filters.in("fdids", fdids))
+                .deleteMany(Filters.in("fdid", fdids))
                 .map(DeleteResult::getDeletedCount);
     }
 
