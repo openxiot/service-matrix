@@ -126,9 +126,14 @@ const MATRIX = db.getSiblingDB('matrix');
 const LAYOUT_COLLS = ['web-dashboard-layouts', 'mobile-dashboard-layouts'];
 
 // 递归把对象里所有名为 from 的键改成 to（值深拷贝，不改原对象）。
+// 注意：非「普通平铺对象」的 BSON 值（Date / ObjectId / 这类有非可枚举内部表示的
+// 类型）必须**原样透传**——否则会被 Object.keys 拷成空对象 {}（曾因此把布局里的
+// creator.timestamp 这类 Date 毁成 {}，导致后端 PojoCodec 解码报
+// "readDateTime can only be called when CurrentBSONType is DATE_TIME"）。
 function renameKey(o, from, to) {
   if (Array.isArray(o)) return o.map(v => renameKey(v, from, to));
   if (o === null || typeof o !== 'object') return o;
+  if (!(o.constructor && o.constructor.name === 'Object')) return o; // Date/ObjectId 等原样
   const out = {};
   for (const k of Object.keys(o)) {
     const nk = (k === from) ? to : k;
@@ -157,8 +162,10 @@ for (const coll of LAYOUT_COLLS) {
       print(`[跳过备份] ${bak} 已存在`);
     }
     c.find({}).forEach(doc => {
-      const nw = renameKey(doc, 'serviceId', 'fdid');
-      c.replaceOne({ _id: doc._id }, nw);
+      // 替换文档必须不带 _id：带了会被 Mongo 判为「Cannot modify '_id'」，改用字段级替换
+      const { _id, ...body } = doc;
+      const nw = renameKey(body, 'serviceId', 'fdid');
+      c.replaceOne({ _id }, nw);
     });
     print(`[布局] ${coll}.widgets[*].config.serviceId -> fdid`);
   } else {
