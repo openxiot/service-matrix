@@ -235,16 +235,14 @@ public final class FieldDeviceValidator {
                 return intervalErr;
             }
             boolean read = isReadPoll(poll);
-            // registry（寄存器块读）必须是真读：它天然由读块展开，配写功能码说明是前端拼错了，
-            // 而「写方法不许轮询、不许有应答」这两条在下面的通用校验里给的是另一套更费解的文案 ——
-            // 在这里先说破「来源与方向打架」这一句，再让通用校验接手字段本身。
-            if (registry && !read) {
-                return "invalid " + base + ".from.type=registry: a registry poll must be a read function (fc 01/02/03/04), got fc "
-                        + (poll.request == null ? null : poll.request.fc);
-            }
-            // registry 的应答解析规则不能没有：读方法缺 response 是静默失效（返回 {}），
-            // 而 registry 的 request/response 都是前端从点表展开的，空应答只能是端点表时漏了。
-            if (registry && ModbusPoll.responseFields(poll).isEmpty()) {
+            // registry 方法由点表寄存器折出，读写都允许：可读寄存器折读块、可写寄存器折 fc 05/06 写方法
+            // （写任意值在 invoke 时进，见 writePollingOf）。方向上的限制不在这里给 ——
+            // 「写方法不许轮询」「写方法不许有应答」分别由 validatePolling / validateInterval、
+            // validateRequestResponse 拦下，各自给更贴身的文案。
+            // registry 的应答解析规则不能没有（仅读方法）：读方法缺 response 是静默失效（返回 {}），
+            // 而 registry 的 request/response 都是前端从点表展开的，空应答只能是端点表时漏了；
+            // 写方法的应答是请求回显、天然没有 response，不走这条。
+            if (read && registry && ModbusPoll.responseFields(poll).isEmpty()) {
                 return base + ".response is required for a registry poll (the register-derived read block must declare fields)";
             }
             String responseErr = validateFields(ModbusPoll.responseFields(poll), base);

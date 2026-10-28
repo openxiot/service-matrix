@@ -371,6 +371,28 @@ class FieldDeviceValidatorTest {
         assertNull(FieldDeviceValidator.validate(decimal));
     }
 
+    @Test
+    void acceptsRegistryWriteFunction() {
+        // 以寄存器为中心的点表：可写寄存器折一条 registry access:"write" 的 fc 06 方法，
+        // 写任意值在 invoke 时进，应答是请求回显、没有 response —— 校验须放行（曾在 241 行被当「前端拼错」拒掉）。
+        FieldDevice regWrite = writeService(ModbusRequests.write("06", 1,
+                ModbusRequests.field(1, "CHW_SETPOINT", "uint16", 70)));
+        regWrite.polls.get(0).from.type = "registry";
+        regWrite.polls.get(0).from.access = "write";
+        String err = FieldDeviceValidator.validate(regWrite);
+        assertEquals(null, err);
+    }
+
+    @Test
+    void stillRequiresResponseOnRegistryReadFunction() {
+        // registry 读方法缺 response 仍是静默失效，保留那条更贴身的文案（校验须只在读方向生效）
+        FieldDevice regRead = fd();
+        regRead.polls.get(0).from.type = "registry";
+        regRead.polls.get(0).response = null;
+        assertEquals("polls[0].response is required for a registry poll (the register-derived read block must declare fields)",
+                FieldDeviceValidator.validate(regRead));
+    }
+
     // ===== request ↔ response 对账 =====
 
     @Test
