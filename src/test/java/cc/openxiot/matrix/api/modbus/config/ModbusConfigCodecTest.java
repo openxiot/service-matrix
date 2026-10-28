@@ -21,38 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link ModbusConfigCodec} 及其子 Codec 的投影：
  * 从 {@code ModbusJson} 拆成一实体一 Codec 后，对外 JSON 形状必须与拆分前逐字一致。
+ *
+ * <p>点表命令已迁移到**以寄存器为中心**：读命令只出 name/fc/index/start/quantity，
+ * 不再内联 数据格式/字节序/缩放/单位/位名；写命令统一成 writeItems（{@code [{registryIndex, value}]}）。</p>
  */
 class ModbusConfigCodecTest {
-
-    /**
-     * 存量 fieldNames/命令级 scale-unit → fields 归一：encode 输出 fields（每字段自带 name/scale/unit），
-     * 迁移专用字段（fieldNames/scale/unit）不进 JSON。
-     */
-    @Test
-    void encodesLegacyFieldNamesAsFields() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "读";
-        c.fc = "03";
-        c.index = 1;
-        c.start = 0;
-        c.quantity = 2;
-        c.dataType = "uint16";
-        c.byteOrder = "ABCD";
-        c.legacyFieldNames = List.of("甲", "乙");
-        c.legacyScale = 0.5;
-        c.legacyUnit = "℃";
-
-        JsonObject o = ModbusCommandCodec.encode(c);
-        JsonArray fields = o.getJsonArray("fields");
-        assertEquals(2, fields.size());
-        assertEquals("甲", fields.getJsonObject(0).getString("name"));
-        assertEquals(0.5, fields.getJsonObject(0).getDouble("scale").doubleValue());
-        assertEquals("℃", fields.getJsonObject(0).getString("unit"));
-        assertEquals("乙", fields.getJsonObject(1).getString("name"));
-        assertNull(o.getJsonArray("fieldNames"));
-        assertNull(o.getDouble("scale"));
-        assertNull(o.getString("unit"));
-    }
 
     @Test
     void encodesConfigWithSlaveCommandsAndPerson() {
@@ -78,39 +51,30 @@ class ModbusConfigCodecTest {
         // 设备类型（可选）有值才出
         assertEquals("离心式冷水机组", slave.getString("type"));
 
+        // 读命令（03）：只出 公共字段 + quantity——数据格式/字节序/应答字段不再内联（在引用寄存器上）
         JsonObject read = o.getJsonArray("commands").getJsonObject(0);
         assertEquals("读进水温度", read.getString("name"));
         assertEquals("03", read.getString("fc"));
         assertEquals(2, read.getInteger("quantity").intValue());
-        assertEquals("uint16", read.getString("dataType"));
-        assertEquals("ABCD", read.getString("byteOrder"));
-        // 03/04 应答字段逐条自带 名称/缩放/单位（以寄存器为中心）
-        JsonArray readFields = read.getJsonArray("fields");
-        assertEquals(2, readFields.size());
-        assertEquals("进水温度", readFields.getJsonObject(0).getString("name"));
-        assertEquals(0.1, readFields.getJsonObject(0).getDouble("scale").doubleValue());
-        assertEquals("℃", readFields.getJsonObject(0).getString("unit"));
-        assertEquals("进水温度2", readFields.getJsonObject(1).getString("name"));
+        assertNull(read.getString("dataType"));
+        assertNull(read.getString("byteOrder"));
+        assertNull(read.getJsonArray("fields"));
+        assertNull(read.getJsonArray("writeItems"));
 
-        // 01 读位：逐位命名走 bitNames（与 0F 的 coils 同形），不出 fields
+        // 01 读位：只出 quantity，无 bitNames
         JsonObject bitRead = o.getJsonArray("commands").getJsonObject(2);
         assertEquals("01", bitRead.getString("fc"));
         assertEquals(8, bitRead.getInteger("quantity").intValue());
-        assertNull(bitRead.getJsonArray("fields"));
-        JsonArray bitNames = bitRead.getJsonArray("bitNames");
-        assertEquals(2, bitNames.size());
-        assertEquals(0, bitNames.getJsonObject(0).getInteger("offset").intValue());
-        assertEquals("进水阀", bitNames.getJsonObject(0).getString("name"));
-        assertEquals(3, bitNames.getJsonObject(1).getInteger("offset").intValue());
-        assertEquals("报警", bitNames.getJsonObject(1).getString("name"));
+        assertNull(bitRead.getJsonArray("bitNames"));
+        assertNull(bitRead.getJsonArray("writeItems"));
 
+        // 写命令（0F）：统一成 writeItems = [{registryIndex, value}]
         JsonObject write = o.getJsonArray("commands").getJsonObject(1);
         assertEquals("0F", write.getString("fc"));
-        assertEquals(1, write.getJsonArray("coils").size());
-        assertEquals(0, write.getJsonArray("coils").getJsonObject(0).getInteger("offset").intValue());
-        assertEquals(true, write.getJsonArray("coils").getJsonObject(0).getBoolean("on"));
-        assertEquals(1, write.getJsonArray("registers").size());
-        assertEquals(100L, write.getJsonArray("registers").getJsonObject(0).getLong("value").longValue());
+        JsonArray writeItems = write.getJsonArray("writeItems");
+        assertEquals(1, writeItems.size());
+        assertEquals(2, writeItems.getJsonObject(0).getInteger("registryIndex").intValue());
+        assertEquals(true, writeItems.getJsonObject(0).getBoolean("value"));
 
         // 人员按 id / name / 毫秒时间戳输出
         JsonObject creator = o.getJsonObject("creator");
@@ -147,6 +111,29 @@ class ModbusConfigCodecTest {
         assertTrue(ModbusCommandCodec.encode((List<ModbusCommand>) null).isEmpty());
     }
 
+    @Test
+    void encodesWriteItemsInOrder() {
+        ModbusCommand c = new ModbusCommand();
+        c.name = "写多寄存器";
+        c.fc = "10";
+        c.index = 1;
+        c.start = 10;
+        ModbusCommand.ModbusCommandWriteItem a = new ModbusCommand.ModbusCommandWriteItem();
+        a.registryIndex = 2;
+        a.value = 100L;
+        ModbusCommand.ModbusCommandWriteItem b = new ModbusCommand.ModbusCommandWriteItem();
+        b.registryIndex = 3;
+        b.value = -1;
+        c.writeItems = List.of(a, b);
+
+        JsonArray arr = ModbusCommandCodec.encode(c).getJsonArray("writeItems");
+        assertEquals(2, arr.size());
+        assertEquals(2, arr.getJsonObject(0).getInteger("registryIndex").intValue());
+        assertEquals(100L, arr.getJsonObject(0).getLong("value").longValue());
+        assertEquals(3, arr.getJsonObject(1).getInteger("registryIndex").intValue());
+        assertEquals(-1, arr.getJsonObject(1).getInteger("value").intValue());
+    }
+
     // ===== 夹具 =====
 
     private static ModbusConfig config() {
@@ -170,31 +157,16 @@ class ModbusConfigCodecTest {
         read.index = 1;
         read.start = 0;
         read.quantity = 2;
-        read.dataType = "uint16";
-        read.byteOrder = "ABCD";
-        ModbusCommand.Field f1 = new ModbusCommand.Field();
-        f1.name = "进水温度";
-        f1.scale = 0.1;
-        f1.unit = "℃";
-        ModbusCommand.Field f2 = new ModbusCommand.Field();
-        f2.name = "进水温度2";
-        read.fields = List.of(f1, f2);
 
         ModbusCommand write = new ModbusCommand();
         write.name = "写开关";
         write.fc = "0F";
         write.index = 2;
         write.start = 10;
-        ModbusCommand.Coil coil = new ModbusCommand.Coil();
-        coil.offset = 0;
-        coil.on = true;
-        write.coils = List.of(coil);
-        ModbusCommand.Register register = new ModbusCommand.Register();
-        register.address = 100;
-        register.dataType = "uint16";
-        register.byteOrder = "ABCD";
-        register.value = 100L;
-        write.registers = List.of(register);
+        ModbusCommand.ModbusCommandWriteItem coil = new ModbusCommand.ModbusCommandWriteItem();
+        coil.registryIndex = 2;
+        coil.value = true;
+        write.writeItems = List.of(coil);
 
         ModbusCommand bitRead = new ModbusCommand();
         bitRead.name = "读开关状态";
@@ -202,13 +174,6 @@ class ModbusConfigCodecTest {
         bitRead.index = 3;
         bitRead.start = 0;
         bitRead.quantity = 8;
-        ModbusCommand.BitName first = new ModbusCommand.BitName();
-        first.offset = 0;
-        first.name = "进水阀";
-        ModbusCommand.BitName alarm = new ModbusCommand.BitName();
-        alarm.offset = 3;
-        alarm.name = "报警";
-        bitRead.bitNames = List.of(first, alarm);
 
         config.commands = List.of(read, write, bitRead);
 

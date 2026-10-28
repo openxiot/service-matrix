@@ -60,30 +60,38 @@ public final class ModbusFrameCodec {
     // ===== 请求帧 =====
 
     /**
-     * 按功能码把一条点表命令编成请求帧。
+     * 按功能码把一条（以寄存器为中心的）点表命令编成请求帧。
      *
-     * @param slaveId 从站地址（点表的 {@code slave.slaveId}，缺省 1）
+     * <p>读命令（01/02/03/04）只用 {@code start/quantity}，被读寄存器按 fc 区从 {@code start} 起推导；
+     * 写命令（05/06/0F/10）的数据区由 {@code writeItems} 按被引用寄存器的地址升序拼出——地址、数据类型、
+     * 字节序、位宽全部取自被引用的寄存器（{@code registries}）。主站调试 / 从站模拟都用这条线。</p>
+     *
+     * @param slaveId    从站地址（点表的 {@code slave.slaveId}，缺省 1）
+     * @param command    点表命令（读写都以寄存器为中心）
+     * @param registries 点表寄存器按 {@code index} 的查询表（configSnapshot.registries）
      * @return 大写 16 进制字符串（含 CRC16，无分隔符）
      */
-    public static String encodeRequest(Integer slaveId, ModbusCommand command) {
+    public static String encodeRequest(Integer slaveId, ModbusCommand command,
+                                       Map<Integer, ModbusRegistry> registries) {
         int slave = slaveId == null ? DEFAULT_SLAVE_ID : slaveId;
         String fc = normalizeFc(command.fc);
 
         byte[] body = switch (fc) {
-            case "01", "02", "03", "04" -> readBody(slave, fc, command);
-            case "05" -> writeSingleCoilBody(slave, command);
-            case "06" -> writeSingleRegisterBody(slave, command);
-            case "0F" -> writeMultipleCoilsBody(slave, command);
-            case "10" -> writeMultipleRegistersBody(slave, command);
+            case "01", "02", "03", "04" -> readBody(slave, fc, command, registries);
+            case "05" -> writeSingleCoilBody(slave, command, registries);
+            case "06" -> writeSingleRegisterBody(slave, command, registries);
+            case "0F" -> writeMultipleCoilsBody(slave, command, registries);
+            case "10" -> writeMultipleRegistersBody(slave, command, registries);
             default -> throw new IllegalArgumentException("unsupported modbus function code: " + command.fc);
         };
 
         return toHex(withCrc(body));
     }
 
-    private static byte[] readBody(int slave, String fc, ModbusCommand command) {
+    private static byte[] readBody(int slave, String fc, ModbusCommand command,
+                                   Map<Integer, ModbusRegistry> registries) {
         int start = require(command.start, "start");
-        int quantity = readQuantity(fc, command);
+        int quantity = readQuantity(fc, command, registries);
         return new byte[]{
                 (byte) slave, (byte) Integer.parseInt(fc, 16),
                 hi(start), lo(start),
@@ -93,58 +101,72 @@ public final class ModbusFrameCodec {
 
     /**
      * 读请求帧里的数量：01/02 即位数；03/04 的数量是**值的个数**（点表注释见 {@code ModbusCommand#quantity}），
-     * 帧里要读的寄存器数 = 数量 × 类型跨度（string 的数量本身就是长度，恒为一个值）。
+     * 帧里要读的寄存器数由被读起头寄存器（{@code start} 处）的数据类型跨度推出：
+     * 非 string = 数量 × 跨度，string / 位 = 数量本身（string 的数量就是其寄存器长、恒为一个值）。
      */
-    public static int readQuantity(String fc, ModbusCommand command) {
+    public static int readQuantity(String fc, ModbusCommand command, Map<Integer, ModbusRegistry> registries) {
         int quantity = command.quantity == null ? 1 : command.quantity;
         if (!"03".equals(fc) && !"04".equals(fc)) {
             return quantity;
         }
-        if (command.dataType == null || "string".equalsIgnoreCase(command.dataType)) {
+        String area = "03".equals(fc) ? "holding" : "input";
+        ModbusRegistry head = ModbusRegistries.at(registries, area, require(command.start, "start"));
+        if (head == null) {
+            throw new IllegalArgumentException("modbus command (fc " + fc
+                    + ") reads from missing registry at start " + command.start + " in area " + area);
+        }
+        if (ModbusRegistries.isBit(head) || "string".equals(ModbusRegistries.format(head))) {
             return quantity;
         }
-        return quantity * (byteWidth(command.dataType) / 2);
+        return quantity * ModbusRegistries.registerCount(head);
     }
 
-    private static byte[] writeSingleCoilBody(int slave, ModbusCommand command) {
-        int start = require(command.start, "start");
-        boolean on = "on".equalsIgnoreCase(command.coilState);
+    private static byte[] writeSingleCoilBody(int slave, ModbusCommand command,
+                                              Map<Integer, ModbusRegistry> registries) {
+        ModbusCommand.ModbusCommandWriteItem item = command.writeItem(0);
+        ModbusRegistry reg = registryOf(item, registries);
+        int address = require(reg.address, "registry address");
+        boolean on = toBit(item.value, itemName(item));
         return new byte[]{
                 (byte) slave, (byte) 0x05,
-                hi(start), lo(start),
+                hi(address), lo(address),
                 (byte) (on ? 0xFF : 0x00), (byte) 0x00
         };
     }
 
-    private static byte[] writeSingleRegisterBody(int slave, ModbusCommand command) {
-        int start = require(command.start, "start");
-        int value = (int) (command.registerValue == null ? 0L : command.registerValue) & 0xFFFF;
+    private static byte[] writeSingleRegisterBody(int slave, ModbusCommand command,
+                                                  Map<Integer, ModbusRegistry> registries) {
+        ModbusCommand.ModbusCommandWriteItem item = command.writeItem(0);
+        ModbusRegistry reg = registryOf(item, registries);
+        int address = require(reg.address, "registry address");
+        int value = (int) toInteger(item.value, itemName(item)) & 0xFFFF;
         return new byte[]{
                 (byte) slave, (byte) 0x06,
-                hi(start), lo(start),
+                hi(address), lo(address),
                 hi(value), lo(value)
         };
     }
 
-    private static byte[] writeMultipleCoilsBody(int slave, ModbusCommand command) {
+    private static byte[] writeMultipleCoilsBody(int slave, ModbusCommand command,
+                                                 Map<Integer, ModbusRegistry> registries) {
         int start = require(command.start, "start");
-        List<ModbusCommand.Coil> coils = command.coils;
-        if (coils == null || coils.isEmpty()) {
-            throw new IllegalArgumentException("modbus command (fc 0F) has no coils: index=" + command.index);
-        }
+        List<ModbusCommand.ModbusCommandWriteItem> items = orderedWriteItems(command, registries);
 
-        int quantity = coils.size();
+        int quantity = items.size();
         int byteCount = (quantity + 7) / 8;
         byte[] bits = new byte[byteCount];
-        for (ModbusCommand.Coil coil : coils) {
-            // offset 相对起始地址（0 基），与 Modbus 应答里“首个请求位落在数据首字节 bit0”口径一致
-            int offset = coil.offset == null ? 0 : coil.offset;
-            if (offset < 0 || offset >= quantity) {
-                throw new IllegalArgumentException("modbus coil offset out of range: " + offset);
+        int position = 0;   // 以位计的写入位置
+        for (ModbusCommand.ModbusCommandWriteItem item : items) {
+            ModbusRegistry reg = registryOf(item, registries);
+            // 同服务线 request.fields：0F 的帧没有空洞，每个线圈紧接上一个
+            if (reg.address - start != position) {
+                throw new IllegalArgumentException("modbus coil offset out of order: " + (reg.address - start)
+                        + " (expected " + position + "), registry=" + item.registryIndex);
             }
-            if (Boolean.TRUE.equals(coil.on)) {
-                bits[offset / 8] |= (byte) (1 << (offset % 8));
+            if (toBit(item.value, itemName(item))) {
+                bits[position / 8] |= (byte) (1 << (position % 8));
             }
+            position++;
         }
 
         byte[] frame = new byte[7 + byteCount];
@@ -159,29 +181,33 @@ public final class ModbusFrameCodec {
         return frame;
     }
 
-    private static byte[] writeMultipleRegistersBody(int slave, ModbusCommand command) {
+    private static byte[] writeMultipleRegistersBody(int slave, ModbusCommand command,
+                                                     Map<Integer, ModbusRegistry> registries) {
         int start = require(command.start, "start");
-        List<ModbusCommand.Register> registers = command.registers;
-        if (registers == null || registers.isEmpty()) {
-            throw new IllegalArgumentException("modbus command (fc 10) has no registers: index=" + command.index);
-        }
+        List<ModbusCommand.ModbusCommandWriteItem> items = orderedWriteItems(command, registries);
 
         int byteCount = 0;
-        for (ModbusCommand.Register register : registers) {
-            byteCount += byteWidth(register.dataType);
+        for (ModbusCommand.ModbusCommandWriteItem item : items) {
+            byteCount += ModbusRegistries.byteWidth(registryOf(item, registries));
         }
 
         byte[] data = new byte[byteCount];
-        for (ModbusCommand.Register register : registers) {
-            int address = require(register.address, "register address");
-            int offset = (address - start) * 2;
-            if (offset < 0 || offset + byteWidth(register.dataType) > byteCount) {
-                throw new IllegalArgumentException("modbus register address out of range: " + address
-                        + " (start=" + start + ")");
+        int position = 0;   // 以寄存器计的写入位置
+        for (ModbusCommand.ModbusCommandWriteItem item : items) {
+            ModbusRegistry reg = registryOf(item, registries);
+            String format = ModbusRegistries.format(reg);
+            int width = ModbusRegistries.byteWidth(reg);
+            // 同 0F：10 的帧也没有空洞，每个寄存器紧接上一个
+            if (reg.address - start != position) {
+                throw new IllegalArgumentException("modbus register offset out of order: " + (reg.address - start)
+                        + " (expected " + position + "), registry=" + item.registryIndex);
             }
-            byte[] value = toBytes(register.value == null ? 0L : register.value,
-                    byteWidth(register.dataType), register.byteOrder);
-            System.arraycopy(value, 0, data, offset, value.length);
+            long bits = "float32".equals(format)
+                    ? Float.floatToIntBits(toFloat(item.value, itemName(item)))
+                    : toInteger(item.value, itemName(item));
+            byte[] value = toBytes(bits, width, ModbusRegistries.byteOrder(reg));
+            System.arraycopy(value, 0, data, position * 2, width);
+            position += width / 2;
         }
 
         byte[] frame = new byte[7 + byteCount];
@@ -189,13 +215,44 @@ public final class ModbusFrameCodec {
         frame[1] = (byte) 0x10;
         frame[2] = hi(start);
         frame[3] = lo(start);
-        // 数量是寄存器个数而非明细行数：int32/uint32/float32 一行占两个寄存器
+        // 数量是寄存器个数而非明细行数：int32/uint32/float32 一个字段占两个寄存器
         int quantity = byteCount / 2;
         frame[4] = hi(quantity);
         frame[5] = lo(quantity);
         frame[6] = (byte) byteCount;
         System.arraycopy(data, 0, frame, 7, byteCount);
         return frame;
+    }
+
+    /** 多条（0F/10）写条目按被引用寄存器的地址升序 —— 决定数据区排列。 */
+    private static List<ModbusCommand.ModbusCommandWriteItem> orderedWriteItems(ModbusCommand command,
+                                                                                Map<Integer, ModbusRegistry> registries) {
+        if (command.writeItems == null || command.writeItems.isEmpty()) {
+            throw new IllegalArgumentException("modbus command (fc 0F/10) has no writeItems: index=" + command.index);
+        }
+        List<ModbusCommand.ModbusCommandWriteItem> ordered = new ArrayList<>(command.writeItems);
+        ordered.sort(Comparator.comparingInt(item -> {
+            ModbusRegistry reg = registryOf(item, registries);
+            return reg.address == null ? 0 : reg.address;
+        }));
+        return ordered;
+    }
+
+    private static ModbusRegistry registryOf(ModbusCommand.ModbusCommandWriteItem item,
+                                             Map<Integer, ModbusRegistry> registries) {
+        if (item == null || item.registryIndex == null) {
+            throw new IllegalArgumentException("modbus write item registryIndex is not set");
+        }
+        ModbusRegistry reg = registries == null ? null : registries.get(item.registryIndex);
+        if (reg == null) {
+            throw new IllegalArgumentException("modbus write item references missing registry " + item.registryIndex);
+        }
+        return reg;
+    }
+
+    /** 写条目的展示名（诊断文案用）：优先寄存器名，缺省给序号。 */
+    private static String itemName(ModbusCommand.ModbusCommandWriteItem item) {
+        return "registry " + (item.registryIndex == null ? "?" : item.registryIndex);
     }
 
     // ===== 请求帧（服务定义）=====
@@ -457,10 +514,12 @@ public final class ModbusFrameCodec {
      * 走 {@code ModbusResponseParser}（按服务定义的 response.fields[] 逐个字段解），本方法只服务于
      * 旧的点位式口径与存量单测。</p>
      *
-     * @param frameHex DTU 回传的应答帧（16 进制字符串，大小写与空白不敏感）
+     * @param frameHex   DTU 回传的应答帧（16 进制字符串，大小写与空白不敏感）
+     * @param registries 点表寄存器按 {@code index} 的查询表（读 03/04 的数据格式/字节序/缩放取自被读起头寄存器）
      * @throws IllegalArgumentException 帧非法、CRC 不符或从站返回异常码
      */
-    public static Object decodeResponse(ModbusCommand command, String frameHex) {
+    public static Object decodeResponse(ModbusCommand command, String frameHex,
+                                        Map<Integer, ModbusRegistry> registries) {
         byte[] frame = parseHex(frameHex);
         if (frame.length < MIN_FRAME_SIZE) {
             throw new IllegalArgumentException("invalid modbus response: " + frameHex);
@@ -482,7 +541,7 @@ public final class ModbusFrameCodec {
 
         return switch (normalizeFc(command.fc)) {
             case "01", "02" -> decodeBit(frame, frameHex);
-            case "03", "04" -> decodeRegister(command, frame, frameHex);
+            case "03", "04" -> decodeRegister(command, frame, frameHex, registries);
             default -> null;
         };
     }
@@ -495,11 +554,15 @@ public final class ModbusFrameCodec {
         return (frame[HEADER_SIZE] & 0x01) != 0;
     }
 
-    private static Object decodeRegister(ModbusCommand command, byte[] frame, String frameHex) {
+    private static Object decodeRegister(ModbusCommand command, byte[] frame, String frameHex,
+                                         Map<Integer, ModbusRegistry> registries) {
         int byteCount = frame[2] & 0xFF;
-        String dataType = command.dataType == null || command.dataType.isBlank()
+        // 以寄存器为中心：数据格式/字节序/缩放取被读起头寄存器（start 处）；无寄存器兜底 uint16/默认序/1
+        String area = "03".equals(normalizeFc(command.fc)) ? "holding" : "input";
+        ModbusRegistry reg = ModbusRegistries.at(registries, area, require(command.start, "start"));
+        String dataType = reg == null || reg.dataType == null || reg.dataType.isBlank()
                 ? "uint16"
-                : command.dataType.trim().toLowerCase(Locale.ROOT);
+                : reg.dataType.trim().toLowerCase(Locale.ROOT);
 
         if ("string".equals(dataType)) {
             if (byteCount < 1 || HEADER_SIZE + byteCount > frame.length - CRC_SIZE) {
@@ -519,21 +582,18 @@ public final class ModbusFrameCodec {
             throw new IllegalArgumentException("invalid modbus response: " + frameHex);
         }
 
-        long bits = fromBytes(frame, HEADER_SIZE, width, command.byteOrder);
+        long bits = fromBytes(frame, HEADER_SIZE, width, reg == null ? null : reg.byteOrder);
         Object value = switch (dataType) {
             case "int16" -> (int) (short) bits;
             case "uint16" -> (int) bits & 0xFFFF;
             case "int32" -> (int) bits;
             case "uint32" -> bits & 0xFFFFFFFFL;
             case "float32" -> Float.intBitsToFloat((int) bits);
-            default -> throw new IllegalArgumentException("unsupported modbus data type: " + command.dataType);
+            default -> throw new IllegalArgumentException("unsupported modbus data type: " + reg.dataType);
         };
 
-        // 命令级 scale 已废弃（fieldNames→fields 后缩放各字段自带）：这里取首个应答字段的 scale 兜底，
-        // 无字段/未配时恒 1.0。真正的逐字段缩放走服务路（ModbusResponseParser）。
-        Double cmdScale = command.fields != null && !command.fields.isEmpty()
-                && command.fields.get(0) != null ? command.fields.get(0).scale : null;
-        double scale = cmdScale == null ? 1.0 : cmdScale;
+        // 缩放取被引用寄存器的 scale（命令不再内联字段）；真正的逐字段缩放走服务路（ModbusResponseParser）。
+        double scale = reg != null && reg.scale != null ? reg.scale : 1.0;
         return scale == 1.0 ? value : ((Number) value).doubleValue() * scale;
     }
 

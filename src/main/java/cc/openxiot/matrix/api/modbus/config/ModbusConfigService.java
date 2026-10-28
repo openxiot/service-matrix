@@ -5,6 +5,7 @@ import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;
 import io.quarkus.runtime.StartupEvent;
@@ -14,6 +15,8 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -24,16 +27,10 @@ public class ModbusConfigService {
 
     /** 功能码词表（十六进制大写字符串）。 */
     private static final Set<String> FCS = Set.of("01", "02", "03", "04", "05", "06", "0F", "10");
-    /** 读功能码：只有读操作有应答字段（{@link ModbusCommand#fields}）。 */
-    private static final Set<String> READ_FCS = Set.of("01", "02", "03", "04");
-    /** 读位功能码（01/02）：数据区按位打包，逐位命名走 {@link ModbusCommand#bitNames}。 */
-    private static final Set<String> READ_BIT_FCS = Set.of("01", "02");
     private static final Set<String> REGISTER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "string");
-    private static final Set<String> WRITE_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64", "float32");
     /** 整型（允许挂 enumMap 枚举映射）——浮点/string 上挂枚举无意义。 */
     private static final Set<String> INTEGER_DATA_TYPES = Set.of("int16", "uint16", "int32", "uint32", "int64", "uint64");
     private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
-    private static final Set<String> COIL_STATES = Set.of("on", "off");
     private static final Set<String> VISIBILITIES = Set.of("private", "public");
     private static final Set<String> OWNER_TYPES = Set.of(ModbusConfigOwner.TYPE_ORGANIZATION, ModbusConfigOwner.TYPE_USER);
     /** 寄存器区（{@link ModbusRegistry#area}）：holding 保持 / input 输入 / coil 线圈 / discrete 离散输入。 */
@@ -51,7 +48,6 @@ public class ModbusConfigService {
     private static final int MAX_READ_REGISTERS = 125;
     private static final int MAX_WRITE_COILS = 1968;
     private static final int MAX_WRITE_REGISTERS = 123;
-    private static final long UINT32_MAX = 0xFFFFFFFFL;
 
     @Inject
     ModbusConfigRepository repo;
@@ -75,7 +71,6 @@ public class ModbusConfigService {
     }
 
     public Uni<ModbusConfig> create(ModbusConfig cfg) {
-        normalizeLegacy(cfg); // 旧 fieldNames/命令级 scale-unit → fields（幂等）
         String err = validate(cfg);
         if (err != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(err));
@@ -114,8 +109,6 @@ public class ModbusConfigService {
                     if (patch.updater != null) {
                         existing.updater = patch.updater;
                     }
-                    // 存量命令（fieldNames→fields）在落库前归一，使 DB 迁到新形状、不残留迁移字段
-                    normalizeLegacy(existing);
                     return repo.replace(existing).replaceWith(existing);
                 });
     }
@@ -341,17 +334,10 @@ public class ModbusConfigService {
         if (err != null) {
             return err;
         }
-        return validateCommands(cfg.commands);
-    }
-
-    /** 把存量命令的 fieldNames/命令级 scale-unit 归一成 fields（幂等；新建即使全新也调用无副作用）。 */
-    private void normalizeLegacy(ModbusConfig cfg) {
-        if (cfg == null || cfg.commands == null) {
-            return;
-        }
-        for (ModbusCommand c : cfg.commands) {
-            ModbusCommand.upgradeLegacyFields(c);
-        }
+        // 命令校验要对账寄存器（被读的一段 / 被写的 writeItems 引用的寄存器）：
+        // 以 index 为查询表，一次构建、命令间复用。
+        Map<Integer, ModbusRegistry> byIndex = ModbusRegistries.byIndex(cfg.registries);
+        return validateCommands(cfg.commands, byIndex);
     }
 
     /**
@@ -446,7 +432,12 @@ public class ModbusConfigService {
         return null;
     }
 
-    private String validateCommands(List<ModbusCommand> commands) {
+    /**
+     * 校验功能码动作列表（{@link ModbusCommand}）。公共字段：index/name/fc/start 如上；
+     * 与区/类型相关的对账（读被覆盖的寄存器、写 writeItems 引用的寄存器）按 fc 分叉见
+     * {@link #validateByFc}，需要 {@code byIndex}（点表寄存器按 index 的查询表）。
+     */
+    private String validateCommands(List<ModbusCommand> commands, Map<Integer, ModbusRegistry> byIndex) {
         if (commands == null) {
             return null;
         }
@@ -481,148 +472,26 @@ public class ModbusConfigService {
             if (c.start < 0) {
                 return "invalid " + base + ".start: " + c.start;
             }
-            String err = validateByFc(c, base);
+            String err = validateByFc(c, base, byIndex);
             if (err != null) {
                 return err;
             }
-            if (!READ_FCS.contains(c.fc) && c.fields != null && !c.fields.isEmpty()) {
-                return base + ".fields is not allowed: fc " + c.fc + " has no response fields";
-            }
-            if (!READ_BIT_FCS.contains(c.fc) && c.bitNames != null && !c.bitNames.isEmpty()) {
-                return base + ".bitNames is not allowed: fc " + c.fc + " has no bit response";
-            }
         }
         return null;
     }
 
-    private String validateByFc(ModbusCommand c, String base) {
+    private String validateByFc(ModbusCommand c, String base, Map<Integer, ModbusRegistry> byIndex) {
         return switch (c.fc) {
-            case "01", "02" -> {
-                String err = validateQuantity(c, base, MAX_READ_BITS);
-                if (err != null) {
-                    yield err;
-                }
-                // 读位的应答数据区按位打包：字段恒为一个（整段位掩码），逐位命名走 bitNames
-                if (c.fields != null && !c.fields.isEmpty()) {
-                    yield base + ".fields is not allowed: fc " + c.fc + " names each bit via bitNames";
-                }
-                yield validateBitNames(c, base, c.quantity);
-            }
-            case "03", "04" -> {
-                String err = validateQuantity(c, base, MAX_READ_REGISTERS);
-                if (err != null) {
-                    yield err;
-                }
-                if (c.dataType == null || c.dataType.isBlank()) {
-                    yield base + ".dataType is required";
-                }
-                if (!REGISTER_DATA_TYPES.contains(c.dataType)) {
-                    yield "invalid " + base + ".dataType: " + c.dataType;
-                }
-                if (c.byteOrder == null || c.byteOrder.isBlank()) {
-                    yield base + ".byteOrder is required";
-                }
-                if (!BYTE_ORDERS.contains(c.byteOrder)) {
-                    yield "invalid " + base + ".byteOrder: " + c.byteOrder;
-                }
-                // 数量 = 值的个数：读的寄存器数 = 数量 × 类型跨度（string 的数量本身就是长度）
-                Integer span = registerSpan(c.dataType);
-                boolean single = span == null;
-                int registers = single ? c.quantity : c.quantity * span;
-                if (registers > MAX_READ_REGISTERS) {
-                    yield "invalid " + base + ".quantity: " + c.quantity
-                            + " (dataType " + c.dataType + " reads " + registers + " registers)";
-                }
-                yield validateFields(c, base, single ? 1 : c.quantity);
-            }
-            case "05" -> {
-                if (c.coilState == null || c.coilState.isBlank()) {
-                    yield base + ".coilState is required";
-                }
-                if (!COIL_STATES.contains(c.coilState)) {
-                    yield "invalid " + base + ".coilState: " + c.coilState;
-                }
-                yield null;
-            }
-            case "06" -> {
-                if (c.registerValue == null) {
-                    yield base + ".registerValue is required";
-                }
-                if (c.registerValue < -32768 || c.registerValue > 65535) {
-                    yield "invalid " + base + ".registerValue: " + c.registerValue;
-                }
-                yield null;
-            }
-            case "0F" -> validateCoils(c, base);
-            case "10" -> validateRegisters(c, base);
+            case "01" -> validateReadBlock(c, base, "coil", byIndex, MAX_READ_BITS, true);
+            case "02" -> validateReadBlock(c, base, "discrete", byIndex, MAX_READ_BITS, true);
+            case "03" -> validateReadBlock(c, base, "holding", byIndex, MAX_READ_REGISTERS, false);
+            case "04" -> validateReadBlock(c, base, "input", byIndex, MAX_READ_REGISTERS, false);
+            case "05" -> validateWriteItems(c, base, byIndex, true, true);
+            case "06" -> validateWriteItems(c, base, byIndex, false, true);
+            case "0F" -> validateWriteItems(c, base, byIndex, true, false);
+            case "10" -> validateWriteItems(c, base, byIndex, false, false);
             default -> null;
         };
-    }
-
-    /**
-     * 校验应答字段（{@link ModbusCommand#fields}，03/04 读寄存器）：允许整体缺省（存量点表；
-     * 生成服务时按功能名称兜底），但一旦给出则逐字段校验 —— 名称非空且不重复、
-     * 个数与应答字段数一致（string 恒为 1，其余为数量）；字段自带缩放系数须有限且 > 0。
-     *
-     * @param expected 该功能码的应答字段个数（string 恒为 1，其余为数量）
-     */
-    private String validateFields(ModbusCommand c, String base, int expected) {
-        List<ModbusCommand.Field> fields = c.fields;
-        if (fields == null || fields.isEmpty()) {
-            return null;
-        }
-        if (fields.size() != expected) {
-            return "invalid " + base + ".fields: " + fields.size()
-                    + " (fc " + c.fc + " needs " + expected + ")";
-        }
-        Set<String> seen = new HashSet<>();
-        for (int i = 0; i < fields.size(); i++) {
-            ModbusCommand.Field f = fields.get(i);
-            String fbase = base + ".fields[" + i + "]";
-            if (f == null) {
-                return fbase + " is null";
-            }
-            if (f.name == null || f.name.isBlank()) {
-                return fbase + ".name is required";
-            }
-            if (!seen.add(f.name)) {
-                return "invalid " + fbase + ".name: " + f.name + " duplicated";
-            }
-            if (f.scale != null && (!Double.isFinite(f.scale) || f.scale == 0 || f.scale < 0)) {
-                return "invalid " + fbase + ".scale: " + f.scale + " (must be a positive finite number)";
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 校验位名称（{@link ModbusCommand#bitNames}，01/02 读位）：允许整体缺省（不逐位命名，只按整段位掩码出
-     * 一个字段），一旦给出则每条都要有 offset 与非空名称，且同一位不能命名两次 —— 名称会直接成为
-     * invoke 返回值的 key，重复会互相覆盖。offset 是 0 基位偏移（从起始地址起，与 0F 的 Coil.offset 同口径）。
-     */
-    private String validateBitNames(ModbusCommand c, String base, int quantity) {
-        List<ModbusCommand.BitName> bits = c.bitNames;
-        if (bits == null || bits.isEmpty()) {
-            return null;
-        }
-        Set<Integer> seen = new HashSet<>();
-        for (int i = 0; i < bits.size(); i++) {
-            ModbusCommand.BitName bit = bits.get(i);
-            String bbase = base + ".bitNames[" + i + "]";
-            if (bit == null || bit.offset == null) {
-                return bbase + ".offset is required";
-            }
-            if (bit.offset < 0 || bit.offset >= quantity) {
-                return "invalid " + bbase + ".offset: " + bit.offset + " (quantity " + quantity + ")";
-            }
-            if (bit.name == null || bit.name.isBlank()) {
-                return bbase + ".name is required";
-            }
-            if (!seen.add(bit.offset)) {
-                return "invalid " + bbase + ".offset: " + bit.offset + " (duplicated)";
-            }
-        }
-        return null;
     }
 
     private String validateQuantity(ModbusCommand c, String base, int max) {
@@ -635,101 +504,170 @@ public class ModbusConfigService {
         return null;
     }
 
-    private String validateCoils(ModbusCommand c, String base) {
-        List<ModbusCommand.Coil> coils = c.coils;
-        if (coils == null || coils.isEmpty()) {
-            return base + ".coils is required";
+    /**
+     * 读命令（01/02/03/04）对账寄存器：{@code quantity} 数量校验后，被读的一段寄存器必须都存在于
+     * {@code area} 区里。
+     *
+     * <p>01/02（位）：一个地址一个位，覆盖 {@code start..start+quantity-1} 每位都要有寄存器。
+     * 03/04（寄存器）：{@code quantity} 是**值的个数**，起头（{@code start} 处）寄存器的数据类型决定跨度
+     * （非 string：帧读 {@code quantity×跨度} 个寄存器、string：帧读 {@code quantity} 个寄存器，
+     * 见 {@code ModbusFrameCodec#readQuantity}），整段 {@code start..start+count} 的每个地址都要有寄存器。
+     * 位名/缩放/单位等元数据不再内联，由消费方按被引用寄存器的名字/scale/unit 推出。</p>
+     */
+    private String validateReadBlock(ModbusCommand c, String base, String area,
+                                     Map<Integer, ModbusRegistry> byIndex, int max, boolean bits) {
+        String err = validateQuantity(c, base, max);
+        if (err != null) {
+            return err;
         }
-        if (coils.size() > MAX_WRITE_COILS) {
-            return "invalid " + base + ".coils: too many (" + coils.size() + ")";
+        int start = c.start;
+        int quantity = c.quantity;
+        if (bits) {
+            for (int off = 0; off < quantity; off++) {
+                ModbusRegistry reg = ModbusRegistries.at(byIndex, area, start + off);
+                if (reg == null) {
+                    return "invalid " + base + ": no register at address " + (start + off)
+                            + " in area " + area + " (fc " + c.fc + " reads " + quantity + " bits from start " + start + ")";
+                }
+            }
+            return null;
         }
-        Set<Integer> seen = new HashSet<>();
-        for (int j = 0; j < coils.size(); j++) {
-            ModbusCommand.Coil it = coils.get(j);
-            String ibase = base + ".coils[" + j + "]";
+        ModbusRegistry head = ModbusRegistries.at(byIndex, area, start);
+        if (head == null) {
+            return "invalid " + base + ": no register at address " + start + " in area " + area;
+        }
+        int frameCount = "string".equals(ModbusRegistries.format(head))
+                ? quantity
+                : quantity * ModbusRegistries.registerCount(head);
+        // 数量×跨度 可能让实际读的寄存器数超上限（如 125 × float32 的 2 = 250）：这里按被读起头寄存器拦一次
+        if (frameCount > max) {
+            return "invalid " + base + ".quantity: " + quantity
+                    + " (reads " + frameCount + " registers from start " + start + ", max " + max + ")";
+        }
+        for (int off = 0; off < frameCount; off++) {
+            ModbusRegistry reg = ModbusRegistries.at(byIndex, area, start + off);
+            if (reg == null) {
+                return "invalid " + base + ": no register at address " + (start + off)
+                        + " in area " + area + " (fc " + c.fc + " reads " + frameCount + " registers from start " + start + ")";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 写命令（05/06/0F/10）对账 {@code writeItems}：每条引用的寄存器必须存在于点表、落在该 fc
+     * 的区（05/0F 线圈、06/10 保持寄存器）且类型匹配，取值类型与取值范围自洽；
+     * 单条（05/06）恰一条、多条（0F/10）按地址升序从 {@code start} 起首尾相接（0F 一位、10 按寄存器个数）。
+     *
+     * <p>与 {@code FieldDeviceValidator.validateWriteRequest} 对 request.fields 的口径一致——
+     * writeItems 与 request.fields 是同一件事（引用寄存器 + 原始值）在「点表命令」vs「服务请求」两条线上的投影。</p>
+     */
+    private String validateWriteItems(ModbusCommand c, String base, Map<Integer, ModbusRegistry> byIndex,
+                                      boolean bits, boolean single) {
+        List<ModbusCommand.ModbusCommandWriteItem> items = c.writeItems;
+        if (items == null || items.isEmpty()) {
+            return base + ".writeItems is required";
+        }
+        if (items.size() > (bits ? MAX_WRITE_COILS : MAX_WRITE_REGISTERS)) {
+            return "invalid " + base + ".writeItems: too many (" + items.size() + ")";
+        }
+        if (single && items.size() != 1) {
+            return "invalid " + base + ".writeItems: fc " + c.fc + " writes exactly one entry, got " + items.size();
+        }
+        String area = bits ? "coil" : "holding";
+        Set<Integer> seenRegistry = new HashSet<>();
+        for (int i = 0; i < items.size(); i++) {
+            ModbusCommand.ModbusCommandWriteItem it = items.get(i);
+            String ibase = base + ".writeItems[" + i + "]";
             if (it == null) {
                 return ibase + " is null";
             }
-            if (it.offset == null || it.offset < 0 || it.offset >= coils.size()) {
-                return "invalid " + ibase + ".offset: " + it.offset;
+            if (it.registryIndex == null) {
+                return ibase + ".registryIndex is required";
             }
-            if (!seen.add(it.offset)) {
-                return "invalid " + ibase + ".offset: duplicated " + it.offset;
+            if (it.registryIndex < 1) {
+                return "invalid " + ibase + ".registryIndex: " + it.registryIndex
+                        + " (index must be a natural number, 1-based)";
+            }
+            if (!seenRegistry.add(it.registryIndex)) {
+                return "invalid " + ibase + ".registryIndex: " + it.registryIndex + " (duplicated)";
+            }
+            ModbusRegistry reg = byIndex == null ? null : byIndex.get(it.registryIndex);
+            if (reg == null) {
+                return "invalid " + ibase + ".registryIndex: " + it.registryIndex + " (not in registries)";
+            }
+            if (!area.equals(reg.area)) {
+                return "invalid " + ibase + ".registryIndex: " + it.registryIndex
+                        + " (fc " + c.fc + " writes " + area + ", registry is in area " + reg.area + ")";
+            }
+            String format = ModbusRegistries.format(reg);
+            if (bits) {
+                if (!(it.value instanceof Boolean)) {
+                    return "invalid " + ibase + ".value: " + it.value + " (a bit is true or false)";
+                }
+            } else {
+                // fc 06 只写一个寄存器：4 字节格式取用会被静默截掉一半
+                if (single && ModbusRegistries.byteWidth(reg) != 2) {
+                    return "invalid " + ibase + ".registryIndex: " + it.registryIndex
+                            + " (fc 06 writes one register, not data type " + format + ")";
+                }
+                String valueErr = validateWriteValue(it.value, format, ibase + ".value");
+                if (valueErr != null) {
+                    return valueErr;
+                }
+            }
+        }
+        // 多条（0F/10）：帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞——位置由寄存器地址相对 start 推出，必须 0 起连续。
+        if (!single) {
+            int start = c.start;
+            List<ModbusCommand.ModbusCommandWriteItem> ordered = new ArrayList<>(items);
+            ordered.sort(Comparator.comparingInt(item -> {
+                ModbusRegistry reg = byIndex.get(item.registryIndex);
+                return reg == null || reg.address == null ? 0 : reg.address;
+            }));
+            int position = 0;
+            for (ModbusCommand.ModbusCommandWriteItem item : ordered) {
+                ModbusRegistry reg = byIndex.get(item.registryIndex);
+                int offset = reg.address - start;
+                if (offset != position) {
+                    return "invalid " + base + ".writeItems: " + (bits ? "bit" : "register")
+                            + " offset of registry " + item.registryIndex + " is " + offset
+                            + " (must be " + position + ", write entries are packed by address without gaps)";
+                }
+                position += bits ? 1 : ModbusRegistries.registerCount(reg);
             }
         }
         return null;
     }
 
-    private String validateRegisters(ModbusCommand c, String base) {
-        List<ModbusCommand.Register> regs = c.registers;
-        if (regs == null || regs.isEmpty()) {
-            return base + ".registers is required";
+    /**
+     * 一条写寄存器值的自洽性：必填、是有限数值；非 float32 的格式还必须是整数值且不越界。
+     * 「整数值」按**值本身**判而不是按 Java 类型判（请求体过 Jackson 后 {@code 2} 可能是
+     * {@code Integer} 或 {@code Double}）。
+     */
+    private String validateWriteValue(Object value, String format, String vbase) {
+        if (value == null) {
+            return vbase + " is required";
         }
-        if (regs.size() > MAX_WRITE_REGISTERS) {
-            return "invalid " + base + ".registers: too many (" + regs.size() + ")";
+        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) {
+            return "invalid " + vbase + ": " + value + " (a register value is a finite number)";
         }
-        int expected = -1;
-        for (int j = 0; j < regs.size(); j++) {
-            ModbusCommand.Register r = regs.get(j);
-            String ibase = base + ".registers[" + j + "]";
-            if (r == null) {
-                return ibase + " is null";
-            }
-            if (r.address == null) {
-                return ibase + ".address is required";
-            }
-            if (r.address < 0) {
-                return "invalid " + ibase + ".address: " + r.address;
-            }
-            if (expected >= 0 && r.address != expected) {
-                return "invalid " + ibase + ".address: " + r.address + " (registers must be contiguous)";
-            }
-            if (r.dataType == null || r.dataType.isBlank()) {
-                return ibase + ".dataType is required";
-            }
-            if (!WRITE_DATA_TYPES.contains(r.dataType)) {
-                return "invalid " + ibase + ".dataType: " + r.dataType;
-            }
-            if (r.byteOrder == null || r.byteOrder.isBlank()) {
-                return ibase + ".byteOrder is required";
-            }
-            if (!BYTE_ORDERS.contains(r.byteOrder)) {
-                return "invalid " + ibase + ".byteOrder: " + r.byteOrder;
-            }
-            if (r.value == null) {
-                return ibase + ".value is required";
-            }
-            if (!fitsType(r.dataType, r.value)) {
-                return "invalid " + ibase + ".value: " + r.value;
-            }
-            Integer span = registerSpan(r.dataType);
-            expected = r.address + (span == null ? 1 : span);
-        }
-        return null;
-    }
-
-    private boolean fitsType(String dataType, long value) {
-        return switch (dataType) {
-            case "int16" -> value >= -32768 && value <= 32767;
-            case "uint16" -> value >= 0 && value <= 65535;
-            case "int32" -> value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE;
-            case "uint32" -> value >= 0 && value <= UINT32_MAX;
-            case "float32" -> value >= Integer.MIN_VALUE && value <= UINT32_MAX;
-            default -> false;
-        };
-    }
-
-    /** 类型占用寄存器数：16 位→1、32 位/float→2、64 位→4、string→不固定（null）。 */
-    private Integer registerSpan(String dataType) {
-        if (dataType == null) {
+        if ("float32".equals(format)) {
             return null;
         }
-        return switch (dataType) {
-            case "int16", "uint16" -> 1;
-            case "int32", "uint32", "float32" -> 2;
-            case "int64", "uint64" -> 4;
-            default -> null;
+        double d = number.doubleValue();
+        if (d != Math.rint(d)) {
+            return "invalid " + vbase + ": " + value + " (format " + format + " needs an integer value)";
+        }
+        long v = (long) d;
+        boolean ok = switch (format) {
+            case "int16" -> v >= Short.MIN_VALUE && v <= Short.MAX_VALUE;
+            case "uint16" -> v >= 0 && v <= 0xFFFFL;
+            case "int32" -> v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE;
+            case "uint32" -> v >= 0 && v <= 0xFFFFFFFFL;
+            default -> true;
         };
+        return ok ? null : "invalid " + vbase + ": " + value + " (out of range for " + format + ")";
     }
 
     /** 线圈/离散输入区（{@link ModbusRegistry#area}）：数据恒为布尔，无需 dataType。 */

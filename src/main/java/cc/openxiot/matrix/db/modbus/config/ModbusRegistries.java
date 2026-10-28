@@ -35,6 +35,25 @@ public final class ModbusRegistries {
     }
 
     /**
+     * 找某区某地址上的寄存器（{@code byIndex} 是 {@link ModbusRegistry#index} 的查询表）。
+     *
+     * <p>校验器/组帧按“地址 + 区”解析被读/被写的寄存器（点表命令只给 {start, quantity}，
+     * 被读寄存器是从 start 起的一段地址连续性推导），而寄存器本身以 index 为身份 ——
+     * 这里扫描 values 把地址区还原出来。查找不到返回 null（调用方给文案）。</p>
+     */
+    public static ModbusRegistry at(Map<Integer, ModbusRegistry> byIndex, String area, int address) {
+        if (byIndex == null || area == null) {
+            return null;
+        }
+        for (ModbusRegistry reg : byIndex.values()) {
+            if (reg != null && area.equals(reg.area) && reg.address != null && reg.address == address) {
+                return reg;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 该寄存器占用的**字节宽**（读切片 / 写数据区用）：
      * 数值由 dataType 推出（int16/uint16→2、int32/uint32/float32→4、int64/uint64→8、int8/uint8→1）；
      * string 宽度不定，用 {@link ModbusRegistry#length}（缺省 1 寄存器 = 2 字节）；

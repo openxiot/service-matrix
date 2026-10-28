@@ -58,9 +58,11 @@ class ModbusConfigServiceTest {
         cfg.slave.model = "19XRV";
         cfg.slave.slaveId = 1;
         cfg.visibility = "private";
+        // 命令校验要对账寄存器（读一段 / 写 writeItems 引用）：给一套默认寄存器，多数测试直接沿用
+        cfg.registries = defaultRegistries();
     }
 
-    /** 合法的读保持寄存器动作（默认样例）。 */
+    /** 合法的读保持寄存器动作（默认样例）：fc 03 自 start=10 连续读 2 个值。 */
     private ModbusCommand readHolding() {
         ModbusCommand c = new ModbusCommand();
         c.name = "CHW_TEMP";
@@ -68,39 +70,59 @@ class ModbusConfigServiceTest {
         c.fc = "03";
         c.start = 10;
         c.quantity = 2;
-        c.dataType = "float32";
-        c.byteOrder = "ABCD";
         return c;
     }
 
-    /** 合法的读线圈动作（01 读位，逐位命名见 bitNames）。 */
-    private ModbusCommand readCoil() {
+    /** 组装一条写命令（名称/序号默认填合法值）。 */
+    private static ModbusCommand command(String fc, int start) {
         ModbusCommand c = new ModbusCommand();
-        c.name = "读开关状态";
+        c.name = "动作";
         c.index = 1;
-        c.fc = "01";
-        c.start = 0;
-        c.quantity = 8;
+        c.fc = fc;
+        c.start = start;
         return c;
     }
 
-    private static ModbusCommand.BitName bit(int offset, String name) {
-        ModbusCommand.BitName b = new ModbusCommand.BitName();
-        b.offset = offset;
-        b.name = name;
-        return b;
+    private static ModbusCommand.ModbusCommandWriteItem write(int registryIndex, Object value) {
+        ModbusCommand.ModbusCommandWriteItem item = new ModbusCommand.ModbusCommandWriteItem();
+        item.registryIndex = registryIndex;
+        item.value = value;
+        return item;
     }
 
-    private static ModbusCommand.Field field(String name) {
-        ModbusCommand.Field f = new ModbusCommand.Field();
-        f.name = name;
-        return f;
+    /** 详细的寄存器样例：序号取用者显式给（同表内唯一由取用者保证）。 */
+    private static ModbusRegistry reg(int index, String area, int address, String access,
+                                      String dataType, String name) {
+        ModbusRegistry r = new ModbusRegistry();
+        r.name = name;
+        r.index = index;
+        r.address = address;
+        r.area = area;
+        r.access = access;
+        r.dataType = dataType;
+        if (dataType != null && List.of("int32", "uint32", "float32", "int64", "uint64").contains(dataType)) {
+            r.byteOrder = "ABCD";
+        }
+        return r;
+    }
+
+    /** 默认寄存器集（序号固定，便于 writeItems 引用）。 */
+    private static List<ModbusRegistry> defaultRegistries() {
+        return List.of(
+                reg(1, "holding", 10, "R", "uint16", "进水温度"),
+                reg(2, "holding", 11, "R", "uint16", "进水温度2"),
+                reg(3, "coil", 0, "R", null, "启停"),
+                reg(4, "holding", 20, "W", "uint16", "设定温度"),
+                reg(5, "coil", 30, "RW", null, "多线圈A"),
+                reg(6, "coil", 31, "RW", null, "多线圈B"),
+                reg(7, "holding", 40, "W", "int16", "寄存器A"),
+                reg(8, "holding", 41, "W", "int16", "寄存器B"));
     }
 
     /** 寄存器序号（供 ModbusRegistry.index）：同表内必须唯一，用个计数器保证。 */
     private static int registrySeq;
 
-    /** 寄存器样例：跨多寄存器类型（32/64 位）自动补 byteOrder，其余免填。 */
+    /** 寄存器样例（序号自增）：跨多寄存器类型（32/64 位）自动补 byteOrder，其余免填。 */
     private static ModbusRegistry registry(String area, int address, String access, String dataType, String name) {
         ModbusRegistry r = new ModbusRegistry();
         r.name = name;
@@ -169,17 +191,6 @@ class ModbusConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("registries[0].access is required", ex.getMessage());
-    }
-
-    /** 应答字段名重复：会互为覆盖，拒绝。 */
-    @Test
-    void createWithDuplicateFieldNamesFails() {
-        ModbusCommand c = readHolding();
-        c.fields = List.of(field("温度"), field("温度"));
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fields[1].name: 温度 duplicated", ex.getMessage());
     }
 
     /** 桩：模拟仓储落库时由 Panache 生成主键（服务层不再自造 id）。 */
@@ -304,18 +315,13 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWriteSingleCoilAndSingleRegisterAllowed() {
-        ModbusCommand coil = new ModbusCommand();
+        ModbusCommand coil = command("05", 0);
         coil.name = "PumpOn";
-        coil.index = 1;
-        coil.fc = "05";
-        coil.start = 0;
-        coil.coilState = "on";
-        ModbusCommand reg = new ModbusCommand();
+        coil.writeItems = List.of(write(3, true));      // 3 = coil @ addr0
+        ModbusCommand reg = command("06", 20);
         reg.name = "SetTemp";
         reg.index = 2;
-        reg.fc = "06";
-        reg.start = 20;
-        reg.registerValue = 120L;
+        reg.writeItems = List.of(write(4, 120));        // 4 = holding @ addr20 uint16
         cfg.commands = List.of(coil, reg);
         insertOk();
         assertNotNull(service.create(cfg).await().indefinitely());
@@ -323,18 +329,9 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWriteMultipleCoilsAllowed() {
-        ModbusCommand c = new ModbusCommand();
+        ModbusCommand c = command("0F", 30);
         c.name = "MultiCoil";
-        c.index = 1;
-        c.fc = "0F";
-        c.start = 30;
-        ModbusCommand.Coil c1 = new ModbusCommand.Coil();
-        c1.offset = 0;
-        c1.on = true;
-        ModbusCommand.Coil c2 = new ModbusCommand.Coil();
-        c2.offset = 1;
-        c2.on = false;
-        c.coils = List.of(c1, c2);
+        c.writeItems = List.of(write(5, true), write(6, false));   // coil @ addr30,31
         cfg.commands = List.of(c);
         insertOk();
         assertNotNull(service.create(cfg).await().indefinitely());
@@ -342,22 +339,9 @@ class ModbusConfigServiceTest {
 
     @Test
     void createWriteMultipleRegistersAllowed() {
-        ModbusCommand c = new ModbusCommand();
+        ModbusCommand c = command("10", 40);
         c.name = "MultiReg";
-        c.index = 1;
-        c.fc = "10";
-        c.start = 40;
-        ModbusCommand.Register r1 = new ModbusCommand.Register();
-        r1.address = 40;
-        r1.dataType = "int16";
-        r1.byteOrder = "ABCD";
-        r1.value = -5L;
-        ModbusCommand.Register r2 = new ModbusCommand.Register();
-        r2.address = 41;
-        r2.dataType = "uint32";
-        r2.byteOrder = "DCBA";
-        r2.value = 0x12345678L;
-        c.registers = List.of(r1, r2);
+        c.writeItems = List.of(write(7, -5), write(8, 12000));     // holding @ addr40,41 int16
         cfg.commands = List.of(c);
         insertOk();
         assertNotNull(service.create(cfg).await().indefinitely());
@@ -393,265 +377,170 @@ class ModbusConfigServiceTest {
         assertEquals("commands[0].start is required", ex.getMessage());
     }
 
-    /** 数量是「值的个数」：uint16 读 3 个值 = 3 个寄存器，合法。 */
+    /** 数量是「值的个数」：uint16 读 3 个值 = 3 个寄存器（逐地址都有寄存器），合法。 */
     @Test
     void createWithMultipleUint16ValuesSucceeds() {
+        cfg.registries = List.of(
+                reg(1, "holding", 10, "R", "uint16", "a"),
+                reg(2, "holding", 11, "R", "uint16", "b"),
+                reg(3, "holding", 12, "R", "uint16", "c"));
         ModbusCommand c = readHolding();
-        c.dataType = "uint16";
         c.quantity = 3;
-        c.fields = List.of(field("第一个温度值"), field("第二个温度值"), field("第三个温度值"));
         cfg.commands = List.of(c);
         insertOk();
 
         assertEquals(CID, service.create(cfg).await().indefinitely().id);
     }
 
-    /** 数量 × 类型跨度 = 实际要读的寄存器数，超过 125 个即非法。 */
+    /** 数量 × 起头寄存器跨度 = 实际要读的寄存器数，超过 125 个即非法。 */
     @Test
     void createWithTooManyRegistersFails() {
+        // 起头寄存器是 float32（跨度 2）：quantity 63 → 126 个寄存器 > 125
+        cfg.registries = List.of(reg(1, "holding", 10, "R", "float32", "进水温度"));
         ModbusCommand c = readHolding();
-        c.quantity = 63; // float32 → 126 个寄存器
+        c.quantity = 63;
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].quantity: 63 (dataType float32 reads 126 registers)", ex.getMessage());
+        assertEquals("invalid commands[0].quantity: 63 (reads 126 registers from start 10, max 125)",
+                ex.getMessage());
     }
 
+    /** 读命令被覆盖的寄存器必须都存在：数量 3 需 addr10/11/12，缺 12 → 拒绝。 */
     @Test
-    void createWithFieldNameCountMismatchFails() {
+    void createWithReadCoveringMissingRegisterFails() {
         ModbusCommand c = readHolding();
-        c.dataType = "uint16";
-        c.quantity = 3;
-        c.fields = List.of(field("第一个温度值"), field("第二个温度值")); // 3 个值应有 3 个名称
+        c.quantity = 3; // 默认寄存器只有 holding @ addr10,11
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fields: 2 (fc 03 needs 3)", ex.getMessage());
+        assertEquals("invalid commands[0]: no register at address 12 in area holding "
+                + "(fc 03 reads 3 registers from start 10)", ex.getMessage());
     }
 
+    /** 读命令起头地址处没有寄存器也要拒绝。 */
     @Test
-    void createWithBlankFieldNameFails() {
-        ModbusCommand c = readHolding();
-        c.fields = List.of(field("进水温度"), field(" "));
+    void createWithReadStartMissingRegisterFails() {
+        ModbusCommand c = command("03", 99);
+        c.quantity = 1;
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].fields[1].name is required", ex.getMessage());
+        assertEquals("invalid commands[0]: no register at address 99 in area holding", ex.getMessage());
     }
 
-    /** string 整段算一个值：无论数量多少，应答只有一个字段。 */
+    /** 写条目引用的寄存器必须存在于点表。 */
     @Test
-    void createWithStringReadNeedsOneFieldName() {
-        ModbusCommand c = readHolding();
-        c.dataType = "string";
-        c.quantity = 5;
-        c.fields = List.of(field("设备型号"), field("备用"));
+    void createWithWriteMissingRegistryFails() {
+        ModbusCommand c = command("06", 20);
+        c.writeItems = List.of(write(999, 100));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].fields: 2 (fc 03 needs 1)", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].registryIndex: 999 (not in registries)", ex.getMessage());
     }
 
+    /** 写条目引用的寄存器必须落在该 fc 的区：06 写 holding，索引到线圈则拒绝。 */
     @Test
-    void createWithFieldNamesOnWriteFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "开机";
-        c.index = 1;
-        c.fc = "05";
-        c.start = 0;
-        c.coilState = "on";
-        c.fields = List.of(field("开关状态"));
+    void createWithWriteWrongAreaFails() {
+        ModbusCommand c = command("06", 0);
+        c.writeItems = List.of(write(3, 100));   // 3 = coil @ addr0
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].fields is not allowed: fc 05 has no response fields", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].registryIndex: 3 "
+                + "(fc 06 writes holding, registry is in area coil)", ex.getMessage());
     }
 
-    /** 01/02 读位：逐位命名走 bitNames（offset 0 基），可以只命名其中几位。 */
+    /** fc 06 只写一个寄存器：被引用寄存器是 4 字节（float32）会被静默截半，拒绝。 */
     @Test
-    void createWithBitNamesSucceeds() {
-        ModbusCommand c = readCoil();
-        c.bitNames = List.of(bit(0, "进水阀"), bit(3, "报警"));
-        cfg.commands = List.of(c);
-        insertOk();
-
-        assertEquals(CID, service.create(cfg).await().indefinitely().id);
-    }
-
-    /** 位偏移必须落在读回的位区间内。 */
-    @Test
-    void createWithBitNameOffsetOutOfRangeFails() {
-        ModbusCommand c = readCoil();
-        c.bitNames = List.of(bit(8, "越界位")); // 数量 8 → 有效偏移 0..7
+    void createWithSingleRegisterWriteNot16BitFails() {
+        cfg.registries = List.of(reg(1, "holding", 10, "W", "float32", "X"));
+        ModbusCommand c = command("06", 10);
+        c.writeItems = List.of(write(1, 100));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].bitNames[0].offset: 8 (quantity 8)", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].registryIndex: 1 "
+                + "(fc 06 writes one register, not data type float32)", ex.getMessage());
     }
 
+    /** 位写（05/0F）的取值必须是布尔。 */
     @Test
-    void createWithDuplicatedBitNameOffsetFails() {
-        ModbusCommand c = readCoil();
-        c.bitNames = List.of(bit(0, "进水阀"), bit(0, "出水阀"));
+    void createWithBitWriteNonBooleanValueFails() {
+        ModbusCommand c = command("0F", 30);
+        c.writeItems = List.of(write(5, 100));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].bitNames[1].offset: 0 (duplicated)", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].value: 100 (a bit is true or false)", ex.getMessage());
     }
 
+    /** 单条写（05/06）必须有一条 writeItems。 */
     @Test
-    void createWithBlankBitNameFails() {
-        ModbusCommand c = readCoil();
-        c.bitNames = List.of(bit(0, " "));
+    void createWithMissingWriteItemsOnSingleWriteFails() {
+        ModbusCommand c = command("05", 0);
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].bitNames[0].name is required", ex.getMessage());
+        assertEquals("commands[0].writeItems is required", ex.getMessage());
     }
 
-    /** 01/02 的应答字段只有一个（整段位掩码），字段名不再由点表给（生成时按功能名称兜底）。 */
-    @Test
-    void createWithFieldsOnBitReadFails() {
-        ModbusCommand c = readCoil();
-        c.fields = List.of(field("开关状态"));
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].fields is not allowed: fc 01 names each bit via bitNames", ex.getMessage());
-    }
-
-    @Test
-    void createWithBitNamesOnRegisterReadFails() {
-        ModbusCommand c = readHolding();
-        c.bitNames = List.of(bit(0, "进水阀"));
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].bitNames is not allowed: fc 03 has no bit response", ex.getMessage());
-    }
-
-    @Test
-    void createWithMissingDataTypeFails() {
-        ModbusCommand c = readHolding();
-        c.dataType = null;
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].dataType is required", ex.getMessage());
-    }
-
-    @Test
-    void createWithInvalidByteOrderFails() {
-        ModbusCommand c = readHolding();
-        c.byteOrder = "XYZW";
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].byteOrder: XYZW", ex.getMessage());
-    }
-
-    @Test
-    void createWithMissingCoilStateFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "PumpOn";
-        c.index = 1;
-        c.fc = "05";
-        c.start = 0;
-        cfg.commands = List.of(c);
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].coilState is required", ex.getMessage());
-    }
-
+    /** 06 引用 uint16 但取值越界（>65535）。 */
     @Test
     void createWithOutOfRangeRegisterValueFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "SetTemp";
-        c.index = 1;
-        c.fc = "06";
-        c.start = 20;
-        c.registerValue = 70000L;
+        ModbusCommand c = command("06", 20);
+        c.writeItems = List.of(write(4, 70000));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].registerValue: 70000", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].value: 70000 (out of range for uint16)", ex.getMessage());
     }
 
+    /** 0F/10 必须有 writeItems。 */
     @Test
-    void createWithEmptyCoilsFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "MultiCoil";
-        c.index = 1;
-        c.fc = "0F";
-        c.start = 30;
-        c.coils = List.of();
+    void createWithEmptyWriteItemsFails() {
+        ModbusCommand c = command("0F", 30);
+        c.writeItems = List.of();
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("commands[0].coils is required", ex.getMessage());
+        assertEquals("commands[0].writeItems is required", ex.getMessage());
     }
 
+    /** 同一条写命令不能重复引用同一个寄存器。 */
     @Test
-    void createWithDuplicateCoilOffsetFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "MultiCoil";
-        c.index = 1;
-        c.fc = "0F";
-        c.start = 30;
-        ModbusCommand.Coil a = new ModbusCommand.Coil();
-        a.offset = 0;
-        a.on = true;
-        ModbusCommand.Coil b = new ModbusCommand.Coil();
-        b.offset = 0;
-        b.on = false;
-        c.coils = List.of(a, b);
+    void createWithDuplicateRegistryIndexFails() {
+        ModbusCommand c = command("0F", 30);
+        c.writeItems = List.of(write(5, true), write(5, false));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].coils[1].offset: duplicated 0", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[1].registryIndex: 5 (duplicated)", ex.getMessage());
     }
 
+    /** 10 写多寄存器：帧没有空洞，被写寄存器地址必须相对 start 首尾相接。 */
     @Test
     void createWithNonContiguousRegistersFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "MultiReg";
-        c.index = 1;
-        c.fc = "10";
-        c.start = 40;
-        ModbusCommand.Register r1 = new ModbusCommand.Register();
-        r1.address = 40;
-        r1.dataType = "int16";
-        r1.byteOrder = "ABCD";
-        r1.value = 1L;
-        ModbusCommand.Register r2 = new ModbusCommand.Register();
-        r2.address = 42; // 应接 41，跳跃不连续
-        r2.dataType = "uint16";
-        r2.byteOrder = "ABCD";
-        r2.value = 2L;
-        c.registers = List.of(r1, r2);
+        // addr10(①), addr20(④) 中间隔了 10 个地址，应接 addr11
+        ModbusCommand c = command("10", 10);
+        c.writeItems = List.of(write(1, 1), write(4, 2));
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].registers[1].address: 42 (registers must be contiguous)", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems: register offset of registry 4 is 10 "
+                + "(must be 1, write entries are packed by address without gaps)", ex.getMessage());
     }
 
+    /** 10 写寄存器：取值必须落进被引用寄存器的数据类型范围。 */
     @Test
     void createWithBadRegisterValueFails() {
-        ModbusCommand c = new ModbusCommand();
-        c.name = "MultiReg";
-        c.index = 1;
-        c.fc = "10";
-        c.start = 40;
-        ModbusCommand.Register r1 = new ModbusCommand.Register();
-        r1.address = 40;
-        r1.dataType = "int16";
-        r1.byteOrder = "ABCD";
-        r1.value = 40000L; // int16 越界
-        c.registers = List.of(r1);
+        ModbusCommand c = command("10", 40);
+        c.writeItems = List.of(write(7, 40000));   // 7 = holding @ addr40 int16：40000 越界
         cfg.commands = List.of(c);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
-        assertEquals("invalid commands[0].registers[0].value: 40000", ex.getMessage());
+        assertEquals("invalid commands[0].writeItems[0].value: 40000 (out of range for int16)", ex.getMessage());
     }
 
     @Test

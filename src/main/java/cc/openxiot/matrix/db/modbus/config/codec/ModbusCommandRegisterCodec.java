@@ -7,38 +7,37 @@ import io.vertx.core.json.JsonObject;
 import java.util.List;
 
 /**
- * {@link ModbusCommand.Register}（写多寄存器 10 的每一个寄存器）与 JSON 的互转。
+ * {@link ModbusCommand.ModbusCommandWriteItem}（写操作 05/06/0F/10 的每一条：引用寄存器 + 原始值）
+ * 与 JSON 的互转，输出形如 {@code {registryIndex, value}}。
+ *
+ * <p>写命令统一成一条 writeItems 列表后，原有的单线圈(05)/单寄存器(06)/多线圈(0F Coil)/
+ * 多寄存器(10 Register) 四种内联结构全部合并为这一种，这里即唯一入口
+ * （{@code ModbusCommandCoilCodec} 已随之删除）。</p>
  */
 public final class ModbusCommandRegisterCodec {
 
     private ModbusCommandRegisterCodec() {
     }
 
-    public static JsonObject encode(ModbusCommand.Register r) {
+    public static JsonObject encode(ModbusCommand.ModbusCommandWriteItem item) {
         JsonObject o = new JsonObject();
-        if (r == null) {
+        if (item == null) {
             return o;
         }
-        if (r.address != null) {
-            o.put("address", r.address);
+        if (item.registryIndex != null) {
+            o.put("registryIndex", item.registryIndex);
         }
-        if (r.dataType != null) {
-            o.put("dataType", r.dataType);
-        }
-        if (r.byteOrder != null) {
-            o.put("byteOrder", r.byteOrder);
-        }
-        if (r.value != null) {
-            o.put("value", r.value);
+        if (item.value != null) {
+            o.put("value", item.value);
         }
         return o;
     }
 
-    public static JsonArray encode(List<ModbusCommand.Register> registers) {
+    public static JsonArray encode(List<ModbusCommand.ModbusCommandWriteItem> items) {
         JsonArray arr = new JsonArray();
-        if (registers != null) {
-            for (ModbusCommand.Register register : registers) {
-                arr.add(encode(register));
+        if (items != null) {
+            for (ModbusCommand.ModbusCommandWriteItem item : items) {
+                arr.add(encode(item));
             }
         }
         return arr;
