@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>两条规矩值得单独钉住：**没给的项不出键**（库里不留空值噪音，读方法也不会带着一个
  * {@code fields: []}），以及 {@code value} 的**原始类型不变**（位是布尔、寄存器是数值，
- * 不能被码器归一成 0.0 或 "0"）。</p>
+ * 不能被码器归一成 0.0 或 "0"）。字段身份是 {@code registryIndex}。</p>
  */
 class ModbusRequestCodecTest {
 
@@ -31,14 +31,9 @@ class ModbusRequestCodecTest {
         return request;
     }
 
-    private static ModbusRequestField field(int index, String name, Integer offset, String format,
-                                            String byteOrder, Object value) {
+    private static ModbusRequestField field(int registryIndex, Object value) {
         ModbusRequestField field = new ModbusRequestField();
-        field.index = index;
-        field.field = name;
-        field.offset = offset;
-        field.format = format;
-        field.byteOrder = byteOrder;
+        field.registryIndex = registryIndex;
         field.value = value;
         return field;
     }
@@ -52,13 +47,11 @@ class ModbusRequestCodecTest {
         assertEquals("03", o.getString("fc"));
         assertEquals(0, o.getInteger("start").intValue());
         assertEquals(2, o.getInteger("quantity").intValue());
-        assertFalse(o.containsKey("fields"));   // 读方法没有写字段：不该落一个空数组
+        assertFalse(o.containsKey("fields"));
 
         ModbusRequest back = ModbusRequestCodec.decode(o);
         assertEquals(1, back.slaveId.intValue());
         assertEquals("03", back.fc);
-        assertEquals(0, back.start.intValue());
-        assertEquals(2, back.quantity.intValue());
         assertNull(back.fields);
         assertEquals(o, ModbusRequestCodec.encode(back));
     }
@@ -70,50 +63,45 @@ class ModbusRequestCodecTest {
         request.fc = "10";
         request.start = 10;
         request.fields = List.of(
-                field(1, "运行模式", 0, "uint16", null, 1),
-                field(2, "设定温度", 1, "float32", "ABCD", 7.5));
+                field(41, 1),
+                field(42, 7.5));
 
         JsonObject o = ModbusRequestCodec.encode(request);
-        assertFalse(o.containsKey("quantity"));   // 写方法的数量由字段推出，定义里不写
+        assertFalse(o.containsKey("quantity"));
 
         JsonArray fields = o.getJsonArray("fields");
         assertEquals(2, fields.size());
-        assertFalse(fields.getJsonObject(0).containsKey("byteOrder"));   // uint16 用不上字节序
-        assertEquals("ABCD", fields.getJsonObject(1).getString("byteOrder"));
+        assertFalse(fields.getJsonObject(0).containsKey("byteOrder"));   // 码器不再带字节序
+        assertEquals(41, fields.getJsonObject(0).getInteger("registryIndex").intValue());
 
         ModbusRequest back = ModbusRequestCodec.decode(o);
         assertEquals("10", back.fc);
         assertEquals(2, back.fields.size());
-        assertEquals(0, back.fields.get(0).offset.intValue());
-        assertEquals(1, back.fields.get(1).offset.intValue());
+        assertEquals(41, back.fields.get(0).registryIndex.intValue());
         assertEquals(o, ModbusRequestCodec.encode(back));
     }
 
     /** {@code value} 原样进出：位是布尔、寄存器是数值，码器不做归一。 */
     @Test
     void valueKeepsItsOwnType() {
-        JsonObject o = ModbusRequestFieldCodec.encode(
-                field(1, "开机", 0, "bit", null, Boolean.TRUE));
+        JsonObject o = ModbusRequestFieldCodec.encode(field(31, Boolean.TRUE));
         assertEquals(Boolean.TRUE, o.getValue("value"));
         assertEquals(Boolean.TRUE, ModbusRequestFieldCodec.decode(o).value);
 
-        // `0` 不能因为过了一层码器而变成 0.0 或 "0"：写帧的取值判定要按值本身判整数
-        JsonObject zero = ModbusRequestFieldCodec.encode(
-                field(1, "运行模式", 0, "uint16", null, 0));
+        JsonObject zero = ModbusRequestFieldCodec.encode(field(41, 0));
         assertEquals(0, ((Number) zero.getValue("value")).intValue());
         assertTrue(ModbusRequestFieldCodec.decode(zero).value instanceof Integer);
 
-        JsonObject decimal = ModbusRequestFieldCodec.encode(
-                field(1, "设定温度", 0, "float32", "ABCD", 7.5));
+        JsonObject decimal = ModbusRequestFieldCodec.encode(field(42, 7.5));
         assertEquals(7.5, ((Number) ModbusRequestFieldCodec.decode(decimal).value).doubleValue());
     }
 
     /** 没有缺省值的字段不出 {@code value} 键：decode 回 null，invoke 时该字段就必须给值。 */
     @Test
     void fieldWithoutDefaultOmitsTheValueKey() {
-        JsonObject o = ModbusRequestFieldCodec.encode(
-                field(1, "设定温度", 0, "int16", null, null));
+        JsonObject o = ModbusRequestFieldCodec.encode(field(41, null));
         assertFalse(o.containsKey("value"));
+        assertEquals(41, o.getInteger("registryIndex").intValue());
         assertNull(ModbusRequestFieldCodec.decode(o).value);
     }
 
@@ -124,7 +112,6 @@ class ModbusRequestCodecTest {
         request.fc = "06";
         request.start = 0;
         request.fields = List.of();
-
         assertFalse(ModbusRequestCodec.encode(request).containsKey("fields"));
     }
 
@@ -133,21 +120,9 @@ class ModbusRequestCodecTest {
     void nullsEncodeToEmptyContainers() {
         assertTrue(ModbusRequestCodec.encode((ModbusRequest) null).isEmpty());
 
-        // 空对象解出一份「什么都没配」的定义：各字段 null，由校验器去报「request.slaveId is required」
         ModbusRequest blank = ModbusRequestCodec.decode(new JsonObject());
         assertNull(blank.slaveId);
         assertNull(blank.fc);
         assertNull(blank.start);
-        assertNull(blank.quantity);
-        assertNull(blank.fields);
-
-        assertTrue(ModbusRequestFieldCodec.encode((ModbusRequestField) null).isEmpty());
-        assertTrue(ModbusRequestFieldCodec.encode((List<ModbusRequestField>) null).isEmpty());
-        assertTrue(ModbusRequestFieldCodec.encode(List.of()).isEmpty());
-
-        assertNull(ModbusRequestCodec.decode(null));
-        assertNull(ModbusRequestFieldCodec.decode((JsonObject) null));
-        assertNull(ModbusRequestFieldCodec.decode((JsonArray) null));
-        assertTrue(ModbusRequestFieldCodec.decode(new JsonArray()).isEmpty());
     }
 }

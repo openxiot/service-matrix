@@ -29,6 +29,7 @@ import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaseline;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollingBaselines;
 import cc.openxiot.matrix.api.modbus.polling.ModbusPollingKey;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
@@ -120,7 +121,7 @@ class FieldDeviceServiceTest {
 
         JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
 
-        assertEquals(100, values.getInteger("进水温度"));
+        assertEquals(100, values.getInteger("0"));
         verify(history).record(any(), any(), eq(values));
         verify(history, never()).recordFailure(any(), any(), any());   // 成功路径不碰失败记录
     }
@@ -195,7 +196,7 @@ class FieldDeviceServiceTest {
 
         JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, null).await().indefinitely();
 
-        assertEquals(100, values.getInteger("进水温度"));
+        assertEquals(100, values.getInteger("0"));
         // 也不许把这次失败改写成一条故障记录：故障是「采到没采到」，告警是「值对不对」，两回事
         verify(history, never()).recordFailure(any(), any(), any());
     }
@@ -318,7 +319,7 @@ class FieldDeviceServiceTest {
         givenParentResult(parentResult(Status.COMPLETED, null, "0106000100C8D99C"));
         when(history.record(any(), any(), any())).thenReturn(Uni.createFrom().nullItem());   // 这次什么都没写 = 没有新基准
 
-        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("写入值", 200))
+        JsonObject values = service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("2", 200))
                 .await().indefinitely();
 
         assertEquals(0, values.size());
@@ -349,7 +350,7 @@ class FieldDeviceServiceTest {
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
                 () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of()).await().indefinitely());
 
-        assertEquals("values.写入值 is required (this field has no default)", thrown.getMessage());
+        assertEquals("values.2 is required (this register has no default)", thrown.getMessage());
         verify(history, never()).recordFailure(any(), any(), any());
         verifyNoInteractions(manipulation);
     }
@@ -363,7 +364,7 @@ class FieldDeviceServiceTest {
                 () -> service.invoke(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, Map.of("运行模式", 1))
                         .await().indefinitely());
 
-        assertEquals("invalid values.运行模式: not a field of this function", thrown.getMessage());
+        assertEquals("invalid values.运行模式: not a register of this function", thrown.getMessage());
         verify(history, never()).recordFailure(any(), any(), any());
         verifyNoInteractions(manipulation);
     }
@@ -395,7 +396,7 @@ class FieldDeviceServiceTest {
         JsonObject values = service.invokePolled(ROOT_SPACE_ID, SERVICE_ID, FUNCTION_INDEX, new ModbusPollingBaselines())
                 .await().indefinitely();
 
-        assertEquals(100, values.getInteger("进水温度"));
+        assertEquals(100, values.getInteger("0"));
         // 归属用的是轮询器传进来的 ownerId（由设备所在空间反推），不是请求头
         verify(manipulation).invokeActions(eq(ROOT_SPACE_ID), anyString());
         verify(history).record(any(), any(), any());      // 缓存是空的 → 读库那条
@@ -504,6 +505,9 @@ class FieldDeviceServiceTest {
         FieldDevice fd = new FieldDevice();
         fd.id = new ObjectId(SERVICE_ID);
         fd.name = "1 号冷水机组";
+        fd.version = FieldDevice.VERSION;
+        fd.slaveId = 1;
+        fd.configSnapshot = configSnapshot();
         fd.device = new DeviceOn();
         fd.device.did = DID;
         fd.device.siid = SIID;
@@ -530,6 +534,23 @@ class FieldDeviceServiceTest {
     private static ModbusConfig configSnapshot() {
         ModbusConfig config = new ModbusConfig();
         config.id = new ObjectId(CONFIG_ID);
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.index = 1;
+        reg.address = 0;
+        reg.name = "进水温度";
+        reg.area = "holding";
+        reg.dataType = "uint16";
+        reg.byteOrder = "ABCD";
+        reg.access = "R";
+        ModbusRegistry write = new ModbusRegistry();
+        write.index = 2;
+        write.address = 1;
+        write.name = "设定温度";
+        write.area = "holding";
+        write.dataType = "uint16";
+        write.byteOrder = "ABCD";
+        write.access = "RW";
+        config.registries = List.of(reg, write);
         return config;
     }
 
@@ -547,11 +568,7 @@ class FieldDeviceServiceTest {
         poll.request = ModbusRequests.holding();
 
         ModbusResponseField field = new ModbusResponseField();
-        field.index = 1;
-        field.field = "进水温度";
-        field.bytes = 2;
-        field.format = "uint16";
-        field.byteOrder = "ABCD";
+        field.registryIndex = 1;
         poll.response = ModbusResponses.of(field);
         return poll;
     }
@@ -561,8 +578,7 @@ class FieldDeviceServiceTest {
      */
     private static ModbusPoll writeFunction(Integer defaultValue) {
         ModbusPoll write = poll();
-        write.request = ModbusRequests.write("06", 1,
-                ModbusRequests.field(1, "写入值", "uint16", defaultValue));
+        write.request = ModbusRequests.write("06", 1, ModbusRequests.field(2, defaultValue));
         write.response = null;
         return write;
     }

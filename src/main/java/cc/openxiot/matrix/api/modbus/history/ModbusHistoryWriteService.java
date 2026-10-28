@@ -5,6 +5,7 @@ import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusInvokeException;
 import cc.openxiot.matrix.api.modbus.polling.ModbusShadowPlan;
 import cc.openxiot.matrix.db.modbus.alarm.ModbusAlarmRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistory;
 import cc.openxiot.matrix.db.modbus.history.ModbusPollingHistoryRepository;
@@ -204,7 +205,7 @@ public class ModbusHistoryWriteService {
                 // 逐寄存器：追加历史事件 + 更新当前值（影子）。range 已改读逐寄存器，按方法的
                 // ModbusServiceHistory 不再写入。失败不阻断 invoke —— 写不上只影响寄存器读侧，
                 // 值本身已经拿到了
-                result = registryEffects(fd, sample, decision, now)
+                result = registryEffects(fd, poll, sample, decision, now)
                         .map(ignored -> new ModbusPollingBaseline(sample, now, null));
             }
         }
@@ -323,14 +324,17 @@ public class ModbusHistoryWriteService {
      */
     private Uni<Void> registryEffects(
             FieldDevice fd,
+            ModbusPoll poll,
             Map<String, Object> sample,
             ModbusHistoryPolicy.Decision decision, Date now
     ) {
         String fdid = fd.id.toHexString();
         List<ModbusRegistryHistory> rows = new ArrayList<>();
         List<ModbusShadow> shadows = new ArrayList<>();
+        // sample 以寄存器地址为 key：把本方法应答里引用的寄存器按地址建立查询表
+        Map<String, ModbusRegistry> byAddress = registersByAddress(fd, poll);
         for (String field : allFields(decision)) {
-            ModbusRegistry reg = registerOf(fd, field);
+            ModbusRegistry reg = byAddress.get(field);
             if (reg == null || reg.index == null) {
                 continue;
             }
@@ -352,11 +356,13 @@ public class ModbusHistoryWriteService {
         String message = messageOf(error);
         List<ModbusRegistryHistory> rows = new ArrayList<>();
         List<ModbusShadow> shadows = new ArrayList<>();
+        Map<Integer, ModbusRegistry> byIndex = ModbusRegistries.byIndex(
+                fd.configSnapshot == null ? null : fd.configSnapshot.registries);
         for (ModbusResponseField field : ModbusPoll.responseFields(poll)) {
-            if (field == null) {
+            if (field == null || field.registryIndex == null) {
                 continue;
             }
-            ModbusRegistry reg = registerOf(fd, field.field);
+            ModbusRegistry reg = byIndex.get(field.registryIndex);
             if (reg == null || reg.index == null) {
                 continue;
             }
@@ -443,19 +449,22 @@ public class ModbusHistoryWriteService {
     }
 
     /**
-     * 字段名 → 点表快照里的寄存器；名字对不上（位名、写方法应答）给 null，不写寄存器侧。
+     * 本方法应答里引用的寄存器，按**地址（响应 key）**建立查询表 —— sample 的 key 是寄存器地址。
      */
-    private static ModbusRegistry registerOf(FieldDevice fd, String fieldName) {
-        if (fd == null || fd.configSnapshot == null
-                || fd.configSnapshot.registries == null || fieldName == null) {
-            return null;
-        }
-        for (ModbusRegistry reg : fd.configSnapshot.registries) {
-            if (reg != null && fieldName.equals(reg.name)) {
-                return reg;
+    private static Map<String, ModbusRegistry> registersByAddress(FieldDevice fd, ModbusPoll poll) {
+        Map<Integer, ModbusRegistry> byIndex = ModbusRegistries.byIndex(
+                fd.configSnapshot == null ? null : fd.configSnapshot.registries);
+        Map<String, ModbusRegistry> byAddress = new HashMap<>();
+        for (ModbusResponseField field : ModbusPoll.responseFields(poll)) {
+            if (field == null || field.registryIndex == null) {
+                continue;
+            }
+            ModbusRegistry reg = byIndex.get(field.registryIndex);
+            if (reg != null && reg.address != null) {
+                byAddress.put(String.valueOf(reg.address), reg);
             }
         }
-        return null;
+        return byAddress;
     }
 
     /**
@@ -548,17 +557,18 @@ public class ModbusHistoryWriteService {
         Date last = null;
         String lastError = null;
         if (fd != null && fd.configSnapshot != null && fd.configSnapshot.registries != null) {
-            Set<String> defined = ModbusShadowPlan.definedFields(ModbusPoll.responseFields(poll));
+            Set<Integer> defined = ModbusShadowPlan.definedFields(ModbusPoll.responseFields(poll));
             for (ModbusRegistry reg : fd.configSnapshot.registries) {
-                if (reg == null || reg.index == null || !defined.contains(reg.name)) {
+                if (reg == null || reg.index == null || !defined.contains(reg.index)) {
                     continue;
                 }
                 ModbusShadow shadow = byIndex.get(reg.index);
                 if (shadow == null) {
                     continue;
                 }
-                if (shadow.value != null) {
-                    values.put(reg.name, shadow.value);
+                if (shadow.value != null && reg.address != null) {
+                    // 基准 key 与解析输出一致：寄存器地址
+                    values.put(String.valueOf(reg.address), shadow.value);
                 }
                 if (shadow.recordedAt != null && (last == null || shadow.recordedAt.after(last))) {
                     last = shadow.recordedAt;

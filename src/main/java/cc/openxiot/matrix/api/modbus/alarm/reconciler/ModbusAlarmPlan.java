@@ -83,10 +83,11 @@ public final class ModbusAlarmPlan {
             return keys;
         }
         for (ModbusRegistry reg : fd.configSnapshot.registries) {
-            if (reg == null || reg.name == null) {
+            if (reg == null || reg.address == null) {
                 continue;
             }
-            addRuleIds(keys, reg.name, reg.alarms);
+            // 判定 key 与解析/告警行一致：寄存器地址（见 ModbusAlarmPolicy.registerRules）
+            addRuleIds(keys, String.valueOf(reg.address), reg.alarms);
         }
         return keys;
     }

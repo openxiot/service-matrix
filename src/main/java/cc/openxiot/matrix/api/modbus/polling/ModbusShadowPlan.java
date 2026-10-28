@@ -5,7 +5,6 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -41,28 +40,17 @@ public final class ModbusShadowPlan {
     }
 
     /**
-     * 一个方法在影子里会出现的**全部**键：{@code response.fields[].field} 加上各位展开的名字
-     * {@code response.fields[].bitList[].field}（见 {@code ModbusResponseParser}：位名与字段名放进同一个结果对象）。
+     * 一个方法在影子里会出现的**全部**寄存器序号：{@code response.fields[].registryIndex}
+     * （见 {@code ModbusResponseParser}：每个引用一只寄存器、以该寄存器的 index 落影子）。
      */
-    public static Set<String> definedFields(List<ModbusResponseField> response) {
-        Set<String> defined = new HashSet<>();
+    public static Set<Integer> definedFields(List<ModbusResponseField> response) {
+        Set<Integer> defined = new HashSet<>();
         if (response == null) {
             return defined;
         }
         for (ModbusResponseField field : response) {
-            if (field == null) {
-                continue;
-            }
-            if (field.field != null && !field.field.isBlank()) {
-                defined.add(field.field);
-            }
-            if (field.bitList == null) {
-                continue;
-            }
-            for (ModbusResponseFieldBit bit : field.bitList) {
-                if (bit != null && bit.field != null && !bit.field.isBlank()) {
-                    defined.add(bit.field);
-                }
+            if (field != null && field.registryIndex != null) {
+                defined.add(field.registryIndex);
             }
         }
         return defined;

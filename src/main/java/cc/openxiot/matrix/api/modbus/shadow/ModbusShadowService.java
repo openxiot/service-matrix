@@ -90,16 +90,16 @@ public class ModbusShadowService {
             List<ModbusPoll> polls,
             List<ModbusShadow> shadows
     ) {
-        // 寄存器点位名 → 读它的方法（应答字段名 == 寄存器点位名）
-        Map<String, Integer> owner = new HashMap<>();
+        // 寄存器序号 → 读它的方法（应答字段引用 registryIndex）
+        Map<Integer, Integer> owner = new HashMap<>();
         if (polls != null) {
             for (ModbusPoll fn : polls) {
                 if (fn == null || fn.index == null) {
                     continue;
                 }
                 for (ModbusResponseField f : ModbusPoll.responseFields(fn)) {
-                    if (f != null && f.field != null) {
-                        owner.put(f.field, fn.index);
+                    if (f != null && f.registryIndex != null) {
+                        owner.put(f.registryIndex, fn.index);
                     }
                 }
             }
@@ -128,12 +128,12 @@ public class ModbusShadowService {
             }
             ModbusShadow sh = reg.index == null ? null : byIndex.get(reg.index);
             out.add(sh == null || sh.value == null
-                    ? encodeRegister(reg, access, owner.get(reg.name), STATUS_NO_DATA,
+                    ? encodeRegister(reg, access, owner.get(reg.index), STATUS_NO_DATA,
                             null, null, null, null)
                     : sh.lastError == null
-                            ? encodeRegister(reg, access, owner.get(reg.name), STATUS_CURRENT,
+                            ? encodeRegister(reg, access, owner.get(reg.index), STATUS_CURRENT,
                                     sh.value, sh.recordedAt, null, null)
-                            : encodeRegister(reg, access, owner.get(reg.name), STATUS_STALE,
+                            : encodeRegister(reg, access, owner.get(reg.index), STATUS_STALE,
                                     sh.value, sh.recordedAt, sh.lastError, sh.errorAt));
         }
         return out;
@@ -141,7 +141,7 @@ public class ModbusShadowService {
 
     /**
      * 一只寄存器投影的对外 JSON，键序与原 {@code ModbusRegisterSnapshotCodec} 逐字一致：
-     * {@code name, area?, dataType?, unit?, access, pollIndex?, value?, recordedAt?, status,
+     * {@code name, address, area?, dataType?, unit?, access, pollIndex?, value?, recordedAt?, status,
      * lastError?, errorAt?}。null 的字段不出键（前端判「有没有缓存」看 {@code value} 在不在）。
      */
     private static JsonObject encodeRegister(ModbusRegistry reg, String access, Integer pollIndex,
@@ -149,6 +149,7 @@ public class ModbusShadowService {
                                              String lastError, java.util.Date errorAt) {
         JsonObject o = new JsonObject();
         o.put("name", reg.name);
+        o.put("address", reg.address);
         if (reg.area != null) {
             o.put("area", reg.area);
         }

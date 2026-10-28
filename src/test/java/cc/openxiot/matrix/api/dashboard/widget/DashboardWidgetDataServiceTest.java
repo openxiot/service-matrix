@@ -37,7 +37,6 @@ import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -1175,11 +1174,19 @@ class WidgetDataServiceTest {
      */
     private static FieldDevice serviceDef(int pollIndex, String primary, String unit, String second,
                                           String... bits) {
+        // 寄存器是第一等公民：主字段、次字段、位各是一只可读寄存器；应答字段只引用它们的序号，
+        // 名字/单位/区都在寄存器上（服务卡仍按**名字**解析到寄存器，dashboard 那一侧不受影响）
+        List<ModbusRegistry> registries = new ArrayList<>();
         List<ModbusResponseField> fields = new ArrayList<>();
-        fields.add(field(primary, unit, bits.length == 0 ? null : List.of(bits)));
+        int index = 1;
+        addRegistry(fields, registries, index++, primary, unit, "holding");
         if (second != null) {
-            fields.add(field(second, "％", null));
+            addRegistry(fields, registries, index++, second, "％", "holding");
         }
+        for (String bit : bits) {
+            addRegistry(fields, registries, index++, bit, "", "coil");
+        }
+
         ModbusPoll poll = new ModbusPoll();
         poll.from = new ModbusPollFrom();
         poll.from.type = "command";
@@ -1192,20 +1199,18 @@ class WidgetDataServiceTest {
         definition.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c9");
         definition.name = "1 号冷水机组";
         definition.polls = List.of(poll);
-        // 点表快照的寄存器：主字段、次字段、位各是一只可读寄存器（服务卡按名字解析到它的 index）
-        List<ModbusRegistry> registries = new ArrayList<>();
-        int index = 1;
-        registries.add(register(index++, primary, unit, "holding"));
-        if (second != null) {
-            registries.add(register(index++, second, "％", "holding"));
-        }
-        for (String bit : bits) {
-            registries.add(register(index++, bit, "", "coil"));
-        }
         ModbusConfig config = new ModbusConfig();
         config.registries = registries;
         definition.configSnapshot = config;
         return definition;
+    }
+
+    private static void addRegistry(List<ModbusResponseField> fields, List<ModbusRegistry> registries,
+                                    int index, String name, String unit, String area) {
+        registries.add(register(index, name, unit, area));
+        ModbusResponseField f = new ModbusResponseField();
+        f.registryIndex = index;
+        fields.add(f);
     }
 
     /**
@@ -1220,24 +1225,6 @@ class WidgetDataServiceTest {
         reg.access = "R";
         reg.address = index - 1;
         return reg;
-    }
-
-    private static ModbusResponseField field(String name, String unit, List<String> bits) {
-        ModbusResponseField f = new ModbusResponseField();
-        f.field = name;
-        f.unit = unit;
-        if (bits != null) {
-            List<ModbusResponseFieldBit> bitList = new ArrayList<>();
-            int offset = 0;
-            for (String bit : bits) {
-                ModbusResponseFieldBit b = new ModbusResponseFieldBit();
-                b.offset = offset++;
-                b.field = bit;
-                bitList.add(b);
-            }
-            f.bitList = bitList;
-        }
-        return f;
     }
 
     private static WebDashboardWidget widget(String id, String type, String size, Map<String, Object> config) {

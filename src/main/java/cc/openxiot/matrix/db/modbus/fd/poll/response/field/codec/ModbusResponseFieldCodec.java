@@ -10,8 +10,7 @@ import java.util.List;
 /**
  * {@link ModbusResponseField}（应答字段解析规则）与 JSON 的互转。
  *
- * <p>带连字符的 {@code value-list} / {@code bit-list} 在实体里叫 {@code valueList} / {@code bitList}，
- * 编解码按示例文件的口径写回原名。</p>
+ * <p>字段身份即 {@code registryIndex}（引用点表寄存器），解码元数据全部由被引用的寄存器携带。</p>
  */
 public final class ModbusResponseFieldCodec {
 
@@ -23,32 +22,8 @@ public final class ModbusResponseFieldCodec {
         if (field == null) {
             return o;
         }
-        if (field.index != null) {
-            o.put("index", field.index);
-        }
-        if (field.field != null) {
-            o.put("field", field.field);
-        }
-        if (field.bytes != null) {
-            o.put("bytes", field.bytes);
-        }
-        if (field.format != null) {
-            o.put("format", field.format);
-        }
-        if (field.byteOrder != null) {
-            o.put("byteOrder", field.byteOrder);
-        }
-        if (field.scale != null) {
-            o.put("scale", field.scale);
-        }
-        if (field.unit != null) {
-            o.put("unit", field.unit);
-        }
-        if (field.valueList != null) {
-            o.put("value-list", ModbusResponseFieldValueCodec.encode(field.valueList));
-        }
-        if (field.bitList != null) {
-            o.put("bit-list", ModbusResponseFieldBitCodec.encode(field.bitList));
+        if (field.registryIndex != null) {
+            o.put("registryIndex", field.registryIndex);
         }
         return o;
     }
@@ -68,15 +43,7 @@ public final class ModbusResponseFieldCodec {
             return null;
         }
         ModbusResponseField field = new ModbusResponseField();
-        field.index = o.getInteger("index");
-        field.field = o.getString("field");
-        field.bytes = o.getInteger("bytes");
-        field.format = o.getString("format");
-        field.byteOrder = o.getString("byteOrder");
-        field.scale = o.getDouble("scale");
-        field.unit = o.getString("unit");
-        field.valueList = ModbusResponseFieldValueCodec.decode(o.getJsonArray("value-list"));
-        field.bitList = ModbusResponseFieldBitCodec.decode(o.getJsonArray("bit-list"));
+        field.registryIndex = o.getInteger("registryIndex");
         return field;
     }
 

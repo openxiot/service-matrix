@@ -305,10 +305,11 @@ public final class ModbusAlarmPolicy {
         }
         List<ModbusFieldRule> rules = new ArrayList<>();
         for (ModbusRegistry reg : fd.configSnapshot.registries) {
-            if (reg == null || reg.name == null || !hasEnabled(reg.alarms)) {
+            if (reg == null || reg.address == null || !hasEnabled(reg.alarms)) {
                 continue;
             }
-            rules.add(new ModbusFieldRule(reg.name, reg.alarms, reg.unit));
+            // 判定 key 与解析输出一致：寄存器地址（解析按地址出值，见 ModbusResponseParser）
+            rules.add(new ModbusFieldRule(String.valueOf(reg.address), reg.alarms, reg.unit));
         }
         return rules;
     }

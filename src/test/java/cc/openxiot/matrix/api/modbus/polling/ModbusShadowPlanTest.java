@@ -5,7 +5,6 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -111,14 +110,11 @@ class ModbusShadowPlanTest {
         assertTrue(fixes.get(1).orphan());
     }
 
-    /** 取名字时把空名与空元素都滤掉：它们进不了影子，也就不该出现在「定义里有」这一侧。 */
+    /** 读寄存器序号：把缺引用的字段滤掉；它们进不了影子，也就不该出现在「定义里有」这一侧。 */
     @Test
-    void definedFieldsReadsFieldAndBitNames() {
-        ModbusResponseField word = field("status");
-        word.bitList = List.of(bit(0, "running"), bit(1, null));
-
-        assertEquals(Set.of("status", "running"),
-                ModbusShadowPlan.definedFields(List.of(word, field(null), field("  "))));
+    void definedFieldsReadsRegistryRefs() {
+        assertEquals(Set.of(1, 2),
+                ModbusShadowPlan.definedFields(List.of(field(1), field(2), field(null))));
         assertTrue(ModbusShadowPlan.definedFields(null).isEmpty());
     }
 
@@ -150,16 +146,9 @@ class ModbusShadowPlanTest {
         return shadow;
     }
 
-    private static ModbusResponseField field(String name) {
+    private static ModbusResponseField field(Integer registryIndex) {
         ModbusResponseField field = new ModbusResponseField();
-        field.field = name;
+        field.registryIndex = registryIndex;
         return field;
-    }
-
-    private static ModbusResponseFieldBit bit(int offset, String name) {
-        ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
-        bit.offset = offset;
-        bit.field = name;
-        return bit;
     }
 }

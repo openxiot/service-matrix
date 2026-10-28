@@ -20,8 +20,9 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
 import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -322,6 +323,9 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
+    /** 夹具侧收集的寄存器（poll 按名字建，fd 收进 configSnapshot）。单测顺序执行，先建 poll 再收 fd。 */
+    private static final List<ModbusRegistry> REGISTERS = new java.util.ArrayList<>();
+
     private static FieldDevice fd(String id, String spaceId, ModbusPoll... polls) {
         FieldDevice fd = new FieldDevice();
         fd.id = new ObjectId(id);
@@ -329,23 +333,42 @@ class WidgetOwnershipValidatorTest {
         fd.device = new DeviceOn();
         fd.device.space = spaceId == null ? null : new SpaceOn(space(spaceId));
         fd.polls = List.of(polls);
+        ModbusConfig config = new ModbusConfig();
+        config.registries = new java.util.ArrayList<>(REGISTERS);
+        REGISTERS.clear();
+        fd.configSnapshot = config;
         return fd;
     }
 
     private static ModbusPoll poll(int index, String field, List<String> bits) {
+        // 字段与每个位各是一只寄存器（名字/区都在上面）；应答字段只引用它们的序号。
+        // widget 仍按**名字**校验归属，故寄存器名要与卡片配置的名字逐字一致。
+        ModbusRegistry host = new ModbusRegistry();
+        host.index = REGISTERS.size() + 1;
+        host.name = field;
+        host.area = "holding";
+        host.unit = "℃";
+        host.access = "R";
+        host.address = 0;
+        REGISTERS.add(host);
+
+        List<ModbusResponseField> fields = new ArrayList<>();
         ModbusResponseField f = new ModbusResponseField();
-        f.field = field;
-        f.unit = "℃";
+        f.registryIndex = host.index;
+        fields.add(f);
         if (bits != null) {
-            List<ModbusResponseFieldBit> bitList = new ArrayList<>();
-            int offset = 0;
             for (String bit : bits) {
-                ModbusResponseFieldBit b = new ModbusResponseFieldBit();
-                b.offset = offset++;
-                b.field = bit;
-                bitList.add(b);
+                ModbusRegistry coil = new ModbusRegistry();
+                coil.index = REGISTERS.size() + 1;
+                coil.name = bit;
+                coil.area = "coil";
+                coil.access = "RW";
+                coil.address = 0;
+                REGISTERS.add(coil);
+                ModbusResponseField cf = new ModbusResponseField();
+                cf.registryIndex = coil.index;
+                fields.add(cf);
             }
-            f.bitList = bitList;
         }
         ModbusPoll fn = new ModbusPoll();
                     fn.from = new ModbusPollFrom();
@@ -353,7 +376,7 @@ class WidgetOwnershipValidatorTest {
                     fn.from.index = index;
                     fn.index = index;
         fn.name = field;
-        fn.response = ModbusResponses.of(f);
+        fn.response = ModbusResponses.of(fields);
         return fn;
     }
 

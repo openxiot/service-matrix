@@ -5,9 +5,10 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
@@ -286,7 +287,7 @@ public class DashboardWidgetOwnershipValidator {
             if (poll == null) {
                 return "function not found: " + ref.pollIndex();
             }
-            if (!hasField(poll, ref.field())) {
+            if (!hasField(fd, poll, ref.field())) {
                 return "field not found: " + ref.field();
             }
             return null;
@@ -299,18 +300,16 @@ public class DashboardWidgetOwnershipValidator {
     }
 
     /**
-     * 按字段名找「载着它的读方法」，不限定某个方法序号。字段名认两类：应答直接定义的字段、
-     * 以及位区里每个位自己的名字 —— 与 {@link #hasField} 对单个方法的判定同一份名单。
-     *
-     * <p>新卡卡片配置不存方法序号，字段（寄存器）就靠这个名字在服务的某个读方法应答里解析到：
-     * 寄存器派生方法的应答字段名 == 寄存器名，所以「名字存在于某方法的应答」就是「这只寄存器可读」。</p>
+     * 按寄存器名找「载着它的读方法」，不限定某个方法序号。寄存器是本服务应答字段（registryIndex）
+     * 引用的点位：其 {@code name} 即前端卡片下拉里选的名字，所以「名字存在于某方法应答」就是
+     * 「这只寄存器可读」。
      */
     private static ModbusPoll findFunctionByField(FieldDevice fd, String field) {
         if (fd == null || fd.polls == null) {
             return null;
         }
         for (ModbusPoll poll : fd.polls) {
-            if (poll != null && hasField(poll, field)) {
+            if (poll != null && hasField(fd, poll, field)) {
                 return poll;
             }
         }
@@ -330,27 +329,19 @@ public class DashboardWidgetOwnershipValidator {
     }
 
     /**
-     * 字段名要认两类：功能码 {@code response} 里直接定义的字段，以及**位区里每个位自己的名字**
-     * （{@code bit-list[].field}）。
-     *
-     * <p>位是独立点位（见方案 §5.7 与 {@code FieldDevice.ts} 的说明）：一次 01/02 调用返回的是
-     * 整个位掩码，但每个具名位各自成为一路 0/1 的值、各自有自己的历史。所以「用户在下拉里
-     * 选了一个位」是完全正常的配置，漏掉这一条会让这类卡片永远存不进去。</p>
+     * 字段（寄存器名）是否在该方法应答引用的某只寄存器里。应答字段引用 {@code registryIndex}，
+     * 解析到寄存器后按寄存器名匹配 —— 重名寄存器同名的也在被引用集合内，仍算命中。
      */
-    private static boolean hasField(ModbusPoll poll, String field) {
+    private static boolean hasField(FieldDevice fd, ModbusPoll poll, String field) {
+        Map<Integer, ModbusRegistry> byIndex = ModbusRegistries.byIndex(
+                fd.configSnapshot == null ? null : fd.configSnapshot.registries);
         for (ModbusResponseField candidate : ModbusPoll.responseFields(poll)) {
-            if (candidate == null) {
+            if (candidate == null || candidate.registryIndex == null) {
                 continue;
             }
-            if (field.equals(candidate.field)) {
+            ModbusRegistry reg = byIndex.get(candidate.registryIndex);
+            if (reg != null && field.equals(reg.name)) {
                 return true;
-            }
-            if (candidate.bitList != null) {
-                for (ModbusResponseFieldBit bit : candidate.bitList) {
-                    if (bit != null && field.equals(bit.field)) {
-                        return true;
-                    }
-                }
             }
         }
         return false;

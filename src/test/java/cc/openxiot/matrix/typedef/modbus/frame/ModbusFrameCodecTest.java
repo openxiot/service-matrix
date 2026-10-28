@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequests;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -138,35 +141,35 @@ class ModbusFrameCodecTest {
         ModbusCommand singleCoil = command("05", 0, null, null, null);
         singleCoil.coilState = "on";
         assertEquals(pointTable(singleCoil), serviceFrame(ModbusRequests.write("05", 0,
-                ModbusRequests.field(1, "开机", "bit", true))));
+                ModbusRequests.field(COIL0, true))));
 
         // 写单寄存器
         ModbusCommand singleRegister = command("06", 1, null, null, null);
         singleRegister.registerValue = 100L;
         assertEquals(pointTable(singleRegister), serviceFrame(ModbusRequests.write("06", 1,
-                ModbusRequests.field(1, "写入值", "uint16", 100))));
+                ModbusRequests.field(U16_1, 100))));
 
         // 写多个线圈：位按各自的 offset 落进同一个位字节
         ModbusCommand coils = command("0F", 0, null, null, null);
         coils.coils = List.of(coil(0, true), coil(1, false), coil(2, true), coil(3, true));
         assertEquals(pointTable(coils), serviceFrame(ModbusRequests.write("0F", 0,
-                ModbusRequests.field(1, "位1", 0, "bit", true),
-                ModbusRequests.field(2, "位2", 1, "bit", false),
-                ModbusRequests.field(3, "位3", 2, "bit", true),
-                ModbusRequests.field(4, "位4", 3, "bit", true))));
+                ModbusRequests.field(COIL0, true),
+                ModbusRequests.field(COIL1, false),
+                ModbusRequests.field(COIL2, true),
+                ModbusRequests.field(COIL3, true))));
 
         // 写多个寄存器：int16 的 -1（补码）在两条线上同形
         ModbusCommand registers = command("10", 10, null, null, null);
         registers.registers = List.of(register(10, "uint16", "ABCD", 100L), register(11, "int16", "ABCD", -1L));
         assertEquals(pointTable(registers), serviceFrame(ModbusRequests.write("10", 10,
-                ModbusRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
-                ModbusRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
+                ModbusRequests.field(U16_10, 100),
+                ModbusRequests.field(I16_11, -1))));
 
         // float32 + CDAB：点表给的是位模式，服务这边给的是浮点值，落到帧上应当是同一串
         ModbusCommand floatRegisters = command("10", 0, null, null, null);
         floatRegisters.registers = List.of(register(0, "float32", "CDAB", 0x41CC0000L));
         assertEquals(pointTable(floatRegisters), serviceFrame(ModbusRequests.write("10", 0,
-                ModbusRequests.field(1, "设定温度", 0, "float32", "CDAB", 25.5f))));
+                ModbusRequests.field(F32_0, 25.5f))));
     }
 
     /** 定点回归：结构化的那条线也不能把既有帧组歪（这几个值别处在断言）。 */
@@ -174,22 +177,22 @@ class ModbusFrameCodecTest {
     void serviceRequestKeepsTheRegressionFrames() {
         assertEquals("010300000001840A", serviceFrame(ModbusRequests.holding()));
         assertEquals("01050000FF008C3A", serviceFrame(ModbusRequests.write("05", 0,
-                ModbusRequests.field(1, "开机", "bit", true))));
+                ModbusRequests.field(COIL0, true))));
         assertEquals("0110000A0002040064FFFF33BF", serviceFrame(ModbusRequests.write("10", 10,
-                ModbusRequests.field(1, "值1", 0, "uint16", "ABCD", 100),
-                ModbusRequests.field(2, "值2", 1, "int16", "ABCD", -1))));
+                ModbusRequests.field(U16_10, 100),
+                ModbusRequests.field(I16_11, -1))));
     }
 
     /** invoke 给的 values 顶掉定义里的缺省值：同一个定义、每次调用一个值。 */
     @Test
     void serviceRequestValuesOverrideTheDefaults() {
         ModbusRequest write = ModbusRequests.write("06", 1,
-                ModbusRequests.field(1, "写入值", "uint16", 100));
+                ModbusRequests.field(U16_1, 100));
 
-        assertEquals("010600010064D9E1", ModbusFrameCodec.encodeRequest(write, Map.of("写入值", 100)));
-        assertEquals("0106000100C8D99C", ModbusFrameCodec.encodeRequest(write, Map.of("写入值", 200)));
+        assertEquals("010600010064D9E1", ModbusFrameCodec.encodeRequest(write, Map.of("2", 100), registries()));
+        assertEquals("0106000100C8D99C", ModbusFrameCodec.encodeRequest(write, Map.of("2", 200), registries()));
         // 没给值就回落缺省：这是「开箱即用、又能被覆盖」的那一半
-        assertEquals("010600010064D9E1", ModbusFrameCodec.encodeRequest(write, Map.of()));
+        assertEquals("010600010064D9E1", ModbusFrameCodec.encodeRequest(write, Map.of(), registries()));
     }
 
     /** 组帧失败必须是明确的配置错误（会被 wrap 成 CONFIG_ERROR），不是一句 NPE。 */
@@ -200,7 +203,7 @@ class ModbusFrameCodecTest {
                 () -> serviceFrame(ModbusRequests.read("07", 0, 1)));
         assertThrows(IllegalArgumentException.class,
                 () -> ModbusFrameCodec.encodeRequest(ModbusRequests.write("06", 1,
-                        ModbusRequests.field(1, "写入值", "uint16", null)), Map.of()));
+                        ModbusRequests.field(U16_1, null)), Map.of(), registries()));
     }
 
     // ===== 应答帧 =====
@@ -272,7 +275,45 @@ class ModbusFrameCodecTest {
 
     /** 服务定义那条线：这里的用例全都靠字段的缺省值，故 values 传 null。 */
     private static String serviceFrame(ModbusRequest request) {
-        return ModbusFrameCodec.encodeRequest(request, null);
+        return ModbusFrameCodec.encodeRequest(request, null, registries());
+    }
+
+    // 服务线夹具用的寄存器（index -> (地址, 区, 类型)）：字段以 registryIndex 引用它们
+    private static final int U16_0 = 1;     // addr 0  uint16
+    private static final int U16_1 = 2;     // addr 1  uint16
+    private static final int COIL0 = 3;     // addr 0  coil
+    private static final int COIL1 = 4;     // addr 1  coil
+    private static final int COIL2 = 5;     // addr 2  coil
+    private static final int COIL3 = 6;     // addr 3  coil
+    private static final int U16_10 = 7;    // addr 10 uint16
+    private static final int I16_11 = 8;    // addr 11 int16
+    private static final int F32_0 = 9;     // addr 0  float32
+    private static final int COIL5 = 10;    // addr 5  coil
+
+    private static Map<Integer, ModbusRegistry> registries() {
+        List<ModbusRegistry> regs = new ArrayList<>();
+        regs.add(reg(U16_0, 0, "holding", "uint16", "ABCD"));
+        regs.add(reg(U16_1, 1, "holding", "uint16", "ABCD"));
+        regs.add(reg(COIL0, 0, "coil", "coil", null));
+        regs.add(reg(COIL1, 1, "coil", "coil", null));
+        regs.add(reg(COIL2, 2, "coil", "coil", null));
+        regs.add(reg(COIL3, 3, "coil", "coil", null));
+        regs.add(reg(U16_10, 10, "holding", "uint16", "ABCD"));
+        regs.add(reg(I16_11, 11, "holding", "int16", "ABCD"));
+        regs.add(reg(F32_0, 0, "holding", "float32", "CDAB"));
+        regs.add(reg(COIL5, 5, "coil", "coil", null));
+        return ModbusRegistries.byIndex(regs);
+    }
+
+    private static ModbusRegistry reg(int index, int address, String area, String dataType, String byteOrder) {
+        ModbusRegistry r = new ModbusRegistry();
+        r.index = index;
+        r.address = address;
+        r.area = area;
+        r.dataType = dataType;
+        r.byteOrder = byteOrder;
+        r.access = "RW";
+        return r;
     }
 
     private static ModbusCommand.Coil coil(int offset, boolean on) {

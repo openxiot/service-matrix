@@ -4,6 +4,7 @@ import cc.openxiot.matrix.api.modbus.alarm.policy.ModbusAlarmPolicy;
 import cc.openxiot.matrix.api.modbus.fd.FieldDeviceService;
 import cc.openxiot.matrix.api.modbus.fd.params.PollOnce;
 import cc.openxiot.matrix.typedef.modbus.frame.ModbusFrameCodec;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistryAlarm;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
@@ -22,21 +23,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * {@link FieldDevice} 定义的内容校验（规则见 MODBUS.md 第七节）。
  *
  * <p>纯函数、无状态、不碰数据库：返回 {@code null} 表示通过，否则返回给前端看的错误文案。
  * 调用方（{@link FieldDeviceService}）把它转成 {@link IllegalArgumentException}。</p>
+ *
+ * <p>寄存器中心：request/response 字段只引用 {@code registryIndex}，解码/编码元数据全部取自被引用的
+ * {@link ModbusRegistry}（见 {@link ModbusRegistries}）。因此本类不再校验字段上的 format/bytes 等，
+ * 改为「引用必须存在 + 方向与寄存器形态自洽」。</p>
  */
 public final class FieldDeviceValidator {
-
-    /**
-     * 应答字段的数据格式词表（字节宽度见 {@link #formatWidth}）。
-     */
-    private static final Set<String> FORMATS = Set.of("int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "string");
-    private static final Set<String> BYTE_ORDERS = Set.of("ABCD", "DCBA", "BADC", "CDAB");
 
     /**
      * 请求功能码词表：01/02/03/04 读 · 05/06/0F/10 写。
@@ -44,15 +42,14 @@ public final class FieldDeviceValidator {
     private static final Set<String> READ_FCS = Set.of("01", "02", "03", "04");
     private static final Set<String> WRITE_FCS = Set.of("05", "06", "0F", "10");
 
-    /**
-     * 写字段的数据格式：位区（05/0F）只有 bit，寄存器区（06/10）只有 16/32 位数值类型。
-     */
-    private static final Set<String> BIT_FORMATS = Set.of("bit");
-    private static final Set<String> REGISTER_FORMATS = Set.of("int16", "uint16", "int32", "uint32", "float32");
-    /**
-     * fc 06 只写一个寄存器：4 字节格式在这里会被静默截掉一半，必须挡在定义期。
-     */
-    private static final Set<String> SINGLE_REGISTER_FORMATS = Set.of("int16", "uint16");
+    /** 写允许的寄存器数据类型（按功能码）：05/0F 只写线圈(bit)、06 只写 16 位、10 写 16/32 位数值。 */
+    private static final Set<String> BIT_WRITE_TYPES = Set.of("bit");
+    private static final Set<String> SINGLE_REGISTER_WRITE_TYPES = Set.of("int16", "uint16");
+    private static final Set<String> MULTI_REGISTER_WRITE_TYPES = Set.of("int16", "uint16", "int32", "uint32", "float32");
+
+    /** 读允许的寄存器数据类型（数值 + string）。 */
+    private static final Set<String> READ_TYPES = Set.of(
+            "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "string");
 
     /**
      * 一次读的数量上限（帧里那个数量字段的字面值）：03/04 是寄存器数（Modbus 规定 125），
@@ -71,21 +68,18 @@ public final class FieldDeviceValidator {
     private static final int MAX_INTERVAL_SECONDS = 3600;
 
     /**
+     * 一个出值一条阈值告警规则（{@link ModbusRegistry#alarms} 参数）的条数上限。
+     *
+     * <p>前端 device.service.editor.ts 里有一份同口径的常量（「添加规则」按钮的禁用点），改动要同步。</p>
+     */
+    private static final int MAX_ALARM_RULES = 8;
+
+    /**
      * 告警文本的长度上限（去首尾空白后算）：它是一条告警在人眼前的名字，不是备注栏。
      *
      * <p>前端 device.service.editor.html 里有一份同口径的常量（输入框的 maxlength），改动要同步。</p>
      */
     private static final int MAX_ALARM_TEXT_LENGTH = 64;
-
-    /**
-     * 一个出值（或一个位）能配的告警规则条数上限。
-     *
-     * <p>它<b>不是安全边界</b> —— 多几条规则只是多几次纯内存比较。这是给「界面上误加了一堆规则」
-     * 一个明确的上限：分级的实际用法是低侧一条、高侧两三条，8 条已经宽裕。</p>
-     *
-     * <p>前端 device.service.editor.ts 里有一份同口径的常量（「添加规则」按钮的禁用点），改动要同步。</p>
-     */
-    private static final int MAX_ALARM_RULES = 8;
 
     /**
      * 规则标识的长度上限（见 {@link ModbusRegistryAlarm.id}）：前端生成的一小串随机码，
@@ -110,8 +104,8 @@ public final class FieldDeviceValidator {
             return "version is required";
         }
         if (fd.version != FieldDevice.VERSION) {
-            // 硬拒旧口径：version=1 的定义里 request 是一整串帧字符串，读成结构化对象只会得到
-            // 一堆 null，然后报一句和病因无关的「request.slaveId is required」
+            // 硬拒旧口径：version=2 的字段里是内联 name/format/bytes，读成注册表引用只会得到
+            // 一串 null，然后报一句和病因无关的「registryIndex is required」
             return "invalid version: " + fd.version + " (this server serves version "
                     + FieldDevice.VERSION + ")";
         }
@@ -125,6 +119,9 @@ public final class FieldDeviceValidator {
         if (fd.configSnapshot.id == null) {
             return "configSnapshot.id is required";
         }
+        // 字段只引用寄存器，寄存器查询表就是唯一事实源——先建出来供下方所有校验段复用
+        Map<Integer, ModbusRegistry> registries =
+                ModbusRegistries.byIndex(fd.configSnapshot.registries);
 
         String deviceErr = checkDevice(fd.device);
         if (deviceErr != null) {
@@ -141,7 +138,7 @@ public final class FieldDeviceValidator {
         if (registryAlarmErr != null) {
             return registryAlarmErr;
         }
-        return validateFunctions(fd.polls, fd.slaveId);
+        return validateFunctions(fd.polls, fd.slaveId, registries);
     }
 
     /**
@@ -166,7 +163,8 @@ public final class FieldDeviceValidator {
         return null;
     }
 
-    private static String validateFunctions(List<ModbusPoll> polls, Integer serviceSlaveId) {
+    private static String validateFunctions(List<ModbusPoll> polls, Integer serviceSlaveId,
+                                            Map<Integer, ModbusRegistry> registries) {
         if (polls == null) {
             return "polls is required";
         }
@@ -214,7 +212,7 @@ public final class FieldDeviceValidator {
             if (poll.name == null || poll.name.isBlank()) {
                 return base + ".name is required";
             }
-            String requestErr = validateRequest(poll.request, base);
+            String requestErr = validateRequest(poll.request, base, registries);
             if (requestErr != null) {
                 return requestErr;
             }
@@ -236,7 +234,7 @@ public final class FieldDeviceValidator {
             }
             boolean read = isReadPoll(poll);
             // registry 方法由点表寄存器折出，读写都允许：可读寄存器折读块、可写寄存器折 fc 05/06 写方法
-            // （写任意值在 invoke 时进，见 writePollingOf）。方向上的限制不在这里给 ——
+            // （写任意值在 invoke 时进，见前端 writePollingOf）。方向上的限制不在这里给 ——
             // 「写方法不许轮询」「写方法不许有应答」分别由 validatePolling / validateInterval、
             // validateRequestResponse 拦下，各自给更贴身的文案。
             // registry 的应答解析规则不能没有（仅读方法）：读方法缺 response 是静默失效（返回 {}），
@@ -245,12 +243,12 @@ public final class FieldDeviceValidator {
             if (read && registry && ModbusPoll.responseFields(poll).isEmpty()) {
                 return base + ".response is required for a registry poll (the register-derived read block must declare fields)";
             }
-            String responseErr = validateFields(ModbusPoll.responseFields(poll), base);
+            String responseErr = validateFields(ModbusPoll.responseFields(poll), registries, base);
             if (responseErr != null) {
                 return responseErr;
             }
-            // 对账放在字段校验之后：它要拿已经验过一遍的 bytes 去求和
-            String reconcileErr = validateRequestResponse(poll, base, read);
+            // 对账放在字段校验之后：它要拿已经验过一遍的寄存器去求和
+            String reconcileErr = validateRequestResponse(poll, base, read, registries);
             if (reconcileErr != null) {
                 return reconcileErr;
             }
@@ -262,11 +260,10 @@ public final class FieldDeviceValidator {
      * 请求定义（{@link ModbusRequest}）：公共字段 → 按方向分叉。
      *
      * <p>读写方向由 {@code fc} 推出（与点表同一口径），且**决定另外两个字段谁有效**：
-     * 读只有 {@code quantity}，写只有 {@code fields}，两者都给或都不给都是定义错误 ——
-     * 这正是结构化之后白拿的那层校验：以前 {@code request} 是整整一帧，方向得靠
-     * {@code parseHex(request)[1]} 猜，帧里的数量与 {@code response} 对不对得上也没人管。</p>
+     * 读只有 {@code quantity}，写只有 {@code fields}，两者都给或都不给都是定义错误。</p>
      */
-    private static String validateRequest(ModbusRequest request, String base) {
+    private static String validateRequest(ModbusRequest request, String base,
+                                          Map<Integer, ModbusRegistry> registries) {
         String rbase = base + ".request";
         if (request == null) {
             return rbase + " is required";
@@ -292,7 +289,7 @@ public final class FieldDeviceValidator {
         }
         return READ_FCS.contains(fc)
                 ? validateReadRequest(request, rbase, fc)
-                : validateWriteRequest(request, rbase, fc);
+                : validateWriteRequest(request, rbase, fc, registries);
     }
 
     /**
@@ -315,17 +312,18 @@ public final class FieldDeviceValidator {
     }
 
     /**
-     * 写请求：{@code fields} 必填、{@code quantity} 必须不填（帧里的数量由字段推出），
-     * 逐字段校验后再按 index 升序核对偏移首尾相接。
+     * 写请求：{@code fields} 必填、{@code quantity} 必须不填（帧里的数量由寄存器推导），
+     * 逐字段校验「引用的寄存器存在 + 数据类型与该功能码匹配 + 取值范围」，再核对地址排列首尾相接。
      */
-    private static String validateWriteRequest(ModbusRequest request, String rbase, String fc) {
+    private static String validateWriteRequest(ModbusRequest request, String rbase, String fc,
+                                               Map<Integer, ModbusRegistry> registries) {
         if (request.quantity != null) {
             return "invalid " + rbase + ".quantity: " + request.quantity
-                    + " (not allowed on a write function (fc " + fc + "), the frame's count comes from fields)";
+                    + " (not allowed on a write function (fc " + fc + "), the frame's count comes from registers)";
         }
         List<ModbusRequestField> fields = request.fields;
         if (fields == null || fields.isEmpty()) {
-            return rbase + ".fields is required (a write function needs the fields it writes)";
+            return rbase + ".fields is required (a write function needs the registers it writes)";
         }
 
         boolean bits = "05".equals(fc) || "0F".equals(fc);
@@ -333,53 +331,27 @@ public final class FieldDeviceValidator {
         if (single && fields.size() != 1) {
             return "invalid " + rbase + ".fields: fc " + fc + " writes exactly one field, got " + fields.size();
         }
-        Set<String> formats = bits ? BIT_FORMATS
-                : ("06".equals(fc) ? SINGLE_REGISTER_FORMATS : REGISTER_FORMATS);
+        Set<String> allowedTypes = bits
+                ? BIT_WRITE_TYPES
+                : ("06".equals(fc) ? SINGLE_REGISTER_WRITE_TYPES : MULTI_REGISTER_WRITE_TYPES);
 
-        Set<Integer> seenIndex = new HashSet<>();
-        Set<String> seenField = new HashSet<>();
+        Set<Integer> seenRegistry = new HashSet<>();
         List<ModbusRequestField> ordered = new ArrayList<>(fields);
         for (int i = 0; i < fields.size(); i++) {
             ModbusRequestField field = fields.get(i);
             String fbase = rbase + ".fields[" + i + "]";
-            if (field == null) {
-                return fbase + " is null";
+            String regErr = checkRequestRegistry(field, fbase, seenRegistry, registries);
+            if (regErr != null) {
+                return regErr;
             }
-            if (field.index == null) {
-                return fbase + ".index is required";
-            }
-            if (field.index < 1) {
-                return "invalid " + fbase + ".index: " + field.index + " (index must be a natural number, 1-based)";
-            }
-            if (!seenIndex.add(field.index)) {
-                return "invalid " + fbase + ".index: " + field.index + " (duplicated)";
-            }
-            if (field.field == null || field.field.isBlank()) {
-                return fbase + ".field is required";
-            }
-            if (!seenField.add(field.field)) {
-                return "invalid " + fbase + ".field: " + field.field + " (duplicated)";
-            }
-            if (field.format == null || field.format.isBlank()) {
-                return fbase + ".format is required";
-            }
-            String format = normalizeFormat(field.format);
-            if (!formats.contains(format)) {
-                return "invalid " + fbase + ".format: " + field.format + " (fc " + fc + " writes "
-                        + String.join(" ", new TreeSet<>(formats)) + ")";
-            }
-            if (single && field.offset != null) {
-                // fc 05/06 的帧里没有「第几个」可言，写了偏移说明是按多值那条路想的
-                return "invalid " + fbase + ".offset: " + field.offset + " (fc " + fc + " writes one value)";
-            }
-            if (!bits && registerWidth(format) == 4) {
-                if (field.byteOrder == null || field.byteOrder.isBlank()) {
-                    return fbase + ".byteOrder is required";
-                }
-            }
-            if (field.byteOrder != null && !field.byteOrder.isBlank()
-                    && !BYTE_ORDERS.contains(field.byteOrder)) {
-                return "invalid " + fbase + ".byteOrder: " + field.byteOrder;
+            ModbusRegistry reg = registries.get(field.registryIndex);
+            String format = ModbusRegistries.format(reg);
+            if (!allowedTypes.contains(format)) {
+                // 白名单逐字列出用 TreeSet 保证顺序稳定（Set.of 迭代顺序不保证，文案会随机）
+                return "invalid " + fbase + ".registryIndex: " + field.registryIndex
+                        + " (fc " + fc + " writes "
+                        + String.join(" ", new java.util.TreeSet<>(allowedTypes))
+                        + ", registry has " + format + ")";
             }
             String valueErr = validateWriteValue(field.value, format, bits, fbase + ".value");
             if (valueErr != null) {
@@ -387,42 +359,75 @@ public final class FieldDeviceValidator {
             }
         }
 
-        if (single) {
-            return null;
-        }
-        return validateWriteOffsets(ordered, rbase, bits);
+        // 位区（0F）与寄存器区（10）的帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞——
+        // 位置由寄存器地址相对 start 推出，必须是 0 起连续。
+        return validateWriteOffsets(ordered, request.start, registries, rbase, bits);
     }
 
-    /**
-     * 写字段的偏移必须**按 index 升序首尾相接**（0F 是位、10 是寄存器）：fc 0F/10 的帧只有
-     * 「起始地址 + 个数 + 紧凑数据区」，没有空洞可言 —— 点表那条线的
-     * {@code ModbusFrameCodec.writeMultipleRegistersBody} 也正是这么要求的。
-     */
-    private static String validateWriteOffsets(List<ModbusRequestField> fields, String rbase, boolean bits) {
-        fields.sort(Comparator.comparingInt(field -> field.index));
-        int position = 0;
-        for (ModbusRequestField field : fields) {
-            if (!Objects.equals(field.offset, position)) {
-                return "invalid " + rbase + ".fields: " + (bits ? "bit" : "register") + " offset of field "
-                        + field.field + " is " + field.offset + " (must be " + position
-                        + ", fields are ordered by index without gaps)";
-            }
-            position += bits ? 1 : registerWidth(normalizeFormat(field.format)) / 2;
+    /** 一个写字段引用的寄存器必须存在且不重复。 */
+    private static String checkRequestRegistry(ModbusRequestField field, String fbase,
+                                               Set<Integer> seenRegistry,
+                                               Map<Integer, ModbusRegistry> registries) {
+        if (field == null) {
+            return fbase + " is null";
+        }
+        if (field.registryIndex == null) {
+            return fbase + ".registryIndex is required";
+        }
+        if (field.registryIndex < 1) {
+            return "invalid " + fbase + ".registryIndex: " + field.registryIndex
+                    + " (index must be a natural number, 1-based)";
+        }
+        if (!seenRegistry.add(field.registryIndex)) {
+            return "invalid " + fbase + ".registryIndex: " + field.registryIndex + " (duplicated)";
+        }
+        if (!registries.containsKey(field.registryIndex)) {
+            return "invalid " + fbase + ".registryIndex: " + field.registryIndex
+                    + " (not in configSnapshot.registries)";
         }
         return null;
     }
 
     /**
-     * 请求 ↔ 应答对账（结构化之后白拿的那层校验）：
+     * 写字段的地址必须按升序**首尾相接**（0F 是位、10 是寄存器）：帧从 {@code start} 起紧凑排列
+     * 被写寄存器，位置 = 寄存器地址 − start，必须 0 起连续。数据宽度由被引用寄存器推出。
+     */
+    private static String validateWriteOffsets(List<ModbusRequestField> fields, Integer start,
+                                               Map<Integer, ModbusRegistry> registries,
+                                               String rbase, boolean bits) {
+        if (start == null) {
+            return null; // start 已在 validateRequest 校验过
+        }
+        fields.sort(Comparator.comparingInt(field -> {
+            ModbusRegistry reg = registries.get(field.registryIndex);
+            return reg.address == null ? 0 : reg.address;
+        }));
+        int position = 0;
+        for (ModbusRequestField field : fields) {
+            ModbusRegistry reg = registries.get(field.registryIndex);
+            int offset = reg.address - start;
+            if (offset != position) {
+                return "invalid " + rbase + ".fields: " + (bits ? "bit" : "register") + " offset of registry "
+                        + field.registryIndex + " is " + offset + " (must be " + position
+                        + ", registers are ordered by address without gaps)";
+            }
+            position += bits ? 1 : ModbusRegistries.registerCount(reg);
+        }
+        return null;
+    }
+
+    /**
+     * 请求 ↔ 应答对账：
      *
      * <ul>
-     *   <li>读：{@code Σ response.fields[].bytes} 必须等于这一读实际取回的字节数
+     *   <li>读：{@code Σ 各寄存器字节宽} 必须等于这一读实际取回的字节数
      *       （01/02 = {@code ceil(quantity / 8)}、03/04 = {@code quantity * 2}）。</li>
      *   <li>读方法必须有 {@code response}：没有解析规则的读方法返回 {@code {}}，是静默失效。</li>
      *   <li>写方法必须没有 {@code response}：写应答是请求回显，解析规则无从谈起。</li>
      * </ul>
      */
-    private static String validateRequestResponse(ModbusPoll poll, String base, boolean read) {
+    private static String validateRequestResponse(ModbusPoll poll, String base, boolean read,
+                                                  Map<Integer, ModbusRegistry> registries) {
         List<ModbusResponseField> fields = ModbusPoll.responseFields(poll);
         if (!read) {
             if (!fields.isEmpty()) {
@@ -434,15 +439,25 @@ public final class FieldDeviceValidator {
             return base + ".response is required for a read function (a method with no field returns {})";
         }
 
-        int declared = 0;
-        for (ModbusResponseField field : fields) {
-            declared += field.bytes;
-        }
         ModbusRequest request = poll.request;
         String fc = normalizeFc(request.fc);
-        int expected = ("01".equals(fc) || "02".equals(fc))
-                ? (request.quantity + 7) / 8
-                : request.quantity * 2;
+        boolean bit = "01".equals(fc) || "02".equals(fc);
+        int declared;
+        int expected;
+        if (bit) {
+            // 位区按位打包：每个引用寄存器是一位，字节数由请求量推出（与应用区对账同一口径）
+            expected = (request.quantity + 7) / 8;
+            declared = (fields.size() + 7) / 8;
+        } else {
+            expected = request.quantity * 2;
+            declared = 0;
+            for (ModbusResponseField field : fields) {
+                ModbusRegistry reg = registries.get(field.registryIndex);
+                if (reg != null) {
+                    declared += ModbusRegistries.byteWidth(reg);
+                }
+            }
+        }
         if (declared != expected) {
             return "invalid " + base + ".response: declares " + declared + " bytes, but fc " + fc
                     + " with quantity " + request.quantity + " reads " + expected;
@@ -457,10 +472,6 @@ public final class FieldDeviceValidator {
      * <p>「整数值」按**值本身**判而不是按 Java 类型判：请求体过 Jackson 之后
      * {@code 2} 可能是 {@code Integer}、也可能是 {@code Double}（而 {@code Double} 能精确表示
      * 全部 int32/uint32，按类型判会把合法值挡在外面）。</p>
-     *
-     * @param format 已归一的小写格式（{@code bit} 或寄存器格式）
-     * @param bits   {@code format} 是不是位格式
-     * @param vbase  出错文案里的取值位置，如 {@code polls[0].request.fields[1].value}
      */
     private static String validateWriteValue(Object value, String format, boolean bits, String vbase) {
         if (value == null) {
@@ -492,16 +503,6 @@ public final class FieldDeviceValidator {
     }
 
     /**
-     * 写字段的寄存器跨度（字段的 format 必须已经过 {@link #validateWriteRequest}）。
-     */
-    private static int registerWidth(String format) {
-        return switch (format) {
-            case "int32", "uint32", "float32" -> 4;
-            default -> 2;
-        };
-    }
-
-    /**
      * 功能码归一到大写：{@code "0f"} 与 {@code "0F"} 是同一个东西（词表都是大写）。
      */
     private static String normalizeFc(String fc) {
@@ -509,10 +510,21 @@ public final class FieldDeviceValidator {
     }
 
     /**
-     * 数据格式归一到小写：{@code "UINT16"} 与 {@code "uint16"} 是同一个东西（词表都是小写）。
+     * 是不是读方法（fc 01/02/03/04）。周期与告警共用这一处判断 ——
+     * 两条规则都只允许配在读方法上（读方法才有「读到的值」）。
      */
-    private static String normalizeFormat(String format) {
-        return format == null ? "" : format.trim().toLowerCase(Locale.ROOT);
+    private static boolean isReadPoll(ModbusPoll poll) {
+        return poll.request != null && ModbusFrameCodec.isRead(poll.request.fc);
+    }
+
+    /**
+     * {@code state} 是否逐字命中枚举映射里的某个显示名 —— 判定时就按这个字符串相等去比。
+     */
+    private static boolean hasDescription(ModbusRegistry reg, String state) {
+        if (reg == null || reg.enumMap == null) {
+            return false;
+        }
+        return reg.enumMap.containsValue(state);
     }
 
     /**
@@ -520,9 +532,7 @@ public final class FieldDeviceValidator {
      * 没开轮询时 {@code interval} 只是一份没生效的配置（false 的用法就是「留着周期、先不跑」）。
      *
      * <p>{@code true} 有两条要求，都在这里说清楚：<b>只允许读方法</b>（写方法开轮询 = 让定时器
-     * 周期性往寄存器里写值，是危险动作），以及开了轮询必须有周期（否则服务端无从知道多久调一次）。
-     * 前者以前是间接成立的（{@code polling=true} 要求 {@code interval}，而 {@code interval}
-     * 不允许配在写方法上），绕了一层，读代码的人看不出「写方法一律不许轮询」这条规矩。</p>
+     * 周期性往寄存器里写值，是危险动作），以及开了轮询必须有周期。</p>
      */
     private static String validatePolling(ModbusPoll poll, String base) {
         if (!Boolean.TRUE.equals(poll.polling)) {
@@ -535,13 +545,12 @@ public final class FieldDeviceValidator {
         if (poll.interval == null) {
             return "invalid " + base + ".polling: " + poll.polling + " (polling requires an interval)";
         }
-        // 周期本身的取值范围与「只允许读方法」交给 validateInterval
         return null;
     }
 
     /**
      * 自动调用周期（{@link ModbusPoll#interval}，秒）：缺省 = 没配周期。
-     * 配了周期不等于会跑 —— 跑不跑看 {@link ModbusPoll#polling}（缺省 = 有周期即跑）。
+     * 配了周期不等于会跑 —— 跑不跑看 {@link ModbusPoll#polling}。
      *
      * <p><b>只允许读方法</b>（fc 01/02/03/04）：写方法的应答是请求回显，周期调用等于让服务端
      * 周期性地往寄存器里写值，是危险动作，不能由定时器发起。</p>
@@ -563,31 +572,19 @@ public final class FieldDeviceValidator {
     }
 
     /**
-     * 是不是读方法（fc 01/02/03/04）。周期与告警共用这一处判断 —— 两条规则都只允许配在读方法上
-     * （读方法才有「读到的值」），各自抄一遍迟早会漂移。
-     *
-     * <p>功能码直接读 {@code request.fc}：结构化了就是这一处白拿的好处 —— 以前要从请求帧里
-     * {@code parseHex(request)[1]} 取第二个字节，还得为库里的脏数据包一层 try/catch。</p>
-     */
-    private static boolean isReadPoll(ModbusPoll poll) {
-        return poll.request != null && ModbusFrameCodec.isRead(poll.request.fc);
-    }
-
-    /**
-     * invoke 入参（{@link PollOnce#values}）
-     * 与写方法的字段定义对账。
+     * invoke 入参（{@link PollOnce#values}）与写方法的字段定义对账。
      *
      * <p><b>读方法给了 values 要报错</b>：静默忽略一个用户以为生效了的载荷，比报错糟得多。</p>
      *
-     * <p>写方法逐字段查：没有缺省值的字段必须给值、给了未声明的字段名报错、类型不符 / 越界报错
-     * （取值判定与定义期的缺省值共用 {@link #validateWriteValue}）。</p>
+     * <p>写方法逐字段查：没有缺省值的字段必须给值、给了未声明的寄存器序号报错、类型不符 / 越界报错
+     * （取值判定与定义期的缺省值共用 {@link #validateWriteValue}）。values 的 key 是被写寄存器的
+     * {@code registryIndex}。</p>
      *
      * <p>这是**调用方的请求错误**，与「function not found」同类，由调用链在 {@code execute} 之前
      * 拦下，因此不进 {@code service-failures}（那是设备故障记录）。</p>
-     *
-     * @param values 可为 null（读方法，或写方法的字段全都带缺省值）
      */
-    public static String validateInvoke(ModbusPoll poll, Map<String, Object> values) {
+    public static String validateInvoke(ModbusPoll poll, Map<String, Object> values,
+                                        Map<Integer, ModbusRegistry> registries) {
         if (poll == null || poll.request == null) {
             return "request is not set";
         }
@@ -608,15 +605,18 @@ public final class FieldDeviceValidator {
 
         Set<String> declared = new HashSet<>();
         for (ModbusRequestField field : fields) {
-            declared.add(field.field);
-            Object value = values == null ? null : values.get(field.field);
+            String key = String.valueOf(field.registryIndex);
+            declared.add(key);
+            Object value = values == null ? null : values.get(key);
             if (value == null) {
                 if (field.value == null) {
-                    return "values." + field.field + " is required (this field has no default)";
+                    return "values." + key + " is required (this register has no default)";
                 }
                 continue;
             }
-            String err = validateWriteValue(value, normalizeFormat(field.format), bits, "values." + field.field);
+            ModbusRegistry reg = registries.get(field.registryIndex);
+            String format = reg == null ? null : ModbusRegistries.format(reg);
+            String err = validateWriteValue(value, format, bits, "values." + key);
             if (err != null) {
                 return err;
             }
@@ -624,119 +624,64 @@ public final class FieldDeviceValidator {
         if (values != null) {
             for (String name : values.keySet()) {
                 if (!declared.contains(name)) {
-                    return "invalid values." + name + ": not a field of this function";
+                    return "invalid values." + name + ": not a register of this function";
                 }
             }
         }
         return null;
     }
 
-    private static String validateFields(List<ModbusResponseField> fields, String base) {
+    /**
+     * 应答字段（{@link ModbusResponseField}）：逐个校验引用的寄存器存在、且该寄存器能被读
+     * （在 READ_TYPES 内）、不重复。
+     */
+    private static String validateFields(List<ModbusResponseField> fields,
+                                         Map<Integer, ModbusRegistry> registries,
+                                         String base) {
         if (fields == null) {
             return null;
         }
-        Set<Integer> seenIndex = new HashSet<>();
-        // 同一应答内所有出值名（各字段名 + 各位名）必须唯一：parser 把它们放进同一个结果对象，重名会互相覆盖
-        Set<String> seenField = new HashSet<>();
+        Set<Integer> seenRegistry = new HashSet<>();
         for (int j = 0; j < fields.size(); j++) {
             ModbusResponseField field = fields.get(j);
             String ibase = base + ".response.fields[" + j + "]";
             if (field == null) {
                 return ibase + " is null";
             }
-            if (field.index == null) {
-                return ibase + ".index is required";
+            if (field.registryIndex == null) {
+                return ibase + ".registryIndex is required";
             }
-            if (field.index < 1) {
-                return "invalid " + ibase + ".index: " + field.index + " (index must be a natural number, 1-based)";
+            if (field.registryIndex < 1) {
+                return "invalid " + ibase + ".registryIndex: " + field.registryIndex
+                        + " (index must be a natural number, 1-based)";
             }
-            if (!seenIndex.add(field.index)) {
-                return "invalid " + ibase + ".index: " + field.index + " (duplicated)";
+            if (!seenRegistry.add(field.registryIndex)) {
+                return "invalid " + ibase + ".registryIndex: " + field.registryIndex + " (duplicated)";
             }
-            if (field.field == null || field.field.isBlank()) {
-                return ibase + ".field is required";
+            ModbusRegistry reg = registries.get(field.registryIndex);
+            if (reg == null) {
+                return "invalid " + ibase + ".registryIndex: " + field.registryIndex
+                        + " (not in configSnapshot.registries)";
             }
-            if (!seenField.add(field.field)) {
-                return "invalid " + ibase + ".field: " + field.field + " (duplicated)";
+            if (ModbusRegistries.isBit(reg)) {
+                continue; // 位点位数据形状由其区决定，无需查 dataType
             }
-            if (field.bytes == null || field.bytes < 1) {
-                return ibase + ".bytes is required";
-            }
-            if (field.format == null || field.format.isBlank()) {
-                return ibase + ".format is required";
-            }
-            String format = field.format.trim().toLowerCase(Locale.ROOT);
-            if (!FORMATS.contains(format)) {
-                return "invalid " + ibase + ".format: " + field.format;
-            }
-            Integer width = formatWidth(format);
-            if (width != null && !width.equals(field.bytes)) {
-                return "invalid " + ibase + ".bytes: " + field.bytes + " (format " + format + " needs " + width + ")";
-            }
-            if (field.bytes > 1) {
-                if (field.byteOrder == null || field.byteOrder.isBlank()) {
-                    return ibase + ".byteOrder is required";
-                }
-                if (!BYTE_ORDERS.contains(field.byteOrder)) {
-                    return "invalid " + ibase + ".byteOrder: " + field.byteOrder;
-                }
-            }
-            String valueListErr = validateValueList(field, ibase);
-            if (valueListErr != null) {
-                return valueListErr;
-            }
-            String bitListErr = validateBitList(field, ibase, seenField);
-            if (bitListErr != null) {
-                return bitListErr;
+            String type = ModbusRegistries.dataType(reg);
+            if (!READ_TYPES.contains(type)) {
+                return "invalid " + ibase + ".registryIndex: " + field.registryIndex
+                        + " (data type " + type + " is not readable)";
             }
         }
         return null;
     }
 
-    /**
-     * 校验位清单（{@link ModbusResponseField#bitList}，01/02 位区）：偏移必须落在该字段覆盖的位区间内
-     * （{@code 0 <= offset < bytes * 8}）、不重复，名称非空且在整份应答内唯一（出值名会进同一个结果对象）。
-     *
-     * <p>位是**独立的结果键**（parser 把每个命名位单独放进结果对象），所以告警配在位上而不是父字段上：
-     * 父字段那份是整个位掩码，与「进水阀开没开」不是一回事。</p>
-     */
-    private static String validateBitList(ModbusResponseField field, String ibase, Set<String> seenField) {
-        if (field.bitList == null || field.bitList.isEmpty()) {
-            return null;
-        }
-        Set<Integer> seenOffset = new HashSet<>();
-        for (int k = 0; k < field.bitList.size(); k++) {
-            var bit = field.bitList.get(k);
-            String bbase = ibase + ".bit-list[" + k + "]";
-            if (bit == null || bit.offset == null) {
-                return bbase + ".offset is required";
-            }
-            if (bit.offset < 0 || bit.offset >= field.bytes * 8) {
-                return "invalid " + bbase + ".offset: " + bit.offset
-                        + " (field covers " + field.bytes * 8 + " bits)";
-            }
-            if (!seenOffset.add(bit.offset)) {
-                return "invalid " + bbase + ".offset: " + bit.offset + " (duplicated)";
-            }
-            if (bit.field == null || bit.field.isBlank()) {
-                return bbase + ".field is required";
-            }
-            if (!seenField.add(bit.field)) {
-                return "invalid " + bbase + ".field: " + bit.field + " (duplicated)";
-            }
-        }
-        return null;
-    }
+    // =========================================================================
+    // 寄存器阈值告警（不变：告警属寄存器，见 ModbusAlarmPolicy）
+    // =========================================================================
 
     /**
      * 寄存器的**一组**阈值告警规则（{@link ModbusRegistry#alarms}）：逐条校验，
-     * 外加两条只有「一组」才有意义的要求 —— 条数上限，以及启用规则的 {@code id} 非空、不超长、组内唯一。
-     *
-     * <p>{@code id} 是「这条开着的告警是哪条规则开的」的唯一依据（见 {@link ModbusRegistryAlarm#id}），
-     * 所以它必须存在且唯一。<b>只在 {@code enabled == true} 时查</b>，与下面 {@link #validateAlarm}
-     * 同一条规矩：停用的规则不参与判定，它的 {@code id} 不影响任何事 —— 半配置合法。</p>
-     *
-     * @param abase 出错文案里的位置，如 {@code configSnapshot.registries[0].alarms}
+     * 外加只有「一组」才有意义的要求 —— 条数上限、启用规则 {@code id} 非空且唯一。
      */
     static String validateAlarms(List<ModbusRegistryAlarm> alarms,
                                  ModbusRegistry reg,
@@ -795,19 +740,8 @@ public final class FieldDeviceValidator {
     /**
      * 一条阈值告警规则（{@link ModbusRegistryAlarm}）。
      *
-     * <p><b>只在 {@code enabled == true} 时校验</b> —— 半配置合法，与 {@link #validatePolling}
-     * 同一条规矩：false 的用法就是「把配置留着、先不报」。所以下面的规则读作「启用之后必须自洽」。
-     * 判定口径（{@link ModbusAlarmPolicy}）共用 {@code OPERATORS} / {@code LEVELS} 两张白名单，
-     * 不各写一份。</p>
-     *
-     * <p>「能比什么」由寄存器的取值形态决定，而不是留给运行期碰运气：{@code string} 寄存器没有可比的量，
-     * 一律不收；带 {@code enumMap} 的寄存器出的是显示名，只能用 {@code =} 比 {@code state}
-     * —— 给它配 {@code >} 会让比较随原始值是否命中枚举映射而时灵时不灵，正是要避免的静默失效。</p>
-     *
-     * @param reg      配置所在寄存器：借它的 dataType / enumMap / area（isBit）判断可比性
-     * @param isBit    寄存器区是 coil/discrete（值恒为 0/1，只能比 0 或 1）
-     * @param readable 寄存器是否可读（access 非 W）——只读不可读；不可读的寄存器没有「读到的值」，不收告警
-     * @param abase    出错文案里的位置，如 {@code configSnapshot.registries[0].alarms[0]}
+     * <p><b>只在 {@code enabled == true} 时校验</b> —— 半配置合法。判定口径
+     * （{@link ModbusAlarmPolicy}）共用 {@code OPERATORS} / {@code LEVELS} 两张白名单。</p>
      */
     private static String validateAlarm(
             ModbusRegistryAlarm alarm,
@@ -823,7 +757,6 @@ public final class FieldDeviceValidator {
             return "invalid " + abase + ": only read functions (fc 01/02/03/04) can have alarms";
         }
         if (alarm.compare == null || !ModbusAlarmPolicy.OPERATORS.contains(alarm.compare)) {
-            // 白名单里逐字列出，不用 OPERATORS 拼串：Set.of 的迭代顺序不保证，文案会随机
             return "invalid " + abase + ".compare: " + alarm.compare + " (must be one of > >= < <= =)";
         }
         if (alarm.level == null || !ModbusAlarmPolicy.LEVELS.contains(alarm.level)) {
@@ -860,9 +793,6 @@ public final class FieldDeviceValidator {
             if (alarm.threshold == null) {
                 return abase + ".threshold is required (compare =)";
             }
-            if (!Double.isFinite(alarm.threshold)) {
-                return "invalid " + abase + ".threshold: " + alarm.threshold;
-            }
             if (isBit && alarm.threshold != 0 && alarm.threshold != 1) {
                 return "invalid " + abase + ".threshold: " + alarm.threshold + " (a bit is 0 or 1, use =)";
             }
@@ -883,52 +813,6 @@ public final class FieldDeviceValidator {
         if (alarm.threshold == null) {
             return abase + ".threshold is required (compare " + alarm.compare + ")";
         }
-        if (!Double.isFinite(alarm.threshold)) {
-            return "invalid " + abase + ".threshold: " + alarm.threshold;
-        }
         return null;
-    }
-
-    /**
-     * {@code state} 是否逐字命中枚举映射里的某个显示名 —— 判定时就按这个字符串相等去比。
-     */
-    private static boolean hasDescription(ModbusRegistry reg, String state) {
-        if (reg == null || reg.enumMap == null) {
-            return false;
-        }
-        return reg.enumMap.containsValue(state);
-    }
-
-    private static String validateValueList(ModbusResponseField field, String ibase) {
-        if (field.valueList == null) {
-            return null;
-        }
-        Set<Long> seen = new HashSet<>();
-        for (int k = 0; k < field.valueList.size(); k++) {
-            var entry = field.valueList.get(k);
-            String vbase = ibase + ".value-list[" + k + "]";
-            if (entry == null || entry.value == null) {
-                return vbase + ".value is required";
-            }
-            if (entry.description == null || entry.description.isBlank()) {
-                return vbase + ".description is required";
-            }
-            if (!seen.add(entry.value)) {
-                return "invalid " + vbase + ".value: " + entry.value + " (duplicated)";
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 类型占用的字节数：8 位→1、16 位→2、32 位→4、string→不固定（null，由 bytes 决定）。
-     */
-    private static Integer formatWidth(String format) {
-        return switch (format) {
-            case "int8", "uint8" -> 1;
-            case "int16", "uint16" -> 2;
-            case "int32", "uint32", "float32" -> 4;
-            default -> null;
-        };
     }
 }

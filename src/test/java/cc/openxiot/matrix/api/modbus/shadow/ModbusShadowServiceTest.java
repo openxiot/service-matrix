@@ -52,7 +52,7 @@ class ModbusShadowServiceTest {
     @Test
     void registerCacheMergesRegistersIntoGrid() {
         long t0 = 1_700_000_000_000L;
-        givenService(List.of(readFunction(1, "进水温度"), readFunction(2, "出水温度")));
+        givenService(List.of(readFunction(1, 1), readFunction(2, 2)));
         when(registryShadowRepo.listByFdid(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of(
                 shadow(1, 61.5, new Date(t0), null, null),
                 shadow(2, 35.0, new Date(t0 + 60_000), "no response", new Date(t0 + 120_000)))));
@@ -85,7 +85,7 @@ class ModbusShadowServiceTest {
     @Test
     void registerCacheWithoutSnapshotReturnsEmpty() {
         FieldDevice svc = fd();
-        svc.polls = List.of(readFunction(1, "进水温度"));
+        svc.polls = List.of(readFunction(1, 1));
         svc.configSnapshot = null;
         when(repo.findById(SERVICE_ID)).thenReturn(Uni.createFrom().item(svc));
 
@@ -107,7 +107,7 @@ class ModbusShadowServiceTest {
     @Test
     void registerCachesGroupsByServiceAndKeepsOrder() {
         String id2 = "65f0c0ffee0123456789abcf";
-        givenService(List.of(readFunction(1, "进水温度")));
+        givenService(List.of(readFunction(1, 1)));
         // 第二个服务：同样的点表，但从未被调用（no-data）
         FieldDevice svc2 = fd();
         svc2.id = new ObjectId(id2);
@@ -129,7 +129,7 @@ class ModbusShadowServiceTest {
     @Test
     void registerCachesToleratesMissingService() {
         String bogus = "dea1dbeef000000000000001";
-        givenService(List.of(readFunction(1, "进水温度")));
+        givenService(List.of(readFunction(1, 1)));
         when(repo.findById(bogus)).thenReturn(Uni.createFrom().nullItem());
         when(registryShadowRepo.listByFdid(SERVICE_ID)).thenReturn(Uni.createFrom().item(List.of()));
 
@@ -178,17 +178,13 @@ class ModbusShadowServiceTest {
         return cfg;
     }
 
-    private static ModbusPoll readFunction(int index, String fieldName) {
+    private static ModbusPoll readFunction(int index, int registryIndex) {
         ModbusPoll fn = new ModbusPoll();
         fn.index = index;
-        fn.name = "读" + fieldName;
+        fn.name = "读寄存器" + registryIndex;
         fn.request = ModbusRequests.holding();
         ModbusResponseField f = new ModbusResponseField();
-        f.index = 1;
-        f.field = fieldName;
-        f.bytes = 2;
-        f.format = "uint16";
-        f.byteOrder = "ABCD";
+        f.registryIndex = registryIndex;
         fn.response = ModbusResponses.of(f);
         return fn;
     }

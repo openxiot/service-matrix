@@ -37,12 +37,12 @@ public class FieldDevice {
      * 写方法另外多出「写入字段 + 缺省值」。校验层按本常量**硬拒旧版本**：
      * 让旧口径的定义响亮地失败，而不是被读成 null 之后报一句含糊的「request is required」。</p>
      */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
 
     @Schema(description = "服务名称（展示用，如 1 号冷水机组）", required = true)
     public String name;
 
-    @Schema(description = "定义格式版本号：ModbusPoll 内部结构后续若演进，按它区分口径（当前为 2）",
+    @Schema(description = "定义格式版本号：ModbusPoll 内部结构后续若演进，按它区分口径（当前为 3）",
             examples = {"2"}, required = true)
     public Integer version;
 

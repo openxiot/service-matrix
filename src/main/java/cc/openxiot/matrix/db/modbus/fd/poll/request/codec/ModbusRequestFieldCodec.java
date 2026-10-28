@@ -10,6 +10,8 @@ import java.util.List;
 /**
  * {@link ModbusRequestField}（写入字段定义）与 JSON 的互转。
  *
+ * <p>字段身份即 {@code registryIndex}（引用点表寄存器），写入值类型/字节序由被引用的寄存器携带。</p>
+ *
  * <p>{@code value} 是异构的（位为布尔、寄存器为数值），编码原样写入、解码取原始类型
  * （{@code JsonObject#getValue} 给回 Boolean/Integer/Long/Double），不做归一 ——
  * 归一成 Double 会把「位」变成 0/1 数字，归一成字符串则违背本仓「不把协议语义压成字符串」的口径。</p>
@@ -24,20 +26,8 @@ public final class ModbusRequestFieldCodec {
         if (field == null) {
             return o;
         }
-        if (field.index != null) {
-            o.put("index", field.index);
-        }
-        if (field.field != null) {
-            o.put("field", field.field);
-        }
-        if (field.offset != null) {
-            o.put("offset", field.offset);
-        }
-        if (field.format != null) {
-            o.put("format", field.format);
-        }
-        if (field.byteOrder != null) {
-            o.put("byteOrder", field.byteOrder);
+        if (field.registryIndex != null) {
+            o.put("registryIndex", field.registryIndex);
         }
         if (field.value != null) {
             o.put("value", field.value);
@@ -60,11 +50,7 @@ public final class ModbusRequestFieldCodec {
             return null;
         }
         ModbusRequestField field = new ModbusRequestField();
-        field.index = o.getInteger("index");
-        field.field = o.getString("field");
-        field.offset = o.getInteger("offset");
-        field.format = o.getString("format");
-        field.byteOrder = o.getString("byteOrder");
+        field.registryIndex = o.getInteger("registryIndex");
         // 原样取原始类型：`value: 0` 不能因为 codec 而被读成 0.0 或 "0"
         field.value = o.getValue("value");
         return field;

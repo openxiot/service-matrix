@@ -43,31 +43,16 @@ public final class ModbusRequests {
         return request;
     }
 
-    /** 一个写入字段（05/06：帧里只有单值，偏移不填）。 */
-    public static ModbusRequestField field(int index, String name, String format, Object value) {
-        return field(index, name, null, format, null, value);
-    }
-
-    /** 一个写入字段（0F/10：{@code offset} 是位偏移 / 寄存器偏移，跨度不大于 1 个寄存器）。 */
-    public static ModbusRequestField field(int index, String name, int offset, String format, Object value) {
-        return field(index, name, offset, format, null, value);
-    }
-
-    /** 一个写入字段（10：32 位格式要一并给字节序）。 */
-    public static ModbusRequestField field(int index, String name, int offset, String format,
-                                           String byteOrder, Object value) {
-        return field(index, name, Integer.valueOf(offset), format, byteOrder, value);
-    }
-
-    private static ModbusRequestField field(int index, String name, Integer offset, String format,
-                                            String byteOrder, Object value) {
+    /** 一个写入字段：引用某只寄存器，带缺省值。 */
+    public static ModbusRequestField field(int registryIndex, Object value) {
         ModbusRequestField field = new ModbusRequestField();
-        field.index = index;
-        field.field = name;
-        field.offset = offset;
-        field.format = format;
-        field.byteOrder = byteOrder;
+        field.registryIndex = registryIndex;
         field.value = value;
         return field;
+    }
+
+    /** 一个写入字段：引用某只寄存器，无缺省值（invoke 必填）。 */
+    public static ModbusRequestField field(int registryIndex) {
+        return field(registryIndex, null);
     }
 }

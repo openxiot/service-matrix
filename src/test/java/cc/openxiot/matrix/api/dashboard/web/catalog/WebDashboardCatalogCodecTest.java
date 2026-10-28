@@ -1,5 +1,7 @@
 package cc.openxiot.matrix.api.dashboard.web.catalog;
 
+import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
 import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 
@@ -13,7 +15,6 @@ import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseFieldBit;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -22,17 +23,15 @@ import org.junit.jupiter.api.Test;
 /**
  * 候选清单的线上形状。**纯 JUnit，不连库**。
  *
- * <p>两条约定在这里被钉住：设备**不带 {@code name}**（那个名字前端自己按四级回退链解析，
- * 服务端没有它、也不该再实现一遍），服务**整份下发**（编辑器要 {@code format} / {@code unit} /
- * {@code valueList} / {@code bitList} 做级联与提示）。</p>
+ * <p>两条约定在这里被钉住：设备**不带 {@code name}**（那个名字前端自己按四级回退链解析），
+ * 服务**整份下发**。寄存器中心下，编辑器要的候选 = 点表 {@code configSnapshot.registries}
+ * （每只寄存器是一条可选字段，含线圈）；应答字段只引用 {@code registryIndex}</p>
  */
 class DashboardCatalogCodecTest {
 
     @Test
     void encode_emptyLists_givesBothKeys() {
         JsonObject o = WebDashboardCatalogCodec.encode(List.of(), List.of());
-
-        // 两个键恒在：编辑器据此显示「没有可选项」，而不是把级联画成坏掉的样子
         assertTrue(o.getJsonArray("devices").isEmpty());
         assertTrue(o.getJsonArray("fds").isEmpty());
     }
@@ -40,7 +39,6 @@ class DashboardCatalogCodecTest {
     @Test
     void encode_nullLists_doesNotThrow() {
         JsonObject o = WebDashboardCatalogCodec.encode(null, null);
-
         assertTrue(o.getJsonArray("devices").isEmpty());
         assertTrue(o.getJsonArray("fds").isEmpty());
     }
@@ -55,23 +53,19 @@ class DashboardCatalogCodecTest {
         assertTrue(device.getBoolean("online"));
     }
 
-    /**
-     * 设备名**不在**这里 —— 前端用 {@code DeviceDisplayService} 解析（产品名 → 实例描述 → URN 段 → did），
-     * 与设备列表页同一条链。服务端要是也解一遍，两处迟早解出两个名字。
-     */
     @Test
     void encodeDevice_hasNoName() {
         JsonObject device = WebDashboardCatalogCodec.encode(List.of(device("did-1", "urn:x:tr:ac", false)), List.of())
                 .getJsonArray("devices").getJsonObject(0);
 
         assertFalse(device.containsKey("name"));
-        // offline 也是 false，不能因为「假值就当没这个字段」——它和「不知道」不是一回事
         assertTrue(device.containsKey("online"));
         assertFalse(device.getBoolean("online"));
     }
 
     /**
-     * 服务整份下发，形状与 {@code /modbus/device/one/{id}} 逐字相同，前端直接复用已有的解码器。
+     * 服务整份下发，形状与 {@code /modbus/device/one/{id}} 逐字相同。编辑器候选现在来自寄存器：
+     * 每只寄存器给 name/format/unit（判数值与提示），线圈寄存器也是一条可选字段。
      */
     @Test
     void encodeService_reusesTheFullServiceShape() {
@@ -81,16 +75,20 @@ class DashboardCatalogCodecTest {
         assertEquals("6512f3a4b5c6d7e8f9a0b1c5", service.getString("id"));
         assertEquals("1 号冷水机组", service.getString("name"));
 
+        // 应答字段只引用寄存器（本体元数据在点表寄存里）
         JsonObject field = service.getJsonArray("polls").getJsonObject(0)
                 .getJsonObject("response").getJsonArray("fields").getJsonObject(0);
-        // 编辑器判「是不是数值」靠 format、「几位小数/单位」靠 unit，两者都必须在
-        assertEquals("温度", field.getString("field"));
-        assertEquals("int16", field.getString("format"));
-        assertEquals("℃", field.getString("unit"));
-        // 位名是独立的可选字段（用户在下拉里选它配一张卡），所以位清单也要在。
-        // 线上的键是**连字符**的 `bit-list`（实体里叫 bitList）—— 前端 FieldDeviceCodec
-        // 就是按这个键解的，所以这里必须钉住线上拼写，不能跟着实体字段名走
-        assertEquals("进水阀", field.getJsonArray("bit-list").getJsonObject(0).getString("field"));
+        assertEquals(1, field.getInteger("registryIndex").intValue());
+        assertFalse(field.containsKey("format"));
+
+        JsonObject temp = service.getJsonObject("configSnapshot").getJsonArray("registries").getJsonObject(0);
+        assertEquals("温度", temp.getString("name"));
+        assertEquals("int16", temp.getString("dataType"));
+        assertEquals("℃", temp.getString("unit"));
+
+        JsonObject valve = service.getJsonObject("configSnapshot").getJsonArray("registries").getJsonObject(1);
+        assertEquals("进水阀", valve.getString("name"));
+        assertEquals("coil", valve.getString("area"));
     }
 
     // ===== helpers =====
@@ -104,16 +102,28 @@ class DashboardCatalogCodecTest {
     }
 
     private static FieldDevice fd() {
-        ModbusResponseFieldBit bit = new ModbusResponseFieldBit();
-        bit.offset = 0;
-        bit.field = "进水阀";
+        ModbusRegistry temp = new ModbusRegistry();
+        temp.index = 1;
+        temp.address = 0;
+        temp.name = "温度";
+        temp.area = "holding";
+        temp.dataType = "int16";
+        temp.byteOrder = "ABCD";
+        temp.access = "R";
+        temp.unit = "℃";
+        ModbusRegistry valve = new ModbusRegistry();
+        valve.index = 2;
+        valve.address = 0;
+        valve.name = "进水阀";
+        valve.area = "coil";
+        valve.access = "RW";
+
+        ModbusConfig config = new ModbusConfig();
+        config.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
+        config.registries = List.of(temp, valve);
 
         ModbusResponseField field = new ModbusResponseField();
-        field.index = 1;
-        field.field = "温度";
-        field.format = "int16";
-        field.unit = "℃";
-        field.bitList = List.of(bit);
+        field.registryIndex = 1;
 
         ModbusPoll poll = new ModbusPoll();
         poll.from = new ModbusPollFrom();
@@ -126,6 +136,8 @@ class DashboardCatalogCodecTest {
         FieldDevice fd = new FieldDevice();
         fd.id = new ObjectId("6512f3a4b5c6d7e8f9a0b1c5");
         fd.name = "1 号冷水机组";
+        fd.version = 3;
+        fd.configSnapshot = config;
         fd.device = new DeviceOn();
         fd.polls = List.of(poll);
         return fd;

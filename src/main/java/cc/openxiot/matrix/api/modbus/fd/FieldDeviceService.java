@@ -15,6 +15,8 @@ import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
 import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.typedef.modbus.failure.ModbusFailureType;
@@ -334,14 +336,16 @@ public class FieldDeviceService {
             return Uni.createFrom().failure(new IllegalArgumentException("modbus device function not found: index=" + pollIndex));
         }
 
-        // 入参对账同样在这里做（execute 之前）：缺值 / 未知字段名 / 给读方法传值都是**调用方的请求错误**，
+        // 入参对账同样在这里做（execute 之前）：缺值 / 未知寄存器 / 给读方法传值都是**调用方的请求错误**，
         // 与「function not found」同类 —— 归一进 service-failures 会把「请求写错了」记成设备故障
-        String valuesErr = FieldDeviceValidator.validateInvoke(poll, values);
+        Map<Integer, ModbusRegistry> registries =
+                ModbusRegistries.byIndex(fd.configSnapshot == null ? null : fd.configSnapshot.registries);
+        String valuesErr = FieldDeviceValidator.validateInvoke(poll, values, registries);
         if (valuesErr != null) {
             return Uni.createFrom().failure(new IllegalArgumentException(valuesErr));
         }
 
-        return execute(ownerId, fd, poll, values, baselines)
+        return execute(ownerId, fd, poll, values, baselines, registries)
                 .onFailure().call(error -> recordFailure(fd, poll, error, baselines));
     }
 
@@ -360,7 +364,8 @@ public class FieldDeviceService {
             FieldDevice fd,
             ModbusPoll poll,
             Map<String, Object> values,
-            ModbusPollingBaselines baselines
+            ModbusPollingBaselines baselines,
+            Map<Integer, ModbusRegistry> registries
     ) {
         String coordinateErr = FieldDeviceValidator.checkDevice(fd.device);
         if (coordinateErr != null) {
@@ -368,13 +373,13 @@ public class FieldDeviceService {
                     ModbusInvokeException.of(ModbusFailureType.CONFIG_ERROR, coordinateErr));
         }
 
-        return Uni.createFrom().item(() -> requestFrame(fd, poll, values))
+        return Uni.createFrom().item(() -> requestFrame(fd, poll, values, registries))
                 .onFailure(IllegalArgumentException.class).transform(FieldDeviceService::frameFailure)
                 .chain(body -> manipulationService.invokeActions(ownerId, body)
                         .onFailure().transform(FieldDeviceService::transportFailure))
                 .map(ActionOperationCodec.RESULT::decode)
                 .map(results -> results.isEmpty() ? null : results.getFirst())
-                .map(result -> decodeFields(poll, result))
+                .map(result -> decodeFields(fd, poll, result, registries))
                 // 两件并列的副作用：先记历史、再评告警。串起来只是为了让顺序确定（历史是「采到什么」，
                 // 告警是「值对不对」，出问题时先看前者），两者互不依赖、也各有各的失败重试
                 .chain(read -> recordHistory(fd, poll, read, baselines)
@@ -409,11 +414,12 @@ public class FieldDeviceService {
     private static String requestFrame(
             FieldDevice fd,
             ModbusPoll poll,
-            Map<String, Object> values
+            Map<String, Object> values,
+            Map<Integer, ModbusRegistry> registries
     ) {
         DeviceOn device = fd.device;
         ActionOperation action = new ActionOperation(new ActionID(device.did, device.siid, device.aiid));
-        String frame = ModbusFrameCodec.encodeRequest(poll.request, values);
+        String frame = ModbusFrameCodec.encodeRequest(poll.request, values, registries);
         action.in().put(device.argument, new ArgumentOperation(device.argument, frame));
         return ActionOperationCodec.QUERY.encode(List.of(action)).toString();
     }
@@ -557,7 +563,8 @@ public class FieldDeviceService {
     }
 
     /** 父设备应答 → 方法返回值。 */
-    private static JsonObject decodeFields(ModbusPoll poll, ActionOperation result) {
+    private static JsonObject decodeFields(FieldDevice fd, ModbusPoll poll, ActionOperation result,
+                                           Map<Integer, ModbusRegistry> registries) {
         if (result == null) {
             throw ModbusInvokeException.of(ModbusFailureType.NO_RESPONSE, "no response from parent device");
         }
@@ -574,7 +581,7 @@ public class FieldDeviceService {
             // 写方法：应答是请求回显，没有读值
             return new JsonObject();
         }
-        return ModbusResponseParser.parse(fields, frameOf(result));
+        return ModbusResponseParser.parse(fields, registries, poll.request, frameOf(result));
     }
 
     /** 从父设备应答的出参里取回传的数据帧（父动作只有一个出参，即应答帧）。 */
