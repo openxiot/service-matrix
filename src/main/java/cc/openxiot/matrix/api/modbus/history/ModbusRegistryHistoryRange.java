@@ -13,14 +13,15 @@ import java.util.Date;
  * 服务只回答「这两刻之间、要多少点」，不知道也不关心这条曲线是谁。所以这个类型是两者在边界处的合并，
  * 不塞回 {@code RangeResult}。</p>
  *
- * <p>{@link #identity} 在历史页那条路是方法序号（{@code pollIndex}），在看板那条路是寄存器序号
- * （{@code registerIndex}）—— 二者都只是请求里那份标识的回显，编码时落在响应体的 {@code pollIndex} 键上；
+ * <p>{@link #identity} 是请求里那份标识的回显 —— 历史页与看板都是寄存器序号
+ * （{@code registryIndex}），编码时落在响应体的 {@code pollIndex} 键上（键名沿用旧前端）；
  * 前端画图只用 {@code points} / {@code carryIn}，不按它取数据。</p>
  *
  * <p>编码要的其它字段（{@code downsampled} / {@code total} / {@code points} / {@code carryIn}）都在
  * {@link ModbusRegistryHistoryWindow.Window} 里或由编码侧从它派生，不需要进这个 record。</p>
  *
- * @param identity 曲线标识的回显：历史页 = pollIndex，看板 = registerIndex（都落到响应的 pollIndex 键）
+ * @param identity 曲线标识的回显（registryIndex），落到响应的 pollIndex 键
+ * @param field    寄存器名（展示用；请求身份是 registryIndex）
  * @param window   窗口整形结果：降不降采样、点/桶、carry-in、要不要降采样都在这里
  */
 public record ModbusRegistryHistoryRange(

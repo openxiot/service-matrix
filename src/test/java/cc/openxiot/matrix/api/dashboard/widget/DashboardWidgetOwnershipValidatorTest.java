@@ -1,7 +1,5 @@
 package cc.openxiot.matrix.api.dashboard.widget;
 
-import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPollFrom;
-import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,8 +20,6 @@ import cc.openxiot.matrix.db.modbus.fd.DeviceOn;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.ModbusResponses;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -130,16 +126,16 @@ class WidgetOwnershipValidatorTest {
 
     @Test
     void service_inOwnSpace_belongs() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R")));
 
-        assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).isEmpty());
+        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, 1)).isEmpty());
     }
 
     @Test
     void service_inChildSpace_belongs() {
-        stubFd(fd(SERVICE_ID, CHILD_ID, poll(1, "温度", null)));
+        stubFd(fd(SERVICE_ID, CHILD_ID, register(1, "温度", "R")));
 
-        assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).isEmpty());
+        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, 1)).isEmpty());
     }
 
     /**
@@ -148,105 +144,94 @@ class WidgetOwnershipValidatorTest {
      */
     @Test
     void service_staleRootIdSnapshotButLiveSpaceIdIsInSubtree_belongs() {
-        FieldDevice stale = fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
+        FieldDevice stale = fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R"));
         stale.device.space.rootId = OTHER_ID;
         stubFd(stale);
 
-        assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).isEmpty());
+        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, 1)).isEmpty());
     }
 
     @Test
     void service_inAnotherSpace_doesNotBelong() {
-        stubFd(fd(SERVICE_ID, OTHER_ID, poll(1, "温度", null)));
+        stubFd(fd(SERVICE_ID, OTHER_ID, register(1, "温度", "R")));
 
         assertEquals("widgets[0](w1): service does not belong to this space: " + SERVICE_ID,
-                errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).get("w1"));
+                errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
     @Test
     void service_withoutSpace_doesNotBelongAndDoesNotThrow() {
-        FieldDevice orphan = fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null));
+        FieldDevice orphan = fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R"));
         orphan.device.space = null;
         stubFd(orphan);
 
         assertEquals("widgets[0](w1): service does not belong to this space: " + SERVICE_ID,
-                errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).get("w1"));
+                errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
     @Test
     void service_notFound() {
         assertEquals("widgets[0](w1): service not found: " + SERVICE_ID,
-                errors(serviceWithField("w1", SERVICE_ID, 1, "温度")).get("w1"));
+                errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
-    @Test
-    void service_functionNotFound() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
+    // ===== 字段身份：寄存器序号（registryIndex），不是寄存器名 =====
 
-        assertEquals("widgets[0](w1): function not found: 9",
-                errors(serviceWithField("w1", SERVICE_ID, 9, "温度")).get("w1"));
+    /** 多只寄存器一次引用：每只都要在点表快照里解析得到。 */
+    @Test
+    void service_multipleRegisters_belongs() {
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R"), register(2, "压力", "RW")));
+
+        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, 1, 2)).isEmpty());
     }
 
+    /** 序号解析不到（写错 / 服务已换点表）时照旧报错，不让它存下去。 */
     @Test
-    void service_fieldNotFound() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
+    void service_registerNotFound() {
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R")));
 
-        assertEquals("widgets[0](w1): field not found: 湿度",
-                errors(serviceWithField("w1", SERVICE_ID, 1, "湿度")).get("w1"));
+        assertEquals("widgets[0](w1): register not found: 9",
+                errors(serviceWithRegisters("w1", SERVICE_ID, 9)).get("w1"));
     }
 
-    /** 位是独立点位：名字写在 {@code response.fields[].bitList[].field} 上，也得认。 */
+    /** 只写寄存器（W）没有读数：配上它只会永远显示「尚未采集」。 */
     @Test
-    void service_bitField_belongs() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "状态字", List.of("进水阀", "出水阀"))));
+    void service_registerNotReadable() {
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "W")));
 
-        assertTrue(errors(serviceWithField("w1", SERVICE_ID, 1, "进水阀")).isEmpty(),
-                "位名应当被认作合法字段（见 ModbusPollResponseFieldBit）");
+        assertEquals("widgets[0](w1): register not readable: 1",
+                errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
-    // ===== 新卡：不存方法序号，字段（寄存器）按名解析到某个读方法 =====
-
-    /** 服务卡不再带 pollIndex：字段能解析到某个读方法即合法（方法由取数时解析）。 */
+    /**
+     * 同名寄存器（ADL400 的「发生时间：分、时」）按序号判定，不会互相串位：
+     * 序号 1 可读、序号 2 只写 —— 判定只看序号指向的那一只。
+     */
     @Test
-    void service_withoutPollIndex_registerField_belongs() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null), poll(2, "压力", null)));
+    void service_duplicateNames_resolveByIndexNotName() {
+        stubFd(fd(SERVICE_ID, ROOT_ID,
+                register(1, "发生时间", "R"), register(2, "发生时间", "W")));
 
-        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "温度", "压力")).isEmpty(),
-                "寄存器字段卡不应再要求方法序号（pollIndex）");
+        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, 1)).isEmpty());
+        assertEquals("widgets[0](w1): register not readable: 2",
+                errors(serviceWithRegisters("w1", SERVICE_ID, 2)).get("w1"));
     }
 
-    /** 位名走新路径同样认。 */
+    /** 曲线卡（fdField 数据源）同样按寄存器序号引用。 */
     @Test
-    void service_withoutPollIndex_bitField_belongs() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "状态字", List.of("进水阀"))));
+    void line_fdField_registerResolves() {
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R")));
 
-        assertTrue(errors(serviceWithRegisters("w1", SERVICE_ID, "进水阀")).isEmpty());
+        assertTrue(errors(lineServiceField("w1", SERVICE_ID, 1)).isEmpty());
     }
 
-    /** 字段解析不到（写错 / 取不到数）时照旧报错，不让它存下去。 */
+    /** 曲线卡的序号解析不到照旧报错。 */
     @Test
-    void service_withoutPollIndex_fieldNotFound() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
+    void line_fdField_registerNotFound() {
+        stubFd(fd(SERVICE_ID, ROOT_ID, register(1, "温度", "R")));
 
-        assertEquals("widgets[0](w1): field not found: 湿度",
-                errors(serviceWithRegisters("w1", SERVICE_ID, "湿度")).get("w1"));
-    }
-
-    /** 曲线卡（serviceField 数据源）同样不再要求方法序号：字段能解析即合法。 */
-    @Test
-    void line_serviceField_withoutPollIndex_fieldResolves() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
-
-        assertTrue(errors(lineServiceField("w1", SERVICE_ID, "温度")).isEmpty());
-    }
-
-    /** 曲线卡的字段解析不到照旧报错。 */
-    @Test
-    void line_serviceField_withoutPollIndex_fieldNotFound() {
-        stubFd(fd(SERVICE_ID, ROOT_ID, poll(1, "温度", null)));
-
-        assertEquals("widgets[0](w1): field not found: 湿度",
-                errors(lineServiceField("w1", SERVICE_ID, "湿度")).get("w1"));
+        assertEquals("widgets[0](w1): register not found: 9",
+                errors(lineServiceField("w1", SERVICE_ID, 9)).get("w1"));
     }
 
     // ===== 编排：什么时候查库、错误之间互不牵连 =====
@@ -323,80 +308,44 @@ class WidgetOwnershipValidatorTest {
         return d;
     }
 
-    /** 夹具侧收集的寄存器（poll 按名字建，fd 收进 configSnapshot）。单测顺序执行，先建 poll 再收 fd。 */
-    private static final List<ModbusRegistry> REGISTERS = new java.util.ArrayList<>();
-
-    private static FieldDevice fd(String id, String spaceId, ModbusPoll... polls) {
+    /**
+     * 服务定义夹具：卡片只按 {@code registryIndex} 校验，故只需点表快照（polls 不参与判定）。
+     */
+    private static FieldDevice fd(String id, String spaceId, ModbusRegistry... registers) {
         FieldDevice fd = new FieldDevice();
         fd.id = new ObjectId(id);
         fd.name = "1 号冷水机组";
         fd.device = new DeviceOn();
         fd.device.space = spaceId == null ? null : new SpaceOn(space(spaceId));
-        fd.polls = List.of(polls);
         ModbusConfig config = new ModbusConfig();
-        config.registries = new java.util.ArrayList<>(REGISTERS);
-        REGISTERS.clear();
+        config.registries = new ArrayList<>(List.of(registers));
         fd.configSnapshot = config;
         return fd;
     }
 
-    private static ModbusPoll poll(int index, String field, List<String> bits) {
-        // 字段与每个位各是一只寄存器（名字/区都在上面）；应答字段只引用它们的序号。
-        // widget 仍按**名字**校验归属，故寄存器名要与卡片配置的名字逐字一致。
-        ModbusRegistry host = new ModbusRegistry();
-        host.index = REGISTERS.size() + 1;
-        host.name = field;
-        host.area = "holding";
-        host.unit = "℃";
-        host.access = "R";
-        host.address = 0;
-        REGISTERS.add(host);
-
-        List<ModbusResponseField> fields = new ArrayList<>();
-        ModbusResponseField f = new ModbusResponseField();
-        f.registryIndex = host.index;
-        fields.add(f);
-        if (bits != null) {
-            for (String bit : bits) {
-                ModbusRegistry coil = new ModbusRegistry();
-                coil.index = REGISTERS.size() + 1;
-                coil.name = bit;
-                coil.area = "coil";
-                coil.access = "RW";
-                coil.address = 0;
-                REGISTERS.add(coil);
-                ModbusResponseField cf = new ModbusResponseField();
-                cf.registryIndex = coil.index;
-                fields.add(cf);
-            }
-        }
-        ModbusPoll fn = new ModbusPoll();
-                    fn.from = new ModbusPollFrom();
-                    fn.from.type = "command";
-                    fn.from.index = index;
-                    fn.index = index;
-        fn.name = field;
-        fn.response = ModbusResponses.of(fields);
-        return fn;
+    private static ModbusRegistry register(int index, String name, String access) {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.index = index;
+        reg.name = name;
+        reg.area = "holding";
+        reg.unit = "℃";
+        reg.access = access;
+        reg.address = index - 1;
+        return reg;
     }
 
     private static WebDashboardWidget device(String id, String did) {
         return widget(id, "device", config("did", did, "pid", "p1"));
     }
 
-    private static WebDashboardWidget serviceWithField(String id, String fdid, int pollIndex, String field) {
-        return widget(id, "service", config("fdid", fdid,
-                "pollIndex", pollIndex, "fields", List.of(field)));
+    /** 服务卡：只带服务 + 寄存器序号，不带方法序号。 */
+    private static WebDashboardWidget serviceWithRegisters(String id, String fdid, Integer... registryIndexes) {
+        return widget(id, "fd", config("fdid", fdid, "fields", List.of(registryIndexes)));
     }
 
-    /** 新卡服务卡：只带服务 + 寄存器字段，不带方法序号。 */
-    private static WebDashboardWidget serviceWithRegisters(String id, String fdid, String... fields) {
-        return widget(id, "service", config("fdid", fdid, "fields", List.of(fields)));
-    }
-
-    /** 新卡曲线卡（serviceField 数据源）：只带服务 + 寄存器字段，不带方法序号。 */
-    private static WebDashboardWidget lineServiceField(String id, String fdid, String field) {
-        return widget(id, "line", config("source", "fdField", "fdid", fdid, "field", field));
+    /** 曲线卡（fdField 数据源）：只带服务 + 寄存器序号。 */
+    private static WebDashboardWidget lineServiceField(String id, String fdid, Integer registryIndex) {
+        return widget(id, "line", config("source", "fdField", "fdid", fdid, "field", registryIndex));
     }
 
     private static WebDashboardWidget widget(String id, String type, Map<String, Object> config) {

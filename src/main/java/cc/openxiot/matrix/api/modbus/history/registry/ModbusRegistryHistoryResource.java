@@ -56,8 +56,12 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
     SpaceService spaceService;
 
     /**
-     * 一个点位的区间曲线：{@code {fdid, pollIndex, field, from, to, maxPoints, downsampled,
+     * 一只寄存器的区间曲线：{@code {fdid, pollIndex, field, from, to, maxPoints, downsampled,
      * carryIn, points}}。
+     *
+     * <p>点位身份是 {@code registryIndex}（寄存器在点表里的序号，1 起）—— 不再按寄存器名解析，
+     * 因为同名寄存器（如 ADL400 的「发生时间：分、时」）按名字会指到错的那一只。响应里的
+     * {@code field} 仍是寄存器名（展示用），{@code pollIndex} 只是请求身份的回显（这里是 registryIndex）。</p>
      *
      * <p>{@code carryIn} 是区间起点之前最近的那一条（可能没有）：不带它，前端不知道 {@code from}
      * 时刻的值，曲线从起点就是空白。{@code downsampled} 决定 {@code points} 怎么读：false 是原始样本
@@ -70,19 +74,19 @@ public class ModbusRegistryHistoryResource extends AbstractResource {
             @PathParam("spaceId") String spaceId,
             @QueryParam("fdid") String fdid,
             @QueryParam("pollIndex") Integer pollIndex,
-            @QueryParam("field") String field,
+            @QueryParam("registryIndex") Integer registryIndex,
             @QueryParam("from") Long from,
             @QueryParam("to") Long to,
             @QueryParam("maxPoints") Integer maxPoints
     ) {
-        logger.infov("query modbus history, space: {0}, fd: {1}, polling: {2}, field: {3}",
-                spaceId, fdid, pollIndex, field);
+        logger.infov("query modbus history, space: {0}, fd: {1}, polling: {2}, registryIndex: {3}",
+                spaceId, fdid, pollIndex, registryIndex);
         return requireSpaceMember(spaceId)
-                .chain(ignored -> registryService.range(fdid, pollIndex, field,
+                .chain(ignored -> registryService.range(fdid, pollIndex, registryIndex,
                         millis(from), millis(to), maxPoints))
                 .map(result -> OxResponse.ok(
                         ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
-                                fdid, pollIndex, field,
+                                fdid, registryIndex, result.field(),
                                 result.from(), result.to(), result.maxPoints(), result.window()))))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));

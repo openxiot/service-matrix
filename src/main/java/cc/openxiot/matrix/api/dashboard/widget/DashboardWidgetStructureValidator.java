@@ -189,13 +189,17 @@ public final class DashboardWidgetStructureValidator {
             }
             return null;
         }
-        // serviceField：服务 + 寄存器字段（不再存方法序号 pollIndex，由取数时解析）。
-        // 字段是否真实存在由 DashboardWidgetOwnershipValidator 查库确认。
+        // fdField：服务 + 寄存器序号（registryIndex，不再存名字 —— 同名寄存器会指错点位）。
+        // 寄存器是否真实存在、是否可读由 DashboardWidgetOwnershipValidator 查库确认。
         if (DashboardWidgetConfigs.str(config.get("fdid")) == null) {
             return "config.fdid is required";
         }
-        if (DashboardWidgetConfigs.str(config.get("field")) == null) {
+        if (!config.containsKey("field")) {
             return "config.field is required";
+        }
+        Integer registryIndex = DashboardWidgetConfigs.intVal(config.get("field"));
+        if (registryIndex == null || registryIndex < 1) {
+            return "config.field must be a positive integer";
         }
         Integer maxPoints = DashboardWidgetConfigs.intVal(config.get("maxPoints"));
         if (maxPoints != null && (maxPoints < 1 || maxPoints > 2000)) {
@@ -295,14 +299,16 @@ public final class DashboardWidgetStructureValidator {
         if (fields.size() > MAX_SERVICE_FIELDS) {
             return "config.fields has too many entries: at most " + MAX_SERVICE_FIELDS;
         }
-        Set<String> seen = new HashSet<>();
+        // 字段身份是寄存器序号（registryIndex，1 起），不是寄存器名：同名寄存器（如 ADL400 的
+        // 「发生时间」）按名字取会指到错的那一只。名字只作展示，由取数时解析回来。
+        Set<Integer> seen = new HashSet<>();
         for (Object field : fields) {
-            String name = DashboardWidgetConfigs.str(field);
-            if (name == null) {
-                return "config.fields must contain strings";
+            Integer registryIndex = DashboardWidgetConfigs.intVal(field);
+            if (registryIndex == null || registryIndex < 1) {
+                return "config.fields must contain positive integers";
             }
-            if (!seen.add(name)) {
-                return "config.fields has a duplicate: " + name;
+            if (!seen.add(registryIndex)) {
+                return "config.fields has a duplicate: " + registryIndex;
             }
         }
         String display = DashboardWidgetConfigs.str(config.get("display"));

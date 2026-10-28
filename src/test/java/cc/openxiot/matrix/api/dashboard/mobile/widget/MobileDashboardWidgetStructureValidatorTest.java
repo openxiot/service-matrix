@@ -182,12 +182,12 @@ class MobileDashboardWidgetStructureValidatorTest {
     }
 
     @Test
-    void line_serviceFieldTripleRequired() {
+    void line_fdFieldTripleRequired() {
         MobileDashboardWidget line = new MobileDashboardWidget();
         line.id = "w1";
         line.type = "line";
         line.size = "FULL";
-        line.config = config("source", "serviceField", "window", last(24));
+        line.config = config("source", "fdField", "window", last(24));
         assertInvalid("config.fdid is required", line);
     }
 
@@ -195,7 +195,7 @@ class MobileDashboardWidgetStructureValidatorTest {
     void service_fieldsMustNotBeEmpty() {
         MobileDashboardWidget svc = new MobileDashboardWidget();
         svc.id = "w1";
-        svc.type = "service";
+        svc.type = "fd";
         svc.size = "FULL";
         svc.config = config("fdid", "s1", "pollIndex", 0, "fields", List.of());
         assertInvalid("config.fields must not be empty", svc);
@@ -222,8 +222,8 @@ class MobileDashboardWidgetStructureValidatorTest {
 
     /** 一张 config 齐全的服务卡（身份 / 档位 / 半格之外，config 那层也过得去）。 */
     private static MobileDashboardWidget service() {
-        MobileDashboardWidget w = typed("service");
-        w.config = config("fdid", "0x01", "pollIndex", 1, "fields", List.of("temperature"));
+        MobileDashboardWidget w = typed("fd");
+        w.config = config("fdid", "0x01", "pollIndex", 1, "fields", List.of(1));
         return w;
     }
 

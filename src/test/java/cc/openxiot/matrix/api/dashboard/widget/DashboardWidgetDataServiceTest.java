@@ -554,7 +554,7 @@ class WidgetDataServiceTest {
     void render_serviceCard_valueUnitAndRecordedAt() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
+        JsonObject data = data(render(serviceCard("w1", List.of(1))), 0);
 
         assertEquals(AT.getTime(), data.getLong("recordedAt").longValue());
         JsonObject row = data.getJsonArray("fields").getJsonObject(0);
@@ -565,13 +565,13 @@ class WidgetDataServiceTest {
     }
 
     /**
-     * 新卡不存方法序号：字段（寄存器）按名解析到读方法再取数，结果与带方法的老卡一致。
+     * 新卡不存方法序号：寄存器按序号（registryIndex）解析再取数，结果与带方法的老卡一致。
      */
     @Test
     void render_serviceCard_withoutPollIndex_resolvesField() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
+        JsonObject data = data(render(serviceCardRegisters("w1", 1)), 0);
 
         JsonObject row = data.getJsonArray("fields").getJsonObject(0);
         assertEquals("温度", row.getString("field"));
@@ -588,7 +588,7 @@ class WidgetDataServiceTest {
     void render_serviceCard_withoutPollIndex_neverCollected() {
         stubService(null, serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
+        JsonObject data = data(render(serviceCardRegisters("w1", 1)), 0);
 
         assertFalse(data.containsKey("recordedAt"));
         assertFalse(data.containsKey("fields"));
@@ -602,7 +602,7 @@ class WidgetDataServiceTest {
     void render_serviceCard_neverCollectedHasOnlyNoData() {
         stubService(null, serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCardRegisters("w1", "温度")), 0);
+        JsonObject data = data(render(serviceCardRegisters("w1", 1)), 0);
 
         assertFalse(data.containsKey("pollIndex"));
         assertFalse(data.containsKey("recordedAt"));
@@ -620,7 +620,7 @@ class WidgetDataServiceTest {
         stubService(shadow(Map.of("温度", 23.5), AT, "modbus timeout", ERROR_AT),
                 serviceDef(1, "温度", "℃", null));
 
-        JsonObject data = data(render(serviceCard("w1", 1, List.of("温度"))), 0);
+        JsonObject data = data(render(serviceCard("w1", List.of(1))), 0);
 
         assertEquals(23.5, data.getJsonArray("fields").getJsonObject(0).getDouble("value").doubleValue());
         assertEquals("modbus timeout", data.getString("error"));
@@ -637,7 +637,7 @@ class WidgetDataServiceTest {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null),
                 serviceDef(1, "温度", "℃", "湿度"));
 
-        JsonObject data = data(render(serviceCard("w1", 1, List.of("温度", "湿度"))), 0);
+        JsonObject data = data(render(serviceCard("w1", List.of(1, 2))), 0);
 
         JsonArray rows = data.getJsonArray("fields");
         assertTrue(rows.getJsonObject(0).containsKey("value"));
@@ -652,7 +652,7 @@ class WidgetDataServiceTest {
         stubService(shadow(Map.of("湿度", 60, "温度", 23.5), AT, null, null),
                 serviceDef(1, "温度", "℃", "湿度"));
 
-        JsonObject data = data(render(serviceCard("w1", 1, List.of("湿度", "温度"))), 0);
+        JsonObject data = data(render(serviceCard("w1", List.of(2, 1))), 0);
 
         assertEquals("湿度", data.getJsonArray("fields").getJsonObject(0).getString("field"));
         assertEquals("温度", data.getJsonArray("fields").getJsonObject(1).getString("field"));
@@ -666,7 +666,7 @@ class WidgetDataServiceTest {
         stubService(shadow(Map.of("进水阀", 1), AT, null, null),
                 serviceDef(1, "状态字", "℃", null, "进水阀"));
 
-        JsonObject row = data(render(serviceCard("w1", 1, List.of("进水阀"))), 0)
+        JsonObject row = data(render(serviceCard("w1", List.of(2))), 0)
                 .getJsonArray("fields").getJsonObject(0);
 
         assertEquals("", row.getString("unit"));
@@ -682,7 +682,7 @@ class WidgetDataServiceTest {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null),
                 serviceDef(1, "温度", "℃", null, "进水阀"));
 
-        JsonObject row = data(render(serviceCard("w1", 1, List.of("温度"))), 0)
+        JsonObject row = data(render(serviceCard("w1", List.of(1))), 0)
                 .getJsonArray("fields").getJsonObject(0);
 
         assertFalse(row.getBoolean("bit"));
@@ -696,7 +696,7 @@ class WidgetDataServiceTest {
     void render_serviceCardsOfTheSameServiceShareOneQuery() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
 
-        render(serviceCard("w1", 1, List.of("温度")), serviceCard("w2", 1, List.of("温度")));
+        render(serviceCard("w1", List.of(1)), serviceCard("w2", List.of(1)));
 
         verify(registryShadowRepo, times(1)).listByFdid("svc-1");
     }
@@ -712,7 +712,7 @@ class WidgetDataServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException("mongo timeout")));
         when(fdRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
-        DashboardWidgetDataService.WidgetData data = render(serviceCard("w1", 1, List.of("温度")),
+        DashboardWidgetDataService.WidgetData data = render(serviceCard("w1", List.of(1)),
                 stat("w2", "devices.total", null));
 
         assertFalse(data.widgets().get(0).success());
@@ -729,7 +729,7 @@ class WidgetDataServiceTest {
                 .thenReturn(Uni.createFrom().failure(new IllegalStateException()));
         when(fdRepo.findById("svc-1")).thenReturn(Uni.createFrom().nullItem());
 
-        assertEquals("IllegalStateException", render(serviceCard("w1", 1, List.of("温度")))
+        assertEquals("IllegalStateException", render(serviceCard("w1", List.of(1)))
                 .widgets().get(0).message());
     }
 
@@ -776,7 +776,7 @@ class WidgetDataServiceTest {
         render(stat("w1", "devices.total", null),
                 distribution("w2", "deviceType", null),
                 line("w3", last(24)),
-                serviceCard("w4", 1, List.of("温度")));
+                serviceCard("w4", List.of(1)));
 
         // 三张读 overview 的卡片窗口全是兜底/24h 两组，故两次；服务卡不额外贡献窗口
         verify(statisticsQueryService, times(2)).overview(eq(SPACE_ID), any(), any());
@@ -789,7 +789,7 @@ class WidgetDataServiceTest {
     void render_noOverviewCards_noOverviewQuery() {
         stubService(shadow(Map.of("温度", 23.5), AT, null, null), serviceDef(1, "温度", "℃", null));
 
-        render(serviceCard("w1", 1, List.of("温度")));
+        render(serviceCard("w1", List.of(1)));
 
         verifyNoInteractions(statisticsQueryService);
     }
@@ -822,9 +822,9 @@ class WidgetDataServiceTest {
     }
 
     @Test
-    void render_serviceTypeDistribution() {
+    void render_fdTypeDistribution() {
         stubOverview();
-        JsonObject data = data(render(distribution("w1", "serviceType", null)), 0);
+        JsonObject data = data(render(distribution("w1", "fdType", null)), 0);
         // key 是 configId：解成「厂家 型号」并合并同名是前端的事
         assertEquals("cfg1", data.getJsonArray("groups").getJsonObject(0).getString("key"));
     }
@@ -913,7 +913,8 @@ class WidgetDataServiceTest {
         stubDefinition();
         events.add(registryEvent(1_700_000_000_000L, 1, false));
 
-        JsonObject data = data(render(curve("w1", last(24), config("field", "进水阀"))), 0);
+        // 「进水阀」是服务定义里的第 2 只寄存器（位区），按序号引用
+        JsonObject data = data(render(curve("w1", last(24), config("field", 2))), 0);
 
         // 位是 0/1 的阶梯（0 一直保持到下一次翻转），直连会画出根本不存在的中间值
         assertTrue(data.getBoolean("step"));
@@ -979,8 +980,8 @@ class WidgetDataServiceTest {
      * 一条字段曲线的卡片：三元组 + 窗口，`extra` 可以改字段名或点数。
      */
     private static WebDashboardWidget curve(String id, Map<String, Object> window, Map<String, Object> extra) {
-        Map<String, Object> config = config("source", "serviceField", "fdid", SERVICE_ID,
-                "pollIndex", 1, "field", "温度", "window", window);
+        Map<String, Object> config = config("source", "fdField", "fdid", SERVICE_ID,
+                "field", 1, "window", window);
         config.putAll(extra);
         return widget(id, "line", "W12H200", config);
     }
@@ -1102,16 +1103,19 @@ class WidgetDataServiceTest {
         when(manipulationService.getShadows(anyString(), anyList())).thenReturn(Uni.createFrom().item(array));
     }
 
-    private static WebDashboardWidget serviceCard(String id, int pollIndex, List<String> fields) {
-        return widget(id, "service", "W12H200", config("fdid", SERVICE_ID,
-                "pollIndex", pollIndex, "fields", fields));
+    /**
+     * 服务卡：只给服务 + 寄存器序号（{@code registryIndex}），不存方法序号。
+     */
+    private static WebDashboardWidget serviceCard(String id, List<Integer> registryIndexes) {
+        return widget(id, "fd", "W12H200", config("fdid", SERVICE_ID, "fields", registryIndexes));
     }
 
     /**
-     * 新卡服务卡：不存方法序号，只给服务 + 寄存器字段。
+     * 同上：寄存器按序号给。
      */
-    private static WebDashboardWidget serviceCardRegisters(String id, String... fields) {
-        return widget(id, "service", "W12H200", config("fdid", SERVICE_ID, "fields", List.of(fields)));
+    private static WebDashboardWidget serviceCardRegisters(String id, Integer... registryIndexes) {
+        return widget(id, "fd", "W12H200",
+                config("fdid", SERVICE_ID, "fields", List.of(registryIndexes)));
     }
 
     /**

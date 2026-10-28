@@ -15,6 +15,7 @@ import jakarta.inject.Inject;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 区间曲线的读取（见 Modbus-History.md 第五节）。与 {@link ModbusHistoryWriteService} 分开：
@@ -38,36 +39,41 @@ public class ModbusRegistryHistoryService {
     @Inject
     ModbusRegistryHistoryRepository registryHistoryRepo;
 
-    /** 只用来把 field 名解析成寄存器序号（只读服务定义的点表快照，见 {@link #resolveRegister}）。 */
+    /** 只用来按 {@code registryIndex} 解析寄存器（只读服务定义的点表快照，见 {@link #resolveRegisterByIndex}）。 */
     @Inject
     FieldDeviceRepository fdRepo;
 
     /**
      * 区间查询的结果：规范化之后的入参（Resource 要原样回给前端）加上整形后的点。
+     *
+     * @param field 寄存器名（展示用）：请求身份是 {@code registryIndex}，响应仍带名字
      */
     public record RangeResult(
             Date from,
             Date to,
             int maxPoints,
+            String field,
             ModbusRegistryHistoryWindow.Window window
     ) {
     }
 
     /**
-     * 某个点位在 {@code [from, to]} 上的曲线数据：carry-in + 原始点，点太多则降采样成桶。
+     * 某只寄存器在 {@code [from, to]} 上的曲线数据：carry-in + 原始点，点太多则降采样成桶。
      *
-     * @param to 传 null 表示「到现在」（缺 {@code from} 没有同样明确的含义，所以 {@code from} 必填）
+     * @param pollIndex     旧前端的请求参数，接受但忽略（逐寄存器后不再需要方法序号）
+     * @param registryIndex 寄存器序号（1 起），本接口的身份参数
+     * @param to            传 null 表示「到现在」（缺 {@code from} 没有同样明确的含义，所以 {@code from} 必填）
      */
     public Uni<RangeResult> range(
             String fdid,
             Integer pollIndex,
-            String field,
+            Integer registryIndex,
             Date from,
             Date to,
             Integer maxPoints
     ) {
         Date end = to == null ? new Date() : to;
-        String err = checkPoint(fdid, field);
+        String err = checkPoint(fdid, registryIndex);
         if (err == null) {
             err = checkRange(from, end);
         }
@@ -76,11 +82,10 @@ public class ModbusRegistryHistoryService {
         }
         int points = normalizeMaxPoints(maxPoints);
 
-        // 逐寄存器：field 名 == 寄存器名（见 configSnapshot.registries），先按服务定义把它解析成
-        // registerIndex。解析不到（服务不存在 / 字段写错）报错，与现有 "fdid is required"
-        // 的报错风格一致；pollIndex 为兼容旧前端请求仍接受、仅忽略（逐寄存器后不再需要它）。
+        // 逐寄存器：registryIndex 是寄存器在点表快照里的身份（见 configSnapshot.registries）。
+        // 解析不到（服务不存在 / 序号写错 / 不可读）报错，与现有 "fdid is required" 的报错风格一致。
         return fdRepo.findById(fdid)
-                .map(service -> resolveRegister(service, field))
+                .map(service -> resolveRegisterByIndex(service, registryIndex))
                 .chain(reg -> Uni.combine().all()
                         .unis(registryHistoryRepo.findCarryIn(fdid, reg.index, from),
                                 registryHistoryRepo.findRange(fdid, reg.index, from, end, MAX_ROWS + 1))
@@ -98,7 +103,7 @@ public class ModbusRegistryHistoryService {
                             ModbusRegistryHistorySample carryIn =
                                     carry != null && !Boolean.TRUE.equals(carry.failure)
                                             ? sampleOf(carry) : null;
-                            return new RangeResult(from, end, points,
+                            return new RangeResult(from, end, points, reg.name,
                                     ModbusRegistryHistoryWindow.of(carryIn, samplesOf(events),
                                             from.getTime(), end.getTime(), points));
                         })));
@@ -107,21 +112,21 @@ public class ModbusRegistryHistoryService {
     // ===== 逐寄存器 =====
 
     /**
-     * field 名 → 服务点表快照里的寄存器。name != 寄存器名（服务没了 / 字段写错 / 纯命令老服务）
-     * 一律报错 —— 与「fdid is required」的报错风格一致，且与 {@link ModbusHistoryWriteService#record}
-     * 的「名字对上才写寄存器侧」同一条匹配规则。
+     * registryIndex → 服务点表快照里的寄存器。序号解析不到（服务没了 / 配置写错）、或那只寄存器
+     * 不可读（只写 W）一律报错 —— 与「fdid is required」的报错风格一致。
      */
-    private static ModbusRegistry resolveRegister(FieldDevice fd, String field) {
-        if (fd == null || fd.configSnapshot == null
-                || fd.configSnapshot.registries == null) {
-            throw new IllegalArgumentException("field not a readable register: " + field);
-        }
-        for (ModbusRegistry reg : fd.configSnapshot.registries) {
-            if (reg != null && field.equals(reg.name)) {
-                return reg;
+    private static ModbusRegistry resolveRegisterByIndex(FieldDevice fd, Integer registryIndex) {
+        if (fd != null && fd.configSnapshot != null && fd.configSnapshot.registries != null) {
+            for (ModbusRegistry reg : fd.configSnapshot.registries) {
+                if (reg != null && Objects.equals(registryIndex, reg.index)) {
+                    if ("R".equals(reg.access) || "RW".equals(reg.access)) {
+                        return reg;
+                    }
+                    break;
+                }
             }
         }
-        throw new IllegalArgumentException("field not a readable register: " + field);
+        throw new IllegalArgumentException("registry index not readable: " + registryIndex);
     }
 
     /** 区间内的事件 → 喂给 {@link ModbusRegistryHistoryWindow} 的临时样本（只留 {@code at}/{@code value}）；失败事件丢弃。 */
@@ -145,12 +150,15 @@ public class ModbusRegistryHistoryService {
 
     // ===== 参数 =====
 
-    private static String checkPoint(String fdid, String field) {
+    private static String checkPoint(String fdid, Integer registryIndex) {
         if (isBlank(fdid)) {
             return "fdid is required";
         }
-        if (isBlank(field)) {
-            return "field is required";
+        if (registryIndex == null) {
+            return "registryIndex is required";
+        }
+        if (registryIndex < 1) {
+            return "registryIndex must be a positive integer";
         }
         return null;
     }

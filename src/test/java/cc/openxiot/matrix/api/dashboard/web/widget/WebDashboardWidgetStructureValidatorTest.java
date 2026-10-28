@@ -399,35 +399,49 @@ class WidgetStructureValidatorTest {
     }
 
     @Test
-    void line_serviceField_keysRequired() {
+    void line_fdField_keysRequired() {
         assertInvalid("config.fdid is required",
-                widget("line", config("source", "serviceField", "window", last(24))));
+                widget("line", config("source", "fdField", "window", last(24))));
         assertInvalid("config.field is required",
-                widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1")));
-        assertValid(widget("line", config("source", "serviceField", "window", last(24),
-                "fdid", "s1", "field", "temp")));
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1")));
+        // 身份是寄存器序号（registryIndex），不是寄存器名
+        assertInvalid("config.field must be a positive integer",
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", "temp")));
+        assertValid(widget("line", config("source", "fdField", "window", last(24),
+                "fdid", "s1", "field", 1)));
+    }
+
+    @Test
+    void line_fieldMustBePositive() {
+        assertInvalid("config.field must be a positive integer",
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", 0)));
+        assertInvalid("config.field must be a positive integer",
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", -1)));
     }
 
     @Test
     void line_maxPointsRange() {
         assertInvalid("config.maxPoints must be between 1 and 2000",
-                widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
-                        "field", "temp", "maxPoints", 0)));
-        assertValid(widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
-                "field", "temp", "maxPoints", 100)));
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", 1, "maxPoints", 0)));
+        assertValid(widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                "field", 1, "maxPoints", 100)));
     }
 
     /**
-     * {@code showFailureShadow} 只对 {@code serviceField} 有意义（阴影画的是 Modbus 采集失败，
-     * 告警曲线没有这种东西），所以它只在 serviceField 分支校验；alarmCount 上带着它一律忽略。
+     * {@code showFailureShadow} 只对 {@code fdField} 有意义（阴影画的是 Modbus 采集失败，
+     * 告警曲线没有这种东西），所以它只在 fdField 分支校验；alarmCount 上带着它一律忽略。
      */
     @Test
     void line_showFailureShadowMustBeBoolean() {
         assertInvalid("config.showFailureShadow must be a boolean", widget("line",
-                config("source", "serviceField", "window", last(24), "fdid", "s1",
-                        "field", "temp", "showFailureShadow", "true")));
-        assertValid(widget("line", config("source", "serviceField", "window", last(24), "fdid", "s1",
-                "field", "temp", "showFailureShadow", true)));
+                config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", 1, "showFailureShadow", "true")));
+        assertValid(widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                "field", 1, "showFailureShadow", true)));
     }
 
     @Test
@@ -445,7 +459,7 @@ class WidgetStructureValidatorTest {
     @Test
     void distribution_snapshotDimensionNeedsNoWindow() {
         assertValid(widget("distribution", config("dimension", "deviceType")));
-        assertValid(widget("distribution", config("dimension", "serviceType")));
+        assertValid(widget("distribution", config("dimension", "fdType")));
     }
 
     @Test
@@ -524,61 +538,69 @@ class WidgetStructureValidatorTest {
         assertValid(widget("device", config("did", "d1", "pid", "p1", "showUnit", true)));
     }
 
-    // ===== service（同上，P2 渲染）=====
+    // ===== fd（同上，P2 渲染）=====
 
     @Test
     void service_keysRequired() {
-        assertInvalid("config.fdid is required", widget("service", config("fields", List.of("a"))));
-        // 不再要求方法序号：选了服务 + 非空寄存器字段即可（方法由取数时解析）
-        assertValid(widget("service", config("fdid", "s1", "fields", List.of("a"))));
+        assertInvalid("config.fdid is required", widget("fd", config("fields", List.of(1))));
+        // 不再要求方法序号：选了服务 + 非空寄存器序号即可（方法由取数时解析）
+        assertValid(widget("fd", config("fdid", "s1", "fields", List.of(1))));
         assertInvalid("config.fields must be an array",
-                widget("service", config("fdid", "s1", "fields", "a")));
+                widget("fd", config("fdid", "s1", "fields", "a")));
     }
 
     @Test
     void service_fieldsNotEmpty() {
         assertInvalid("config.fields must not be empty",
-                widget("service", config("fdid", "s1", "fields", List.of())));
+                widget("fd", config("fdid", "s1", "fields", List.of())));
     }
 
     @Test
     void service_fieldsLimit() {
-        List<String> tooMany = new ArrayList<>();
+        List<Integer> tooMany = new ArrayList<>();
         for (int i = 0; i <= WebDashboardWidgetStructureValidator.MAX_SERVICE_FIELDS; i++) {
-            tooMany.add("f" + i);
+            tooMany.add(i + 1);
         }
-        assertInvalid("config.fields has too many entries", widget("service",
+        assertInvalid("config.fields has too many entries", widget("fd",
                 config("fdid", "s1", "fields", tooMany)));
     }
 
     @Test
     void service_fieldsUnique() {
-        assertInvalid("config.fields has a duplicate: temp", widget("service",
-                config("fdid", "s1", "fields", List.of("temp", "temp"))));
-    }
-
-    @Test
-    void service_fieldEntriesMustBeStrings() {
-        assertInvalid("config.fields must contain strings", widget("service",
-                config("fdid", "s1", "fields", List.of("temp", 3))));
+        assertInvalid("config.fields has a duplicate: 2", widget("fd",
+                config("fdid", "s1", "fields", List.of(2, 2))));
     }
 
     /**
-     * 位名也是合法的字段名：位是**独立的点**（有自己的轮询与历史，见 {@code ModbusPollResponseFieldBit}），
-     * 所以位区字段要连位一起展开之后填进来，不该被结构校验拦掉。
+     * 字段身份是寄存器序号（{@code registryIndex}）：名字（字符串）不再合法 —— 同名寄存器
+     * （ADL400 的「发生时间：分、时」）按名字会指到错的那一只。
      */
     @Test
-    void service_bitNameIsAValidField() {
-        assertValid(widget("service", config("fdid", "s1",
-                "fields", List.of("status", "status.bit0", "status.bit1"))));
+    void service_fieldEntriesMustBePositiveIntegers() {
+        assertInvalid("config.fields must contain positive integers", widget("fd",
+                config("fdid", "s1", "fields", List.of(1, "temp"))));
+        assertInvalid("config.fields must contain positive integers", widget("fd",
+                config("fdid", "s1", "fields", List.of(0))));
+        assertInvalid("config.fields must contain positive integers", widget("fd",
+                config("fdid", "s1", "fields", List.of(-1))));
+    }
+
+    /**
+     * 位也是**独立的寄存器**（有自己的 index、轮询与历史），所以位所在的那只寄存器序号
+     * 同样是合法字段，不该被结构校验拦掉。
+     */
+    @Test
+    void service_bitRegisterIndexIsAValidField() {
+        assertValid(widget("fd", config("fdid", "s1",
+                "fields", List.of(1, 2, 3))));
     }
 
     @Test
     void service_showUnitMustBeBoolean() {
-        assertInvalid("config.showUnit must be a boolean", widget("service",
-                config("fdid", "s1", "fields", List.of("temp"), "showUnit", 1)));
-        assertValid(widget("service", config("fdid", "s1",
-                "fields", List.of("temp"), "showUnit", true)));
+        assertInvalid("config.showUnit must be a boolean", widget("fd",
+                config("fdid", "s1", "fields", List.of(1), "showUnit", 1)));
+        assertValid(widget("fd", config("fdid", "s1",
+                "fields", List.of(1), "showUnit", true)));
     }
 
     /**
@@ -588,8 +610,8 @@ class WidgetStructureValidatorTest {
      */
     @Test
     void service_leftoverShowStaleIsIgnored() {
-        assertValid(widget("service", config("fdid", "s1",
-                "fields", List.of("temp"), "showStale", 1)));
+        assertValid(widget("fd", config("fdid", "s1",
+                "fields", List.of(1), "showStale", 1)));
     }
 
     // ===== helpers =====

@@ -36,6 +36,11 @@ public final class DashboardWidgetConfigs {
         return value instanceof Number n ? n.intValue() : null;
     }
 
+    /** 从 config 里按 key 取整数（缺省 / 类型不对都给 {@code null}）。 */
+    public static Integer intVal(Map<String, Object> config, String key) {
+        return config == null ? null : intVal(config.get(key));
+    }
+
     public static Long longVal(Object value) {
         return value instanceof Number n ? n.longValue() : null;
     }
@@ -48,6 +53,23 @@ public final class DashboardWidgetConfigs {
                 String text = str(item);
                 if (text != null) {
                     result.add(text);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 整数数组（{@code registryIndex} 清单）；非数字元素直接跳过 —— 与 {@link #strList} 同一口径：
+     * 形状错误由结构校验报，这里只求读得出清单、不抛异常。
+     */
+    public static List<Integer> intList(Object value) {
+        List<Integer> result = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                Integer index = intVal(item);
+                if (index != null) {
+                    result.add(index);
                 }
             }
         }

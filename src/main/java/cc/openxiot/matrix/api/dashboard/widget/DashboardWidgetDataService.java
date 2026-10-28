@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 看板的批量取数：把一屏卡片需要的数字一次性取回来，并**逐卡片**返回成功或失败。
@@ -180,9 +181,9 @@ public class DashboardWidgetDataService {
         //    只按 id 查（`Modbus-History.md` 当前的写法）就意味着拿到别人的 id 就能读别人的数据。
         //    已存布局同样要判 —— 保存时校验过，但那张卡片引用的服务可能在那之后被删掉了。
         //
-        //    先取服务定义，再据此把字段曲线/服务卡配置的字段名解析回点表里的寄存器：卡片配置
-        //    不存方法序号，字段（寄存器）就靠这个名字在 configSnapshot.registries 里解析到 index
-        //    才知道取哪只寄存器的影子/历史。
+        //    先取服务定义，再据此把字段曲线/服务卡配置的寄存器序号（registryIndex）解析回寄存器：
+        //    卡片配置只存序号（名字会因同名寄存器指错点位），序号在 configSnapshot.registries 里
+        //    解析到那一只寄存器，才知道取哪只的影子/历史。
         return ownershipValidator.errorsByWidget(space, widgets)
                 .chain(errors -> fetchFds(fdids)
                         .chain(fds -> {
@@ -734,7 +735,7 @@ public class DashboardWidgetDataService {
      * 而这份清单本来就是跟着窗口一起取回来的，省不下什么。</p>
      */
     private static JsonObject fieldData(CurveQuery query, CurveFetched curve, FdFetched service) {
-        ModbusRegistry reg = registerOf(service.service(), query.field());
+        ModbusRegistry reg = registerByIndex(service.service(), query.registerIndex());
         // 这份响应体是这次取数现编的（`fetchCurves` 里每个去重键一份），就地缀上三样即可
         JsonObject data = curve.range();
         data.put("unit", reg == null || reg.unit == null ? "" : reg.unit);
@@ -796,17 +797,18 @@ public class DashboardWidgetDataService {
      * 旧卡的 {@code pollIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, FdFetched fetched) {
-        List<String> configured = DashboardWidgetConfigs.strList(config.get("fields"));
+        List<Integer> configured = DashboardWidgetConfigs.intList(config.get("fields"));
         JsonObject data = new JsonObject();
         JsonArray rows = new JsonArray();
         ModbusShadow representative = null;
-        for (String name : configured) {
-            ModbusRegistry reg = registerOf(fetched.service(), name);
-            if (reg == null || reg.index == null) {
+        for (Integer registryIndex : configured) {
+            ModbusRegistry reg = registerByIndex(fetched.service(), registryIndex);
+            if (reg == null) {
                 continue;
             }
             ModbusShadow shadow = fetched.registryShadows().get(reg.index);
-            JsonObject row = new JsonObject().put("field", name);
+            // 输出里的 field 仍是**寄存器名**（展示用）：配置身份换成了序号，展示口径不变
+            JsonObject row = new JsonObject().put("field", reg.name);
             if (shadow != null && shadow.value != null) {
                 row.put("value", shadow.value);
             }
@@ -849,13 +851,14 @@ public class DashboardWidgetDataService {
                 || candidate.recordedAt.getTime() > current.recordedAt.getTime();
     }
 
-    /** 字段名 → 服务点表快照里的寄存器；没配快照 / 名字对不上给 null。 */
-    private static ModbusRegistry registerOf(FieldDevice fd, String fieldName) {
-        if (fd == null || fd.configSnapshot == null || fd.configSnapshot.registries == null) {
+    /** 寄存器序号（registryIndex）→ 服务点表快照里的寄存器；没配快照 / 序号对不上给 null。 */
+    private static ModbusRegistry registerByIndex(FieldDevice fd, Integer registryIndex) {
+        if (fd == null || fd.configSnapshot == null
+                || fd.configSnapshot.registries == null || registryIndex == null) {
             return null;
         }
         for (ModbusRegistry reg : fd.configSnapshot.registries) {
-            if (reg != null && fieldName.equals(reg.name)) {
+            if (reg != null && Objects.equals(registryIndex, reg.index)) {
                 return reg;
             }
         }
@@ -998,26 +1001,27 @@ public class DashboardWidgetDataService {
         }
 
         /**
-         * 从卡片配置里读，寄存器序号在取到服务定义后**按寄存器名解析**（卡片不再存 pollIndex）。
-         * {@code fdid} / {@code field} 缺一、或字段在点表快照里解析不到（服务没了、字段写错）
-         * 都给 {@code null} —— 拿不到寄存器序号就无从查这段窗口的历史。
+         * 从卡片配置里读 {@code config.field} 的**寄存器序号**（{@code registryIndex}），
+         * 再按序号在点表快照里解析出寄存器、把名字记下来当展示用（{@code curve.field()}）。
+         * {@code fdid} / {@code field} 缺一、或序号在点表快照里解析不到（服务没了、配置写错）
+         * 都给 {@code null} —— 拿不到寄存器就无从查这段窗口的历史。
          */
         static CurveQuery of(DashboardWidgetView widget, Window window, Map<String, FdFetched> fds) {
             Map<String, Object> config = widget.config();
             String fdid = configString(config, "fdid");
-            String field = configString(config, "field");
-            if (fdid == null || field == null || fds == null) {
+            Integer registryIndex = DashboardWidgetConfigs.intVal(config, "field");
+            if (fdid == null || registryIndex == null || fds == null) {
                 return null;
             }
-            ModbusRegistry reg = registerOf(fdOf(fds, fdid), field);
-            if (reg == null || reg.index == null) {
+            ModbusRegistry reg = registerByIndex(fdOf(fds, fdid), registryIndex);
+            if (reg == null) {
                 return null;
             }
             Integer maxPoints = DashboardWidgetConfigs.intVal(config.get("maxPoints"));
             // 夹到 [1, MAX_MAX_POINTS]：点数只是性能提示，不值得为超出让请求失败
             int points = maxPoints == null ? DEFAULT_MAX_POINTS : maxPoints;
             points = Math.min(Math.max(points, 1), MAX_MAX_POINTS);
-            return new CurveQuery(fdid, reg.index, field, window, points);
+            return new CurveQuery(fdid, registryIndex, reg.name, window, points);
         }
     }
 
@@ -1033,7 +1037,7 @@ public class DashboardWidgetDataService {
     /**
      * 一个现场设备的取数结果：该设备各寄存器的当前值（按 registerIndex）、服务定义、以及错误文案。
      *
-     * <p>定义与影子一起取：定义用来把配置的字段名解析到寄存器、并产出 {@code unit} / {@code bit}，
+     * <p>定义与影子一起取：定义用来把配置的寄存器序号解析到寄存器、并产出 {@code unit} / {@code bit}，
      * 两者缺一个卡片都画不出来，分两次取只会多一个中间状态。</p>
      */
     private record FdFetched(Map<Integer, ModbusShadow> registryShadows, FieldDevice service,

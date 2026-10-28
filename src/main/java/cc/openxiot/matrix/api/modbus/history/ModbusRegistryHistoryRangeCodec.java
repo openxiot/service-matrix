@@ -35,7 +35,7 @@ public final class ModbusRegistryHistoryRangeCodec {
      * 后端要是各写一份编码，一边改了键名、或漏了「没有 carry-in 时不出键」那条规则，
      * 另一边的表现是**静默地少一段曲线**。</p>
      *
-     * <p>{@code identity}（历史页是 pollIndex、看板是 registerIndex）只是请求那份标识的回显，
+     * <p>{@code identity}（历史页与看板都是 registerIndex）只是请求那份标识的回显，
      * 落在响应的 {@code pollIndex} 键上，前端画图只用 {@code points} / {@code carryIn}，不按它取数据。</p>
      */
     public static JsonObject encode(ModbusRegistryHistoryRange range) {

@@ -5,11 +5,8 @@ import cc.openxiot.matrix.api.statistics.StatisticsQueryService;
 import cc.openxiot.matrix.db.dashboard.DashboardWidgetView;
 import cc.openxiot.matrix.db.device.DeviceEntity;
 import cc.openxiot.matrix.db.device.DeviceRepository;
-import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.FieldDevice;
-import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
-import cc.openxiot.matrix.db.modbus.fd.poll.ModbusPoll;
 import cc.openxiot.matrix.db.modbus.fd.FieldDeviceRepository;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.db.space.SpaceOn;
@@ -22,12 +19,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * 卡片配置里**需要查库的那部分**校验：引用的设备/服务是否属于这个空间，
- * {@code (fdid, field)} 引用是否真实存在（老卡的 {@code pollIndex} 方法序号不再需要，
- * 字段按 {@code findFunctionByField} 在服务定义里解析）。
+ * {@code (fdid, registryIndex)} 引用是否真实存在且可读（身份是寄存器序号，不是寄存器名 ——
+ * 同名寄存器按名字解析会指到错的那一只）。
  *
  * <p>与纯函数的 {@link WebDashboardWidgetStructureValidator} 分成两个类，是因为两者的失败语义不同：
  * 结构错误是「这份 body 根本不成形」，一次请求只能报一个；归属错误是「某一张卡指向了不存在
@@ -189,11 +187,9 @@ public class DashboardWidgetOwnershipValidator {
                     if (fdid == null) {
                         continue;
                     }
-                    // 老卡带 pollIndex（方法序号），新卡不带 —— 校验按字段解析即可，见 checkServiceRef
-                    Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
                     addFdid(fdids, fdid);
-                    for (String field : DashboardWidgetConfigs.strList(config.get("fields"))) {
-                        fdRefs.add(new FdRef(i, widget.id(), fdid, pollIndex, field));
+                    for (Integer registryIndex : DashboardWidgetConfigs.intList(config.get("fields"))) {
+                        fdRefs.add(new FdRef(i, widget.id(), fdid, registryIndex));
                     }
                 }
                 case "line" -> {
@@ -201,13 +197,12 @@ public class DashboardWidgetOwnershipValidator {
                         continue;
                     }
                     String fdid = DashboardWidgetConfigs.str(config.get("fdid"));
-                    Integer pollIndex = DashboardWidgetConfigs.intVal(config.get("pollIndex"));
-                    String field = DashboardWidgetConfigs.str(config.get("field"));
-                    if (fdid == null || field == null) {
+                    Integer registryIndex = DashboardWidgetConfigs.intVal(config.get("field"));
+                    if (fdid == null || registryIndex == null) {
                         continue;
                     }
                     addFdid(fdids, fdid);
-                    fdRefs.add(new FdRef(i, widget.id(), fdid, pollIndex, field));
+                    fdRefs.add(new FdRef(i, widget.id(), fdid, registryIndex));
                 }
                 case "device" -> {
                     String did = DashboardWidgetConfigs.str(config.get("did"));
@@ -281,70 +276,35 @@ public class DashboardWidgetOwnershipValidator {
         if (!inSubtree(spaceIds, fd.device == null ? null : fd.device.space)) {
             return "fd does not belong to this space: " + ref.fdid();
         }
-        // 老卡带 pollIndex（方法序号）：按那个方法的应答字段校验，行为不变。
-        if (ref.pollIndex() != null) {
-            ModbusPoll poll = findPoll(fd, ref.pollIndex());
-            if (poll == null) {
-                return "function not found: " + ref.pollIndex();
-            }
-            if (!hasField(fd, poll, ref.field())) {
-                return "field not found: " + ref.field();
-            }
-            return null;
+        // 寄存器序号必须在点表快照里解析得到 —— 解析不到就取不到影子/历史
+        ModbusRegistry reg = registerByIndex(fd, ref.registryIndex());
+        if (reg == null) {
+            return "register not found: " + ref.registryIndex();
         }
-        // 新卡不存方法号：字段（寄存器）必须能在某个读方法的应答里解析到 —— 答不上来就取不到数
-        if (findFunctionByField(fd, ref.field()) == null) {
-            return "field not found: " + ref.field();
+        // 只写的寄存器没有读数：卡片配上它只会永远显示「尚未采集」
+        if (!isReadable(reg)) {
+            return "register not readable: " + ref.registryIndex();
         }
         return null;
     }
 
-    /**
-     * 按寄存器名找「载着它的读方法」，不限定某个方法序号。寄存器是本服务应答字段（registryIndex）
-     * 引用的点位：其 {@code name} 即前端卡片下拉里选的名字，所以「名字存在于某方法应答」就是
-     * 「这只寄存器可读」。
-     */
-    private static ModbusPoll findFunctionByField(FieldDevice fd, String field) {
-        if (fd == null || fd.polls == null) {
+    /** 寄存器序号 → 点表快照里的寄存器；没配快照 / 序号对不上给 {@code null}。 */
+    private static ModbusRegistry registerByIndex(FieldDevice fd, Integer registryIndex) {
+        if (fd == null || fd.configSnapshot == null
+                || fd.configSnapshot.registries == null || registryIndex == null) {
             return null;
         }
-        for (ModbusPoll poll : fd.polls) {
-            if (poll != null && hasField(fd, poll, field)) {
-                return poll;
+        for (ModbusRegistry reg : fd.configSnapshot.registries) {
+            if (reg != null && Objects.equals(registryIndex, reg.index)) {
+                return reg;
             }
         }
         return null;
     }
 
-    private static ModbusPoll findPoll(FieldDevice fd, Integer index) {
-        if (fd.polls == null) {
-            return null;
-        }
-        for (ModbusPoll poll : fd.polls) {
-            if (poll != null && index.equals(poll.index)) {
-                return poll;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 字段（寄存器名）是否在该方法应答引用的某只寄存器里。应答字段引用 {@code registryIndex}，
-     * 解析到寄存器后按寄存器名匹配 —— 重名寄存器同名的也在被引用集合内，仍算命中。
-     */
-    private static boolean hasField(FieldDevice fd, ModbusPoll poll, String field) {
-        Map<Integer, ModbusRegistry> byIndex = ModbusRegistries.byIndex(
-                fd.configSnapshot == null ? null : fd.configSnapshot.registries);
-        for (ModbusResponseField candidate : ModbusPoll.responseFields(poll)) {
-            if (candidate == null || candidate.registryIndex == null) {
-                continue;
-            }
-            ModbusRegistry reg = byIndex.get(candidate.registryIndex);
-            if (reg != null && field.equals(reg.name)) {
-                return true;
-            }
-        }
-        return false;
+    /** 可读 = R / RW（与 {@code ModbusShadowService} 同口径）：只有可读寄存器才会被采集。 */
+    private static boolean isReadable(ModbusRegistry reg) {
+        return "R".equals(reg.access) || "RW".equals(reg.access);
     }
 
     /**
@@ -363,8 +323,8 @@ public class DashboardWidgetOwnershipValidator {
         return "widgets[" + index + "](" + widgetId + "): ";
     }
 
-    /** 一次 (fdid, field) 引用；现场设备卡片的每个字段各一条。pollIndex 仅老卡带，可为 null。 */
-    private record FdRef(int index, String widgetId, String fdid, Integer pollIndex, String field) {
+    /** 一次 (fdid, registryIndex) 引用；现场设备卡片的每个寄存器各一条。 */
+    private record FdRef(int index, String widgetId, String fdid, Integer registryIndex) {
     }
 
     /** 一张设备卡片的引用。 */
