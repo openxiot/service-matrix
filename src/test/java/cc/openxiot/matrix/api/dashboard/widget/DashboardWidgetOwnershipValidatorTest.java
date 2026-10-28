@@ -155,7 +155,7 @@ class WidgetOwnershipValidatorTest {
     void service_inAnotherSpace_doesNotBelong() {
         stubFd(fd(SERVICE_ID, OTHER_ID, register(1, "温度", "R")));
 
-        assertEquals("widgets[0](w1): service does not belong to this space: " + SERVICE_ID,
+        assertEquals("widgets[0](w1): fd does not belong to this space: " + SERVICE_ID,
                 errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
@@ -165,13 +165,13 @@ class WidgetOwnershipValidatorTest {
         orphan.device.space = null;
         stubFd(orphan);
 
-        assertEquals("widgets[0](w1): service does not belong to this space: " + SERVICE_ID,
+        assertEquals("widgets[0](w1): fd does not belong to this space: " + SERVICE_ID,
                 errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 
     @Test
     void service_notFound() {
-        assertEquals("widgets[0](w1): service not found: " + SERVICE_ID,
+        assertEquals("widgets[0](w1): fd not found: " + SERVICE_ID,
                 errors(serviceWithRegisters("w1", SERVICE_ID, 1)).get("w1"));
     }
 

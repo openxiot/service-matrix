@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
  * <p><b>本类只管「配置本身合不合法」，不管「你能不能写」和「这个设备是不是你的」</b>：</p>
  * <ul>
  *   <li>「能不能写」是资源层 {@code requireSpaceAdmin} 的事；</li>
- *   <li>「设备/服务是否属于该空间」「{@code (fdid, pollIndex, field)} 三元组是否存在」
+ *   <li>「设备/服务是否属于该空间」「{@code (fdid, registryIndex)} 引用是否存在且可读」
  *       需要查库，是 {@link DashboardWidgetOwnershipValidator} 的事。</li>
  * </ul>
  * <p>这样切分的实际好处：本类能被不碰库的纯 JUnit 覆盖（{@code @QuarkusTest} 会要求连 Mongo），

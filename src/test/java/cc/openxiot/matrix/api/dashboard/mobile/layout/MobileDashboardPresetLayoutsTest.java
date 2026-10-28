@@ -44,7 +44,7 @@ class MobileDashboardPresetLayoutsTest {
 
         // 顺序（=视觉顺序）：id 在预设里就是文档，别被排序或补位打乱
         assertEquals("m_preset_devices", ws.get(0).id);
-        assertEquals("m_preset_services", ws.get(1).id);
+        assertEquals("m_preset_fds", ws.get(1).id);
         assertEquals("m_preset_alarms", ws.get(2).id);
         assertEquals("m_preset_failures", ws.get(3).id);
         assertEquals("m_preset_device_type", ws.get(4).id);

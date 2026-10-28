@@ -793,8 +793,9 @@ public class DashboardWidgetDataService {
      * <p>{@code recordedAt} / {@code error} 属于**整个服务卡**：取各参与寄存器影子里**最近一次**成功
      * 采集的那一份做代表（值仍逐寄存器取自各自的影子），所以时间只有一处。</p>
      *
-     * <p>按 {@code config.fields} 的**配置顺序**产出；{@code unit} / {@code bit} 取自寄存器定义。
-     * 旧卡的 {@code pollIndex} 不再读——卡片存的是寄存器字段，方法由取数时解析。</p>
+     * <p>按 {@code config.fields} 的**配置顺序**产出（每项是寄存器序号 {@code registryIndex}）；
+     * {@code unit} / {@code bit} 取自寄存器定义，输出里的 {@code field} 仍是寄存器名（展示用）。
+     * 旧卡的 {@code pollIndex} 不再读——卡片存的是寄存器序号，方法由取数时解析。</p>
      */
     private static JsonObject serviceData(Map<String, Object> config, FdFetched fetched) {
         List<Integer> configured = DashboardWidgetConfigs.intList(config.get("fields"));
