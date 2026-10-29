@@ -4,9 +4,11 @@ import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfig;
 import cc.openxiot.matrix.db.modbus.config.ModbusConfigOwner;
+import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.config.ModbusSlave;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusCommandCodec;
 import cc.openxiot.matrix.db.modbus.config.codec.ModbusConfigCodec;
+import cc.openxiot.matrix.db.modbus.config.codec.ModbusRegistryCodec;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.bson.types.ObjectId;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -109,6 +112,23 @@ class ModbusConfigCodecTest {
         assertTrue(ModbusConfigCodec.encode((List<ModbusConfig>) null).isEmpty());
         assertTrue(ModbusCommandCodec.encode((ModbusCommand) null).isEmpty());
         assertTrue(ModbusCommandCodec.encode((List<ModbusCommand>) null).isEmpty());
+    }
+
+    @Test
+    void encodesRegistryDescriptionOnlyWhenPresent() {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = "A相电压";
+        reg.index = 1;
+        reg.address = 0;
+        reg.area = "holding";
+        reg.access = "R";
+        reg.description = "来自 1 号电表";
+
+        assertEquals("来自 1 号电表", ModbusRegistryCodec.encode(reg).getString("description"));
+
+        // 没填就不出键（与其余可选字段同口径）
+        reg.description = null;
+        assertFalse(ModbusRegistryCodec.encode(reg).containsKey("description"));
     }
 
     @Test

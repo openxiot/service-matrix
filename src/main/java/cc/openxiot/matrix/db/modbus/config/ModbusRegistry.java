@@ -30,6 +30,10 @@ public class ModbusRegistry {
     @Schema(description = "点位名称（用户可改），如 A相电压", required = true)
     public String name;
 
+    /** 说明（用户自己填的自由文本）：只用来展示，不参与解析、轮询、告警等任何逻辑。 */
+    @Schema(description = "说明（用户自己填的自由文本，仅供展示，不参与解析/轮询）", examples = {"A 相电压，来自 1 号电表"})
+    public String description;
+
     @Schema(description = "寄存器在点表里的序号（1 起自然数，寄存器间唯一；供 ModbusPollFrom.index 引用）", examples = {"1"}, required = true)
     public Integer index;
 

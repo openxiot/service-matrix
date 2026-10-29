@@ -25,6 +25,9 @@ public final class ModbusRegistryCodec {
         if (reg.name != null) {
             o.put("name", reg.name);
         }
+        if (reg.description != null) {
+            o.put("description", reg.description);
+        }
         if (reg.index != null) {
             o.put("index", reg.index);
         }
