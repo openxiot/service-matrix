@@ -99,7 +99,7 @@ class ModbusHistoryCodecTest {
         // 非数值点位折叠后没有极值可言，但**键必须在**（值为 null）：
         // 前端画图时按键直接读，不该为「这一桶恰好没有数值」写分支
         JsonObject json = ModbusRegistryHistorySampleCodec.encode(
-                new Bucket(T0, T0 + 1000, 3, "ON", "OFF", null, null, null));
+                new Bucket(T0, T0 + 1000, 3, "ON", "OFF", null, null, null, null));
 
         assertEquals(T0, json.getLong("at"));
         assertEquals(T0 + 1000, json.getLong("until"));
@@ -111,6 +111,22 @@ class ModbusHistoryCodecTest {
         assertTrue(json.containsKey("avg"));
         assertNull(json.getDouble("min"));
         assertNull(json.getDouble("avg"));
+    }
+
+    @Test
+    void bucketOnlyCarriesSumInDeltaMode() {
+        // 普通值模式的桶没有 sum：一段时间里的读数之和不是个有意义的量，不该出现在响应里
+        JsonObject actual = ModbusRegistryHistorySampleCodec.encode(
+                new Bucket(T0, T0 + 1000, 2, 75.0, 77.0, 75.0, 77.0, 76.0, null));
+        assertFalse(actual.containsKey("sum"));
+
+        // 增量模式的桶才有（桶内正增量之和）；first/last 在增量模式下无意义，照常为 null
+        JsonObject delta = ModbusRegistryHistorySampleCodec.encode(
+                new Bucket(T0, T0 + 1000, 2, null, null, 1.0, 3.0, 2.0, 4.0));
+        assertTrue(delta.containsKey("sum"));
+        assertEquals(4.0, delta.getDouble("sum"));
+        assertNull(delta.getDouble("first"));
+        assertNull(delta.getDouble("last"));
     }
 
     @Test

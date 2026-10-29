@@ -54,6 +54,11 @@ public final class ModbusRegistryHistorySampleCodec {
         o.put("min", bucket.min());
         o.put("max", bucket.max());
         o.put("avg", bucket.avg());
+        // 只有增量模式的桶才有 sum（桶内正增量之和）：普通值模式下不出这个键，
+        // 免得前端把「一段读数之和」当成一个真实存在的量
+        if (bucket.sum() != null) {
+            o.put("sum", bucket.sum());
+        }
         return o;
     }
 }

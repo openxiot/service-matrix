@@ -974,6 +974,41 @@ class WidgetDataServiceTest {
         verify(registryHistoryRepo, times(2)).findRange(anyString(), any(), any(), any(), anyInt());
     }
 
+    // ===== line(serviceField)：增量口径 =====
+
+    @Test
+    void render_deltaCurveDiffsConsecutiveReadings() {
+        stubDefinition();
+        doAnswer(invocation -> Uni.createFrom().item(registryEvent(AT.getTime() - HOUR, 100.0, false)))
+                .when(registryHistoryRepo).findCarryIn(anyString(), any(), any());
+        events.add(registryEvent(AT.getTime(), 105.0, false));
+        events.add(registryEvent(AT.getTime() + 60_000, 112.0, false));
+
+        JsonObject data = data(render(curve("w1", last(24), config("valueMode", "delta"))), 0);
+
+        // 首点 = 105 − 100（carry-in 是窗口起点的值），第二点 = 112 − 105
+        JsonArray points = data.getJsonArray("points");
+        assertEquals(2, points.size());
+        assertEquals(5.0, points.getJsonObject(0).getDouble("value").doubleValue());
+        assertEquals(7.0, points.getJsonObject(1).getDouble("value").doubleValue());
+        // carry-in 已经折进首点，不能再发出去让前端减第二次
+        assertFalse(data.containsKey("carryIn"));
+    }
+
+    /**
+     * 同一条寄存器、同一个窗口，两种数值口径是**两条曲线**：去重键漏了口径，
+     * 其中一张卡就会拿到另一张的数（差值看起来也是一组合法的读数）。
+     */
+    @Test
+    void render_deltaAndActualCurvesAreNotDedupedTogether() {
+        stubDefinition();
+        events.add(registryEvent(AT.getTime(), 1, false));
+
+        render(curve("a", last(24)), curve("b", last(24), config("valueMode", "delta")));
+
+        verify(registryHistoryRepo, times(2)).findRange(anyString(), any(), any(), any(), anyInt());
+    }
+
     // ===== helpers =====
 
     /**

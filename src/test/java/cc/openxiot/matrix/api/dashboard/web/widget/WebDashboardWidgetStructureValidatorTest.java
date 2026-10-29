@@ -449,6 +449,29 @@ class WidgetStructureValidatorTest {
         assertValid(widget("line", config("source", "alarmCount", "window", last(24), "showFailureShadow", "true")));
     }
 
+    /** 展现方式两种数据源都给：整点告警条数用柱状图同样说得通。缺省即曲线图（老配置没有这个键）。 */
+    @Test
+    void line_chartEnum() {
+        assertValid(widget("line", config("source", "alarmCount", "window", last(24), "chart", "bar")));
+        assertValid(widget("line", config("source", "alarmCount", "window", last(24), "chart", "line")));
+        assertInvalid("config.chart must be one of",
+                widget("line", config("source", "alarmCount", "window", last(24), "chart", "pie")));
+    }
+
+    @Test
+    void line_valueModeEnumOnlyForFdField() {
+        assertValid(widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                "field", 1, "valueMode", "delta")));
+        assertValid(widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                "field", 1, "valueMode", "actual")));
+        assertInvalid("config.valueMode must be one of",
+                widget("line", config("source", "fdField", "window", last(24), "fdid", "s1",
+                        "field", 1, "valueMode", "cumulative")));
+        // 告警条数本身就是增量，再求一次增量是错的：编辑器不会写这个键，写出来就是链路有 bug
+        assertInvalid("config.valueMode only applies to source fdField",
+                widget("line", config("source", "alarmCount", "window", last(24), "valueMode", "delta")));
+    }
+
     // ===== distribution =====
 
     @Test

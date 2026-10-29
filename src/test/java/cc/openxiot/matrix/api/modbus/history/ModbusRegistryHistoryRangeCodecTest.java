@@ -34,7 +34,7 @@ class ModbusRegistryHistoryRangeCodecTest {
     }
 
     private static Bucket bucket(long at) {
-        return new Bucket(at, at + 1000, 2, 75.0, 77.0, 75.0, 77.0, 76.0);
+        return new Bucket(at, at + 1000, 2, 75.0, 77.0, 75.0, 77.0, 76.0, null);
     }
 
     @Test

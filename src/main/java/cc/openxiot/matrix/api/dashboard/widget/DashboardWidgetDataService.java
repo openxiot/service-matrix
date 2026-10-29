@@ -402,8 +402,13 @@ public class DashboardWidgetDataService {
                                             ? sampleOf(carryIn) : null;
                             long from = curve.window().from().getTime();
                             long to = curve.window().to().getTime();
-                            ModbusRegistryHistoryWindow.Window window = ModbusRegistryHistoryWindow.of(
-                                    carryInSample, samples, from, to, curve.maxPoints());
+                            // 增量值：相邻读数之差（负值断点、降采样桶按 sum 聚合），
+                            // 与历史页的阶梯函数整形是两套规则，见 ModbusRegistryHistoryWindow.ofDeltas
+                            ModbusRegistryHistoryWindow.Window window = curve.delta()
+                                    ? ModbusRegistryHistoryWindow.ofDeltas(
+                                            carryInSample, samples, from, to, curve.maxPoints())
+                                    : ModbusRegistryHistoryWindow.of(
+                                            carryInSample, samples, from, to, curve.maxPoints());
                             JsonObject body = ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(
                                     curve.fdid(), curve.registerIndex(), curve.field(),
                                     curve.window().from(), curve.window().to(), curve.maxPoints(), window));
@@ -988,17 +993,19 @@ public class DashboardWidgetDataService {
     }
 
     /**
-     * 一条字段曲线的取数请求：某只寄存器在某段窗口上要多少个点。
+     * 一条字段曲线的取数请求：某只寄存器在某段窗口上要多少个点、按哪种数值口径。
      *
-     * <p><b>去重键里必须带 {@code maxPoints}</b>：要 200 个点与要 2000 个点是两次不同的查询
-     * （降不降采样、桶多粗都不一样）。只按「寄存器 × 窗口」去重，会让其中一张卡拿到另一张的点数
-     * —— 而它看起来完全正常，因为它本来就是一组合法的采样。</p>
+     * <p><b>去重键里必须带 {@code maxPoints} 与 {@code delta}</b>：要 200 个点与要 2000 个点是两次
+     * 不同的查询（降不降采样、桶多粗都不一样）；实际值与增量值更是两份不同的数据
+     * （后者是相邻差、负值断点、桶按 sum 聚合）。只按「寄存器 × 窗口」去重，会让其中一张卡
+     * 拿到另一张的数据 —— 而它看起来完全正常，因为它本来就是一组合法的点。</p>
      */
     private record CurveQuery(String fdid, Integer registerIndex, String field, Window window,
-                              int maxPoints) {
+                              int maxPoints, boolean delta) {
 
         String key() {
-            return fdid + "#" + registerIndex + "#" + field + "#" + window.key() + "#" + maxPoints;
+            return fdid + "#" + registerIndex + "#" + field + "#" + window.key() + "#" + maxPoints
+                    + "#" + (delta ? "delta" : "actual");
         }
 
         /**
@@ -1022,7 +1029,9 @@ public class DashboardWidgetDataService {
             // 夹到 [1, MAX_MAX_POINTS]：点数只是性能提示，不值得为超出让请求失败
             int points = maxPoints == null ? DEFAULT_MAX_POINTS : maxPoints;
             points = Math.min(Math.max(points, 1), MAX_MAX_POINTS);
-            return new CurveQuery(fdid, registryIndex, reg.name, window, points);
+            // 缺省是实际值：老配置里没有这个键，而那时的卡片画的就是读数本身
+            boolean delta = "delta".equals(configString(config, "valueMode"));
+            return new CurveQuery(fdid, registryIndex, reg.name, window, points, delta);
         }
     }
 

@@ -203,6 +203,110 @@ class ModbusRegistryHistoryWindowTest {
         assertEquals(3.0, bucket.avg());
     }
 
+    // ===== 增量（ofDeltas） =====
+
+    @Test
+    void deltasStartFromCarryIn() {
+        // carry-in 是窗口起点的值，正好是首点的「上次」：不拿它当基准，第一条增量就丢了
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - HOUR, 50),
+                List.of(sample(T0 + MINUTE, 55), sample(T0 + 2 * MINUTE, 60)), T0, T0 + HOUR, 500);
+
+        assertFalse(window.downsampled());
+        assertEquals(2, window.samples().size());
+        assertEquals(T0 + MINUTE, window.samples().get(0).at.getTime());
+        assertEquals(5.0, window.samples().get(0).value);
+        // 第二点的「上次」是窗口内的第一条（55），不是 carry-in：增量是相邻两次读数之差
+        assertEquals(5.0, window.samples().get(1).value);
+
+        // carry-in 已经折进首点，响应里不能再给：前端会以为还要再减一次
+        assertNull(window.carryIn());
+        assertTrue(window.buckets().isEmpty());
+    }
+
+    @Test
+    void withoutCarryInTheFirstSampleHasNoDelta() {
+        // 窗口之前没有样本：首个读数没有「上次」可减，不出点（0 会是一条假的「这段时间没变化」）
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(null,
+                List.of(sample(T0 + MINUTE, 55), sample(T0 + 2 * MINUTE, 60)), T0, T0 + HOUR, 500);
+
+        assertEquals(1, window.samples().size());
+        assertEquals(5.0, window.samples().get(0).value);
+    }
+
+    @Test
+    void negativeDeltaKeepsItsMomentAsABreak() {
+        // 计数器回零：100 → 120 → 5 → 25。第二条的差是 −115，画出来是个深谷；
+        // 要保留时刻、把值置空当断点，并且以 5 为新基准继续算 +20
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 100),
+                List.of(sample(T0 + MINUTE, 120), sample(T0 + 2 * MINUTE, 5), sample(T0 + 3 * MINUTE, 25)),
+                T0, T0 + HOUR, 500);
+
+        List<ModbusRegistryHistorySample> points = window.samples();
+        assertEquals(3, points.size());
+        assertEquals(20.0, points.get(0).value);
+        assertNull(points.get(1).value);
+        assertEquals(T0 + 2 * MINUTE, points.get(1).at.getTime());
+        assertEquals(20.0, points.get(2).value);
+    }
+
+    @Test
+    void nonNumericSampleBreaksAndClearsTheBaseline() {
+        // 字符串没有大小：这一刻留断点，基准清空；下一个数值样本重新建基准（不跨过它求差）
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 10),
+                List.of(sample(T0 + MINUTE, "ON"), sample(T0 + 2 * MINUTE, 15), sample(T0 + 3 * MINUTE, 20)),
+                T0, T0 + HOUR, 500);
+
+        List<ModbusRegistryHistorySample> points = window.samples();
+        assertEquals(2, points.size());
+        assertNull(points.get(0).value);
+        assertEquals(T0 + MINUTE, points.get(0).at.getTime());
+        assertEquals(5.0, points.get(1).value);
+    }
+
+    @Test
+    void downsampledDeltasAreSummedPerBucket() {
+        // 4 个增量点折成 2 个桶：sum 才是「这段时间累计增加了多少」，
+        // avg 是「每次采样的平均增量」—— 两个都出，前端按口径选
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 0),
+                List.of(sample(T0 + 10_000, 1),
+                        sample(T0 + 30_000, 3),
+                        sample(T0 + 2 * MINUTE, 6),
+                        sample(T0 + 2 * MINUTE + 30_000, 7)),
+                T0, T0 + 4 * MINUTE, 2);
+
+        assertTrue(window.downsampled());
+        assertEquals(2, window.buckets().size());
+
+        Bucket first = window.buckets().get(0);
+        assertEquals(3.0, first.sum());
+        assertEquals(1.5, first.avg());
+        assertEquals(1.0, first.min());
+        assertEquals(2.0, first.max());
+        // 增量是求和出来的量，没有「桶起点的读数」可言：不让前端拿 first/last 当读数画
+        assertNull(first.first());
+        assertNull(first.last());
+
+        Bucket second = window.buckets().get(1);
+        assertEquals(4.0, second.sum());
+        assertEquals(2.0, second.avg());
+        assertEquals(1.0, second.min());
+        assertEquals(3.0, second.max());
+    }
+
+    @Test
+    void bucketSumSkipsBreaksButCountIncludesThem() {
+        // 桶里 2 条点：+5 和一个负增量断点。sum 只算 +5（断点不是 0，而是「不知道」）
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 100),
+                List.of(sample(T0 + 10_000, 105), sample(T0 + 20_000, 5)), T0, T0 + MINUTE, 1);
+
+        Bucket bucket = window.buckets().get(0);
+        assertEquals(2, bucket.count());
+        assertEquals(5.0, bucket.sum());
+        assertEquals(5.0, bucket.avg());
+        assertEquals(5.0, bucket.min());
+        assertEquals(5.0, bucket.max());
+    }
+
     // ===== 夹具 =====
 
     /** 只填窗口会用到的两个字段；点位身份由数据源的查询决定，窗口不关心。 */

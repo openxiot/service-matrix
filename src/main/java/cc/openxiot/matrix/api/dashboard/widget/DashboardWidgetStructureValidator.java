@@ -60,7 +60,19 @@ public final class DashboardWidgetStructureValidator {
     private static final Set<String> LINE_SOURCES = Set.of("alarmCount", "fdField");
 
     /**
-     * 目前只实现 {@code pie}。{@code bar} 与 {@code gauge} 同属 P3，所以现在提交它们也会被拒 ——
+     * 历史数据卡（{@code line}）的展现方式。缺省是 {@code line} —— 老配置里没有这个键，
+     * 而那时的卡片就是曲线图。
+     */
+    private static final Set<String> LINE_CHARTS = Set.of("line", "bar");
+
+    /**
+     * 历史数据卡（{@code line}）的数值口径。缺省是 {@code actual}；{@code delta} 是
+     * 「当次读数 − 上次读数」，只对现场设备字段（{@code fdField}）有意义。
+     */
+    private static final Set<String> VALUE_MODES = Set.of("actual", "delta");
+
+    /**
+     * 分布卡目前只实现 {@code pie}。{@code bar} 与 {@code gauge} 同属 P3，所以现在提交它们也会被拒 ——
      * 理由与 {@link #DISPLAYS} 相同：用户配了柱状图却看到饼图，比保存时报一句错更难查。
      */
     private static final Set<String> CHARTS = Set.of("pie");
@@ -182,12 +194,27 @@ public final class DashboardWidgetStructureValidator {
         if (windowErr != null) {
             return windowErr;
         }
+        // 展现方式两种数据源都给：整点告警条数用柱状图同样说得通
+        String chart = DashboardWidgetConfigs.str(config.get("chart"));
+        if (config.containsKey("chart") && (chart == null || !LINE_CHARTS.contains(chart))) {
+            return "config.chart must be one of " + LINE_CHARTS;
+        }
         if ("alarmCount".equals(source)) {
             String bucket = DashboardWidgetConfigs.str(config.get("bucket"));
             if (bucket != null && !"hour".equals(bucket)) {
                 return "config.bucket must be hour";
             }
+            // 「数值」只对现场设备字段有意义：告警条数本身就是增量，再求一次增量是错的。
+            // 编辑器不会写这个键，写出来说明配置链路有 bug —— 报错比静默忽略更容易发现
+            if (config.containsKey("valueMode")) {
+                return "config.valueMode only applies to source fdField";
+            }
             return null;
+        }
+        // fdField：数值口径
+        String valueMode = DashboardWidgetConfigs.str(config.get("valueMode"));
+        if (config.containsKey("valueMode") && (valueMode == null || !VALUE_MODES.contains(valueMode))) {
+            return "config.valueMode must be one of " + VALUE_MODES;
         }
         // fdField：服务 + 寄存器序号（registryIndex，不再存名字 —— 同名寄存器会指错点位）。
         // 寄存器是否真实存在、是否可读由 DashboardWidgetOwnershipValidator 查库确认。

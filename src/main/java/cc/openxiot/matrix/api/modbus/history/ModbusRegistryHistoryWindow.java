@@ -56,6 +56,10 @@ public final class ModbusRegistryHistoryWindow {
 
     /**
      * 一个降采样桶：{@code [at, until)} 内样本的折叠结果。{@code at} 与原始点的时刻同义，都是横轴坐标。
+     *
+     * <p>{@code sum} 只有**增量模式**（{@link #ofDeltas}）才有值：桶内正增量之和，
+     * 也就是「这段时间累计增加了多少」。普通值模式下它是 {@code null} —— 把一段时间里的
+     * 读数加起来没有意义（阶梯函数下更是如此），所以不装作有。</p>
      */
     public record Bucket(
             long at,
@@ -65,7 +69,8 @@ public final class ModbusRegistryHistoryWindow {
             Object last,
             Double min,
             Double max,
-            Double avg
+            Double avg,
+            Double sum
     ) {
     }
 
@@ -133,9 +138,129 @@ public final class ModbusRegistryHistoryWindow {
             long start = from + (long) i * bucketMillis;
             buckets.add(new Bucket(start, Math.min(start + bucketMillis, to), count[i],
                     fold.first[i], fold.last[i], fold.min[i], fold.max[i],
-                    fold.numericMillis[i] > 0 ? fold.weighted[i] / fold.numericMillis[i] : null));
+                    fold.numericMillis[i] > 0 ? fold.weighted[i] / fold.numericMillis[i] : null,
+                    null));
         }
         return new Window(carryIn, rows, List.copyOf(buckets), true);
+    }
+
+    /**
+     * 增量模式的整形：把窗口内**相邻两次成功读数之差**当成点（「当次字段值 − 上次字段值」）。
+     *
+     * <p>三条规则：</p>
+     * <ul>
+     *   <li><b>基准是 carry-in</b>：它是窗口起点之前最近的一条样本，其值一直保持到窗口内第一条样本，
+     *       所以它正好是 {@code from} 时刻的值 —— 首点的增量 {@code v_first − carryIn} 落在窗口内，
+     *       不会把窗口外的量算进来。没有 carry-in 时首个样本没有「上次」，不出点。</li>
+     *   <li><b>负增量 = 断点</b>：计数器回零 / 翻转 / 设备重启时相减为负，这个差值不该画出来。
+     *       但要**保留时刻、把值置空**（而不是直接丢掉这个点）：丢掉的话折线会把前后两点直接连起来，
+     *       看不出断过。置空的点由前端画成断点，且不计入桶的 {@code sum}。</li>
+     *   <li><b>降采样按 sum 聚合</b>：桶里所有正增量相加，才是「这段时间累计增加了多少」；
+     *       用均值会变成「每次采样的平均增量」，与「这段时间的增量」是两件事。</li>
+     * </ul>
+     *
+     * <p>非数值样本（{@code value-list} 的 description、字符串）没有大小，不出增量：
+     * 在它自己的时刻留一个空点（断点），基准也随之清空，直到下一个数值样本。</p>
+     *
+     * <p>与 {@link #of} 一样{@code samples} 必须是区间内、按 {@code at} 升序的全部样本。</p>
+     */
+    public static Window ofDeltas(
+            ModbusRegistryHistorySample carryIn,
+            List<ModbusRegistryHistorySample> samples,
+            long from,
+            long to,
+            int maxPoints
+    ) {
+        List<ModbusRegistryHistorySample> deltas = deltas(carryIn, samples);
+        // 点不多就直接给原始增量点（与服务端「超过 maxPoints 才折」的口径一致）
+        if (deltas.size() <= maxPoints) {
+            return new Window(null, deltas, List.of(), false);
+        }
+
+        long bucketMillis = Math.max(1L, ceilDiv(to - from, maxPoints));
+        int bucketCount = (int) Math.max(1L, Math.min(maxPoints, ceilDiv(to - from, bucketMillis)));
+
+        int[] count = new int[bucketCount];
+        int[] numericCount = new int[bucketCount];
+        double[] sum = new double[bucketCount];
+        Double[] min = new Double[bucketCount];
+        Double[] max = new Double[bucketCount];
+        for (ModbusRegistryHistorySample delta : deltas) {
+            int bucket = bucketOf(delta.at.getTime(), from, bucketMillis, bucketCount);
+            count[bucket]++;
+            if (delta.value instanceof Number number) {
+                double value = number.doubleValue();
+                numericCount[bucket]++;
+                sum[bucket] += value;
+                min[bucket] = min[bucket] == null ? value : Math.min(min[bucket], value);
+                max[bucket] = max[bucket] == null ? value : Math.max(max[bucket], value);
+            }
+        }
+
+        List<Bucket> buckets = new ArrayList<>();
+        for (int i = 0; i < bucketCount; i++) {
+            if (count[i] == 0) {
+                continue;
+            }
+            long start = from + (long) i * bucketMillis;
+            // first / last 在增量模式下没有意义：增量描述的是区间，不是一个时刻的状态
+            buckets.add(new Bucket(start, Math.min(start + bucketMillis, to), count[i],
+                    null, null, min[i], max[i],
+                    numericCount[i] > 0 ? roundDelta(sum[i] / numericCount[i]) : null,
+                    numericCount[i] > 0 ? roundDelta(sum[i]) : null));
+        }
+        return new Window(null, deltas, List.copyOf(buckets), true);
+    }
+
+    /**
+     * 相邻两次读数之差。carry-in 是首个样本的基准。
+     *
+     * <p>「这一段的差值不可知」的两种情况都**留点置空**（前端画断点），而不是把点吞掉 ——
+     * 吞掉会让折线把前后两点直接连起来，看不出中间断过：</p>
+     * <ul>
+     *   <li>差值为负（计数器回零 / 翻转 / 重启）；</li>
+     *   <li>样本是非数值（{@code value-list} 的 description、字符串），没有大小可言，
+     *       基准也随之清空，直到下一个数值样本。</li>
+     * </ul>
+     */
+    private static List<ModbusRegistryHistorySample> deltas(
+            ModbusRegistryHistorySample carryIn, List<ModbusRegistryHistorySample> samples) {
+        List<ModbusRegistryHistorySample> deltas = new ArrayList<>();
+        Double previous = numericOf(carryIn);
+        if (samples == null) {
+            return deltas;
+        }
+        for (ModbusRegistryHistorySample row : samples) {
+            if (row == null || row.at == null) {
+                continue;
+            }
+            Double value = numericOf(row);
+            if (value == null) {
+                deltas.add(new ModbusRegistryHistorySample(row.at, null));
+                previous = null;
+                continue;
+            }
+            if (previous != null) {
+                double delta = value - previous;
+                // 负值保留时刻、值置空：前端据此画断点，桶求和时也自然跳过
+                deltas.add(new ModbusRegistryHistorySample(row.at, delta < 0 ? null : roundDelta(delta)));
+            }
+            previous = value;
+        }
+        return deltas;
+    }
+
+    /** 数值样本的 double 值；非数值（字符串描述等）给 null。 */
+    private static Double numericOf(ModbusRegistryHistorySample sample) {
+        return sample != null && sample.value instanceof Number number ? number.doubleValue() : null;
+    }
+
+    /**
+     * 差值是浮点相减来的（{@code 12345.89 − 12345.67 = 0.219999999999...}）。按 9 位小数收一下：
+     * 寄存器（int / float32）的精度远到不了第 9 位，收掉的是浮点误差，不是数据。
+     */
+    private static double roundDelta(double value) {
+        return Math.round(value * 1e9) / 1e9;
     }
 
     /**
