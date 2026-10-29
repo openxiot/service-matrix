@@ -133,6 +133,32 @@ class ModbusResponseParserTest {
                 .getString("0"));
     }
 
+    /** 一字符一寄存器（高字节补 0）：先丢 0x00 再整段解，同样读成 "AB"。 */
+    @Test
+    void decodeStringHandlesZeroPaddedRegisters() {
+        ModbusRegistry model = reg(1, 0, "string", null);
+        model.length = 4;
+        assertEquals("AB", parse(List.of(field(1)), List.of(model), read("03", 2), "01040441004200DF18")
+                .getString("0"));
+    }
+
+    /** 中文跨寄存器：长度按字节声明（"温度" 6 字节 + 2 个 0x00 补位 = 8）。 */
+    @Test
+    void decodeStringDecodesUtf8AcrossRegisters() {
+        ModbusRegistry model = reg(1, 0, "string", null);
+        model.length = 8;
+        assertEquals("温度", parse(List.of(field(1)), List.of(model), read("03", 4),
+                "010408E6B8A9E5BAA6000002B0").getString("0"));
+    }
+
+    /** 存量 string 没声明 length：宽度按 1 寄存器（2 字节）算，解码按帧里的 byteCount。 */
+    @Test
+    void decodeStringWithoutLengthUsesByteCount() {
+        ModbusRegistry model = reg(1, 0, "string", null);
+        assertEquals("O", parse(List.of(field(1)), List.of(model), read("03", 1), "0103024F008C74")
+                .getString("0"));
+    }
+
     @Test
     void decodeBitRegionPicksEachRegisterBitByAddress() {
         // 01 读位：地址 0、2 的位区 05 = 第 0、2 位为 1。每只线圈寄存器是独立字段，位偏移 = 地址 − start

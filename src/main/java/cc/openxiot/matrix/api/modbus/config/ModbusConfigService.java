@@ -414,6 +414,20 @@ public class ModbusConfigService {
                     return "invalid " + base + ".dataType: " + r.dataType;
                 }
             }
+            // string 是应用层的文本解释：宽度靠 length 声明（偶数 2..250，缺省 2 字节 = 1 寄存器），
+            // 且只读 —— 写链路没有文本编码（组帧会按整数写进文本寄存器），校验期就拦死
+            boolean stringType = !isCoilOrDiscreteArea(r.area) && "string".equals(r.dataType);
+            if (r.length != null && !stringType) {
+                return "invalid " + base + ".length is only allowed for dataType string";
+            }
+            if (stringType) {
+                if (r.length != null && (r.length < 2 || r.length > 250 || r.length % 2 != 0)) {
+                    return "invalid " + base + ".length: " + r.length + " (an even byte count 2..250)";
+                }
+                if (!"R".equals(r.access)) {
+                    return "invalid " + base + ".access: " + r.access + " (a string register is read-only)";
+                }
+            }
             // 枚举映射（enumMap，可选）：仅挂在整型数值类型上；位区/浮点/string 无意义，key/value 须非空
             if (r.enumMap != null && !r.enumMap.isEmpty()) {
                 if (isCoilOrDiscreteArea(r.area)) {
@@ -509,9 +523,9 @@ public class ModbusConfigService {
      * {@code area} 区里。
      *
      * <p>01/02（位）：一个地址一个位，覆盖 {@code start..start+quantity-1} 每位都要有寄存器。
-     * 03/04（寄存器）：{@code quantity} 是**值的个数**，起头（{@code start} 处）寄存器的数据类型决定跨度
-     * （非 string：帧读 {@code quantity×跨度} 个寄存器、string：帧读 {@code quantity} 个寄存器，
-     * 见 {@code ModbusFrameCodec#readQuantity}），整段 {@code start..start+count} 的每个地址都要有寄存器。
+     * 03/04（寄存器）：{@code quantity} 是**值的个数**，起头（{@code start} 处）寄存器的跨度决定整帧
+     * 寄存器数（{@code quantity×跨度}，见 {@code ModbusFrameCodec#readQuantity}）；第 v 个值从
+     * {@code start + v×头跨度} 开始，那里要有寄存器且与起头同宽。string 长度已声明时整段只算一个值。
      * 位名/缩放/单位等元数据不再内联，由消费方按被引用寄存器的名字/scale/unit 推出。</p>
      */
     private String validateReadBlock(ModbusCommand c, String base, String area,
@@ -536,19 +550,33 @@ public class ModbusConfigService {
         if (head == null) {
             return "invalid " + base + ": no register at address " + start + " in area " + area;
         }
-        int frameCount = "string".equals(ModbusRegistries.format(head))
-                ? quantity
-                : quantity * ModbusRegistries.registerCount(head);
+        // 整段 string 算一个值：长度已声明时 quantity 只能是 1（length 为空是存量命令，quantity 仍按寄存器数解释）
+        if ("string".equals(ModbusRegistries.format(head)) && head.length != null && quantity != 1) {
+            return "invalid " + base + ".quantity: " + quantity
+                    + " (a string register reads as one value, quantity must be 1)";
+        }
+        int headSpan = ModbusRegistries.registerCount(head);
+        int frameCount = quantity * headSpan;
         // 数量×跨度 可能让实际读的寄存器数超上限（如 125 × float32 的 2 = 250）：这里按被读起头寄存器拦一次
         if (frameCount > max) {
             return "invalid " + base + ".quantity: " + quantity
                     + " (reads " + frameCount + " registers from start " + start + ", max " + max + ")";
         }
-        for (int off = 0; off < frameCount; off++) {
-            ModbusRegistry reg = ModbusRegistries.at(byIndex, area, start + off);
+        // 按值起点校验：每个值都要有一只寄存器，且与起头寄存器同宽。
+        // 只查起点而不是逐地址查，是为了让单值 float32 / 多寄存器 string 合法；同宽要求则挡住
+        // 「把一只 float32 当两段 uint16 读」这类跨值错位。
+        for (int v = 0; v < quantity; v++) {
+            int at = start + v * headSpan;
+            ModbusRegistry reg = v == 0 ? head : ModbusRegistries.at(byIndex, area, at);
             if (reg == null) {
-                return "invalid " + base + ": no register at address " + (start + off)
+                return "invalid " + base + ": no register at address " + at
                         + " in area " + area + " (fc " + c.fc + " reads " + frameCount + " registers from start " + start + ")";
+            }
+            int span = ModbusRegistries.registerCount(reg);
+            if (span != headSpan) {
+                return "invalid " + base + ": register at address " + at + " spans " + span
+                        + " registers, expected " + headSpan
+                        + " (fc " + c.fc + " reads " + frameCount + " registers from start " + start + ")";
             }
         }
         return null;
@@ -606,6 +634,11 @@ public class ModbusConfigService {
                     return "invalid " + ibase + ".value: " + it.value + " (a bit is true or false)";
                 }
             } else {
+                // string 只读：放在 fc06 宽度检查之前，免得 length=2 的 string 从这里漏过去
+                if ("string".equals(format)) {
+                    return "invalid " + ibase + ".registryIndex: " + it.registryIndex
+                            + " (a string register is read-only)";
+                }
                 // fc 06 只写一个寄存器：4 字节格式取用会被静默截掉一半
                 if (single && ModbusRegistries.byteWidth(reg) != 2) {
                     return "invalid " + ibase + ".registryIndex: " + it.registryIndex
@@ -646,6 +679,9 @@ public class ModbusConfigService {
      * {@code Integer} 或 {@code Double}）。
      */
     private String validateWriteValue(Object value, String format, String vbase) {
+        if ("string".equals(format)) {
+            return "invalid " + vbase + ": " + value + " (a string register is read-only)";
+        }
         if (value == null) {
             return vbase + " is required";
         }

@@ -237,6 +237,43 @@ class FieldDeviceValidatorTest {
         assertNull(FieldDeviceValidator.validate(bits));
     }
 
+    /** string 只读：写请求引用它，在功能码类型白名单就被挡下（06 与 10 同一口径）。 */
+    @Test
+    void rejectsWriteToStringRegister() {
+        FieldDevice single = writeService(ModbusRequests.write("06", 16, ModbusRequests.field(4, 100)));
+        assertEquals("invalid polls[0].request.fields[0].registryIndex: 4 "
+                        + "(fc 06 writes int16 uint16, registry has string)",
+                FieldDeviceValidator.validate(single));
+
+        FieldDevice multiple = writeService(ModbusRequests.write("10", 16, ModbusRequests.field(4, 100)));
+        assertEquals("invalid polls[0].request.fields[0].registryIndex: 4 "
+                        + "(fc 10 writes float32 int16 int32 uint16 uint32, registry has string)",
+                FieldDeviceValidator.validate(multiple));
+    }
+
+    /** string 读：请求 quantity 是寄存器数（length/2），应答一个字段声明同样的字节数。 */
+    @Test
+    void acceptsStringReadReconciliation() {
+        FieldDevice stringRead = fd();
+        ModbusRegistry model = ModbusRegistries.byIndex(stringRead.configSnapshot.registries).get(4);
+        model.length = 8;   // 8 字节 = 4 个寄存器
+        stringRead.polls.get(0).request = ModbusRequests.read("03", 16, 4);
+        stringRead.polls.get(0).response = ModbusResponses.of(responseField(4));
+        assertNull(FieldDeviceValidator.validate(stringRead));
+    }
+
+    /** string 读的字节数对不上（quantity 按寄存器数、字段按 length）：拒绝。 */
+    @Test
+    void rejectsStringReadWithWrongQuantity() {
+        FieldDevice stringRead = fd();
+        ModbusRegistry model = ModbusRegistries.byIndex(stringRead.configSnapshot.registries).get(4);
+        model.length = 8;
+        stringRead.polls.get(0).request = ModbusRequests.read("03", 16, 2);   // 只读 4 字节
+        stringRead.polls.get(0).response = ModbusResponses.of(responseField(4));
+        assertEquals("invalid polls[0].response: declares 8 bytes, but fc 03 with quantity 2 reads 4",
+                FieldDeviceValidator.validate(stringRead));
+    }
+
     @Test
     void rejectsWriteRegistersWithGaps() {
         // fc 10 的帧只有「起始地址 + 个数 + 紧凑数据区」，没有空洞：reg43(addr 103) 应从 102 起

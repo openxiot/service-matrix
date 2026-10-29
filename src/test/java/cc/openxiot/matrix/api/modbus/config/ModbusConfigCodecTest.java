@@ -132,6 +132,39 @@ class ModbusConfigCodecTest {
     }
 
     @Test
+    void encodesStringLengthOnlyWhenDeclared() {
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = "表号";
+        reg.index = 1;
+        reg.address = 300;
+        reg.area = "holding";
+        reg.access = "R";
+        reg.dataType = "string";
+        reg.length = 12;
+
+        assertEquals(12, ModbusRegistryCodec.encode(reg).getInteger("length").intValue());
+
+        // 没声明长度就不出键（缺省 2 字节由解析侧兜底，库里不留噪音）
+        reg.length = null;
+        assertFalse(ModbusRegistryCodec.encode(reg).containsKey("length"));
+    }
+
+    @Test
+    void ignoresLengthOnNonStringRegistry() {
+        // 历史脏数据：数值类型上残留的 length 不往外带（数值宽度由 dataType 推出）
+        ModbusRegistry reg = new ModbusRegistry();
+        reg.name = "电压";
+        reg.index = 1;
+        reg.address = 0;
+        reg.area = "holding";
+        reg.access = "R";
+        reg.dataType = "uint16";
+        reg.length = 12;
+
+        assertFalse(ModbusRegistryCodec.encode(reg).containsKey("length"));
+    }
+
+    @Test
     void encodesWriteItemsInOrder() {
         ModbusCommand c = new ModbusCommand();
         c.name = "写多寄存器";

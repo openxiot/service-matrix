@@ -193,6 +193,61 @@ class ModbusConfigServiceTest {
         assertEquals("registries[0].access is required", ex.getMessage());
     }
 
+    /** string 寄存器：声明字节长（偶数 2..250）且只读，是合法点位。 */
+    @Test
+    void createWithStringRegistrySucceeds() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 12;
+        cfg.registries = List.of(r);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** string 的字节长必须是偶数：奇数会让寄存器数向上取整，用户声明与实际不一致。 */
+    @Test
+    void createWithOddStringLengthFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 13;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[0].length: 13 (an even byte count 2..250)", ex.getMessage());
+    }
+
+    /** string 字节长下限 2、上限 250（125 个寄存器 × 2）。 */
+    @Test
+    void createWithStringLengthOutOfRangeFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 252;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[0].length: 252 (an even byte count 2..250)", ex.getMessage());
+    }
+
+    /** 数值类型的宽度由 dataType 推出：挂 length 会让用户以为能改宽度，直接拒绝。 */
+    @Test
+    void createWithLengthOnNumericRegistryFails() {
+        ModbusRegistry r = reg(1, "holding", 10, "R", "uint16", "电压");
+        r.length = 4;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[0].length is only allowed for dataType string", ex.getMessage());
+    }
+
+    /** string 只读：写链路没有文本编码，W/RW 一律拒绝。 */
+    @Test
+    void createWithWritableStringRegistryFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "RW", "string", "表号");
+        r.length = 12;
+        cfg.registries = List.of(r);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid registries[0].access: RW (a string register is read-only)", ex.getMessage());
+    }
+
     /** 桩：模拟仓储落库时由 Panache 生成主键（服务层不再自造 id）。 */
     private void insertOk() {
         when(repo.insert(any(ModbusConfig.class))).thenAnswer(inv -> {
@@ -429,6 +484,92 @@ class ModbusConfigServiceTest {
         assertEquals("invalid commands[0]: no register at address 99 in area holding", ex.getMessage());
     }
 
+    /** 单个 float32（跨 2 个寄存器）作为一个值读：只要求 start 处有寄存器，不要求 11 上也有一只。 */
+    @Test
+    void createWithSingleFloat32ReadSucceeds() {
+        cfg.registries = List.of(reg(1, "holding", 10, "R", "float32", "进水温度"));
+        ModbusCommand c = readHolding();
+        c.quantity = 1;
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** 数量 = 值的个数：float32 读 2 个值覆盖 10..13，第二个值起点（12）必须同宽。 */
+    @Test
+    void createWithMultipleFloat32ValuesSucceeds() {
+        cfg.registries = List.of(
+                reg(1, "holding", 10, "R", "float32", "a"),
+                reg(2, "holding", 12, "R", "float32", "b"));
+        ModbusCommand c = readHolding();
+        c.quantity = 2;
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    /** 混宽：起头 float32（跨度 2）却把 12 上的 uint16 当第二个值——拒绝，不能把 4 字节值劈成两段。 */
+    @Test
+    void createWithMixedWidthReadFails() {
+        cfg.registries = List.of(
+                reg(1, "holding", 10, "R", "float32", "a"),
+                reg(2, "holding", 12, "R", "uint16", "b"));
+        ModbusCommand c = readHolding();
+        c.quantity = 2;
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0]: register at address 12 spans 1 registers, expected 2 "
+                + "(fc 03 reads 4 registers from start 10)", ex.getMessage());
+    }
+
+    /** 声明了长度的 string 整段是一个值：quantity 只能为 1（帧寄存器数由 length 推出）。 */
+    @Test
+    void createWithStringReadSucceeds() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 12;
+        cfg.registries = List.of(r);
+        ModbusCommand c = command("03", 300);
+        c.quantity = 1;
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
+    @Test
+    void createWithDeclaredStringReadMultipleValuesFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 12;
+        cfg.registries = List.of(r);
+        ModbusCommand c = command("03", 300);
+        c.quantity = 2;
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].quantity: 2 "
+                + "(a string register reads as one value, quantity must be 1)", ex.getMessage());
+    }
+
+    /**
+     * 存量命令兼容：string 没声明 length 时 quantity 仍按寄存器数解释（跨度 1），
+     * 升级后不会被新校验挡掉——多读的寄存器照样逐个要有定义。
+     */
+    @Test
+    void createWithLegacyStringReadMultipleRegistersSucceeds() {
+        cfg.registries = List.of(
+                reg(1, "holding", 300, "R", "string", "表号"),
+                reg(2, "holding", 301, "R", "string", "表号2"));
+        ModbusCommand c = command("03", 300);
+        c.quantity = 2;
+        cfg.commands = List.of(c);
+        insertOk();
+
+        assertEquals(CID, service.create(cfg).await().indefinitely().id);
+    }
+
     /** 写条目引用的寄存器必须存在于点表。 */
     @Test
     void createWithWriteMissingRegistryFails() {
@@ -438,6 +579,36 @@ class ModbusConfigServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.create(cfg).await().indefinitely());
         assertEquals("invalid commands[0].writeItems[0].registryIndex: 999 (not in registries)", ex.getMessage());
+    }
+
+    /** string 只读：fc 06 写它直接拒绝（放在 fc06 宽度检查之前，length=2 也漏不过去）。 */
+    @Test
+    void createWithStringSingleWriteFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 2;
+        cfg.registries = List.of(r);
+        ModbusCommand c = command("06", 300);
+        c.writeItems = List.of(write(1, 100));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].writeItems[0].registryIndex: 1 (a string register is read-only)",
+                ex.getMessage());
+    }
+
+    /** string 只读：fc 10 多寄存器写同样拒绝。 */
+    @Test
+    void createWithStringMultipleWriteFails() {
+        ModbusRegistry r = reg(1, "holding", 300, "R", "string", "表号");
+        r.length = 12;
+        cfg.registries = List.of(r);
+        ModbusCommand c = command("10", 300);
+        c.writeItems = List.of(write(1, 100));
+        cfg.commands = List.of(c);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.create(cfg).await().indefinitely());
+        assertEquals("invalid commands[0].writeItems[0].registryIndex: 1 (a string register is read-only)",
+                ex.getMessage());
     }
 
     /** 写条目引用的寄存器必须落在该 fc 的区：06 写 holding，索引到线圈则拒绝。 */

@@ -6,7 +6,6 @@ import cc.openxiot.matrix.db.modbus.config.ModbusRegistry;
 import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequestField;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -101,8 +100,10 @@ public final class ModbusFrameCodec {
 
     /**
      * 读请求帧里的数量：01/02 即位数；03/04 的数量是**值的个数**（点表注释见 {@code ModbusCommand#quantity}），
-     * 帧里要读的寄存器数由被读起头寄存器（{@code start} 处）的数据类型跨度推出：
-     * 非 string = 数量 × 跨度，string / 位 = 数量本身（string 的数量就是其寄存器长、恒为一个值）。
+     * 帧里要读的寄存器数由被读起头寄存器（{@code start} 处）的跨度推出 = 数量 × 跨度。
+     *
+     * <p>string 也走这条统一口径（整段算一个值，quantity 恒 1）；存量命令没声明
+     * {@code ModbusRegistry#length} 时寄存器跨度为 1，帧里的数量与旧行为逐字节相同。</p>
      */
     public static int readQuantity(String fc, ModbusCommand command, Map<Integer, ModbusRegistry> registries) {
         int quantity = command.quantity == null ? 1 : command.quantity;
@@ -114,9 +115,6 @@ public final class ModbusFrameCodec {
         if (head == null) {
             throw new IllegalArgumentException("modbus command (fc " + fc
                     + ") reads from missing registry at start " + command.start + " in area " + area);
-        }
-        if (ModbusRegistries.isBit(head) || "string".equals(ModbusRegistries.format(head))) {
-            return quantity;
         }
         return quantity * ModbusRegistries.registerCount(head);
     }
@@ -137,7 +135,7 @@ public final class ModbusFrameCodec {
     private static byte[] writeSingleRegisterBody(int slave, ModbusCommand command,
                                                   Map<Integer, ModbusRegistry> registries) {
         ModbusCommand.ModbusCommandWriteItem item = command.writeItem(0);
-        ModbusRegistry reg = registryOf(item, registries);
+        ModbusRegistry reg = requireWritable(registryOf(item, registries), item);
         int address = require(reg.address, "registry address");
         int value = (int) toInteger(item.value, itemName(item)) & 0xFFFF;
         return new byte[]{
@@ -194,7 +192,7 @@ public final class ModbusFrameCodec {
         byte[] data = new byte[byteCount];
         int position = 0;   // 以寄存器计的写入位置
         for (ModbusCommand.ModbusCommandWriteItem item : items) {
-            ModbusRegistry reg = registryOf(item, registries);
+            ModbusRegistry reg = requireWritable(registryOf(item, registries), item);
             String format = ModbusRegistries.format(reg);
             int width = ModbusRegistries.byteWidth(reg);
             // 同 0F：10 的帧也没有空洞，每个寄存器紧接上一个
@@ -246,6 +244,17 @@ public final class ModbusFrameCodec {
         ModbusRegistry reg = registries == null ? null : registries.get(item.registryIndex);
         if (reg == null) {
             throw new IllegalArgumentException("modbus write item references missing registry " + item.registryIndex);
+        }
+        return reg;
+    }
+
+    /**
+     * string 寄存器只读：写链路一律拒绝（定义期校验已先拦，这里是运行期兜底，
+     * 避免存量脏配置组出一帧按整数写进文本寄存器）。
+     */
+    private static ModbusRegistry requireWritable(ModbusRegistry reg, ModbusCommand.ModbusCommandWriteItem item) {
+        if ("string".equals(ModbusRegistries.format(reg))) {
+            throw new IllegalArgumentException("modbus registry " + item.registryIndex + " is a string register (read-only)");
         }
         return reg;
     }
@@ -568,13 +577,16 @@ public final class ModbusFrameCodec {
             if (byteCount < 1 || HEADER_SIZE + byteCount > frame.length - CRC_SIZE) {
                 throw new IllegalArgumentException("invalid modbus response: " + frameHex);
             }
-            // 定长字符串：尾部常以 0x00 补满，去掉尾部空白后再返回
-            String text = new String(frame, HEADER_SIZE, byteCount, StandardCharsets.UTF_8);
-            int end = text.length();
-            while (end > 0 && text.charAt(end - 1) <= ' ') {
-                end--;
+            Integer length = reg == null ? null : reg.length;
+            // 长度已声明时必须整段对上：少字节说明从站没把这段文本读完，多字节说明读的不是这只寄存器
+            if (length != null && byteCount != length) {
+                throw new IllegalArgumentException("invalid modbus response: byte count " + byteCount
+                        + " does not match string length " + length + ", frame=" + frameHex);
             }
-            return text.substring(0, end);
+            // 定长字符串：尾部常以 0x00 补满；整段按 UTF-8 解，去掉 0x00 与尾部空白
+            byte[] data = new byte[byteCount];
+            System.arraycopy(frame, HEADER_SIZE, data, 0, byteCount);
+            return ModbusRegistries.decodeString(data, length);
         }
 
         int width = byteWidth(dataType);

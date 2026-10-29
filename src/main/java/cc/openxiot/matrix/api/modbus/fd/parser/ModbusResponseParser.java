@@ -9,7 +9,6 @@ import cc.openxiot.matrix.db.modbus.fd.poll.request.ModbusRequest;
 import cc.openxiot.matrix.db.modbus.fd.poll.response.field.ModbusResponseField;
 import io.vertx.core.json.JsonObject;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -183,7 +182,7 @@ public final class ModbusResponseParser {
     private static Object decodeValue(ModbusRegistry reg, byte[] data) {
         String format = ModbusRegistries.format(reg);
         Object raw = switch (format) {
-            case "string" -> text(data);
+            case "string" -> ModbusRegistries.decodeString(data, reg.length);
             case "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32" ->
                     number(format, bits(reg, data, false));
             default -> throw ModbusInvokeException.of(ModbusFailureType.FIELD_DEFINITION_ERROR,
@@ -228,16 +227,6 @@ public final class ModbusResponseParser {
             case "uint32" -> bits & 0xFFFFFFFFL;
             default -> Float.intBitsToFloat((int) bits);
         };
-    }
-
-    /** 定长字符串：尾部常以 0x00 或空格补满，去掉尾部空白后再返回。 */
-    private static String text(byte[] data) {
-        String text = new String(data, StandardCharsets.UTF_8);
-        int end = text.length();
-        while (end > 0 && text.charAt(end - 1) <= ' ') {
-            end--;
-        }
-        return text.substring(0, end);
     }
 
     /** 命中寄存器的枚举映射则返回其描述，否则 null。 */

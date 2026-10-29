@@ -1,5 +1,6 @@
 package cc.openxiot.matrix.db.modbus.config;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -74,7 +75,7 @@ public final class ModbusRegistries {
             case "int16", "uint16" -> 2;
             case "int32", "uint32", "float32" -> 4;
             case "int64", "uint64" -> 8;
-            case "string" -> reg.length == null ? 2 : reg.length;
+            case "string" -> reg.length == null || reg.length < 1 ? 2 : reg.length;
             default -> throw new IllegalArgumentException(
                     "unsupported modbus registry data type: " + type + " (registry " + reg.index + ")");
         };
@@ -86,6 +87,35 @@ public final class ModbusRegistries {
             return 1;
         }
         return (byteWidth(reg) + 1) / 2;
+    }
+
+    /**
+     * string 数据区 → 文本：先丢掉 0x00（设备常拿高字节或尾部补零），再按 UTF-8 整段解，
+     * 最后去掉尾部空白（≤ 0x20）。
+     *
+     * <p>「两个字符挤一个寄存器」与「一个字符占一个寄存器（高字节补 0）」两种排布都能读对；
+     * 非法/截断的多字节序列由 Java 的 UTF-8 解码器替换成 U+FFFD，不抛异常。</p>
+     *
+     * @param length 寄存器声明的字节长；null 表示不知道长度，按 {@code data} 整段解（存量口径）
+     */
+    public static String decodeString(byte[] data, Integer length) {
+        if (data == null || data.length == 0) {
+            return "";
+        }
+        int take = length == null ? data.length : Math.min(length, data.length);
+        byte[] text = new byte[take];
+        int n = 0;
+        for (int i = 0; i < take; i++) {
+            if (data[i] != 0) {
+                text[n++] = data[i];
+            }
+        }
+        String value = new String(text, 0, n, StandardCharsets.UTF_8);
+        int end = value.length();
+        while (end > 0 && value.charAt(end - 1) <= ' ') {
+            end--;
+        }
+        return value.substring(0, end);
     }
 
     /** 与 {@code format} 同口径的小写数据格式：位点位给 {@code bit}，数值给 dataType。 */

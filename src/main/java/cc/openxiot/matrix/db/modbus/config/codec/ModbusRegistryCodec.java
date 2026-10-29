@@ -43,6 +43,10 @@ public final class ModbusRegistryCodec {
         if (reg.byteOrder != null) {
             o.put("byteOrder", reg.byteOrder);
         }
+        // 字节长只对 string 有意义；非 string 的历史脏数据不往外带
+        if ("string".equals(reg.dataType) && reg.length != null) {
+            o.put("length", reg.length);
+        }
         if (reg.access != null) {
             o.put("access", reg.access);
         }

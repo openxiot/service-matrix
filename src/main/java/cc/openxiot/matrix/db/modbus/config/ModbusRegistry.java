@@ -49,9 +49,9 @@ public class ModbusRegistry {
     @Schema(description = "字节序（仅跨多寄存器值必填）：ABCD 大端 / DCBA 小端 / BADC 字内字节交换 / CDAB 字交换。32 位（int32/uint32/float32）跨 2 个寄存器、64 位（int64/uint64）跨 4 个寄存器", examples = {"ABCD"})
     public String byteOrder;
 
-    @Schema(description = "string 数据类型的字节长（可选；缺省按 1 寄存器 = 2 字节）。"
-            + "只对 dataType=string 有意义——string 宽度不随类型定，需要显式声明跨几个寄存器"
-            + "（如 DL/T645地址 = 12 字节、6 个寄存器）。数值类型宽度由 dataType 推出，忽略本字段",
+    @Schema(description = "string 数据类型的字节长（仅 dataType=string；偶数、2..250，可选、缺省 2 字节）。"
+            + "string 宽度不随类型定，需要显式声明占多少字节（跨寄存器数 = 字节长 / 2，"
+            + "如 DL/T645 地址 = 12 字节、6 个寄存器）。数值类型宽度由 dataType 推出，忽略本字段",
             examples = {"12"})
     public Integer length;
 

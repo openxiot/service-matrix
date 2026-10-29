@@ -3,6 +3,7 @@ package cc.openxiot.matrix.typedef.modbus.frame;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cc.openxiot.matrix.db.modbus.config.ModbusCommand;
 import cc.openxiot.matrix.db.modbus.config.ModbusRegistries;
@@ -66,10 +67,17 @@ class ModbusFrameCodecTest {
                 ModbusFrameCodec.encodeRequest(1, command("04", 0, 2), registries()));
     }
 
-    /** string 的数量本身就是寄存器长度，恒为一个值。 */
+    /** string 整段算一个值：帧寄存器数由声明的字节长推出（8 字节 = 4 个寄存器）。 */
     @Test
-    void encodeReadStringUsesQuantityAsLength() {
-        // 起头寄存器 STR_IN @ input/10 为 string：帧里的数量即 quantity 本身
+    void encodeReadStringUsesDeclaredLength() {
+        // 起头寄存器 STR_LEN_IN @ input/20：length=8 → quantity=1 读 4 个寄存器
+        assertEquals("010400140004B1CD",
+                ModbusFrameCodec.encodeRequest(1, command("04", 20, 1), registries()));
+    }
+
+    /** 存量 string 命令没声明 length：数量仍按寄存器数解释，帧与升级前逐字节相同。 */
+    @Test
+    void encodeReadLegacyStringUsesQuantityAsRegisterCount() {
         assertEquals("0104000A0004D1CB",
                 ModbusFrameCodec.encodeRequest(1, command("04", 10, 4), registries()));
     }
@@ -263,6 +271,39 @@ class ModbusFrameCodecTest {
         assertEquals(false, ModbusFrameCodec.decodeResponse(command("01", 0, 1), "010101005188", registries()));
     }
 
+    /** string 解码：先丢 0x00 再按 UTF-8 整段解，尾部空白（含补位的空格）去掉。 */
+    @Test
+    void decodeStringStripsZeroBytesAndTrailingSpace() {
+        // 尾部补 0x00（"ON" 后两个空字节）
+        assertEquals("ON", ModbusFrameCodec.decodeResponse(command("04", 10, 4),
+                "0104044F4E00008D47", oneString(10, null)));
+        // 两个字符挤一个寄存器
+        assertEquals("AB", ModbusFrameCodec.decodeResponse(command("04", 10, 4),
+                "010404414200004FAC", oneString(10, null)));
+        // 一字符一寄存器（高字节补 0）也能读对
+        assertEquals("AB", ModbusFrameCodec.decodeResponse(command("04", 10, 4),
+                "01040441004200DF18", oneString(10, null)));
+        // 尾部空格补位
+        assertEquals("ON", ModbusFrameCodec.decodeResponse(command("04", 10, 4),
+                "0104044F4E2020955F", oneString(10, null)));
+    }
+
+    /** 中文跨寄存器：UTF-8 整段解（"温度" = 6 字节，后补 2 个 0x00）。 */
+    @Test
+    void decodeStringDecodesUtf8AcrossRegisters() {
+        assertEquals("温度", ModbusFrameCodec.decodeResponse(command("04", 20, 1),
+                "010408E6B8A9E5BAA6000002B0", oneString(20, 8)));
+    }
+
+    /** 声明了 length：应答字节数必须整段对上（少读/多读都是配置或从站错）。 */
+    @Test
+    void decodeStringRejectsByteCountMismatchWhenLengthDeclared() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> ModbusFrameCodec.decodeResponse(command("04", 20, 1),
+                        "0104044F4E00008D47", oneString(20, 8)));
+        assertTrue(ex.getMessage().contains("does not match string length 8"));
+    }
+
     @Test
     void decodeWriteResponseHasNoValue() {
         assertNull(ModbusFrameCodec.decodeResponse(command("06", 1, null), "010600010064D9E1", registries()));
@@ -318,6 +359,18 @@ class ModbusFrameCodecTest {
         return ModbusRegistries.byIndex(List.of(r));
     }
 
+    /** 单只 string 寄存器的查询表（解应答用；length 为空 = 存量口径，按帧里的 byteCount 整段解）。 */
+    private static Map<Integer, ModbusRegistry> oneString(int address, Integer length) {
+        ModbusRegistry r = new ModbusRegistry();
+        r.index = 1;
+        r.address = address;
+        r.area = "input";
+        r.dataType = "string";
+        r.length = length;
+        r.access = "R";
+        return ModbusRegistries.byIndex(List.of(r));
+    }
+
     // 服务线夹具用的寄存器（index -> (地址, 区, 类型)）：字段/命令以 registryIndex 引用它们
     private static final int U16_0 = 1;     // addr 0  uint16
     private static final int U16_1 = 2;     // addr 1  uint16
@@ -330,7 +383,8 @@ class ModbusFrameCodecTest {
     private static final int F32_0 = 9;     // addr 0  float32
     private static final int COIL5 = 10;    // addr 5  coil
     private static final int F32_IN = 11;   // addr 0  input float32
-    private static final int STR_IN = 12;   // addr 10 input string
+    private static final int STR_IN = 12;   // addr 10 input string（未声明 length，存量口径）
+    private static final int STR_LEN_IN = 13;   // addr 20 input string length=8
 
     private static Map<Integer, ModbusRegistry> registries() {
         List<ModbusRegistry> regs = new ArrayList<>();
@@ -346,6 +400,9 @@ class ModbusFrameCodecTest {
         regs.add(reg(COIL5, 5, "coil", "coil", null));
         regs.add(reg(F32_IN, 0, "input", "float32", "ABCD"));
         regs.add(reg(STR_IN, 10, "input", "string", null));
+        ModbusRegistry strLen = reg(STR_LEN_IN, 20, "input", "string", null);
+        strLen.length = 8;
+        regs.add(strLen);
         return ModbusRegistries.byIndex(regs);
     }
 
