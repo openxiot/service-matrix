@@ -206,44 +206,33 @@ class ModbusRegistryHistoryWindowTest {
     // ===== 增量（ofDeltas） =====
 
     @Test
-    void deltasStartFromCarryIn() {
-        // carry-in 是窗口起点的值，正好是首点的「上次」：不拿它当基准，第一条增量就丢了
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - HOUR, 50),
+    void firstDeltaIsZero() {
+        // 系列第一个样本没有「上次」，增量固定为 0；第二个样本 = 60 − 55
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(
                 List.of(sample(T0 + MINUTE, 55), sample(T0 + 2 * MINUTE, 60)), T0, T0 + HOUR, 500);
 
         assertFalse(window.downsampled());
         assertEquals(2, window.samples().size());
         assertEquals(T0 + MINUTE, window.samples().get(0).at.getTime());
-        assertEquals(5.0, window.samples().get(0).value);
-        // 第二点的「上次」是窗口内的第一条（55），不是 carry-in：增量是相邻两次读数之差
+        assertEquals(0.0, window.samples().get(0).value);
         assertEquals(5.0, window.samples().get(1).value);
 
-        // carry-in 已经折进首点，响应里不能再给：前端会以为还要再减一次
+        // 增量口径不涉及 carry-in，响应里也不给
         assertNull(window.carryIn());
         assertTrue(window.buckets().isEmpty());
     }
 
     @Test
-    void withoutCarryInTheFirstSampleHasNoDelta() {
-        // 窗口之前没有样本：首个读数没有「上次」可减，不出点（0 会是一条假的「这段时间没变化」）
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(null,
-                List.of(sample(T0 + MINUTE, 55), sample(T0 + 2 * MINUTE, 60)), T0, T0 + HOUR, 500);
-
-        assertEquals(1, window.samples().size());
-        assertEquals(5.0, window.samples().get(0).value);
-    }
-
-    @Test
     void negativeDeltaKeepsItsMomentAsABreak() {
-        // 计数器回零：100 → 120 → 5 → 25。第二条的差是 −115，画出来是个深谷；
+        // 计数器回零：120 → 5 → 25。首点 0；第二条的差是 −115，画出来是个深谷；
         // 要保留时刻、把值置空当断点，并且以 5 为新基准继续算 +20
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 100),
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(
                 List.of(sample(T0 + MINUTE, 120), sample(T0 + 2 * MINUTE, 5), sample(T0 + 3 * MINUTE, 25)),
                 T0, T0 + HOUR, 500);
 
         List<ModbusRegistryHistorySample> points = window.samples();
         assertEquals(3, points.size());
-        assertEquals(20.0, points.get(0).value);
+        assertEquals(0.0, points.get(0).value);
         assertNull(points.get(1).value);
         assertEquals(T0 + 2 * MINUTE, points.get(1).at.getTime());
         assertEquals(20.0, points.get(2).value);
@@ -251,8 +240,9 @@ class ModbusRegistryHistoryWindowTest {
 
     @Test
     void nonNumericSampleBreaksAndClearsTheBaseline() {
-        // 字符串没有大小：这一刻留断点，基准清空；下一个数值样本重新建基准（不跨过它求差）
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 10),
+        // 字符串没有大小：这一刻留断点，基准清空；它后面第一条数值样本没有「上次」，也不出点；
+        // 再下一条才开始算差（不跨过断点求差）
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(
                 List.of(sample(T0 + MINUTE, "ON"), sample(T0 + 2 * MINUTE, 15), sample(T0 + 3 * MINUTE, 20)),
                 T0, T0 + HOUR, 500);
 
@@ -265,9 +255,9 @@ class ModbusRegistryHistoryWindowTest {
 
     @Test
     void downsampledDeltasAreSummedPerBucket() {
-        // 4 个增量点折成 2 个桶：sum 才是「这段时间累计增加了多少」，
+        // 4 个增量点（0 / 2 / 3 / 1）折成 2 个桶：sum 才是「这段时间累计增加了多少」，
         // avg 是「每次采样的平均增量」—— 两个都出，前端按口径选
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 0),
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(
                 List.of(sample(T0 + 10_000, 1),
                         sample(T0 + 30_000, 3),
                         sample(T0 + 2 * MINUTE, 6),
@@ -278,9 +268,9 @@ class ModbusRegistryHistoryWindowTest {
         assertEquals(2, window.buckets().size());
 
         Bucket first = window.buckets().get(0);
-        assertEquals(3.0, first.sum());
-        assertEquals(1.5, first.avg());
-        assertEquals(1.0, first.min());
+        assertEquals(2.0, first.sum());
+        assertEquals(1.0, first.avg());
+        assertEquals(0.0, first.min());
         assertEquals(2.0, first.max());
         // 增量是求和出来的量，没有「桶起点的读数」可言：不让前端拿 first/last 当读数画
         assertNull(first.first());
@@ -295,15 +285,20 @@ class ModbusRegistryHistoryWindowTest {
 
     @Test
     void bucketSumSkipsBreaksButCountIncludesThem() {
-        // 桶里 2 条点：+5 和一个负增量断点。sum 只算 +5（断点不是 0，而是「不知道」）
-        Window window = ModbusRegistryHistoryWindow.ofDeltas(sample(T0 - MINUTE, 100),
-                List.of(sample(T0 + 10_000, 105), sample(T0 + 20_000, 5)), T0, T0 + MINUTE, 1);
+        // 桶里 4 条点：首点 0、+5、一个负增量断点、+2。sum 只算数值点（0 + 5 + 2 = 7），
+        // 断点不是 0 而是「不知道」，只计入 count
+        Window window = ModbusRegistryHistoryWindow.ofDeltas(
+                List.of(sample(T0 + 10_000, 100),
+                        sample(T0 + 20_000, 105),
+                        sample(T0 + 30_000, 5),
+                        sample(T0 + 40_000, 7)),
+                T0, T0 + MINUTE, 1);
 
         Bucket bucket = window.buckets().get(0);
-        assertEquals(2, bucket.count());
-        assertEquals(5.0, bucket.sum());
-        assertEquals(5.0, bucket.avg());
-        assertEquals(5.0, bucket.min());
+        assertEquals(4, bucket.count());
+        assertEquals(7.0, bucket.sum());
+        assertEquals(2.333333333, bucket.avg());
+        assertEquals(0.0, bucket.min());
         assertEquals(5.0, bucket.max());
     }
 

@@ -977,8 +977,9 @@ class WidgetDataServiceTest {
     // ===== line(serviceField)：增量口径 =====
 
     @Test
-    void render_deltaCurveDiffsConsecutiveReadings() {
+    void render_deltaCurveStartsAtZeroAndDiffsConsecutiveReadings() {
         stubDefinition();
+        // carry-in 在增量口径里不参与计算：就算取到了 100，首点也是 0
         doAnswer(invocation -> Uni.createFrom().item(registryEvent(AT.getTime() - HOUR, 100.0, false)))
                 .when(registryHistoryRepo).findCarryIn(anyString(), any(), any());
         events.add(registryEvent(AT.getTime(), 105.0, false));
@@ -986,12 +987,12 @@ class WidgetDataServiceTest {
 
         JsonObject data = data(render(curve("w1", last(24), config("valueMode", "delta"))), 0);
 
-        // 首点 = 105 − 100（carry-in 是窗口起点的值），第二点 = 112 − 105
+        // 首点固定 0，第二点 = 112 − 105
         JsonArray points = data.getJsonArray("points");
         assertEquals(2, points.size());
-        assertEquals(5.0, points.getJsonObject(0).getDouble("value").doubleValue());
+        assertEquals(0.0, points.getJsonObject(0).getDouble("value").doubleValue());
         assertEquals(7.0, points.getJsonObject(1).getDouble("value").doubleValue());
-        // carry-in 已经折进首点，不能再发出去让前端减第二次
+        // 增量口径不下发 carry-in（它本来也不参与计算）
         assertFalse(data.containsKey("carryIn"));
     }
 

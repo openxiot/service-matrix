@@ -402,11 +402,11 @@ public class DashboardWidgetDataService {
                                             ? sampleOf(carryIn) : null;
                             long from = curve.window().from().getTime();
                             long to = curve.window().to().getTime();
-                            // 增量值：相邻读数之差（负值断点、降采样桶按 sum 聚合），
+                            // 增量值：相邻读数之差（首点 0、负值断点、降采样桶按 sum 聚合），
                             // 与历史页的阶梯函数整形是两套规则，见 ModbusRegistryHistoryWindow.ofDeltas
                             ModbusRegistryHistoryWindow.Window window = curve.delta()
                                     ? ModbusRegistryHistoryWindow.ofDeltas(
-                                            carryInSample, samples, from, to, curve.maxPoints())
+                                            samples, from, to, curve.maxPoints())
                                     : ModbusRegistryHistoryWindow.of(
                                             carryInSample, samples, from, to, curve.maxPoints());
                             JsonObject body = ModbusRegistryHistoryRangeCodec.encode(new ModbusRegistryHistoryRange(

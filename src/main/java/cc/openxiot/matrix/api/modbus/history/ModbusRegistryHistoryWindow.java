@@ -149,9 +149,8 @@ public final class ModbusRegistryHistoryWindow {
      *
      * <p>三条规则：</p>
      * <ul>
-     *   <li><b>基准是 carry-in</b>：它是窗口起点之前最近的一条样本，其值一直保持到窗口内第一条样本，
-     *       所以它正好是 {@code from} 时刻的值 —— 首点的增量 {@code v_first − carryIn} 落在窗口内，
-     *       不会把窗口外的量算进来。没有 carry-in 时首个样本没有「上次」，不出点。</li>
+     *   <li><b>首点固定为 0</b>：第一个样本没有「上次」，增量按 0 出 —— 图从 0 起步，而不是空一段
+     *       或拿窗口外的 carry-in 凑一个非零值。carry-in 在这个口径里**不参与计算**。</li>
      *   <li><b>负增量 = 断点</b>：计数器回零 / 翻转 / 设备重启时相减为负，这个差值不该画出来。
      *       但要**保留时刻、把值置空**（而不是直接丢掉这个点）：丢掉的话折线会把前后两点直接连起来，
      *       看不出断过。置空的点由前端画成断点，且不计入桶的 {@code sum}。</li>
@@ -159,19 +158,21 @@ public final class ModbusRegistryHistoryWindow {
      *       用均值会变成「每次采样的平均增量」，与「这段时间的增量」是两件事。</li>
      * </ul>
      *
+     * <p>样本值是**已经乘过缩放系数**的工程值（采集解码时 {@code ModbusResponseParser} 已乘
+     * {@code scale}），所以这里的差天然等于「原始差 × scale」，不能再乘第二次。</p>
+     *
      * <p>非数值样本（{@code value-list} 的 description、字符串）没有大小，不出增量：
      * 在它自己的时刻留一个空点（断点），基准也随之清空，直到下一个数值样本。</p>
      *
      * <p>与 {@link #of} 一样{@code samples} 必须是区间内、按 {@code at} 升序的全部样本。</p>
      */
     public static Window ofDeltas(
-            ModbusRegistryHistorySample carryIn,
             List<ModbusRegistryHistorySample> samples,
             long from,
             long to,
             int maxPoints
     ) {
-        List<ModbusRegistryHistorySample> deltas = deltas(carryIn, samples);
+        List<ModbusRegistryHistorySample> deltas = deltas(samples);
         // 点不多就直接给原始增量点（与服务端「超过 maxPoints 才折」的口径一致）
         if (deltas.size() <= maxPoints) {
             return new Window(null, deltas, List.of(), false);
@@ -213,7 +214,7 @@ public final class ModbusRegistryHistoryWindow {
     }
 
     /**
-     * 相邻两次读数之差。carry-in 是首个样本的基准。
+     * 相邻两次读数之差。**系列的第一个样本固定出 0**（它没有「上次」）；carry-in 不参与。
      *
      * <p>「这一段的差值不可知」的两种情况都**留点置空**（前端画断点），而不是把点吞掉 ——
      * 吞掉会让折线把前后两点直接连起来，看不出中间断过：</p>
@@ -222,14 +223,16 @@ public final class ModbusRegistryHistoryWindow {
      *   <li>样本是非数值（{@code value-list} 的 description、字符串），没有大小可言，
      *       基准也随之清空，直到下一个数值样本。</li>
      * </ul>
+     *
+     * <p>断点之后的第一条数值样本**不出点**：它与上一条的差不可知，0 会是一句假的「没变化」。</p>
      */
-    private static List<ModbusRegistryHistorySample> deltas(
-            ModbusRegistryHistorySample carryIn, List<ModbusRegistryHistorySample> samples) {
+    private static List<ModbusRegistryHistorySample> deltas(List<ModbusRegistryHistorySample> samples) {
         List<ModbusRegistryHistorySample> deltas = new ArrayList<>();
-        Double previous = numericOf(carryIn);
         if (samples == null) {
             return deltas;
         }
+        Double previous = null;
+        boolean firstSample = true;
         for (ModbusRegistryHistorySample row : samples) {
             if (row == null || row.at == null) {
                 continue;
@@ -238,14 +241,19 @@ public final class ModbusRegistryHistoryWindow {
             if (value == null) {
                 deltas.add(new ModbusRegistryHistorySample(row.at, null));
                 previous = null;
+                firstSample = false;
                 continue;
             }
-            if (previous != null) {
+            if (firstSample) {
+                // 系列首点：没有「上次」，按约定出 0
+                deltas.add(new ModbusRegistryHistorySample(row.at, 0.0));
+            } else if (previous != null) {
                 double delta = value - previous;
                 // 负值保留时刻、值置空：前端据此画断点，桶求和时也自然跳过
                 deltas.add(new ModbusRegistryHistorySample(row.at, delta < 0 ? null : roundDelta(delta)));
             }
             previous = value;
+            firstSample = false;
         }
         return deltas;
     }
