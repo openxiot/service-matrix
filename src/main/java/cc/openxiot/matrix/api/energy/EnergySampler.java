@@ -128,7 +128,7 @@ public class EnergySampler {
         try {
             tick().await().atMost(Duration.ofSeconds(Math.max(intervalSeconds * 2, 60)));
         } catch (Exception e) {
-            logger.errorv("energy sampling failed: {0}", e.getMessage());
+            logger.errorv(e, "energy sampling failed");
         } finally {
             running.set(false);
         }
@@ -151,8 +151,9 @@ public class EnergySampler {
                         }
                         chain = chain.chain(() -> sampleConfig(config, now)
                                 .onFailure().recoverWithItem(failure -> {
-                                    logger.warnv("sample energy config {0} failed: {1}",
-                                            config.id, failure.getMessage());
+                                    // 带上异常本身：getMessage() 可能为 null（NPE、驱动包装异常），
+                                    // 只打 message 会变成「failed: null」，排不了障。
+                                    logger.warnv(failure, "sample energy config {0} failed", config.id);
                                     return null;
                                 }));
                     }
@@ -167,8 +168,8 @@ public class EnergySampler {
                 .unis(readServiceValues(config), readRegisterValues(config), stateRepo.listByConfig(configId))
                 .asTuple()
                 .chain(tuple -> {
-                    Map<String, Observation> observations = tuple.getItem1();
-                    observations.putAll(tuple.getItem2());
+                    Map<String, Observation> observations =
+                            mergeObservations(tuple.getItem1(), tuple.getItem2());
                     Map<String, EnergyPointState> states = statesByKey(tuple.getItem3());
 
                     long intervalMillis = Math.max(intervalSeconds, 10) * 1_000L;
@@ -332,6 +333,20 @@ public class EnergySampler {
         return observations;
     }
 
+    /**
+     * 合并设备属性与寄存器两路观测。
+     *
+     * <p>任一侧在没有该来源的点位时返回 {@link Map#of()}（不可变实例），所以不能直接在
+     * 其中一侧上 {@code putAll}：那会让只配一种来源的配置每轮都抛
+     * {@link UnsupportedOperationException}（message 为 null）。</p>
+     */
+    static Map<String, Observation> mergeObservations(
+            Map<String, Observation> services, Map<String, Observation> registers) {
+        Map<String, Observation> merged = new HashMap<>(services);
+        merged.putAll(registers);
+        return merged;
+    }
+
     private static Map<String, EnergyPointState> statesByKey(List<EnergyPointState> states) {
         Map<String, EnergyPointState> byKey = new HashMap<>();
         if (states != null) {
@@ -395,6 +410,6 @@ public class EnergySampler {
      * @param value      原始读数
      * @param observedAt 设备侧的读取时刻（只有 Modbus 影子有）；null = 没有时间戳
      */
-    private record Observation(double value, Long observedAt) {
+    record Observation(double value, Long observedAt) {
     }
 }
