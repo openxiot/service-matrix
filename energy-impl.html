@@ -666,7 +666,7 @@
         </table>
       </div>
 
-      <p>这一版交付了后端 <code>/matrix/v1/energy</code> 的配置增删改查、报表和实时状态，<code>EnergySampler</code> 定时采样，前端 <code>/main/energy</code> 的三个标签页（筛选、要点卡、图表、逐桶表格、管理员配置对话框），以及 66 份词典的能源词条补齐。</p>
+      <p>这一版交付了后端 <code>/matrix/v1/energy</code> 的配置增删改查、报表和实时状态，<code>EnergySampler</code> 定时采样，前端 <code>/main/energy</code> 的页头角色切换与筛选条、三种角色的报表（要点卡、图表、逐桶表格、管理员配置对话框），以及 66 份词典的能源词条补齐。</p>
 
       <h3>三个影响全局的取舍</h3>
       <dl class="decisions">
@@ -924,15 +924,18 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
     <section id="frontend">
       <p class="section-label"><span>06</span><span>前端结构</span></p>
       <h2>一个宿主，三个面板</h2>
-      <p>宿主只负责两件不随标签页变化的事：当前项目根空间、当前用户是不是项目管理员。筛选、取数、图表与配置对话框都在面板里，三个面板互不共享状态。</p>
+      <p>宿主负责三件不随角色变化的事：当前项目根空间、当前用户是不是项目管理员，以及页头。页头 <code>nz-page-header-extra</code> 里是角色切换的单选组（消耗 / 生产 / 存储）与刷新按钮，<code>nz-page-header-content</code> 里是 <code>nz-descriptions</code> 筛选条：类型、时间范围、单条配置。配置不是下拉，点开一个卡片对话框来选（写法照语言 / 主题对话框）。筛选条件放在 <code>EnergyFilterStore</code>，角色对应的面板读取同一份条件取数；切角色只换面板，类型与时间范围保留。面板自己管取数、图表与配置编辑对话框。</p>
 
       <div class="tree">EnergyComponent <span class="dim">/main/energy</span>
-├─ tab 能源消耗 → EnergyPanel <span class="dim">role=CONSUMPTION</span>
-├─ tab 能源生产 → EnergyPanel <span class="dim">role=PRODUCTION</span>
-└─ tab 能源存储 → EnergyPanel <span class="dim">role=STORAGE</span>
+├─ 角色切换 + 刷新 <span class="dim">页头 extra · nz-radio-group</span>
+├─ 筛选条 <span class="dim">页头 content · nz-descriptions · EnergyFilterStore</span>
+├─ 配置选择对话框 <span class="dim">nz-card 卡片，点选即关窗</span>
+├─ 能源消耗 → EnergyPanel <span class="dim">role=CONSUMPTION</span>
+├─ 能源生产 → EnergyPanel <span class="dim">role=PRODUCTION</span>
+└─ 能源存储 → EnergyPanel <span class="dim">role=STORAGE</span>
    ├─ 实时状态卡 <span class="dim">仅存储，读 /status</span>
    ├─ 报表 <span class="dim">要点卡 · 图表 · 逐桶表格</span>
-   └─ 配置对话框 <span class="dim">仅管理员</span></div>
+   └─ 配置编辑对话框 <span class="dim">仅管理员</span></div>
 
       <div class="table-wrap">
         <table>
@@ -940,8 +943,10 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
             <tr><th>文件</th><th>职责</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">energy.component.*</td><td>页头、三个标签页、管理员判定（与设备页同一口径）</td></tr>
-            <tr><td class="mono">energy.panel.component.*</td><td>筛选条件、取数、要点卡、图表、逐桶表格、配置列表</td></tr>
+            <tr><td class="mono">energy.component.*</td><td>页头角色切换与筛选条、管理员判定（与设备页同一口径）</td></tr>
+            <tr><td class="mono">energy.filter.ts</td><td>筛选条件与配置列表（宿主 provide，页头与面板共享）</td></tr>
+            <tr><td class="mono">energy.panel.component.*</td><td>取数、要点卡、图表、逐桶表格、配置列表</td></tr>
+            <tr><td class="mono">energy.config.select.component.*</td><td>配置选择对话框（卡片列表，选「全部」或某条配置）</td></tr>
             <tr><td class="mono">energy.config.dialog.component.*</td><td>配置表单与点位编辑器（服务属性 / 寄存器）</td></tr>
             <tr><td class="mono">energy.ranges.ts</td><td>预设时间窗口、桶标签、变化率、可用容量 —— 纯函数</td></tr>
             <tr><td class="mono">energy.charts.ts</td><td>四张图的 ECharts option 构造函数 —— 纯函数</td></tr>
@@ -952,7 +957,7 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
       </div>
 
       <h3>取数节奏</h3>
-      <p>条件与请求放在同一个 <code>effect</code> 里：角色、类型、时间窗口、单条配置、刷新版本任一变化就重取，不需要在每个 setter 里记得调一次。另外有一个 60 秒的时钟信号 —— 「今天」的终点不该停在打开页面的那一秒。</p>
+      <p>条件与请求放在同一个 <code>effect</code> 里：角色、类型、时间窗口、单条配置、刷新版本任一变化就重取，不需要在每个 setter 里记得调一次。筛选条件与时钟都在 <code>EnergyFilterStore</code>；面板每分钟推一次时钟 —— 「今天」的终点不该停在打开页面的那一秒。</p>
 
       <h3>几个页面约定</h3>
       <ul>
