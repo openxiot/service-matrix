@@ -141,14 +141,20 @@ public class ModbusShadowService {
 
     /**
      * 一只寄存器投影的对外 JSON，键序与原 {@code ModbusRegisterSnapshotCodec} 逐字一致：
-     * {@code name, address, area?, dataType?, unit?, access, pollIndex?, value?, recordedAt?, status,
+     * {@code name, index?, address, area?, dataType?, unit?, access, pollIndex?, value?, recordedAt?, status,
      * lastError?, errorAt?}。null 的字段不出键（前端判「有没有缓存」看 {@code value} 在不在）。
+     *
+     * <p>{@code index} 是点表内寄存器序号（{@code ModbusRegistry.index}）—— 展示配置按它选寄存器，
+     * 名字可重名、可改，不能当身份。没有序号的老数据不出现这个键。</p>
      */
     private static JsonObject encodeRegister(ModbusRegistry reg, String access, Integer pollIndex,
                                              String status, Object value, java.util.Date recordedAt,
                                              String lastError, java.util.Date errorAt) {
         JsonObject o = new JsonObject();
         o.put("name", reg.name);
+        if (reg.index != null) {
+            o.put("index", reg.index);
+        }
         o.put("address", reg.address);
         if (reg.area != null) {
             o.put("area", reg.area);

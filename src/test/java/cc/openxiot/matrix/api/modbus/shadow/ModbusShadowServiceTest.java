@@ -64,6 +64,8 @@ class ModbusShadowServiceTest {
         // 有值 + 最近成功 → current
         JsonObject temp = grid.get(0);
         assertEquals("进水温度", temp.getString("name"));
+        // 序号是展示配置选寄存器用的身份（名字可重名、可改）
+        assertEquals(1, temp.getInteger("index"));
         assertEquals(61.5, temp.getValue("value"));
         assertEquals(1, temp.getInteger("pollIndex"));
         assertEquals(t0, temp.getLong("recordedAt"));
