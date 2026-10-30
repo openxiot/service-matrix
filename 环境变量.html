@@ -1,0 +1,853 @@
+<title>Matrix 环境变量</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eef2f0;
+    --surface: #f9fbfa;
+    --surface-2: #e6edea;
+    --ink: #10262a;
+    --ink-soft: #3d5559;
+    --muted: #5e7375;
+    --line: #cfdad6;
+    --line-strong: #a8bab5;
+    --accent: #0c5b62;
+    --accent-ink: #063b40;
+    --copper: #a65a2a;
+    --steel: #2e6e94;
+    --masthead: #0a2a2e;
+    --masthead-ink: #e6f0ed;
+    --masthead-muted: #8fb0ac;
+    --masthead-line: rgba(230, 240, 237, 0.16);
+    --code-bg: #0f272b;
+    --code-ink: #d8e6e2;
+    --focus: #a65a2a;
+    --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+    --font-body: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --paper: #0a1416;
+      --surface: #0f1d20;
+      --surface-2: #16282c;
+      --ink: #e4eeeb;
+      --ink-soft: #b9cac6;
+      --muted: #8aa19d;
+      --line: #22383b;
+      --line-strong: #365155;
+      --accent: #74c7c9;
+      --accent-ink: #9ad9da;
+      --copper: #e0a06a;
+      --steel: #7db3d6;
+      --masthead: #071b1e;
+      --masthead-ink: #e6f0ed;
+      --masthead-muted: #86a9a5;
+      --code-bg: #061214;
+      --code-ink: #cfe0dc;
+      --focus: #e0a06a;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --paper: #0a1416;
+    --surface: #0f1d20;
+    --surface-2: #16282c;
+    --ink: #e4eeeb;
+    --ink-soft: #b9cac6;
+    --muted: #8aa19d;
+    --line: #22383b;
+    --line-strong: #365155;
+    --accent: #74c7c9;
+    --accent-ink: #9ad9da;
+    --copper: #e0a06a;
+    --steel: #7db3d6;
+    --masthead: #071b1e;
+    --masthead-ink: #e6f0ed;
+    --masthead-muted: #86a9a5;
+    --code-bg: #061214;
+    --code-ink: #cfe0dc;
+    --focus: #e0a06a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--accent-ink); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+  code, .mono { font-family: var(--font-mono); }
+
+  code {
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.12em 0.38em;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- 名称牌 ---------- */
+
+  .masthead {
+    background-color: var(--masthead);
+    color: var(--masthead-ink);
+    border-bottom: 3px solid var(--copper);
+    background-image:
+      linear-gradient(var(--masthead-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--masthead-line) 1px, transparent 1px);
+    background-size: 36px 36px;
+    background-position: -1px -1px;
+  }
+
+  .masthead__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 60px 32px 52px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
+    gap: 48px;
+    align-items: center;
+  }
+
+  .eyebrow {
+    margin: 0 0 18px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--masthead-muted);
+  }
+
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    line-height: 1.08;
+    letter-spacing: 0.02em;
+    color: var(--masthead-ink);
+    text-wrap: balance;
+  }
+
+  .masthead .lede {
+    margin: 22px 0 0;
+    max-width: 34em;
+    font-size: 17px;
+    line-height: 1.7;
+    color: #c9dcd7;
+  }
+
+  .meta {
+    margin: 34px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--masthead-line);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .meta dt {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--masthead-muted);
+  }
+
+  .meta dd {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--masthead-ink);
+  }
+
+  .schematic { margin: 0; }
+  .schematic svg { display: block; width: 100%; height: auto; }
+  .schematic figcaption {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    color: var(--masthead-muted);
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
+  .dot--on { background: var(--copper); }
+  .dot--off { background: #4e7d80; }
+
+  .node rect { fill: rgba(230, 240, 237, 0.04); stroke: #4e7d80; stroke-width: 1; }
+  .node--live rect { stroke: var(--copper); }
+  .node text { fill: var(--masthead-ink); font-family: var(--font-body); font-size: 13px; }
+  .node text.sub {
+    fill: var(--masthead-muted);
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.12em;
+  }
+  .wire { fill: none; stroke: #4e7d80; stroke-width: 1; }
+  .wire--live {
+    stroke: var(--copper);
+    stroke-dasharray: 3 7;
+    animation: flow 2.8s linear infinite;
+  }
+  @keyframes flow { to { stroke-dashoffset: -20; } }
+
+  /* ---------- 版式 ---------- */
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 64px 32px 110px;
+    display: grid;
+    grid-template-columns: 196px minmax(0, 1fr);
+    gap: 68px;
+    align-items: start;
+  }
+
+  .toc {
+    position: sticky;
+    top: 28px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .toc p {
+    margin: 0 0 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+
+  .toc a {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 6px;
+    padding: 7px 0;
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+
+  .toc a:hover { color: var(--ink); border-bottom-color: var(--line-strong); }
+  .toc a .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--copper); padding-top: 2px; }
+
+  main { min-width: 0; max-width: 786px; }
+
+  section { padding-top: 8px; }
+  section + section { margin-top: 72px; border-top: 1px solid var(--line); padding-top: 48px; }
+
+  .section-label {
+    margin: 0 0 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  .section-label span:last-child { color: var(--muted); letter-spacing: 0.1em; }
+
+  h2 {
+    margin: 0 0 22px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.7rem, 3.4vw, 2.15rem);
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+
+  h3 {
+    margin: 40px 0 12px;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+  }
+
+  h3:first-of-type { margin-top: 34px; }
+
+  p { margin: 0 0 16px; max-width: 68ch; }
+  p.lead { font-size: 17px; color: var(--ink-soft); }
+
+  ul, ol { margin: 0 0 18px; padding-left: 1.25em; max-width: 66ch; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--muted); }
+
+  strong { font-weight: 600; }
+  .dim { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- 决策清单 ---------- */
+
+  .decisions { margin: 26px 0 8px; border-top: 1px solid var(--line-strong); }
+
+  .decision {
+    display: grid;
+    grid-template-columns: 176px minmax(0, 1fr);
+    gap: 26px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .decision dt {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--copper);
+    line-height: 1.6;
+  }
+
+  .decision dd { margin: 0; font-size: 15px; max-width: 60ch; }
+
+  /* ---------- 表格 ---------- */
+
+  .table-wrap { margin: 24px 0 28px; overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 16px 8px 0;
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px 11px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  td:last-child, th:last-child { padding-right: 0; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12.5px; }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .pill--copper { border-color: var(--copper); color: var(--copper); }
+  .pill--steel { border-color: var(--steel); color: var(--steel); }
+
+  /* ---------- 代码 ---------- */
+
+  pre {
+    margin: 22px 0 26px;
+    padding: 18px 20px;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.75;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  pre .c { color: #7f9d98; }
+  pre .k { color: #e0a06a; }
+
+  /* ---------- 注记 ---------- */
+
+  .note {
+    margin: 24px 0;
+    padding: 14px 0 15px;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line-strong);
+    display: grid;
+    gap: 6px;
+  }
+
+  .note__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  .note p { margin: 0; font-size: 14.5px; color: var(--ink-soft); max-width: 64ch; }
+
+  /* ---------- 双副本图 ---------- */
+
+  .replicas {
+    margin: 26px 0 28px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .replica {
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    padding: 15px 17px;
+  }
+
+  .replica h4 {
+    margin: 0 0 2px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .replica p {
+    margin: 0 0 10px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .replica ul { margin: 0; padding-left: 1.1em; font-size: 13px; }
+  .replica li { margin: 3px 0; font-family: var(--font-mono); font-size: 12px; }
+  .replica--live { border-color: var(--copper); }
+  .replica--live h4 { color: var(--copper); }
+
+  footer {
+    margin-top: 88px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line-strong);
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  @media (max-width: 960px) {
+    .masthead__inner { grid-template-columns: 1fr; gap: 40px; padding: 48px 24px 44px; }
+    .schematic { max-width: 460px; }
+    .shell { grid-template-columns: 1fr; gap: 28px; padding: 40px 24px 80px; }
+    .toc { position: static; }
+    .toc ol { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+    .toc a { grid-template-columns: auto; padding: 4px 0; }
+    .toc a .n { display: none; }
+    main { max-width: none; }
+  }
+
+  @media (max-width: 620px) {
+    .meta { grid-template-columns: 1fr 1fr; }
+    .decision { grid-template-columns: 1fr; gap: 6px; }
+    .replicas { grid-template-columns: 1fr; }
+    section + section { margin-top: 56px; padding-top: 38px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .wire--live { animation: none; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="masthead__inner">
+    <div>
+      <p class="eyebrow">service-matrix / 部署配置</p>
+      <h1>环境变量</h1>
+      <p class="lede">点号配置在部署侧怎么写、哪些开关只能开在一个副本、开完看哪行日志。能源采样与 Modbus 轮询共用同一条约定：开关缺省关，由 poller 副本打开。</p>
+      <dl class="meta">
+        <div>
+          <dt>变量格式</dt>
+          <dd>属性名大写，非字母数字换下划线</dd>
+        </div>
+        <div>
+          <dt>缺省行为</dt>
+          <dd>采集类开关全部关闭</dd>
+        </div>
+        <div>
+          <dt>生效方式</dt>
+          <dd>新 revision / 重启进程</dd>
+        </div>
+      </dl>
+    </div>
+    <figure class="schematic">
+      <svg viewBox="0 0 460 252" role="img" aria-label="api 副本不开采集，poller 副本打开轮询与能源采样，两者共享同一个 Mongo">
+        <g class="node">
+          <rect x="4" y="26" width="150" height="76" rx="2"></rect>
+          <text x="18" y="52">api × N</text>
+          <text class="sub" x="18" y="68">POLL=false</text>
+          <text class="sub" x="18" y="82">ENERGY=false</text>
+        </g>
+        <g class="node node--live">
+          <rect x="4" y="146" width="150" height="76" rx="2"></rect>
+          <text x="18" y="172">poller × 1</text>
+          <text class="sub" x="18" y="188">POLL=true</text>
+          <text class="sub" x="18" y="202">ENERGY=true</text>
+        </g>
+        <g class="node">
+          <rect x="306" y="86" width="150" height="76" rx="2"></rect>
+          <text x="320" y="112">Mongo</text>
+          <text class="sub" x="320" y="128">SHADOW / STATS</text>
+        </g>
+        <path class="wire" d="M154 64 H230 V124 H306"></path>
+        <path class="wire wire--live" d="M154 184 H230 V124 H306"></path>
+      </svg>
+      <figcaption>
+        <span><i class="dot dot--on"></i>采集开关打开</span>
+        <span><i class="dot dot--off"></i>采集开关关闭</span>
+        <span>同一镜像，两种角色</span>
+      </figcaption>
+    </figure>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="目录">
+    <p>目录</p>
+    <ol>
+      <li><a href="#mapping"><span class="n">01</span><span>命名与优先级</span></a></li>
+      <li><a href="#topology"><span class="n">02</span><span>副本分工</span></a></li>
+      <li><a href="#energy"><span class="n">03</span><span>能源采样</span></a></li>
+      <li><a href="#modbus"><span class="n">04</span><span>Modbus 轮询</span></a></li>
+      <li><a href="#history"><span class="n">05</span><span>历史与索引</span></a></li>
+      <li><a href="#reference"><span class="n">06</span><span>完整参考</span></a></li>
+      <li><a href="#examples"><span class="n">07</span><span>配置示例</span></a></li>
+      <li><a href="#verify"><span class="n">08</span><span>验证与排错</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="mapping">
+      <p class="section-label"><span>01</span><span>命名与优先级</span></p>
+      <h2>点号属性怎么变成环境变量</h2>
+      <p class="lead">代码里用 MicroProfile Config 读取配置，属性名是点号形式；部署侧的环境变量名由同一个名字推导：全部大写，每个非字母数字字符换成下划线。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>application.properties</th><th>环境变量</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">energy.sample.enabled</td><td class="mono">ENERGY_SAMPLE_ENABLED</td></tr>
+            <tr><td class="mono">energy.sample.interval-seconds</td><td class="mono">ENERGY_SAMPLE_INTERVAL_SECONDS</td></tr>
+            <tr><td class="mono">energy.sample.zone</td><td class="mono">ENERGY_SAMPLE_ZONE</td></tr>
+            <tr><td class="mono">modbus.poll.enabled</td><td class="mono">MODBUS_POLL_ENABLED</td></tr>
+            <tr><td class="mono">modbus.poll.invoke-timeout-seconds</td><td class="mono">MODBUS_POLL_INVOKE_TIMEOUT_SECONDS</td></tr>
+            <tr><td class="mono">modbus.history.retention-days</td><td class="mono">MODBUS_HISTORY_RETENTION_DAYS</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ul>
+        <li><strong>环境变量优先于</strong> <code>application.properties</code>，文件里的值优先于代码里的 <code>defaultValue</code>。</li>
+        <li>布尔值写小写 <code>true</code> / <code>false</code>；数值不带单位，秒就是秒。</li>
+        <li>带点的变量名（<code>energy.sample.enabled</code>）<strong>不会生效</strong>，容器平台通常也不接受这种名字。写成 <code>ENERGY_SAMPLE_ENABLED</code>。</li>
+        <li>这些开关都在启动时读取，改完要产生新 revision 或重启进程，热改无效。</li>
+      </ul>
+
+      <div class="note">
+        <span class="note__label">为什么用环境变量而不是写进文件</span>
+        <p>同一个镜像要部署成两种角色：面向用户的 api 副本，和只负责采集的 poller 副本。采集开关写进 <code>application.properties</code> 会让所有副本一起开，这正是下面要避免的事。</p>
+      </div>
+    </section>
+
+    <section id="topology">
+      <p class="section-label"><span>02</span><span>副本分工</span></p>
+      <h2>同一个 jar，两种角色</h2>
+      <p>service-matrix 的部署约定是 <strong>api N 副本 + poller 1 副本</strong>。镜像相同，靠环境变量区分职责。采集类开关的缺省值都是 <code>false</code>；没有显式打开的副本只提供 HTTP 接口。</p>
+
+      <div class="replicas">
+        <div class="replica">
+          <h4>api 副本</h4>
+          <p>HTTP / 报表 / 状态</p>
+          <ul>
+            <li>MODBUS_POLL_ENABLED 不设</li>
+            <li>ENERGY_SAMPLE_ENABLED 不设</li>
+          </ul>
+        </div>
+        <div class="replica replica--live">
+          <h4>poller 副本</h4>
+          <p>采集 / 轮询 / 采样</p>
+          <ul>
+            <li>MODBUS_POLL_ENABLED=true</li>
+            <li>ENERGY_SAMPLE_ENABLED=true</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="decisions">
+        <div class="decision">
+          <dt>为什么只能一个</dt>
+          <dd>能源采样按点位基线累加增量：两个副本各读一次、各写一次 <code>$inc</code>，同一段电量会被记两遍。Modbus 轮询则会让同一条 RS485 总线上出现重复帧。</dd>
+        </div>
+        <div class="decision">
+          <dt>采样器不发帧</dt>
+          <dd>能源采样读的是库里的影子：服务点位读设备影子，寄存器点位读 Modbus 影子。它和 poller 放一起只是运维上的约定，不是协议要求；但 register 点位的值依赖 poller 更新影子。</dd>
+        </div>
+        <div class="decision">
+          <dt>索引不受影响</dt>
+          <dd>各模块的 <code>*.index.enabled</code> 缺省为 true，每个副本启动时都会幂等地建索引，多副本重复执行无害。</dd>
+        </div>
+      </div>
+    </section>
+
+    <section id="energy">
+      <p class="section-label"><span>03</span><span>能源采样</span></p>
+      <h2>打开之后从当下开始累计</h2>
+      <p>能源采样的四个变量都在 <code>EnergySampler</code> 里读取。除了开关，其余三项一般保持缺省，只有时区建议显式指定。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>环境变量</th><th>缺省</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">ENERGY_SAMPLE_ENABLED</td>
+              <td class="num">false</td>
+              <td>调度开关。<strong>只在一个副本上设 true</strong>，通常就是 poller。</td>
+            </tr>
+            <tr>
+              <td class="mono">ENERGY_SAMPLE_INTERVAL_SECONDS</td>
+              <td class="num">60</td>
+              <td>采样周期；小于 10 会被夹到 10。</td>
+            </tr>
+            <tr>
+              <td class="mono">ENERGY_SAMPLE_ZONE</td>
+              <td class="mono">system</td>
+              <td>小时桶的边界时区。<code>system</code> 跟随容器时区，建议显式写 <code>Asia/Shanghai</code>。</td>
+            </tr>
+            <tr>
+              <td class="mono">ENERGY_INDEX_ENABLED</td>
+              <td class="num">true</td>
+              <td>启动时建 <code>energy-configs</code> / <code>energy-stats</code> 索引；测试进程设 false。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="c"># 只配在 poller 副本上</span>
+ENERGY_SAMPLE_ENABLED=true
+ENERGY_SAMPLE_ZONE=Asia/Shanghai
+<span class="c"># 可选：采样周期，秒</span>
+ENERGY_SAMPLE_INTERVAL_SECONDS=60</code></pre>
+
+      <div class="note">
+        <span class="note__label">没有补历史</span>
+        <p>每个点位的第一条读数只用来建立基线，不产生增量。因此开关打开之前的时段不会凭空出现数据，报表里会是空桶；需要历史只能等它从现在开始积累。</p>
+      </div>
+
+      <p>打开开关后，启动日志里会出现两行：</p>
+      <pre><code>energy indexes ensured
+energy sampler started, interval=60s</code></pre>
+    </section>
+
+    <section id="modbus">
+      <p class="section-label"><span>04</span><span>Modbus 轮询</span></p>
+      <h2>poller 副本的七个旋钮</h2>
+      <p>轮询器有自己的开关和一组调度参数，缺省值都在代码里；<code>application.properties</code> 只作说明，不设 enabled。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>环境变量</th><th>缺省</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">MODBUS_POLL_ENABLED</td><td class="num">false</td><td>调度开关，只在一个副本上设 true。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_CONCURRENCY</td><td class="num">20</td><td>同时采集的设备上限。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_WAKEUP_MILLIS</td><td class="num">1000</td><td>唤醒周期，也就是到点任务的最大延迟。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_RECONCILE_SECONDS</td><td class="num">300</td><td>周期对账间隔；定义变更最迟这么久生效。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_JITTER_PERCENT</td><td class="num">10</td><td>周期抖动，防止整点齐发。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_INVOKE_TIMEOUT_SECONDS</td><td class="num">10</td><td>单次采集超时，<strong>必须小于</strong> <code>lease</code>。</td></tr>
+            <tr><td class="mono">MODBUS_POLL_LEASE_SECONDS</td><td class="num">60</td><td>任务租约；扩容时保证同一任务只有一个副本在跑。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>超时大于等于租约时，一次慢应答会拖到租约过期，另一个副本会把同一条任务抢走重发。两个值要一起调，保持超时明显小于租约。</p>
+    </section>
+
+    <section id="history">
+      <p class="section-label"><span>05</span><span>历史与索引</span></p>
+      <h2>缺省就生效的那几个</h2>
+      <p>下面这些参数与采集开关无关：只在 poller 上需要，但它们的缺省值已经会改变数据保留行为，值得在部署前确认。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>环境变量</th><th>缺省</th><th>影响</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">MODBUS_HISTORY_DEADBAND</td><td class="num">0</td><td>数值死区，0 = 精确比较；仅对数值生效。</td></tr>
+            <tr><td class="mono">MODBUS_HISTORY_KEEP_ALIVE_SECONDS</td><td class="num">600</td><td>值没变也强制落一条；≤ 0 关闭。</td></tr>
+            <tr><td class="mono">MODBUS_HISTORY_RETENTION_DAYS</td><td class="num">90</td><td><strong>不设也已经生效</strong>：在 <code>at</code> 上建 TTL 索引，后台删 90 天前的明细。设 0 或负数会关闭并删除已有 TTL 索引。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>索引开关</h3>
+      <p>五个 <code>*.index.enabled</code> 缺省都是 true，测试进程在 <code>src/test/resources/application.properties</code> 里全部关掉。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>环境变量</th><th>建什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">SPACE_INDEX_ENABLED</td><td>空间树 <code>ancestors</code> 索引</td></tr>
+            <tr><td class="mono">DASHBOARD_INDEX_ENABLED</td><td>看板布局 <code>spaceId</code> 唯一索引</td></tr>
+            <tr><td class="mono">CARD_INDEX_ENABLED</td><td>卡片配置的 <code>spaceId</code> 索引，并清理旧唯一索引</td></tr>
+            <tr><td class="mono">MODBUS_INDEX_ENABLED</td><td>Modbus 点表索引</td></tr>
+            <tr><td class="mono">ENERGY_INDEX_ENABLED</td><td>能源配置与小时桶索引</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="reference">
+      <p class="section-label"><span>06</span><span>完整参考</span></p>
+      <h2>一张表收口</h2>
+      <p>按「配在哪个副本、缺省是什么」排列。没有列出的属性都写在 <code>application.properties</code> 里，属于进程内固定配置，通常不需要部署侧覆盖。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>变量</th><th>缺省</th><th>配在哪</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">ENERGY_SAMPLE_ENABLED</td><td class="mono">false</td><td>poller（仅一个副本）</td></tr>
+            <tr><td class="mono">ENERGY_SAMPLE_INTERVAL_SECONDS</td><td class="num">60</td><td>poller</td></tr>
+            <tr><td class="mono">ENERGY_SAMPLE_ZONE</td><td class="mono">system</td><td>poller（建议 Asia/Shanghai）</td></tr>
+            <tr><td class="mono">MODBUS_POLL_ENABLED</td><td class="mono">false</td><td>poller（仅一个副本）</td></tr>
+            <tr><td class="mono">MODBUS_POLL_CONCURRENCY</td><td class="num">20</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_POLL_WAKEUP_MILLIS</td><td class="num">1000</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_POLL_RECONCILE_SECONDS</td><td class="num">300</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_POLL_JITTER_PERCENT</td><td class="num">10</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_POLL_INVOKE_TIMEOUT_SECONDS</td><td class="num">10</td><td>poller（&lt; lease）</td></tr>
+            <tr><td class="mono">MODBUS_POLL_LEASE_SECONDS</td><td class="num">60</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_HISTORY_DEADBAND</td><td class="num">0</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_HISTORY_KEEP_ALIVE_SECONDS</td><td class="num">600</td><td>poller</td></tr>
+            <tr><td class="mono">MODBUS_HISTORY_RETENTION_DAYS</td><td class="num">90</td><td>poller（缺省即生效）</td></tr>
+            <tr><td class="mono">ENERGY_INDEX_ENABLED</td><td class="mono">true</td><td>任一/全部副本，幂等</td></tr>
+            <tr><td class="mono">MODBUS_INDEX_ENABLED</td><td class="mono">true</td><td>任一/全部副本，幂等</td></tr>
+            <tr><td class="mono">SPACE_INDEX_ENABLED</td><td class="mono">true</td><td>任一/全部副本，幂等</td></tr>
+            <tr><td class="mono">DASHBOARD_INDEX_ENABLED</td><td class="mono">true</td><td>任一/全部副本，幂等</td></tr>
+            <tr><td class="mono">CARD_INDEX_ENABLED</td><td class="mono">true</td><td>任一/全部副本，幂等</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="note__label">数据库连接</span>
+        <p>Mongo 连接串不写在仓库的配置文件里，由部署侧提供。Quarkus 标准变量名是 <code>QUARKUS_MONGODB_CONNECTION_STRING</code>，改它同样要重启。</p>
+      </div>
+    </section>
+
+    <section id="examples">
+      <p class="section-label"><span>07</span><span>配置示例</span></p>
+      <h2>staging 上的两条命令</h2>
+      <p>api 与 poller 是两个 container app 时，只给 poller 设采集开关。改环境变量会生成新 revision 并重启。</p>
+
+      <pre><code><span class="c"># poller：打开轮询与能源采样</span>
+az containerapp update \
+  --name &lt;poller-app&gt; --resource-group staging \
+  --set-env-vars \
+    MODBUS_POLL_ENABLED=true \
+    ENERGY_SAMPLE_ENABLED=true \
+    ENERGY_SAMPLE_ZONE=Asia/Shanghai
+
+<span class="c"># api：确保没设这两个开关（缺省即 false）</span>
+az containerapp update \
+  --name service-matrix --resource-group staging \
+  --remove-env-vars MODBUS_POLL_ENABLED ENERGY_SAMPLE_ENABLED</code></pre>
+
+      <p>本地或 docker 运行同理：</p>
+      <pre><code>docker run --rm -p 8080:8080 \
+  -e QUARKUS_MONGODB_CONNECTION_STRING='mongodb://host:27017/matrix' \
+  -e ENERGY_SAMPLE_ENABLED=true \
+  -e ENERGY_SAMPLE_ZONE=Asia/Shanghai \
+  ghcr.io/openxiot/service-matrix:latest</code></pre>
+    </section>
+
+    <section id="verify">
+      <p class="section-label"><span>08</span><span>验证与排错</span></p>
+      <h2>看日志，不看猜测</h2>
+      <p>启动后按副本核对这几行，就能确认开关是否真的读到。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>副本</th><th>期望日志</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>poller</td><td class="mono">modbus poll enabled, instance=…, concurrency=…, wakeup=…ms, timeout=…s, lease=…s</td></tr>
+            <tr><td>poller</td><td class="mono">energy sampler started, interval=60s</td></tr>
+            <tr><td>poller</td><td class="mono">energy indexes ensured</td></tr>
+            <tr><td>api</td><td class="mono">modbus poll disabled</td></tr>
+            <tr><td>api</td><td class="dim">没有 energy sampler started</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="decisions">
+        <div class="decision">
+          <dt>配了却没生效</dt>
+          <dd>先看变量名：写成 <code>energy.sample.enabled</code> 或 <code>Energy.Sample.Enabled</code> 都不会被读到。再确认改的是容器 app 的 env，而不是本地 shell。</dd>
+        </div>
+        <div class="decision">
+          <dt>数据翻倍</dt>
+          <dd>两个副本都开了能源采样，或者两个 poller 都在跑。检查每个副本的 <code>ENERGY_SAMPLE_ENABLED</code>，保留一个。</dd>
+        </div>
+        <div class="decision">
+          <dt>小时桶错位</dt>
+          <dd><code>ENERGY_SAMPLE_ZONE</code> 没设或容器时区不是 UTC+8。已写入的小时桶不会跟着改，换时区只影响之后的数据。</dd>
+        </div>
+        <div class="decision">
+          <dt>报表没有历史</dt>
+          <dd>刚打开开关时是正常的：第一条读数只建基线，不产生增量，数据从打开之后开始积累。</dd>
+        </div>
+      </div>
+
+    </section>
+
+    <footer>
+      <span>service-matrix · 环境变量</span>
+      <span>对应 commit 8806b09 · 2026-10-30</span>
+    </footer>
+  </main>
+</div>
