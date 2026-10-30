@@ -1,0 +1,1081 @@
+<title>Matrix 能源统计</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #eef2f0;
+    --surface: #f9fbfa;
+    --surface-2: #e6edea;
+    --ink: #10262a;
+    --ink-soft: #3d5559;
+    --muted: #5e7375;
+    --line: #cfdad6;
+    --line-strong: #a8bab5;
+    --accent: #0c5b62;
+    --accent-ink: #063b40;
+    --copper: #a65a2a;
+    --steel: #2e6e94;
+    --masthead: #0a2a2e;
+    --masthead-ink: #e6f0ed;
+    --masthead-muted: #8fb0ac;
+    --masthead-line: rgba(230, 240, 237, 0.16);
+    --code-bg: #0f272b;
+    --code-ink: #d8e6e2;
+    --focus: #a65a2a;
+    --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+    --font-body: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --paper: #0a1416;
+      --surface: #0f1d20;
+      --surface-2: #16282c;
+      --ink: #e4eeeb;
+      --ink-soft: #b9cac6;
+      --muted: #8aa19d;
+      --line: #22383b;
+      --line-strong: #365155;
+      --accent: #74c7c9;
+      --accent-ink: #9ad9da;
+      --copper: #e0a06a;
+      --steel: #7db3d6;
+      --masthead: #071b1e;
+      --masthead-ink: #e6f0ed;
+      --masthead-muted: #86a9a5;
+      --code-bg: #061214;
+      --code-ink: #cfe0dc;
+      --focus: #e0a06a;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --paper: #0a1416;
+    --surface: #0f1d20;
+    --surface-2: #16282c;
+    --ink: #e4eeeb;
+    --ink-soft: #b9cac6;
+    --muted: #8aa19d;
+    --line: #22383b;
+    --line-strong: #365155;
+    --accent: #74c7c9;
+    --accent-ink: #9ad9da;
+    --copper: #e0a06a;
+    --steel: #7db3d6;
+    --masthead: #071b1e;
+    --masthead-ink: #e6f0ed;
+    --masthead-muted: #86a9a5;
+    --code-bg: #061214;
+    --code-ink: #cfe0dc;
+    --focus: #e0a06a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--accent-ink); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+  code, .mono { font-family: var(--font-mono); }
+
+  code {
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.12em 0.38em;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- 名称牌 ---------- */
+
+  .masthead {
+    background-color: var(--masthead);
+    color: var(--masthead-ink);
+    border-bottom: 3px solid var(--copper);
+    background-image:
+      linear-gradient(var(--masthead-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--masthead-line) 1px, transparent 1px);
+    background-size: 36px 36px;
+    background-position: -1px -1px;
+  }
+
+  .masthead__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 60px 32px 52px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
+    gap: 48px;
+    align-items: center;
+  }
+
+  .eyebrow {
+    margin: 0 0 18px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--masthead-muted);
+  }
+
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    line-height: 1.08;
+    letter-spacing: 0.02em;
+    color: var(--masthead-ink);
+    text-wrap: balance;
+  }
+
+  .masthead .lede {
+    margin: 22px 0 0;
+    max-width: 34em;
+    font-size: 17px;
+    line-height: 1.7;
+    color: #c9dcd7;
+  }
+
+  .meta {
+    margin: 34px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--masthead-line);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .meta dt {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--masthead-muted);
+  }
+
+  .meta dd {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--masthead-ink);
+  }
+
+  .schematic { margin: 0; }
+  .schematic svg { display: block; width: 100%; height: auto; }
+  .schematic figcaption {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    color: var(--masthead-muted);
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; }
+  .dot--charge { background: var(--copper); }
+  .dot--discharge { background: #7db3d6; }
+
+  .node rect { fill: rgba(230, 240, 237, 0.04); stroke: #4e7d80; stroke-width: 1; }
+  .node--meter rect { stroke: var(--copper); }
+  .node text { fill: var(--masthead-ink); font-family: var(--font-body); font-size: 13px; }
+  .node text.sub {
+    fill: var(--masthead-muted);
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.14em;
+  }
+  .wire { fill: none; stroke: #4e7d80; stroke-width: 1; }
+  .wire--live {
+    stroke: var(--copper);
+    stroke-dasharray: 3 7;
+    animation: flow 2.8s linear infinite;
+  }
+  @keyframes flow { to { stroke-dashoffset: -20; } }
+
+  /* ---------- 版式 ---------- */
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 64px 32px 110px;
+    display: grid;
+    grid-template-columns: 196px minmax(0, 1fr);
+    gap: 68px;
+    align-items: start;
+  }
+
+  .toc {
+    position: sticky;
+    top: 28px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .toc p {
+    margin: 0 0 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+
+  .toc a {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 6px;
+    padding: 7px 0;
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+
+  .toc a:hover { color: var(--ink); border-bottom-color: var(--line-strong); }
+  .toc a .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--copper); padding-top: 2px; }
+
+  main { min-width: 0; max-width: 786px; }
+
+  section { padding-top: 8px; }
+  section + section { margin-top: 72px; border-top: 1px solid var(--line); padding-top: 48px; }
+
+  .section-label {
+    margin: 0 0 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  .section-label span:last-child { color: var(--muted); letter-spacing: 0.1em; }
+
+  h2 {
+    margin: 0 0 22px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.7rem, 3.4vw, 2.15rem);
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+
+  h3 {
+    margin: 40px 0 12px;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+  }
+
+  h3:first-of-type { margin-top: 34px; }
+
+  p { margin: 0 0 16px; max-width: 68ch; }
+  p.lead { font-size: 17px; color: var(--ink-soft); }
+
+  ul, ol { margin: 0 0 18px; padding-left: 1.25em; max-width: 66ch; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--muted); }
+
+  strong { font-weight: 600; }
+  .dim { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- 决策清单 ---------- */
+
+  .decisions { margin: 26px 0 8px; border-top: 1px solid var(--line-strong); }
+
+  .decision {
+    display: grid;
+    grid-template-columns: 176px minmax(0, 1fr);
+    gap: 26px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .decision dt {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--copper);
+    line-height: 1.6;
+  }
+
+  .decision dd { margin: 0; font-size: 15px; max-width: 60ch; }
+  .decision dd b { font-weight: 600; }
+
+  /* ---------- 表格 ---------- */
+
+  .table-wrap { margin: 24px 0 28px; overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 16px 8px 0;
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px 11px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  td:last-child, th:last-child { padding-right: 0; }
+  td.mono, th.mono { font-family: var(--font-mono); font-size: 12.5px; }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .pill--copper { border-color: var(--copper); color: var(--copper); }
+  .pill--steel { border-color: var(--steel); color: var(--steel); }
+
+  /* ---------- 代码 ---------- */
+
+  pre {
+    margin: 22px 0 26px;
+    padding: 18px 20px;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.75;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  pre .c { color: #7f9d98; }
+  pre .k { color: #e0a06a; }
+
+  /* ---------- 注记 ---------- */
+
+  .note {
+    margin: 24px 0;
+    padding: 14px 0 15px;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line-strong);
+    display: grid;
+    gap: 6px;
+  }
+
+  .note__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  .note p { margin: 0; font-size: 14.5px; color: var(--ink-soft); max-width: 64ch; }
+
+  /* ---------- 管线图 ---------- */
+
+  .figure { margin: 28px 0 30px; }
+
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .node-box {
+    flex: 1 1 158px;
+    min-width: 0;
+    padding: 12px 14px 13px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+  }
+
+  .node-box b {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+
+  .node-box span {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  .pipe-arrow {
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1;
+  }
+
+  figcaption {
+    margin-top: 10px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+  }
+
+  /* ---------- 小时桶 ---------- */
+
+  .bucket {
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    padding: 16px 18px 14px;
+  }
+
+  .bucket__head, .bucket__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .bucket__head { margin-bottom: 12px; }
+  .bucket__head .strong { color: var(--ink); }
+
+  .bucket__ticks {
+    height: 38px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background-image: linear-gradient(90deg, var(--accent) 0 1px, transparent 1px);
+    background-size: calc(100% / 60) 100%;
+    background-repeat: repeat-x;
+    opacity: 0.55;
+  }
+
+  .bucket__foot {
+    margin-top: 12px;
+    color: var(--ink-soft);
+  }
+
+  .bucket__foot span:last-child { color: var(--muted); }
+
+  /* ---------- 组件树 ---------- */
+
+  .tree {
+    margin: 22px 0 26px;
+    padding: 18px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.9;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .tree .dim { color: var(--muted); }
+
+  /* ---------- 页脚 ---------- */
+
+  footer {
+    margin-top: 88px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line-strong);
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  @media (max-width: 960px) {
+    .masthead__inner { grid-template-columns: 1fr; gap: 40px; padding: 48px 24px 44px; }
+    .schematic { max-width: 460px; }
+    .shell { grid-template-columns: 1fr; gap: 28px; padding: 40px 24px 80px; }
+    .toc { position: static; }
+    .toc ol { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+    .toc a { grid-template-columns: auto; padding: 4px 0; }
+    .toc a .n { display: none; }
+    main { max-width: none; }
+  }
+
+  @media (max-width: 620px) {
+    .meta { grid-template-columns: 1fr 1fr; }
+    .decision { grid-template-columns: 1fr; gap: 6px; }
+    .pipe-arrow { transform: rotate(90deg); }
+    section + section { margin-top: 56px; padding-top: 38px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .wire--live { animation: none; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="masthead__inner">
+    <div>
+      <p class="eyebrow">service-matrix / webapp-matrix</p>
+      <h1>能源统计</h1>
+      <p class="lede">消耗、生产、存储三条线从设备影子走到小时桶，再变成报表与状态卡。这份文档说明每一层为什么这样切，以及边界在哪里。</p>
+      <dl class="meta">
+        <div>
+          <dt>范围</dt>
+          <dd>后端 · 前端 · 多语言</dd>
+        </div>
+        <div>
+          <dt>接口</dt>
+          <dd>/matrix/v1/energy</dd>
+        </div>
+        <div>
+          <dt>状态</dt>
+          <dd>代码完成，待 review</dd>
+        </div>
+      </dl>
+    </div>
+    <figure class="schematic">
+      <svg viewBox="0 0 460 252" role="img" aria-label="消耗、生产、存储三类点位汇入小时桶，再供报表与状态卡读取">
+        <g class="node">
+          <rect x="4" y="16" width="132" height="54" rx="2"></rect>
+          <text x="18" y="40">消耗</text>
+          <text class="sub" x="18" y="56">CONSUMPTION</text>
+        </g>
+        <g class="node">
+          <rect x="4" y="99" width="132" height="54" rx="2"></rect>
+          <text x="18" y="123">生产</text>
+          <text class="sub" x="18" y="139">PRODUCTION</text>
+        </g>
+        <g class="node">
+          <rect x="4" y="182" width="132" height="54" rx="2"></rect>
+          <text x="18" y="206">存储</text>
+          <text class="sub" x="18" y="222">STORAGE</text>
+        </g>
+        <g class="node node--meter">
+          <rect x="196" y="99" width="96" height="54" rx="2"></rect>
+          <text x="210" y="123">小时桶</text>
+          <text class="sub" x="210" y="139">ENERGY-STATS</text>
+        </g>
+        <g class="node">
+          <rect x="350" y="99" width="106" height="54" rx="2"></rect>
+          <text x="364" y="123">页面</text>
+          <text class="sub" x="364" y="139">REPORT / STATUS</text>
+        </g>
+        <path class="wire wire--live" d="M136 43 H166 V126 H196"></path>
+        <path class="wire wire--live" d="M136 126 H196"></path>
+        <path class="wire wire--live" d="M136 209 H166 V126 H196"></path>
+        <path class="wire" d="M292 126 H350"></path>
+      </svg>
+      <figcaption>
+        <span><i class="dot dot--charge"></i>正功率 = 充电</span>
+        <span><i class="dot dot--discharge"></i>负功率 = 放电</span>
+        <span>采样 → 聚合 → 读取</span>
+      </figcaption>
+    </figure>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="目录">
+    <p>目录</p>
+    <ol>
+      <li><a href="#scope"><span class="n">01</span><span>范围与结论</span></a></li>
+      <li><a href="#model"><span class="n">02</span><span>数据模型</span></a></li>
+      <li><a href="#sampling"><span class="n">03</span><span>采样与口径</span></a></li>
+      <li><a href="#report"><span class="n">04</span><span>报表与聚合</span></a></li>
+      <li><a href="#api"><span class="n">05</span><span>接口</span></a></li>
+      <li><a href="#frontend"><span class="n">06</span><span>前端结构</span></a></li>
+      <li><a href="#i18n"><span class="n">07</span><span>多语言</span></a></li>
+      <li><a href="#verify"><span class="n">08</span><span>验证</span></a></li>
+      <li><a href="#limits"><span class="n">09</span><span>边界与后续</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="scope">
+      <p class="section-label"><span>01</span><span>范围与结论</span></p>
+      <h2>三条线，一套统计底座</h2>
+      <p class="lead">设计稿把能源分成消耗、生产、存储三个页面。实现上它们不是三套逻辑，而是同一份「配置 → 采样 → 小时桶 → 报表」底座上的三个角色：数据形状一样，只是指标和页面重点不同。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>角色</th><th>页面重点</th><th>核心指标</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pill">CONSUMPTION</span><br>能源消耗</td>
+              <td>用量报表、费用、同比环比</td>
+              <td>用量 <code>energy</code>、成本 <code>cost</code></td>
+            </tr>
+            <tr>
+              <td><span class="pill">PRODUCTION</span><br>能源生产</td>
+              <td>产量报表、收益、同比环比</td>
+              <td>产量 <code>energy</code>、收益 <code>revenue</code></td>
+            </tr>
+            <tr>
+              <td><span class="pill">STORAGE</span><br>能源存储</td>
+              <td>实时状态卡、SOC / 功率曲线、充放电吞吐、效率与套利</td>
+              <td>充电量、放电量、SOC、功率、容量、循环次数</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>这一版交付了后端 <code>/matrix/v1/energy</code> 的配置增删改查、报表和实时状态，<code>EnergySampler</code> 定时采样，前端 <code>/main/energy</code> 的三个标签页（筛选、要点卡、图表、逐桶表格、管理员配置对话框），以及 66 份词典的能源词条补齐。</p>
+
+      <h3>三个影响全局的取舍</h3>
+      <dl class="decisions">
+        <div class="decision">
+          <dt>存储只落小时桶</dt>
+          <dd><b>天和月都是小时的整数倍。</b> 采样线程只往小时桶累加，报表读出来再在内存里汇总。配置里的 <code>periodHours</code> 不改变数据形状，避免历史库里混着 1 小时桶和 4 小时桶。</dd>
+        </div>
+        <div class="decision">
+          <dt>粒度由服务端按跨度选</dt>
+          <dd><b>前端只给 <code>[from, to)</code>，不传粒度。</b> 两天以内看小时，两个月以内看天，再长看月。页面上的「今天 / 本月 / 跨年」因此不需要各自记住一套参数。</dd>
+        </div>
+        <div class="decision">
+          <dt>实时状态单独接口</dt>
+          <dd><b>报表桶里的 SOC 是平均或末值，给不出「现在」。</b> 状态卡直接读点位基线（<code>energy-point-states</code>）的最后一个读数，再配当天的充放电合计。</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section id="model">
+      <p class="section-label"><span>02</span><span>数据模型</span></p>
+      <h2>配置属于项目，点位指向读数</h2>
+      <p>一条配置是「一个项目 × 一个角色 × 一个能源类型」的统计口径。点位可以挂在项目下任意子空间的设备上，但配置本身只属于项目根空间 —— 与设备、服务、看板的「按项目」口径一致。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>集合</th><th>一条记录是什么</th><th>关键字段</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">energy-configs</td>
+              <td>项目里的一条统计配置</td>
+              <td><code>spaceId</code>（根空间）、<code>role</code>、<code>type</code>、<code>points[]</code>、价格、<code>periodHours</code>、<code>enabled</code></td>
+            </tr>
+            <tr>
+              <td class="mono">energy-stats</td>
+              <td>一条配置的一个小时桶</td>
+              <td>累计量用 <code>$inc</code>；SOC 存和与次数、极值、末值；容量类只存末值</td>
+            </tr>
+            <tr>
+              <td class="mono">energy-point-states</td>
+              <td>一条配置里一个点位的累计基线</td>
+              <td><code>lastRaw</code>、<code>lastAt</code>、<code>total</code>、<code>updatedAt</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>点位身份：key 不含名字</h3>
+      <p>点位在服务端没有独立 id，身份由「来源 + 设备引用 + 指标」拼成。名字和单位只是展示，改名不会让累计基线断掉；反过来，同一个读数配两遍会被校验拒绝 —— 否则电量会被计两次。</p>
+      <pre><code><span class="c">// EnergyPoint.key()</span>
+SERVICE  | did.siid.piid       | ENERGY
+REGISTER | fdid#registerIndex  | SOC</code></pre>
+
+      <h3>价格与校验</h3>
+      <ul>
+        <li>消耗 / 生产用 <code>price</code>；存储用 <code>chargePrice</code> 与 <code>dischargePrice</code>。价格为空是「不算」，不是「算出来是 0」。</li>
+        <li><code>periodHours</code> 只允许 1 / 4 / 12 / 24；价格不能为负；角色与指标必须匹配：存储不能用笼统的 <code>ENERGY</code>，消耗 / 生产只能用 <code>ENERGY</code>。</li>
+        <li>点位字段必须成套：服务属性要有 <code>did / siid / piid</code>，寄存器要有 <code>fdid / registerIndex</code>；电量点位必须声明取值方式。</li>
+      </ul>
+
+      <div class="note">
+        <span class="note__label">编辑与删除</span>
+        <p>更新配置会清空这条配置的点位基线：来源或口径改了以后，旧基线继续用会算出一个错误的差值。删除配置会同时删掉它的小时桶与基线，不留孤儿数据。代价只是编辑到下一次采样之间那一小段增量缺失。</p>
+      </div>
+
+      <p>鉴权按空间：读需要项目成员，写需要项目管理员；路径上的 <code>spaceId</code> 可以是项目下任意一级空间，服务端统一归一成根空间再查。</p>
+    </section>
+
+    <section id="sampling">
+      <p class="section-label"><span>03</span><span>采样与口径</span></p>
+      <h2>读数怎样变成电量</h2>
+      <p>采样器每 60 秒把启用配置的点位读一遍。设备属性走影子批量取，寄存器走 Modbus 影子；一条配置或一个点位读失败只影响这一轮，不会让整个循环停摆。</p>
+
+      <div class="figure">
+        <div class="pipeline">
+          <div class="node-box"><b>设备影子</b><span>did.siid.piid<br>fdid + registerIndex</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>采样器</b><span>60s 一轮<br>逐配置、逐点位</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>小时桶</b><span>配置 × 小时<br>energy-stats</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>读侧</b><span>报表聚合<br>状态卡</span></div>
+        </div>
+      </div>
+
+      <h3>三种取值口径</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>口径</th><th>读数含义</th><th>本轮增量</th><th>边界处理</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pill pill--copper">ACTUAL</span></td>
+              <td>累计表底（电表、累计电量寄存器）</td>
+              <td>本次 − 上次</td>
+              <td>读数变小视为清零 / 换表：增量取新读数本身；首读只建基线</td>
+            </tr>
+            <tr>
+              <td><span class="pill">INCREMENT</span></td>
+              <td>读数本身就是增量</td>
+              <td>本次读数，但同一个读数只算一次</td>
+              <td>寄存器看 <code>recordedAt</code> 是否变新；服务属性没有时间戳，看值是否变化</td>
+            </tr>
+            <tr>
+              <td><span class="pill pill--steel">POWER</span></td>
+              <td>瞬时功率（kW）</td>
+              <td>功率 × 距上次采样的时长</td>
+              <td>时长夹在 0 到 3 个采样周期之间；正数算充电，负数算放电</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>功率积分只在「存储角色且没有配显式充 / 放电量点位」时启用。配了累计充放电寄存器就优先用寄存器，否则两边会重复计电。</p>
+
+      <div class="note">
+        <span class="note__label">设备属性的限制</span>
+        <p>设备属性影子没有时间戳，只能按「值是否变化」判断是不是一次新上报。代价是连续两次增量恰好相同会被漏掉一次（例如每轮都上报 1 kWh）；这是没有时间戳时唯一安全的选择，比每轮重复累加要好。</p>
+      </div>
+
+      <h3>一条配置里多个点位怎样合</h3>
+      <p>合并规则按指标性质定，同一轮内先合成一个采样再写桶：电量、充放电量、功率、容量、循环次数<strong>相加</strong>；SOC、SOH、温度<strong>取平均</strong>。价格在所采样的那一刻折算成成本 / 收益，之后改价不重算历史桶。</p>
+
+      <h3>部署开关</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>配置项</th><th>默认</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">energy.sample.enabled</td><td class="mono">false</td><td>默认关。只能在一个副本上开，多副本同时采样会把同一段时间重复累加</td></tr>
+            <tr><td class="mono">energy.sample.interval-seconds</td><td class="mono">60</td><td>采样周期；低于 10 秒按 10 秒处理</td></tr>
+            <tr><td class="mono">energy.sample.zone</td><td class="mono">system</td><td>小时桶边界的时区；建议显式设成项目所在地时区</td></tr>
+            <tr><td class="mono">energy.index.enabled</td><td class="mono">true</td><td>启动时建索引；测试进程可关</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="report">
+      <p class="section-label"><span>04</span><span>报表与聚合</span></p>
+      <h2>小时桶怎样变成曲线</h2>
+      <p>报表接口接收一个左闭右开的毫秒窗口，按跨度自动选展示粒度，把窗口内的小时桶汇总成密集的展示桶，并同时算本期、环比、同比三个合计。</p>
+
+      <div class="figure">
+        <div class="bucket">
+          <div class="bucket__head">
+            <span class="strong">一小时</span>
+            <span>60 次采样</span>
+            <span>1 行 energy-stats</span>
+          </div>
+          <div class="bucket__ticks" aria-hidden="true"></div>
+          <div class="bucket__foot">
+            <span>累计量：本轮增量求和</span>
+            <span>瞬时量：和 ÷ 次数 · 极值 · 末值</span>
+          </div>
+        </div>
+        <figcaption>一次采样只写自己所在的那个小时桶；读的时候才按天、月合并。</figcaption>
+      </div>
+
+      <h3>粒度与窗口</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>窗口跨度</th><th>展示粒度</th><th>典型页面</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>≤ 48 小时</td><td><span class="pill">HOUR</span></td><td>今天、昨天、本周</td></tr>
+            <tr><td>≤ 62 天</td><td><span class="pill">DAY</span></td><td>本月、上个月</td></tr>
+            <tr><td>更长</td><td><span class="pill">MONTH</span></td><td>跨年自定义区间</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>窗口最长 366 天；<code>to</code> 不传默认现在；<code>from ≥ to</code> 报错。</li>
+        <li>展示桶按请求时区对齐：小时取整点、天取本地零点、月取本地 1 日零点，跨夏令时由日期推算，不靠加固定毫秒。</li>
+        <li>窗口内每个桶都在（密集零填充）：没采到数据的桶值是 0 / <code>null</code>，但 <code>samples = 0</code>，页面据此显示「—」而不是「用量 0」。</li>
+      </ul>
+
+      <h3>合计、环比与同比</h3>
+      <p>环比不是拿本期乘系数，而是再查一次上一等长窗口（<code>[from − span, from)</code>）；同比按本地时间减一年后同样查库。这样「本月至今」的环比自然是上月同期，不会多算几天。</p>
+      <p>多条配置合并时，先在每条配置内部滚成展示桶，再把同一桶相加：容量和循环次数在配置内取末值，跨配置才相加。顺序反过来会把「每台电池的容量」滚成一台的。</p>
+
+      <h3>页面上额外算的几个数</h3>
+      <ul>
+        <li><strong>充放电效率</strong> = 放电量 ÷ 充电量，只在本窗口内算，不跨周期。</li>
+        <li><strong>循环次数增量</strong> = 本期末值 − 上期末值，只有配了累计循环数才显示。</li>
+        <li><strong>套利收益</strong> = 放电收益 − 充电成本；两项价格都没配时返回 <code>null</code>，不显示 0。</li>
+        <li><strong>变化率</strong>：上一期是 0 或没有数据时显示「—」，不编一个 0%。</li>
+      </ul>
+
+      <h3>实时状态卡</h3>
+      <p><code>/status</code> 只处理存储角色：列出启用中且有点位的配置，每条配置读点位基线的最后读数，加上当天的充放电合计。</p>
+      <ul>
+        <li>一条配置内：SOC / SOH / 温度取平均，容量 / 功率 / 循环次数相加。</li>
+        <li>多台电池：总览的 SOC / SOH 按容量加权，温度简单平均，其余相加。十度电的电池和一百度电的电池不能同样看待。</li>
+        <li>停用的配置不出现：基线还留在库里，但把它当「当前状态」只会误导。</li>
+        <li>缺数据是 <code>null</code>，页面显示「—」。</li>
+      </ul>
+    </section>
+
+    <section id="api">
+      <p class="section-label"><span>05</span><span>接口</span></p>
+      <h2>六个端点，两种权限</h2>
+      <p>全部挂在 <code>/matrix/v1/energy</code> 下。读需要空间成员，写需要空间管理员；错误沿用全仓的 <code>OxResponse.error</code>（HTTP 200 + <code>success: false</code>），不用 4xx。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">GET</td><td class="mono">/configs/{spaceId}</td><td>成员</td><td><code>role</code>、<code>type</code> 可选</td></tr>
+            <tr><td class="mono">POST</td><td class="mono">/configs/{spaceId}</td><td>管理员</td><td>新建配置</td></tr>
+            <tr><td class="mono">PUT</td><td class="mono">/configs/{spaceId}/{id}</td><td>管理员</td><td>整体替换，清空点位基线</td></tr>
+            <tr><td class="mono">DELETE</td><td class="mono">/configs/{spaceId}/{id}</td><td>管理员</td><td>同时删除桶与基线</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/report/{spaceId}</td><td>成员</td><td><code>role</code>、<code>type</code>、<code>from</code> 必填；<code>to</code>、<code>configId</code>、<code>zone</code> 可选</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/status/{spaceId}</td><td>成员</td><td><code>type</code> 必填；<code>zone</code> 可选</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>约定</h3>
+      <ul>
+        <li>时间一律 epoch 毫秒，<code>from</code> 含、<code>to</code> 不含，与看板 / 告警一致。</li>
+        <li><code>zone</code> 是 IANA 时区名；前端传浏览器时区，保证「今天」从本地零点算起。</li>
+        <li>报表返回 <code>buckets</code>（展示桶）、<code>totals</code>（本期）、<code>previous</code>（环比）、<code>lastYear</code>（同比）和配置摘要。</li>
+        <li>桶里的功率同时给带符号的 <code>powerMax</code> 和拆开的 <code>chargePowerMax</code> / <code>dischargePowerMax</code>，表格不必自己判断方向。</li>
+      </ul>
+
+      <pre><code><span class="c">// GET /report/{spaceId}?role=STORAGE&amp;type=ELECTRICITY&amp;from=…&amp;to=…&amp;zone=Asia%2FShanghai</span>
+{
+  <span class="k">"success"</span>: true,
+  <span class="k">"data"</span>: {
+    <span class="k">"granularity"</span>: "HOUR",
+    <span class="k">"buckets"</span>: [
+      { "at": 1761786000000, "charge": 1.2, "discharge": 0.8, "soc": 54.3,
+        "power": -3.1, "chargePowerMax": 4.0, "dischargePowerMax": 3.1, "samples": 57 }
+    ],
+    <span class="k">"totals"</span>: { "charge": 8.4, "discharge": 6.1, "soc": 52.7, "samples": 402 },
+    <span class="k">"previous"</span>: { "charge": 7.9, "discharge": 5.8, "samples": 388 },
+    <span class="k">"lastYear"</span>: { "charge": 0, "discharge": 0, "samples": 0 },
+    <span class="k">"configs"</span>: [ { "id": "…", "name": "1 号电池", "points": 3 } ]
+  }
+}</code></pre>
+
+      <div class="note">
+        <span class="note__label">为什么合计里没有平均 SOC</span>
+        <p>瞬时量在桶里存的是「和 ÷ 次数」。跨桶再求平均要按各桶的采样次数再加权，否则采样多的时段会被采样少的时段稀释。页面上的平均 SOC 直接由后端的桶值给出，不把各桶平均值再平均一次。</p>
+      </div>
+    </section>
+
+    <section id="frontend">
+      <p class="section-label"><span>06</span><span>前端结构</span></p>
+      <h2>一个宿主，三个面板</h2>
+      <p>宿主只负责两件不随标签页变化的事：当前项目根空间、当前用户是不是项目管理员。筛选、取数、图表与配置对话框都在面板里，三个面板互不共享状态。</p>
+
+      <div class="tree">EnergyComponent <span class="dim">/main/energy</span>
+├─ tab 能源消耗 → EnergyPanel <span class="dim">role=CONSUMPTION</span>
+├─ tab 能源生产 → EnergyPanel <span class="dim">role=PRODUCTION</span>
+└─ tab 能源存储 → EnergyPanel <span class="dim">role=STORAGE</span>
+   ├─ 实时状态卡 <span class="dim">仅存储，读 /status</span>
+   ├─ 报表 <span class="dim">要点卡 · 图表 · 逐桶表格</span>
+   └─ 配置对话框 <span class="dim">仅管理员</span></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>文件</th><th>职责</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">energy.component.*</td><td>页头、三个标签页、管理员判定（与设备页同一口径）</td></tr>
+            <tr><td class="mono">energy.panel.component.*</td><td>筛选条件、取数、要点卡、图表、逐桶表格、配置列表</td></tr>
+            <tr><td class="mono">energy.config.dialog.component.*</td><td>配置表单与点位编辑器（服务属性 / 寄存器）</td></tr>
+            <tr><td class="mono">energy.ranges.ts</td><td>预设时间窗口、桶标签、变化率、可用容量 —— 纯函数</td></tr>
+            <tr><td class="mono">energy.charts.ts</td><td>四张图的 ECharts option 构造函数 —— 纯函数</td></tr>
+            <tr><td class="mono">energy.service.ts</td><td>HTTP 调用；报表与状态带浏览器时区</td></tr>
+            <tr><td class="mono">typedef / codec</td><td>请求与响应映射；缺字段给 null，不补 0</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>取数节奏</h3>
+      <p>条件与请求放在同一个 <code>effect</code> 里：角色、类型、时间窗口、单条配置、刷新版本任一变化就重取，不需要在每个 setter 里记得调一次。另外有一个 60 秒的时钟信号 —— 「今天」的终点不该停在打开页面的那一秒。</p>
+
+      <h3>几个页面约定</h3>
+      <ul>
+        <li>存储面板才请求实时状态；切换类型时重置「单条配置」筛选，免得筛出空报表。</li>
+        <li>配置对话框里用 <code>point.key()</code> 查重，重复点位当场拒绝；编辑时复制点位，不直接改列表里的对象。</li>
+        <li>非管理员看不到写按钮；按钮隐藏不是权限，后端仍按空间管理员再判一次。</li>
+        <li>桶里 <code>samples = 0</code> 的整行显示「—」；瞬时量是 <code>null</code> 时显示「—」而不是 0。</li>
+        <li>图表切换曲线 / 柱状图只改 option，不重取数据。</li>
+      </ul>
+    </section>
+
+    <section id="i18n">
+      <p class="section-label"><span>07</span><span>多语言</span></p>
+      <h2>键是中文，值才是译文</h2>
+      <p>前端的词条以中文原文作 key，66 份词典必须拥有完全相同的键集与顺序。服务端和用户自己的数据（配置名、点位名、设备名）不进词典，原样显示。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>项</th><th>数量</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>词典</td><td class="num">66</td><td>含 en_AU / en_GB / zh_HK / zh_TW 等区域变体</td></tr>
+            <tr><td>每份词条</td><td class="num">816</td><td>补齐后所有词典键集与顺序一致</td></tr>
+            <tr><td>本次能源新增</td><td class="num">91</td><td>报表、存储状态、配置对话框</td></tr>
+            <tr><td>历史缺口补齐</td><td class="num">55 / 27</td><td>60 份缺 55 条；4 份区域词典缺 27 条</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>带占位符的文案先换成 <code>{{0}}</code>、<code>{{1}}</code> 再送去翻译，回来按位置还原成 <code>{{label}}</code>、<code>{{count}}</code>。数字占位符在各语言里都能原样保留；命名占位符直接翻会被音译或改写。SOC 是行业缩写，不参与翻译。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>中文键</th><th>English</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>能源消耗</td><td>Energy consumption</td><td>标签页</td></tr>
+            <tr><td>充电量 / 放电量</td><td>Charge / Discharge</td><td>双向流量，分列显示</td></tr>
+            <tr><td>循环次数增量</td><td>Cycle count increase</td><td>本期末值 − 上期末值</td></tr>
+            <tr><td>套利收益</td><td>Arbitrage revenue</td><td>放电收益 − 充电成本</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="note__label">译文的可信度</span>
+        <p>新增的 60 种语言由机器翻译生成，术语与语气尚未经过母语者校对；en_AU / en_GB 沿用英文，zh_HK / zh_TW 由繁体中文生成并手工调整了用词。上线前建议抽查重点语言，至少覆盖 SOC、容量、充放电这类行业词。</p>
+      </div>
+    </section>
+
+    <section id="verify">
+      <p class="section-label"><span>08</span><span>验证</span></p>
+      <h2>算错不会报错，只能靠用例</h2>
+      <p>能源这一层的错误通常不会让页面崩，只会显示一个看着很合理的数字。因此把纯算术抽出来单测：采样口径、滚动汇总、配置校验、编解码都不依赖 Mongo 或时钟。</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>层</th><th>用例</th><th>覆盖</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>EnergyAccumulatorTest</td><td class="num">15</td><td>累计差、回绕、增量去重、功率积分与夹取、合并与计价</td></tr>
+            <tr><td>EnergyRollupTest</td><td class="num">8</td><td>粒度选择、本地对齐、密集填充、跨配置合并</td></tr>
+            <tr><td>EnergyConfigValidatorTest</td><td class="num">11</td><td>角色与指标匹配、点位字段成套、重复点位、价格与周期</td></tr>
+            <tr><td>EnergyConfigCodecTest</td><td class="num">4</td><td>请求 / 响应编解码</td></tr>
+            <tr><td>energy.ranges.spec.ts</td><td class="num">16</td><td>预设窗口、自定义区间、夏令时、变化率的空值、可用容量</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>前端生产构建通过；全量单元测试 50 个文件、1066 条用例全部通过；后端能源相关测试 38 条通过；66 份词典补齐后逐份校验键集、顺序、空值与占位符，均为 0 差异。没有做真实设备与真实 Mongo 的端到端验证：采样器与数据库写入仍依赖部署环境联调。</p>
+    </section>
+
+    <section id="limits">
+      <p class="section-label"><span>09</span><span>边界与后续</span></p>
+      <h2>这版故意没做的事</h2>
+      <p>下面这些不是遗漏，而是当前实现的明确边界。写出来是为了让 review 时能直接判断哪些需要补。</p>
+
+      <dl class="decisions">
+        <div class="decision">
+          <dt>摘要页</dt>
+          <dd>设计稿的一级页面（能源分布、总计、存储状态、来源）没有实现。当前入口直接是三个二级标签页；状态卡先落在存储页顶部。</dd>
+        </div>
+        <div class="decision">
+          <dt>periodHours 的角色</dt>
+          <dd>配置项会保存、展示，也返回给前端，但报表粒度由窗口跨度自动决定，不读它。若要让「统计周期」成为默认展示粒度，需要再加一个显式参数或前端换算。</dd>
+        </div>
+        <div class="decision">
+          <dt>一台电池 = 一条配置</dt>
+          <dd>配置内多点位会合并成一个数，页面上的「单台设备」筛选实际是「单条配置」。要在配置内按设备拆卡片，需要额外的设备维度。</dd>
+        </div>
+        <div class="decision">
+          <dt>没有峰谷电价</dt>
+          <dd>价格是单一价，在采样时锁进桶里。分时电价、需量电费都未实现；历史桶也不会因改价重算。</dd>
+        </div>
+        <div class="decision">
+          <dt>没有历史回填</dt>
+          <dd>新建配置从第一次采样建立基线，之前的用量不会补算；设备属性在离线期间也不会补点。</dd>
+        </div>
+        <div class="decision">
+          <dt>采样只跑一个副本</dt>
+          <dd><code>energy.sample.enabled</code> 默认关，部署时必须只在一个副本打开，否则同一段增量会被重复累加。这是部署约定，代码没有分布式锁。</dd>
+        </div>
+        <div class="decision">
+          <dt>没有 TTL</dt>
+          <dd>小时桶不会自动过期：一天 24 行 × 配置数，一年约 8,760 行 / 配置。需要长期保留或另做归档策略。</dd>
+        </div>
+        <div class="decision">
+          <dt>图表没有单测</dt>
+          <dd>四张图的 option 构造函数是纯函数，但没有 spec；当前只靠构建与页面手测。窗口与变化率这类容易算错的逻辑已有 16 个用例。</dd>
+        </div>
+        <div class="decision">
+          <dt>机器译文待校对</dt>
+          <dd>除中英与手工调整的繁体用词外，其余语言建议上线前抽查行业术语。</dd>
+        </div>
+      </dl>
+    </section>
+
+    <footer>
+      <span>energy.md · 设计与实现 · 2026-10-30</span>
+      <span>代码未提交，等待 review</span>
+    </footer>
+  </main>
+</div>
