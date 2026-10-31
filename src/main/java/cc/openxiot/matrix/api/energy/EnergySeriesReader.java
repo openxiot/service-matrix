@@ -24,8 +24,12 @@ import java.util.List;
 @ApplicationScoped
 public class EnergySeriesReader {
 
+    private final EnergyStatRepository statRepo;
+
     @Inject
-    EnergyStatRepository statRepo;
+    public EnergySeriesReader(EnergyStatRepository statRepo) {
+        this.statRepo = statRepo;
+    }
 
     /** 展示曲线：每条配置先在本配置内滚动，再把同一展示桶相加（容量/循环次数不会重复滚）。 */
     public Uni<List<EnergyBucket>> buckets(List<EnergyConfig> configs, long from, long to,

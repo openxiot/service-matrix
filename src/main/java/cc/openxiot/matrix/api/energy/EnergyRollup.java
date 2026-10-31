@@ -30,17 +30,23 @@ import java.util.Map;
  */
 public final class EnergyRollup {
 
-    /** 两天以内按小时看；超过两天按天看。 */
+    /**
+     * 两天以内按小时看；超过两天按天看。
+     */
     public static final long HOUR = 3_600_000L;
     public static final long DAY = 24 * HOUR;
 
-    /** 天气/月度报表的桶数上限：自定义范围再长，也不会画出几万个点。 */
+    /**
+     * 天气/月度报表的桶数上限：自定义范围再长，也不会画出几万个点。
+     */
     public static final int MAX_BUCKETS = 1_500;
 
     private EnergyRollup() {
     }
 
-    /** 按跨度自动选粒度：≤48h 小时、≤62 天按天、再长按月。 */
+    /**
+     * 按跨度自动选粒度：≤48h 小时、≤62 天按天、再长按月。
+     */
     public static EnergyGranularity granularityFor(long from, long to) {
         long span = Math.max(0, to - from);
         if (span <= 48 * HOUR) {
@@ -52,7 +58,9 @@ public final class EnergyRollup {
         return EnergyGranularity.MONTH;
     }
 
-    /** 时刻所在的展示桶起点（本地时区）。 */
+    /**
+     * 时刻所在的展示桶起点（本地时区）。
+     */
     public static long bucketAt(long millis, EnergyGranularity granularity, ZoneId zone) {
         ZonedDateTime time = Instant.ofEpochMilli(millis).atZone(zone);
         ZonedDateTime start = switch (granularity) {
@@ -63,7 +71,9 @@ public final class EnergyRollup {
         return start.toInstant().toEpochMilli();
     }
 
-    /** 下一个展示桶的起点（跨月/跨夏令时都由 {@link LocalDate} 推，不靠加固定毫秒）。 */
+    /**
+     * 下一个展示桶的起点（跨月/跨夏令时都由 {@link LocalDate} 推，不靠加固定毫秒）。
+     */
     public static long next(long bucketAt, EnergyGranularity granularity, ZoneId zone) {
         ZonedDateTime time = Instant.ofEpochMilli(bucketAt).atZone(zone);
         ZonedDateTime next = switch (granularity) {
@@ -74,7 +84,9 @@ public final class EnergyRollup {
         return next.toInstant().toEpochMilli();
     }
 
-    /** 覆盖 {@code [from, to)} 的展示桶起点（升序、密集）。 */
+    /**
+     * 覆盖 {@code [from, to)} 的展示桶起点（升序、密集）。
+     */
     public static List<Long> starts(long from, long to, EnergyGranularity granularity, ZoneId zone) {
         List<Long> starts = new ArrayList<>();
         if (from >= to) {
@@ -95,8 +107,13 @@ public final class EnergyRollup {
      * <p>{@code stats} 必须按 {@code bucketAt} 升序（仓库的 {@code findRange} 就是这个顺序），
      * 否则容量/循环次数这类「最后值」会取错。</p>
      */
-    public static List<EnergyBucket> rollup(List<EnergyStat> stats, long from, long to,
-                                            EnergyGranularity granularity, ZoneId zone) {
+    public static List<EnergyBucket> rollup(
+            List<EnergyStat> stats,
+            long from,
+            long to,
+            EnergyGranularity granularity,
+            ZoneId zone
+    ) {
         List<Long> starts = starts(from, to, granularity, zone);
         Map<Long, EnergyBucket> buckets = new LinkedHashMap<>();
         for (long at : starts) {
@@ -117,7 +134,9 @@ public final class EnergyRollup {
         return new ArrayList<>(buckets.values());
     }
 
-    /** 一个窗口的合计（不做展示分桶）。 */
+    /**
+     * 一个窗口的合计（不做展示分桶）。
+     */
     public static EnergyBucket summarize(List<EnergyStat> stats) {
         EnergyBucket total = EnergyBucket.empty(0);
         if (stats != null) {
@@ -128,7 +147,9 @@ public final class EnergyRollup {
         return total;
     }
 
-    /** 多条配置的同一展示桶 / 合计相加。 */
+    /**
+     * 多条配置的同一展示桶 / 合计相加。
+     */
     public static EnergyBucket mergeAll(List<EnergyBucket> buckets) {
         EnergyBucket total = EnergyBucket.empty(0);
         if (buckets != null) {

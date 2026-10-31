@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.config;
 
 import cc.openxiot.common.person.Person;
 import cc.openxiot.matrix.db.energy.EnergyConfig;

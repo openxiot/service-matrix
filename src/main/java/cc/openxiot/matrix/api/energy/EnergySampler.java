@@ -98,15 +98,18 @@ public class EnergySampler {
                             ignored -> logger.info("energy indexes ensured"),
                             failure -> logger.warnv("ensure energy indexes failed: {0}", failure.getMessage()));
         }
+
         if (!enabled) {
             return;
         }
+
         long interval = Math.max(intervalSeconds, 10);
         ticker = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "energy-sampler");
             thread.setDaemon(true);
             return thread;
         });
+
         // 首轮延后一个周期：让应用先把索引/连接起来，也避免与启动时的库初始化抢
         ticker.scheduleWithFixedDelay(this::tickSafely, interval, interval, TimeUnit.SECONDS);
         logger.infov("energy sampler started, interval={0}s", interval);

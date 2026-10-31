@@ -1,5 +1,6 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.report;
 
+import cc.openxiot.matrix.api.energy.EnergyBucket;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 

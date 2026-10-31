@@ -1,5 +1,7 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.status;
 
+import cc.openxiot.matrix.api.energy.EnergyBucket;
+import cc.openxiot.matrix.api.energy.EnergyRollup;
 import cc.openxiot.matrix.db.energy.EnergyConfig;
 import cc.openxiot.matrix.db.energy.EnergyConfigRepository;
 import cc.openxiot.matrix.db.energy.EnergyMetric;

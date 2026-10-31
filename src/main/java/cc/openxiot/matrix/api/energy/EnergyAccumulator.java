@@ -40,14 +40,18 @@ public final class EnergyAccumulator {
     private EnergyAccumulator() {
     }
 
-    /** 一个点位这一轮的结论：该加多少、新的基线是什么。 */
+    /**
+     * 一个点位这一轮的结论：该加多少、新的基线是什么。
+     */
     public record PointOutcome(
             EnergySample sample,
             Double lastRaw,
             Long lastAt,
             double delta
     ) {
-        /** 没读到值（或值不可用）：基线不动，这一轮什么都不加。 */
+        /**
+         * 没读到值（或值不可用）：基线不动，这一轮什么都不加。
+         */
         public static PointOutcome missing(Double lastRaw, Long lastAt) {
             return new PointOutcome(EnergySample.EMPTY, lastRaw, lastAt, 0);
         }
@@ -56,14 +60,14 @@ public final class EnergyAccumulator {
     /**
      * 消费一个点位的一次读数。
      *
-     * @param point             点位定义
-     * @param raw               本次读数；null = 没读到
-     * @param fresh             对 INCREMENT：这次读是不是一次**新**上报（寄存器按 recordedAt、设备属性按值变化）
-     * @param now               采样时刻（epoch 毫秒）
-     * @param lastRaw           上一次的原始值
-     * @param lastAt            上一次读数时刻
-     * @param integratePower    是否把功率积分成充/放电量（存储且没配显式充放电量点位时）
-     * @param intervalMillis    采样周期（功率积分时长的上限按它的 3 倍）
+     * @param point          点位定义
+     * @param raw            本次读数；null = 没读到
+     * @param fresh          对 INCREMENT：这次读是不是一次**新**上报（寄存器按 recordedAt、设备属性按值变化）
+     * @param now            采样时刻（epoch 毫秒）
+     * @param lastRaw        上一次的原始值
+     * @param lastAt         上一次读数时刻
+     * @param integratePower 是否把功率积分成充/放电量（存储且没配显式充放电量点位时）
+     * @param intervalMillis 采样周期（功率积分时长的上限按它的 3 倍）
      */
     public static PointOutcome consume(
             EnergyPoint point,
@@ -80,16 +84,21 @@ public final class EnergyAccumulator {
         }
         long safeInterval = Math.max(intervalMillis, 1_000L);
         return switch (point.metric) {
-            case ENERGY, CHARGE_ENERGY, DISCHARGE_ENERGY ->
-                    consumeEnergy(point, raw, fresh, now, lastRaw, lastAt);
+            case ENERGY, CHARGE_ENERGY, DISCHARGE_ENERGY -> consumeEnergy(point, raw, fresh, now, lastRaw, lastAt);
             case POWER -> consumePower(raw, now, lastRaw, lastAt, integratePower, safeInterval);
             case SOC, CAPACITY, SOH, TEMPERATURE, CYCLES ->
                     new PointOutcome(stateSample(point.metric, raw), raw, now, 0);
         };
     }
 
-    private static PointOutcome consumeEnergy(EnergyPoint point, double raw, boolean fresh,
-                                              long now, Double lastRaw, Long lastAt) {
+    private static PointOutcome consumeEnergy(
+            EnergyPoint point,
+            double raw,
+            boolean fresh,
+            long now,
+            Double lastRaw,
+            Long lastAt
+    ) {
         double delta;
         if (lastRaw == null) {
             // 第一条读数只建立基线：不知道它之前累积了多少，算进来会把历史一次计入当前桶
@@ -111,8 +120,14 @@ public final class EnergyAccumulator {
         return new PointOutcome(sample, raw, now, delta);
     }
 
-    private static PointOutcome consumePower(double raw, long now, Double lastRaw, Long lastAt,
-                                             boolean integratePower, long intervalMillis) {
+    private static PointOutcome consumePower(
+            double raw,
+            long now,
+            Double lastRaw,
+            Long lastAt,
+            boolean integratePower,
+            long intervalMillis
+    ) {
         double charge = 0;
         double discharge = 0;
         if (integratePower && lastAt != null) {
@@ -240,7 +255,9 @@ public final class EnergyAccumulator {
                 sample.temperature(), sample.cycles());
     }
 
-    /** 有些设备会把「没读到」编码成 NaN 或字符串；到这一层只认有限数。 */
+    /**
+     * 有些设备会把「没读到」编码成 NaN 或字符串；到这一层只认有限数。
+     */
     public static Double number(Object value) {
         if (value instanceof Number number) {
             double d = number.doubleValue();
@@ -261,7 +278,9 @@ public final class EnergyAccumulator {
         return value == null || !Double.isFinite(value) || value < 0 ? 0 : value;
     }
 
-    /** 空台账：便于调用方收集各点位结果。 */
+    /**
+     * 空台账：便于调用方收集各点位结果。
+     */
     public static List<EnergySample> newSamples() {
         return new ArrayList<>();
     }

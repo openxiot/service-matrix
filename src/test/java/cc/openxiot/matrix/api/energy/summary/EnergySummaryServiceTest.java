@@ -1,5 +1,10 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.summary;
 
+import cc.openxiot.matrix.api.energy.EnergyGranularity;
+import cc.openxiot.matrix.api.energy.EnergyRollup;
+import cc.openxiot.matrix.api.energy.EnergySeriesReader;
+import cc.openxiot.matrix.api.energy.status.EnergyStatus;
+import cc.openxiot.matrix.api.energy.status.EnergyStatusService;
 import cc.openxiot.matrix.db.energy.EnergyConfig;
 import cc.openxiot.matrix.db.energy.EnergyConfigRepository;
 import cc.openxiot.matrix.db.energy.EnergyRole;
@@ -32,7 +37,7 @@ import static org.mockito.Mockito.when;
  * 摘要的五张卡口径、电网夹到 0、上一期窗口、空数据与停用配置。
  *
  * <p>用真实的 {@link EnergySeriesReader} + 假的 {@code statRepo}：摘要最容易错的是
- * 「角色 × 类型怎么映射成卡」，rollup 的合并规则已有 {@link EnergyRollupTest} 覆盖。</p>
+ * 「角色 × 类型怎么映射成卡」，rollup 的合并规则已有 <code>EnergyRollupTest</code> 覆盖。</p>
  */
 class EnergySummaryServiceTest {
 
@@ -50,8 +55,7 @@ class EnergySummaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        EnergySeriesReader reader = new EnergySeriesReader();
-        reader.statRepo = statRepo;
+        EnergySeriesReader reader = new EnergySeriesReader(statRepo);
         service.configRepo = configRepo;
         service.seriesReader = reader;
         service.statusService = statusService;

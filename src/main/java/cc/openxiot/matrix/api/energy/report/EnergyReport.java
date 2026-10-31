@@ -1,4 +1,7 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.report;
+
+import cc.openxiot.matrix.api.energy.EnergyBucket;
+import cc.openxiot.matrix.api.energy.EnergyGranularity;
 
 import java.util.List;
 

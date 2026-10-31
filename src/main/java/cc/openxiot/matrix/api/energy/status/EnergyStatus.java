@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.status;
 
 import java.util.List;
 

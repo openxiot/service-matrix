@@ -1,5 +1,9 @@
-package cc.openxiot.matrix.api.energy;
+package cc.openxiot.matrix.api.energy.config;
 
+import cc.openxiot.matrix.api.energy.EnergyBucket;
+import cc.openxiot.matrix.api.energy.EnergyGranularity;
+import cc.openxiot.matrix.api.energy.report.EnergyReport;
+import cc.openxiot.matrix.api.energy.report.EnergyReportCodec;
 import cc.openxiot.matrix.db.energy.EnergyConfig;
 import cc.openxiot.matrix.db.energy.EnergyMetric;
 import cc.openxiot.matrix.db.energy.EnergyPoint;

@@ -873,7 +873,7 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
 
     <section id="api">
       <p class="section-label"><span>05</span><span>接口</span></p>
-      <h2>六个端点，两种权限</h2>
+      <h2>七个端点，两种权限</h2>
       <p>全部挂在 <code>/matrix/v1/energy</code> 下。读需要空间成员，写需要空间管理员；错误沿用全仓的 <code>OxResponse.error</code>（HTTP 200 + <code>success: false</code>），不用 4xx。</p>
 
       <div class="table-wrap">
@@ -888,9 +888,22 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
             <tr><td class="mono">DELETE</td><td class="mono">/configs/{spaceId}/{id}</td><td>管理员</td><td>同时删除桶与基线</td></tr>
             <tr><td class="mono">GET</td><td class="mono">/report/{spaceId}</td><td>成员</td><td><code>role</code>、<code>type</code>、<code>from</code> 必填；<code>to</code>、<code>configId</code>、<code>zone</code> 可选</td></tr>
             <tr><td class="mono">GET</td><td class="mono">/status/{spaceId}</td><td>成员</td><td><code>type</code> 必填；<code>zone</code> 可选</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/summary/{spaceId}</td><td>成员</td><td><code>from</code> 必填；<code>to</code>、<code>zone</code> 可选</td></tr>
           </tbody>
         </table>
       </div>
+
+      <h3>代码组织</h3>
+      <p>四个模块各占一个子包，资源类按模块拆开、都继承 <code>AbstractEnergyResource</code>（共用按空间鉴权与参数解析）；小时桶、rollup、采样与共享读侧仍在 <code>energy</code> 根包。</p>
+      <div class="tree">api/energy
+├─ AbstractEnergyResource <span class="dim">成员 / 管理员判定、枚举与时区解析</span>
+├─ EnergyBucket / EnergyGranularity / EnergyRollup <span class="dim">小时桶与滚动汇总</span>
+├─ EnergySampler / EnergyAccumulator <span class="dim">定时采样与累计</span>
+├─ EnergySeriesReader <span class="dim">报表与摘要共用的读侧</span>
+├─ config/ <span class="dim">EnergyConfigService · Codec · Validator · Resource</span>
+├─ report/ <span class="dim">EnergyReportService · Codec · Report · Resource</span>
+├─ status/ <span class="dim">EnergyStatusService · Codec · Status · Resource</span>
+└─ summary/ <span class="dim">EnergySummaryService · Codec · Summary · Resource</span></div>
 
       <h3>约定</h3>
       <ul>
@@ -1167,7 +1180,7 @@ EnergyReportPage <span class="dim">/main/energy/{consumption,production,storage}
             <tr><td class="mono">EnergySummary.java</td><td>响应 DTO：五张卡、五组桶、窗口充放电、存储状态</td></tr>
             <tr><td class="mono">EnergySummaryService.java</td><td>窗口 / 时区 / 跨度校验、按角色 × 类型分组、五张卡、上一期、<code>EnergyStatusService</code> 状态卡</td></tr>
             <tr><td class="mono">EnergySummaryCodec.java</td><td>JSON 输出；「没数据」写成显式 <code>null</code>，不省略键</td></tr>
-            <tr><td class="mono">EnergyResource.java</td><td><code>GET /summary/{spaceId}</code>，<code>requireSpaceMember</code>，错误走 <code>OxResponse.success:false</code></td></tr>
+            <tr><td class="mono">summary/EnergySummaryResource.java</td><td><code>GET /summary/{spaceId}</code>，<code>requireSpaceMember</code>，错误走 <code>OxResponse.success:false</code></td></tr>
             <tr><td class="mono">EnergySummary.ts / EnergySummaryCodec.ts</td><td>前端模型与只解不编的 codec</td></tr>
             <tr><td class="mono">energy.service.ts</td><td><code>summary(spaceId, from, to)</code>，带浏览器时区</td></tr>
             <tr><td class="mono">energy.component.*</td><td>一次取数、请求序号、<code>nz-spin</code> / <code>nz-alert</code>、五张卡与三块图</td></tr>
