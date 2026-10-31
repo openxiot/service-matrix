@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.energy.summary;
 
-import cc.openxiot.matrix.api.energy.EnergyGranularity;
 import cc.openxiot.common.role.OxRole;
+import cc.openxiot.matrix.api.energy.EnergyGranularity;
 import cc.openxiot.matrix.api.space.SpaceService;
 import cc.openxiot.matrix.db.space.SpaceEntity;
 import cc.openxiot.matrix.service.orgcheck.OrgAccessService;

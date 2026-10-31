@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.api.energy;
 
-import cc.openxiot.matrix.db.energy.EnergyConfig;
 import cc.openxiot.matrix.db.energy.EnergyMetric;
-import cc.openxiot.matrix.db.energy.EnergyPoint;
 import cc.openxiot.matrix.db.energy.EnergyRole;
-import cc.openxiot.matrix.db.energy.EnergySample;
 import cc.openxiot.matrix.db.energy.EnergySourceKind;
 import cc.openxiot.matrix.db.energy.EnergyValueMode;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.config.EnergyPoint;
+import cc.openxiot.matrix.db.energy.stat.EnergySample;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

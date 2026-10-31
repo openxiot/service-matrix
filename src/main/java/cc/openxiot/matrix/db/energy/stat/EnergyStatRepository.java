@@ -1,5 +1,7 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.stat;
 
+import cc.openxiot.matrix.db.energy.EnergyRole;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;

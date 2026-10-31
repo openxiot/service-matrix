@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.state;
 
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ReplaceOptions;

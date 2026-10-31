@@ -1,11 +1,11 @@
 package cc.openxiot.matrix.api.energy.config;
 
-import cc.openxiot.matrix.db.energy.EnergyConfig;
 import cc.openxiot.matrix.db.energy.EnergyMetric;
-import cc.openxiot.matrix.db.energy.EnergyPoint;
 import cc.openxiot.matrix.db.energy.EnergyRole;
 import cc.openxiot.matrix.db.energy.EnergySourceKind;
 import cc.openxiot.matrix.db.energy.EnergyValueMode;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.config.EnergyPoint;
 
 import java.util.HashSet;
 import java.util.List;

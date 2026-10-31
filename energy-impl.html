@@ -905,6 +905,13 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
 ├─ status/ <span class="dim">EnergyStatusService · Codec · Status · Resource</span>
 └─ summary/ <span class="dim">EnergySummaryService · Codec · Summary · Resource</span></div>
 
+      <p>数据层按三份集合拆成 <code>config/</code>、<code>stat/</code>、<code>state/</code>；角色 / 类型 / 指标 / 来源 / 口径这五个枚举是配置与桶共用的词汇，留在 <code>db/energy</code> 根包。</p>
+      <div class="tree">db/energy
+├─ EnergyRole / EnergyType / EnergyMetric / EnergySourceKind / EnergyValueMode <span class="dim">共享枚举</span>
+├─ config/ <span class="dim">EnergyConfig · EnergyPoint · EnergyConfigRepository</span>
+├─ stat/ <span class="dim">EnergyStat · EnergySample · EnergyStatRepository</span>
+└─ state/ <span class="dim">EnergyPointState · EnergyPointStateRepository</span></div>
+
       <h3>约定</h3>
       <ul>
         <li>时间一律 epoch 毫秒，<code>from</code> 含、<code>to</code> 不含，与看板 / 告警一致。</li>

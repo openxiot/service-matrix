@@ -1,12 +1,12 @@
 package cc.openxiot.matrix.api.energy.config;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.energy.EnergyConfig;
-import cc.openxiot.matrix.db.energy.EnergyConfigRepository;
-import cc.openxiot.matrix.db.energy.EnergyPointStateRepository;
 import cc.openxiot.matrix.db.energy.EnergyRole;
-import cc.openxiot.matrix.db.energy.EnergyStatRepository;
 import cc.openxiot.matrix.db.energy.EnergyType;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.config.EnergyConfigRepository;
+import cc.openxiot.matrix.db.energy.stat.EnergyStatRepository;
+import cc.openxiot.matrix.db.energy.state.EnergyPointStateRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

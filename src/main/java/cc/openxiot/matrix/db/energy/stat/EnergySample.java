@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.stat;
 
 /**
  * 一次采样对一个小时桶的**增量**（纯值对象）。

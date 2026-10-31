@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.energy;
 
-import cc.openxiot.matrix.db.energy.EnergyStat;
+import cc.openxiot.matrix.db.energy.stat.EnergyStat;
 import org.junit.jupiter.api.Test;
 
 import java.time.ZoneId;

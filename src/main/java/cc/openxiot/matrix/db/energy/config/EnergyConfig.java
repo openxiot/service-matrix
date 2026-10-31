@@ -1,6 +1,9 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.config;
 
 import cc.openxiot.common.person.Person;
+import cc.openxiot.matrix.db.energy.EnergyMetric;
+import cc.openxiot.matrix.db.energy.EnergyRole;
+import cc.openxiot.matrix.db.energy.EnergyType;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.types.ObjectId;

@@ -1,10 +1,10 @@
 package cc.openxiot.matrix.api.energy.config;
 
 import cc.openxiot.common.person.Person;
-import cc.openxiot.matrix.db.energy.EnergyConfig;
-import cc.openxiot.matrix.db.energy.EnergyPoint;
-import cc.openxiot.matrix.db.energy.EnergyType;
 import cc.openxiot.matrix.db.energy.EnergyRole;
+import cc.openxiot.matrix.db.energy.EnergyType;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.config.EnergyPoint;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 

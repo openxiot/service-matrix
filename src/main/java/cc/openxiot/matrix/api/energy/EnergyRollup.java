@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.energy;
 
-import cc.openxiot.matrix.db.energy.EnergyStat;
+import cc.openxiot.matrix.db.energy.stat.EnergyStat;
 
 import java.time.Instant;
 import java.time.LocalDate;

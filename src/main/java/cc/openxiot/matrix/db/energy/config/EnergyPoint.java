@@ -1,5 +1,8 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.config;
 
+import cc.openxiot.matrix.db.energy.EnergyMetric;
+import cc.openxiot.matrix.db.energy.EnergySourceKind;
+import cc.openxiot.matrix.db.energy.EnergyValueMode;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 

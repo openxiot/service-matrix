@@ -1,16 +1,16 @@
 package cc.openxiot.matrix.api.energy;
 
 import cc.openxiot.matrix.api.device.manipulation.ManipulationService;
-import cc.openxiot.matrix.db.energy.EnergyConfig;
-import cc.openxiot.matrix.db.energy.EnergyConfigRepository;
-import cc.openxiot.matrix.db.energy.EnergyPoint;
-import cc.openxiot.matrix.db.energy.EnergyPointState;
-import cc.openxiot.matrix.db.energy.EnergyPointStateRepository;
 import cc.openxiot.matrix.db.energy.EnergyRole;
-import cc.openxiot.matrix.db.energy.EnergySample;
 import cc.openxiot.matrix.db.energy.EnergySourceKind;
-import cc.openxiot.matrix.db.energy.EnergyStatRepository;
 import cc.openxiot.matrix.db.energy.EnergyValueMode;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.config.EnergyConfigRepository;
+import cc.openxiot.matrix.db.energy.config.EnergyPoint;
+import cc.openxiot.matrix.db.energy.stat.EnergySample;
+import cc.openxiot.matrix.db.energy.stat.EnergyStatRepository;
+import cc.openxiot.matrix.db.energy.state.EnergyPointState;
+import cc.openxiot.matrix.db.energy.state.EnergyPointStateRepository;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadow;
 import cc.openxiot.matrix.db.modbus.shadow.ModbusShadowRepository;
 import io.quarkus.runtime.ShutdownEvent;

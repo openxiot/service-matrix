@@ -1,4 +1,4 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.state;
 
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonId;
@@ -12,7 +12,7 @@ import java.util.Date;
  * 放在内存里一重启就会把重启那一刻之前、当前周期里已经采到的增量再算一遍（或者漏掉）。</p>
  *
  * <p>主键是 {@code configId#pointKey}：配置删了，基线跟着删（见 {@code EnergySampler} 的清理）；
- * 点位改名不影响主键（{@link EnergyPoint#key()} 不含名字）。</p>
+ * 点位改名不影响主键（{@link cc.openxiot.matrix.db.energy.config.EnergyPoint#key()} 不含名字）。</p>
  */
 @RegisterForReflection
 public class EnergyPointState {

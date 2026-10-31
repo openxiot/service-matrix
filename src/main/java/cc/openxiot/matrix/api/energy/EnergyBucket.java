@@ -1,6 +1,6 @@
 package cc.openxiot.matrix.api.energy;
 
-import cc.openxiot.matrix.db.energy.EnergyStat;
+import cc.openxiot.matrix.db.energy.stat.EnergyStat;
 
 /**
  * 一个展示桶（或整个窗口的合计）的聚合值。

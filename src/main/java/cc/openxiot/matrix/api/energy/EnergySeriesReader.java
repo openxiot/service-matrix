@@ -1,7 +1,7 @@
 package cc.openxiot.matrix.api.energy;
 
-import cc.openxiot.matrix.db.energy.EnergyConfig;
-import cc.openxiot.matrix.db.energy.EnergyStatRepository;
+import cc.openxiot.matrix.db.energy.config.EnergyConfig;
+import cc.openxiot.matrix.db.energy.stat.EnergyStatRepository;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

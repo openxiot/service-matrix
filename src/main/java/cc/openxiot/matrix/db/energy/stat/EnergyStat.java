@@ -1,5 +1,7 @@
-package cc.openxiot.matrix.db.energy;
+package cc.openxiot.matrix.db.energy.stat;
 
+import cc.openxiot.matrix.db.energy.EnergyRole;
+import cc.openxiot.matrix.db.energy.EnergyType;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.types.ObjectId;
@@ -27,7 +29,7 @@ public class EnergyStat {
 
     public String spaceId;
 
-    /** 配置 id（{@link EnergyConfig#id} 的十六进制字符串）。 */
+    /** 配置 id（{@link cc.openxiot.matrix.db.energy.config.EnergyConfig#id} 的十六进制字符串）。 */
     public String configId;
 
     public EnergyRole role;
