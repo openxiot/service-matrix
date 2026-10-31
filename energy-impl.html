@@ -574,7 +574,7 @@
         </div>
         <div>
           <dt>状态</dt>
-          <dd>代码完成，待 review</dd>
+          <dd>配置 / 报表 / 状态 / 摘要已实现</dd>
         </div>
       </dl>
     </div>
@@ -631,7 +631,8 @@
       <li><a href="#frontend"><span class="n">06</span><span>前端结构</span></a></li>
       <li><a href="#i18n"><span class="n">07</span><span>多语言</span></a></li>
       <li><a href="#verify"><span class="n">08</span><span>验证</span></a></li>
-      <li><a href="#limits"><span class="n">09</span><span>边界与后续</span></a></li>
+      <li><a href="#summary"><span class="n">09</span><span>摘要页</span></a></li>
+      <li><a href="#limits"><span class="n">10</span><span>边界与后续</span></a></li>
     </ol>
   </nav>
 
@@ -666,7 +667,7 @@
         </table>
       </div>
 
-      <p>这一版交付了后端 <code>/matrix/v1/energy</code> 的配置增删改查、报表和实时状态，<code>EnergySampler</code> 定时采样，前端 <code>/main/energy</code> 的页头角色切换与筛选条、三种角色的报表（要点卡、图表、逐桶表格、管理员配置对话框），以及 66 份词典的能源词条补齐。</p>
+      <p>这一版交付了后端 <code>/matrix/v1/energy</code> 的配置增删改查、报表、实时状态与摘要，<code>EnergySampler</code> 定时采样；前端 <code>/main/energy</code> 一级摘要页（五张卡、三块用量与存储状态）、按角色拆开的三个二级页（要点卡、图表、逐桶表格、管理员配置对话框、导出），以及 66 份词典的能源词条补齐。</p>
 
       <h3>三个影响全局的取舍</h3>
       <dl class="decisions">
@@ -923,19 +924,21 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
 
     <section id="frontend">
       <p class="section-label"><span>06</span><span>前端结构</span></p>
-      <h2>一个宿主，三个面板</h2>
-      <p>宿主负责三件不随角色变化的事：当前项目根空间、当前用户是不是项目管理员，以及页头。页头 <code>nz-page-header-extra</code> 里是角色切换的单选组（消耗 / 生产 / 存储）与刷新按钮，<code>nz-page-header-content</code> 里是 <code>nz-descriptions</code> 筛选条：类型、时间范围、单条配置。配置不是下拉，点开一个卡片对话框来选（写法照语言 / 主题对话框）。筛选条件放在 <code>EnergyFilterStore</code>，角色对应的面板读取同一份条件取数；切角色只换面板，类型与时间范围保留。面板自己管取数、图表与配置编辑对话框。</p>
+      <h2>一级摘要 + 三个二级页</h2>
+      <p>一级页（<code>/main/energy</code>）是摘要：页头只有时间范围与刷新，内容通过一次 <code>GET /energy/summary</code> 取回五张总计卡、五组曲线与存储状态。二级页按角色各一个页面组件（<code>consumption/</code> / <code>production/</code> / <code>storage/</code>），各自 <code>providers</code> 一份 <code>EnergyFilterStore</code>：页头的类型、时间范围、单条配置与报表读同一份条件。三级「节能」页挂在消耗页下面。二级页的公共部分 —— 页头筛选、报表取数、配置管理、导出 —— 都在 <code>shared/page/energy.report.page.ts</code> 的抽象基类里。</p>
 
-      <div class="tree">EnergyComponent <span class="dim">/main/energy</span>
-├─ 角色切换 + 刷新 <span class="dim">页头 extra · nz-radio-group</span>
-├─ 筛选条 <span class="dim">页头 content · nz-descriptions · EnergyFilterStore</span>
-├─ 配置选择对话框 <span class="dim">nz-card 卡片，点选即关窗</span>
-├─ 能源消耗 → EnergyPanel <span class="dim">role=CONSUMPTION</span>
-├─ 能源生产 → EnergyPanel <span class="dim">role=PRODUCTION</span>
-└─ 能源存储 → EnergyPanel <span class="dim">role=STORAGE</span>
-   ├─ 实时状态卡 <span class="dim">仅存储，读 /status</span>
-   ├─ 报表 <span class="dim">要点卡 · 图表 · 逐桶表格</span>
-   └─ 配置编辑对话框 <span class="dim">仅管理员</span></div>
+      <div class="tree">EnergyComponent <span class="dim">/main/energy · 摘要</span>
+├─ 时间范围 + 自定义区间 <span class="dim">页头 extra · EnergyFilterStore</span>
+├─ 五张总计卡 <span class="dim">GET /energy/summary · totals[]</span>
+├─ 电 / 气 / 水用量 <span class="dim">series.consumption / production / gas / water</span>
+└─ 存储状态卡 <span class="dim">storage + charge / discharge + series.storage</span>
+
+EnergyReportPage <span class="dim">/main/energy/{consumption,production,storage}</span>
+├─ 页头：类型 / 时间范围 / 单条配置 / 返回
+├─ 报表 <span class="dim">要点卡 · 图表 · 逐桶表格 · GET /report</span>
+├─ 实时状态卡 <span class="dim">仅存储 · GET /status</span>
+├─ 配置选择与编辑对话框 <span class="dim">仅管理员</span>
+└─ 导出 <span class="dim">PDF / Excel / CSV / HTML</span></div>
 
       <div class="table-wrap">
         <table>
@@ -943,25 +946,30 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
             <tr><th>文件</th><th>职责</th></tr>
           </thead>
           <tbody>
-            <tr><td class="mono">energy.component.*</td><td>页头角色切换与筛选条、管理员判定（与设备页同一口径）</td></tr>
-            <tr><td class="mono">energy.filter.ts</td><td>筛选条件与配置列表（宿主 provide，页头与面板共享）</td></tr>
-            <tr><td class="mono">energy.panel.component.*</td><td>取数、要点卡、图表、逐桶表格、配置列表</td></tr>
-            <tr><td class="mono">energy.config.select.component.*</td><td>配置选择对话框（卡片列表，选「全部」或某条配置）</td></tr>
-            <tr><td class="mono">energy.config.dialog.component.*</td><td>配置表单与点位编辑器（服务属性 / 寄存器）</td></tr>
-            <tr><td class="mono">energy.ranges.ts</td><td>预设时间窗口、桶标签、变化率、可用容量 —— 纯函数</td></tr>
-            <tr><td class="mono">energy.charts.ts</td><td>四张图的 ECharts option 构造函数 —— 纯函数</td></tr>
-            <tr><td class="mono">energy.service.ts</td><td>HTTP 调用；报表与状态带浏览器时区</td></tr>
+            <tr><td class="mono">energy.component.*</td><td>一级摘要页：一次取数、五张卡、三块用量与存储状态、请求序号与失败提示</td></tr>
+            <tr><td class="mono">energy.routes.ts</td><td>一级摘要 + 三个二级页 + 消耗页下的「节能」三级页</td></tr>
+            <tr><td class="mono">consumption|production|storage/*.component.*</td><td>按角色拆开的三个二级页，各自 provide 一份筛选条件</td></tr>
+            <tr><td class="mono">shared/page/energy.report.page.ts</td><td>二级页公共基类：页头筛选、报表取数、配置管理、导出</td></tr>
+            <tr><td class="mono">shared/energy.filter.ts</td><td>筛选条件与刷新时钟（页面组件 provide，页头与报表共享）</td></tr>
+            <tr><td class="mono">shared/config/{select,editor}</td><td>配置选择对话框与配置 / 点位编辑器（服务属性 / 寄存器）</td></tr>
+            <tr><td class="mono">shared/export/*</td><td>PDF / Excel / CSV / HTML 导出的模型、图表快照与对话框</td></tr>
+            <tr><td class="mono">shared/energy.ranges.ts</td><td>预设时间窗口、桶标签、变化率、可用容量 —— 纯函数</td></tr>
+            <tr><td class="mono">shared/energy.charts.ts</td><td>图表 ECharts option 构造函数 —— 纯函数</td></tr>
+            <tr><td class="mono">shared/energy.summary.ts</td><td>摘要 code → 词条、<code>previous</code> → 环比、用量合计 —— 纯函数</td></tr>
+            <tr><td class="mono">energy.service.ts</td><td>HTTP 调用；摘要、报表与状态带浏览器时区</td></tr>
             <tr><td class="mono">typedef / codec</td><td>请求与响应映射；缺字段给 null，不补 0</td></tr>
           </tbody>
         </table>
       </div>
 
       <h3>取数节奏</h3>
-      <p>条件与请求放在同一个 <code>effect</code> 里：角色、类型、时间窗口、单条配置、刷新版本任一变化就重取，不需要在每个 setter 里记得调一次。筛选条件与时钟都在 <code>EnergyFilterStore</code>；面板每分钟推一次时钟 —— 「今天」的终点不该停在打开页面的那一秒。</p>
+      <p>条件与请求放在同一个 <code>effect</code> 里：一级页看项目与时间窗口，二级页再加角色、类型与单条配置；刷新版本与每分钟的 tick 也都经窗口参与计算，任一变化就重取，不需要在每个 setter 里记得调一次。一级页取数期间保留上一次结果，晚到的旧响应按请求序号丢弃；二级页同样每分钟推一次时钟 —— 「今天」的终点不该停在打开页面的那一秒。</p>
 
       <h3>几个页面约定</h3>
       <ul>
-        <li>存储面板才请求实时状态；切换类型时重置「单条配置」筛选，免得筛出空报表。</li>
+        <li>一级页只有窗口，不收角色 / 类型 / 配置；五张卡与五组曲线共用同一次请求，不并发拼五个报表。</li>
+        <li>一级页失败给一条 <code>nz-alert</code>，用右下角刷新按钮重试；没数据时五张卡「—」、图表空白，不显示 0。</li>
+        <li>只有存储页请求实时状态；切换类型时重置「单条配置」筛选，免得筛出空报表。</li>
         <li>配置对话框里用 <code>point.key()</code> 查重，重复点位当场拒绝；编辑时复制点位，不直接改列表里的对象。</li>
         <li>非管理员看不到写按钮；按钮隐藏不是权限，后端仍按空间管理员再判一次。</li>
         <li>桶里 <code>samples = 0</code> 的整行显示「—」；瞬时量是 <code>null</code> 时显示「—」而不是 0。</li>
@@ -1025,23 +1033,289 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
             <tr><td>EnergyRollupTest</td><td class="num">8</td><td>粒度选择、本地对齐、密集填充、跨配置合并</td></tr>
             <tr><td>EnergyConfigValidatorTest</td><td class="num">11</td><td>角色与指标匹配、点位字段成套、重复点位、价格与周期</td></tr>
             <tr><td>EnergyConfigCodecTest</td><td class="num">4</td><td>请求 / 响应编解码</td></tr>
+            <tr><td>EnergySummaryServiceTest</td><td class="num">12</td><td>五张卡口径、电网夹取与 null、<code>previous</code> 窗口、无配置 / 无采样、停用配置、存储状态</td></tr>
+            <tr><td>EnergySummaryCodecTest</td><td class="num">5</td><td>code 顺序、显式 null、usage / storage 桶字段</td></tr>
+            <tr><td>EnergySummaryResourceTest</td><td class="num">4</td><td>成员 / 非成员、未知空间、非法时区</td></tr>
             <tr><td>energy.ranges.spec.ts</td><td class="num">16</td><td>预设窗口、自定义区间、夏令时、变化率的空值、可用容量</td></tr>
+            <tr><td>EnergySummaryCodec.spec.ts / energy.summary.spec.ts</td><td class="num">11</td><td>五张卡解出与映射、<code>previous</code> 为 0 / null、<code>storage</code> 缺失、空桶、跳过没采样的桶</td></tr>
           </tbody>
         </table>
       </div>
 
-      <p>前端生产构建通过；全量单元测试 50 个文件、1066 条用例全部通过；后端能源相关测试 38 条通过；66 份词典补齐后逐份校验键集、顺序、空值与占位符，均为 0 差异。没有做真实设备与真实 Mongo 的端到端验证：采样器与数据库写入仍依赖部署环境联调。</p>
+      <p>前端生产构建通过；全量单元测试 54 个文件、1087 条用例全部通过；后端能源相关测试 63 条通过；66 份词典补齐后逐份校验键集、顺序、空值与占位符，均为 0 差异。摘要页的联调仍未做：需要部署环境打开 <code>energy.sample.enabled</code> 采一轮，再用同一窗口对比摘要卡与三个二级页的合计。</p>
+    </section>
+
+    <section id="summary">
+      <p class="section-label"><span>09</span><span>摘要页</span></p>
+      <h2>一级页从 mock 走到服务端</h2>
+      <p class="lead">摘要页（<code>/main/energy</code>）已经从 <code>energy.summary.mock.ts</code> 换成服务端取数：<strong>不新建集合，也不让前端拼五个报表</strong>，而是由服务端读现有小时桶，一次返回整页需要的数据。</p>
+      <p><span class="pill pill--copper">已实现</span> 接口、口径与字段均按本节落地；三个取舍的实际选择见本节末尾，实现落点列在「接口」之前。</p>
+
+      <dl class="decisions">
+        <div class="decision">
+          <dt>一个只读端点</dt>
+          <dd><b><code>GET /matrix/v1/energy/summary/{spaceId}</code>，成员可读。</b> 只收窗口与时区，不收角色 / 类型 / 配置 / 粒度；整页一次返回，避免前端拼五次报表。</dd>
+        </div>
+        <div class="decision">
+          <dt>不落摘要表</dt>
+          <dd><b>读时从 <code>energy-stats</code> 聚合。</b> 现有小时桶已是配置 × 小时粒度，摘要只是换一个窗口再滚一次；不新增集合，也就没有失效与回填问题。</dd>
+        </div>
+        <div class="decision">
+          <dt>code、null、previous</dt>
+          <dd><b>总计用稳定 code；没数据给 <code>null</code>；上一期给原始值。</b> 前端映射词条、用既有 <code>changeRate()</code> 算环比，服务端不掺界面语言与展示格式。</dd>
+        </div>
+      </dl>
+
+      <h3>页面上的数据分四块</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>页面区块</th><th>需要的数</th><th>响应字段</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>五张总计卡</td>
+              <td>太阳能 / 电池 / 电网 / 燃气 / 用水的窗口合计、单位、环比</td>
+              <td><code>totals</code></td>
+            </tr>
+            <tr>
+              <td>电力对比图</td>
+              <td>用电、发电两组展示桶</td>
+              <td><code>series.consumption</code> / <code>series.production</code></td>
+            </tr>
+            <tr>
+              <td>燃气 / 用水图</td>
+              <td>两组展示桶</td>
+              <td><code>series.gas</code> / <code>series.water</code></td>
+            </tr>
+            <tr>
+              <td>存储状态卡</td>
+              <td>当前 SOC / 可用容量 / 额定容量 / 净功率；窗口内充放电量；SOC 与功率曲线</td>
+              <td><code>storage</code> + <code>charge</code> / <code>discharge</code> + <code>series.storage</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>数据从哪来</h3>
+      <p>全部来自现有三张表，没有新的采集，也没有新的写入：</p>
+      <ul>
+        <li><code>energy-configs</code> 决定「哪些配置算哪一类」：角色 × 类型；</li>
+        <li><code>energy-stats</code> 提供窗口内的小时桶（<code>energy</code>、<code>charge</code>、<code>discharge</code>、<code>socSum</code>、<code>powerSum</code>…）；</li>
+        <li><code>energy-point-states</code> 由 <code>EnergyStatusService</code> 读出「此刻」的 SOC、容量与功率。</li>
+      </ul>
+      <p>现有模型没有「太阳能 / 电网 / 电池」这种机器可读的来源字段；<code>EnergySourceKind</code> 表示的是读数来自服务属性还是寄存器，不是能源来源。因此五张卡只能按 <strong>角色 × 类型</strong> 映射：</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>总计卡</th><th>口径</th><th>取数</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>太阳能总计</td><td>生产 × 电力</td><td><code>sum(production.energy)</code></td></tr>
+            <tr><td>电池总计</td><td>存储 × 电力，窗口内<strong>充电量</strong></td><td><code>sum(storage.charge)</code></td></tr>
+            <tr><td>电网总计</td><td>用电 − 自发自用，近似净购电</td><td><code>max(0, sum(consumption.energy) − sum(production.energy))</code></td></tr>
+            <tr><td>燃气总计</td><td>消耗 × 燃气</td><td><code>sum(gas.energy)</code></td></tr>
+            <tr><td>用水总计</td><td>消耗 × 用水</td><td><code>sum(water.energy)</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="note__label">电网是近似值</span>
+        <p>当前公式只减太阳能，没有再减电池放电，也没有区分购电与上网。它与消耗页的用电合计能对上；要做到真正的「电网购入」，需要给配置加来源语义（如 <code>source = GRID</code>）或单独的电网点位。见本节末尾的取舍。</p>
+      </div>
+
+      <h3>存取方式：读时聚合，不落摘要表</h3>
+      <p>摘要不单独存一份：窗口、时区、粒度都可以变，存下来就要处理失效、回填和配置编辑；而现有小时桶已经是按配置 × 小时存的，读的时候滚一遍即可。一次请求的路径：</p>
+      <div class="figure">
+        <div class="pipeline">
+          <div class="node-box"><b>请求</b><span>spaceId<br>from / to / zone</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>配置 + 两个窗口</b><span>按 role × type 分组<br>本期 + 上一期</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>内存聚合</b><span>EnergyRollup<br>rollup / summarize</span></div>
+          <span class="pipe-arrow" aria-hidden="true">→</span>
+          <div class="node-box"><b>响应</b><span>总计 + 五组桶<br>+ 存储状态</span></div>
+        </div>
+      </div>
+      <ul>
+        <li><strong>本期</strong>：窗口内每个配置读一次 <code>energy-stats</code>（现有 <code>findRange(configId, from, to)</code>），按粒度滚成展示桶，再按 <code>EnergyBucket.merge</code> 跨配置合并。</li>
+        <li><strong>上一期</strong>：同样大小的 <code>[from − span, from)</code>，只取合计、不取展示桶，用于环比。和报表「环比不是乘系数」同一条规则。</li>
+        <li><strong>存储的合并顺序</strong>：容量、循环次数必须先在每条配置内滚成末值，再跨配置相加；反过来会把「每台电池的容量」滚成一台。直接复用 <code>EnergyReportService</code> 的 rollup 顺序，不另写一套。</li>
+        <li><strong>存储状态</strong>：复用 <code>EnergyStatusService.status(...).total</code>（启用且有点位的配置，SOC 按容量加权）；窗口充放电量则取本期存储桶的合计，不用 status 里「今日」的充放电。</li>
+        <li><strong>不写库</strong>：整个接口只读，不产生新集合、不更新基线，也不触发采样。</li>
+      </ul>
+      <p>实现上已经把 <code>EnergyReportService</code> 里私有的 <code>buckets()</code> / <code>totals()</code> 抽成了 <code>EnergySeriesReader</code>：报表与摘要共用同一套「按配置读桶 → rollup → 跨配置合并」，<code>EnergySummaryService</code> 只做「按角色 × 类型分组 + 五张卡 + 上一期 + 存储状态」的编排，没有第二份 rollup 规则。也没有在服务层连调 5 次 <code>report()</code> —— 那会重复查上一期与同比、重复取配置。</p>
+      <p>仓库里还有一个未使用的 <code>EnergyStatRepository.latest(spaceId, role)</code>，注释写着「摘要用」。它是最后一个<strong>桶</strong>，不如点位基线实时，不要拿它代替状态卡；摘要的当前 SOC / 功率仍走 <code>EnergyStatusService</code>。</p>
+
+      <h3>读放大与缓存</h3>
+      <p>一次请求读 <code>2N</code> 次桶（<code>N</code> = 项目配置数，本期与上一期各一次），外加存储状态按启用配置读点位基线。现有报表本来就是按配置逐个 <code>findRange</code>，摘要沿用同一量级；五张卡与五组曲线共用这两轮查询，不会乘 5。配置很多时再按顺序优化：</p>
+      <ul>
+        <li>给 <code>EnergyStatRepository</code> 加按 <code>spaceId + bucketAt</code> 范围的查询，利用现有 <code>(spaceId, role, bucketAt)</code> 索引，在内存里按 <code>configId</code> 分组后再滚 —— 一个窗口一次查询，而不是一个配置一次。</li>
+        <li>确实压不住再加 30 秒 TTL 的进程内缓存，key = <code>spaceId + from + to + zone</code>；窗口终点是「现在」时缓存会短暂滞后，刷新按钮要能绕过。</li>
+        <li>预聚合的 <code>energy-rollups</code> 只在数据量证明必要时做，不放在第一版。</li>
+      </ul>
+      <p>第一版不加缓存：摘要每分钟刷一次，读的是同一批小时桶，Mongo 的量很小；先把数字正确、失效路径简单放在前面。</p>
+
+      <h3>实现落点</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>位置</th><th>职责</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">EnergySeriesReader.java</td><td>从报表抽出的共享读侧：按配置 <code>findRange</code>、rollup、跨配置合并（<code>buckets()</code> / <code>totals()</code>）</td></tr>
+            <tr><td class="mono">EnergySummary.java</td><td>响应 DTO：五张卡、五组桶、窗口充放电、存储状态</td></tr>
+            <tr><td class="mono">EnergySummaryService.java</td><td>窗口 / 时区 / 跨度校验、按角色 × 类型分组、五张卡、上一期、<code>EnergyStatusService</code> 状态卡</td></tr>
+            <tr><td class="mono">EnergySummaryCodec.java</td><td>JSON 输出；「没数据」写成显式 <code>null</code>，不省略键</td></tr>
+            <tr><td class="mono">EnergyResource.java</td><td><code>GET /summary/{spaceId}</code>，<code>requireSpaceMember</code>，错误走 <code>OxResponse.success:false</code></td></tr>
+            <tr><td class="mono">EnergySummary.ts / EnergySummaryCodec.ts</td><td>前端模型与只解不编的 codec</td></tr>
+            <tr><td class="mono">energy.service.ts</td><td><code>summary(spaceId, from, to)</code>，带浏览器时区</td></tr>
+            <tr><td class="mono">energy.component.*</td><td>一次取数、请求序号、<code>nz-spin</code> / <code>nz-alert</code>、五张卡与三块图</td></tr>
+            <tr><td class="mono">shared/energy.summary.ts</td><td>code → 词条、<code>previous</code> → <code>changeRate()</code>、用量合计</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>energy.summary.mock.ts</code> 与它的 spec 已删除：窗口与桶对齐的用例由后端 <code>EnergyRollupTest</code> / <code>EnergySummaryServiceTest</code> 承担，页面映射由新增的 <code>EnergySummaryCodec.spec.ts</code> / <code>energy.summary.spec.ts</code> 覆盖。</p>
+
+      <h3>接口</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>方法</th><th>路径</th><th>权限</th><th>参数</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">GET</td><td class="mono">/summary/{spaceId}</td><td>空间成员</td><td><code>from</code> 必填；<code>to</code>、<code>zone</code> 可选</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>挂在现有 <code>/matrix/v1/energy</code> 下，沿用 <code>requireSpaceMember</code>；不走管理员。</li>
+        <li><code>from</code> / <code>to</code> 是 epoch 毫秒，<code>[from, to)</code>；<code>from ≥ to</code>、跨度超过 366 天直接报错，与 <code>/report</code> 同一套校验。</li>
+        <li><code>zone</code> 是 IANA 时区；前端传浏览器时区，不传则服务端默认时区。展示桶按本地整点 / 零点 / 月初对齐。</li>
+        <li>不传粒度、角色、类型、配置：摘要固定看项目全量，粒度由服务端按跨度选（≤48h 小时、≤62d 天、更长月）。长窗口会返回 <code>MONTH</code>，前端 <code>bucketLabel()</code> 已支持，不需要另做降级。</li>
+        <li>响应仍是 <code>OxResponse</code>：成功 <code>success: true</code>，失败 HTTP 200 + <code>success: false</code>。</li>
+      </ul>
+
+      <h3>数据结构</h3>
+      <p>响应只保留摘要页用得到的字段；桶是密集的，窗口内每个展示桶都在。示例里省略了中间桶：</p>
+      <pre><code><span class="c">// GET /summary/{spaceId}?from=…&amp;to=…&amp;zone=Asia%2FShanghai</span>
+{
+  <span class="k">"success"</span>: true,
+  <span class="k">"data"</span>: {
+    <span class="k">"spaceId"</span>: "…",
+    <span class="k">"from"</span>: 1761786000000,
+    <span class="k">"to"</span>: 1761872400000,
+    <span class="k">"zone"</span>: "Asia/Shanghai",
+    <span class="k">"granularity"</span>: "HOUR",
+    <span class="k">"totals"</span>: [
+      { "key": "SOLAR",   "value": 123.4, "unit": "kWh", "previous": 118.2 },
+      { "key": "BATTERY", "value": 88.6,  "unit": "kWh", "previous": 80.1 },
+      { "key": "GRID",    "value": 45.2,  "unit": "kWh", "previous": 52.7 },
+      { "key": "GAS",     "value": 61.8,  "unit": "m³",  "previous": null },
+      { "key": "WATER",   "value": 8.4,   "unit": "m³",  "previous": 8.0 }
+    ],
+    <span class="k">"series"</span>: {
+      <span class="k">"consumption"</span>: [ { "at": 1761786000000, "energy": 2.8, "samples": 57 } ],
+      <span class="k">"production"</span>:  [ { "at": 1761786000000, "energy": 0,   "samples": 57 } ],
+      <span class="k">"gas"</span>:         [ { "at": 1761786000000, "energy": 1.8, "samples": 57 } ],
+      <span class="k">"water"</span>:       [ { "at": 1761786000000, "energy": 0.2, "samples": 57 } ],
+      <span class="k">"storage"</span>:     [ { "at": 1761786000000, "soc": 42, "power": -2.1,
+                           "charge": 0, "discharge": 2.1, "samples": 57 } ]
+    },
+    <span class="k">"charge"</span>: 88.6,
+    <span class="k">"discharge"</span>: 76.3,
+    <span class="k">"storage"</span>: { "soc": 78, "available": 93.6, "capacity": 120, "power": -8.4 }
+  }
+}</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>字段</th><th>含义</th><th>空值</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">totals[].key</td><td>固定顺序：<code>SOLAR</code>、<code>BATTERY</code>、<code>GRID</code>、<code>GAS</code>、<code>WATER</code></td><td>不会缺</td></tr>
+            <tr><td class="mono">totals[].value</td><td>窗口内合计，按对应口径计算</td><td>没有配置或没有采样 → <code>null</code></td></tr>
+            <tr><td class="mono">totals[].previous</td><td>上一等长窗口的同口径合计</td><td><code>null</code>；前端据此算环比，不显示 0%</td></tr>
+            <tr><td class="mono">totals[].unit</td><td>服务端按类型给的规范单位：电 <code>kWh</code>，气 / 水 <code>m³</code></td><td>不会缺</td></tr>
+            <tr><td class="mono">series.*[].at</td><td>展示桶起点（本地对齐的 epoch 毫秒）</td><td>不会缺</td></tr>
+            <tr><td class="mono">series.*[].samples</td><td>该桶采样次数；<code>0</code> = 没数据</td><td>不会缺</td></tr>
+            <tr><td class="mono">series.storage[].soc / power</td><td>桶内 SOC、净功率（正充负放）</td><td>无采样 → <code>null</code></td></tr>
+            <tr><td class="mono">charge / discharge</td><td>窗口内充电量 / 放电量</td><td>没有存储采样 → <code>null</code></td></tr>
+            <tr><td class="mono">storage</td><td>此刻的 SOC / 可用 / 额定 / 净功率</td><td>没有启用中的存储配置 → <code>null</code>；字段也可能为 <code>null</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p><strong>总计用 code，不用中文。</strong> 服务端返回稳定的 <code>SOLAR</code> 等 code，前端映射到已有 i18n 词条，服务端不依赖界面语言，以后加语言也不用改接口。前端映射只有五行：<code>SOLAR → 太阳能总计</code>、<code>BATTERY → 电池总计</code>、<code>GRID → 电网总计</code>、<code>GAS → 燃气总计</code>、<code>WATER → 用水总计</code>。</p>
+      <p>环比沿用现有分工：接口返回 <code>previous</code>，前端用 <code>energy.ranges.ts</code> 里已有、已有用例的 <code>changeRate(current, previous)</code> 算百分比。这样 <code>/report</code> 与 <code>/summary</code> 对「上一期是 0 或没有数据」的处理完全一致，不在服务端再写一份变化率。</p>
+
+      <h3>空数据与边界</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>情况</th><th>响应</th><th>页面</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>某来源没有配置</td><td>该卡 <code>value = null</code>；电网公式里把缺席的发电按 0 计</td><td>卡片显示「—」，不显示 0</td></tr>
+            <tr><td>有配置但窗口内没采样</td><td>该卡 <code>value = null</code>；桶 <code>samples = 0</code>、值为 0</td><td>曲线空白，卡片「—」</td></tr>
+            <tr><td>发电有配置但没采样、用电有数据</td><td>电网 <code>value = null</code>（不知道自发自用，不能拿用电冒充净购电）</td><td>电网卡「—」</td></tr>
+            <tr><td>上一期没有数据或为 0</td><td><code>previous = null</code></td><td>环比「—」</td></tr>
+            <tr><td>没有启用中的存储配置</td><td><code>storage = null</code>；<code>charge</code> / <code>discharge</code> 可能仍有历史值</td><td>状态卡「—」，曲线照常</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>部署默认 <code>energy.sample.enabled = false</code>，联调时先把采样打开；否则窗口里一个采样点都没有，整页都是「—」，这不是接口故障。</p>
+      <div class="note">
+        <span class="note__label">停用配置去哪了</span>
+        <p>窗口的桶与总计沿用 <code>/report</code> 的口径：<strong>包含停用配置的历史桶</strong>，这样摘要与消耗 / 生产 / 存储页对同一个窗口的数字一致。存储状态卡沿用 <code>/status</code> 的口径：<strong>只算启用且有点位的配置</strong>，因为「现在」不该由一台停用的电池代表。两边口径不同是现有实现就有的，不是摘要新造的；如果产品希望摘要只算启用配置，应当同时改 report，否则点进二级页会对不上。</p>
+      </div>
+
+      <h3>为什么不这样做</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>备选</th><th>为什么否掉</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>前端并发调 5 个 <code>/report</code> + 1 个 <code>/status</code></td><td>六次往返，各自算上一期与同比；配置在两次调用之间被改会拼出不一致的一页；电网与电池公式还得前端再写一份。</td></tr>
+            <tr><td>采样时写一张 <code>energy-summary</code> 表</td><td>摘要随窗口、时区、粒度变化，预聚合要按这些维度再存一份；配置编辑、改价、停用、回填都会触发失效，写入放大且难补齐。</td></tr>
+            <tr><td>现在就给配置加 <code>source</code>（太阳能 / 电网 / 电池）</td><td>五张卡用角色 × 类型已经能映射；加字段要改配置表单、存量数据迁移与校验。等真正需要区分「购电 / 上网」时再做，届时电网公式一起改。</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>前端怎么接</h3>
+      <ul>
+        <li><code>EnergySummary</code> 模型与只解不编的 codec：<code>series.*</code> 解成页面用的五组 <code>EnergyBucket[]</code>，<code>totals</code> 映射成 <code>SummaryTotal</code>，<code>storage</code> 与窗口 <code>charge</code> / <code>discharge</code> 拼成存储卡。</li>
+        <li><code>shared/energy.summary.ts</code>：code → 词条（五行固定映射），<code>previous</code> 经 <code>changeRate()</code> 得环比；<code>sumUsage()</code> 跳过 <code>samples = 0</code> 的桶，一个采样都没有时返回 <code>null</code>，页面显示「—」。</li>
+        <li><code>EnergyService.summary(spaceId, from, to)</code> 与 <code>report()</code> 一样带浏览器时区；页面不再 import mock。</li>
+        <li><code>energy.component.ts</code> 用 <code>effect</code> 取数：条件（<code>spaceId</code>、窗口、刷新时钟）变化时重取；旧数据先留着，请求完成再替换；请求序号丢弃晚到的旧响应；切项目时先清空旧数字。</li>
+        <li>加载中页头保留，内容区给 <code>nz-spin</code>；失败给一条 <code>nz-alert</code>，复用右下角刷新按钮重试，不新增 i18n 词条；没数据时五张卡「—」、图表空白，不显示 0。</li>
+      </ul>
+
+      <h3>验证</h3>
+      <ul>
+        <li>后端：<code>EnergySummaryServiceTest</code>（12 条）覆盖五张卡口径、电网夹到 0、<code>previous</code> 窗口、无配置 / 有配置无采样、停用配置、存储状态与校验；<code>EnergySummaryCodecTest</code>（5 条）覆盖 code 顺序与显式 null；<code>EnergySummaryResourceTest</code>（4 条）覆盖成员 / 非成员、未知空间、非法时区。全部通过。</li>
+        <li>前端：<code>EnergySummaryCodec.spec.ts</code> 与 <code>energy.summary.spec.ts</code>（11 条）覆盖五张卡、<code>previous = null</code>、<code>storage = null</code>、空桶与跳过没采样的桶；全量 54 个文件、1087 条用例通过，生产构建通过。</li>
+        <li>联调未做：打开 <code>energy.sample.enabled</code> 采一轮，用同一窗口对比摘要卡与消耗 / 生产 / 存储页的合计；重点看电网卡是否等于 <code>max(0, 用电 − 发电)</code>。</li>
+      </ul>
+
+      <div class="note">
+        <span class="note__label">落地时定下的三个口径</span>
+        <p><b>1. 电网</b>：按 <code>max(0, 用电 − 发电)</code>，不扣电池放电、不区分购电与上网；<b>2. 停用配置</b>：窗口桶与总计与 report 一致，包含历史桶；存储状态卡只算启用配置；<b>3. 单位</b>：固定电 <code>kWh</code>、气 / 水 <code>m³</code>，不读点位 <code>unit</code>。三条都落在服务端 <code>EnergySummaryService</code>，要改需同时改 <code>/report</code> 与前端映射。</p>
+      </div>
     </section>
 
     <section id="limits">
-      <p class="section-label"><span>09</span><span>边界与后续</span></p>
+      <p class="section-label"><span>10</span><span>边界与后续</span></p>
       <h2>这版故意没做的事</h2>
       <p>下面这些不是遗漏，而是当前实现的明确边界。写出来是为了让 review 时能直接判断哪些需要补。</p>
 
       <dl class="decisions">
         <div class="decision">
-          <dt>摘要页</dt>
-          <dd>设计稿的一级页面（能源分布、总计、存储状态、来源）没有实现。当前入口直接是三个二级标签页；状态卡先落在存储页顶部。</dd>
+          <dt>摘要页的电网口径与缓存</dt>
+          <dd>摘要已接服务端，但电网仍是 <code>max(0, 用电 − 发电)</code> 的近似；没有缓存，每次请求按配置逐个读本期与上一期。口径与读放大见 <a href="#summary">09 摘要页</a>。</dd>
         </div>
         <div class="decision">
           <dt>periodHours 的角色</dt>
@@ -1079,8 +1353,8 @@ REGISTER | fdid#registerIndex  | SOC</code></pre>
     </section>
 
     <footer>
-      <span>energy.md · 设计与实现 · 2026-10-30</span>
-      <span>commit 8806b09 · 部署开关见 环境变量.html</span>
+      <span>energy.md · 设计与实现 · 2026-10-31</span>
+      <span>摘要页已接服务端 · 部署开关见 环境变量.html</span>
     </footer>
   </main>
 </div>

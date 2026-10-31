@@ -58,6 +58,9 @@ public class EnergyResource extends AbstractResource {
     EnergyStatusService statusService;
 
     @Inject
+    EnergySummaryService summaryService;
+
+    @Inject
     OrgAccessService orgAccessService;
 
     @Inject
@@ -170,6 +173,32 @@ public class EnergyResource extends AbstractResource {
                         .chain(space -> reportService.report(space.rootSpaceId(),
                                 tuple.getItem1(), tuple.getItem2(), from, to, configId, tuple.getItem3())))
                 .map(report -> OxResponse.ok(EnergyReportCodec.encode(report)))
+                .onFailure(IllegalArgumentException.class)
+                .recoverWithItem(e -> OxResponse.error(e.getMessage()));
+    }
+
+    // -- 摘要 --
+
+    /**
+     * 摘要页一次取数：五张总计卡 + 五组曲线 + 存储状态。
+     *
+     * <p>固定看项目全量，不收角色 / 类型 / 配置；粒度由服务端按跨度选。上一期的原始值
+     * 由服务端算，变化率交给前端（与 {@code /report} 的环比口径一致）。</p>
+     */
+    @GET
+    @Path("/summary/{spaceId}")
+    @RolesAllowed({OxRole.USER})
+    public Uni<Response> summary(
+            @PathParam("spaceId") String spaceId,
+            @QueryParam("from") Long from,
+            @QueryParam("to") Long to,
+            @QueryParam("zone") String zone
+    ) {
+        logger.infov("query energy summary, space: {0}, from: {1}, to: {2}", spaceId, from, to);
+        return zone(zone)
+                .chain(summaryZone -> requireSpaceMember(spaceId)
+                        .chain(space -> summaryService.summary(space.rootSpaceId(), from, to, summaryZone)))
+                .map(summary -> OxResponse.ok(EnergySummaryCodec.encode(summary)))
                 .onFailure(IllegalArgumentException.class)
                 .recoverWithItem(e -> OxResponse.error(e.getMessage()));
     }
