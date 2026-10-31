@@ -22,7 +22,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
  * <p>固定看项目全量，不收角色 / 类型 / 配置；五张卡、五组曲线与存储状态由服务端
  * 读现有小时桶现算。</p>
  */
-@Path("/matrix/v1/energy/summary/{spaceId}")
+@Path("/matrix/v1/energy/summary")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Energy", description = "能源摘要 API")
 @RequestScoped
@@ -38,6 +38,7 @@ public class EnergySummaryResource extends AbstractEnergyResource {
      * 由服务端算，变化率交给前端（与 {@code /report} 的环比口径一致）。</p>
      */
     @GET
+    @Path("/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> summary(
             @PathParam("spaceId") String spaceId,

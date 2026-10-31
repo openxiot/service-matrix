@@ -24,7 +24,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
  * <p>时间参数是 epoch 毫秒（{@code from} 含、{@code to} 不含），与看板 / 告警接口同口径；
  * 展示桶的粒度由服务端按跨度自动选，前端不传。</p>
  */
-@Path("/matrix/v1/energy/report/{spaceId}")
+@Path("/matrix/v1/energy/report")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Energy", description = "能源报表 API")
 @RequestScoped
@@ -40,6 +40,7 @@ public class EnergyReportResource extends AbstractEnergyResource {
      * 粒度由服务端按跨度自动选，前端不传。</p>
      */
     @GET
+    @Path("/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> report(
             @PathParam("spaceId") String spaceId,

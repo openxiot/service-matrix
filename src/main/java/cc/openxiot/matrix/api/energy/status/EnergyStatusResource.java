@@ -22,7 +22,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
  *
  * <p>报表桶里的 SOC 是平均值或末值，给不出「现在」，因此状态卡单独读点位基线。</p>
  */
-@Path("/matrix/v1/energy/status/{spaceId}")
+@Path("/matrix/v1/energy/status")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Energy", description = "能源实时状态 API")
 @RequestScoped
@@ -37,6 +37,7 @@ public class EnergyStatusResource extends AbstractEnergyResource {
      * <p>只对 {@code STORAGE} 有意义，其他角色没有这些指标 —— 不传 role，资源按类型直接查存储配置。</p>
      */
     @GET
+    @Path("/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> status(
             @PathParam("spaceId") String spaceId,

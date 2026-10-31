@@ -28,7 +28,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
  * <p>读需空间成员、写需空间管理员；错误走 {@code OxResponse.error}
  * （HTTP 200 + {@code success:false}），与全仓一致，不用 4xx。</p>
  */
-@Path("/matrix/v1/energy/configs/{spaceId}")
+@Path("/matrix/v1/energy/configs")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Energy", description = "能源配置 API")
 @RequestScoped
@@ -39,6 +39,7 @@ public class EnergyConfigResource extends AbstractEnergyResource {
 
     /** 项目下的配置；{@code role} / {@code type} 可选（页面按标签页时两个都给）。 */
     @GET
+    @Path("/{spaceId}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> listConfigs(
             @PathParam("spaceId") String spaceId,
@@ -55,6 +56,7 @@ public class EnergyConfigResource extends AbstractEnergyResource {
     }
 
     @POST
+    @Path("/{spaceId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> createConfig(
@@ -74,7 +76,7 @@ public class EnergyConfigResource extends AbstractEnergyResource {
     }
 
     @PUT
-    @Path("/{id}")
+    @Path("/{spaceId}/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({OxRole.USER})
     public Uni<Response> updateConfig(
@@ -95,7 +97,7 @@ public class EnergyConfigResource extends AbstractEnergyResource {
     }
 
     @DELETE
-    @Path("/{id}")
+    @Path("/{spaceId}/{id}")
     @RolesAllowed({OxRole.USER})
     public Uni<Response> deleteConfig(
             @PathParam("spaceId") String spaceId,
